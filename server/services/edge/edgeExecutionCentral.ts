@@ -1192,6 +1192,7 @@ export async function completeForNodeV2(node: EdgeNodePrincipal, runId: number, 
       if (!gate || gate.type !== "hitl_gate") return edgeError("step_invalid", `"${req.gateStepId}" is not an approval gate of run ${runId}.`);
     }
     const sink = await resolveEngineSink();
+    const ketDoan: { r: Awaited<ReturnType<typeof sink.applyEdgeSegmentEnd>> | null } = { r: null }; // A2(n) T7b-3 (H36)
     const out = await d.transaction(async (tx) => {
       const r = await sink.applyEdgeSegmentEnd(tx as unknown as CentralDbHandle, runId, {
         outcome: req.outcome,
@@ -1204,10 +1205,19 @@ export async function completeForNodeV2(node: EdgeNodePrincipal, runId: number, 
       });
       if (!r.ok) return edgeError("not_finished", r.message) as EdgeAnswer;
       if (!(await advance(tx as unknown as Awaited<ReturnType<typeof db>>, runId, c, true))) throw new EdgeReplayed("replayed");
+      ketDoan.r = r;
       const [run] = await tx.select({ status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson }).from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
       return { http: 200, data: { abortRequested: run ? centralStopped(run) : true, status: (run?.status ?? r.status) as EdgeCompleteAnswer["status"] } } as EdgeAnswer<EdgeCompleteAnswer>;
     });
     if (out.http === 200) await auditEdge(node, "EDGE_RUN_SEGMENT_DONE", runId, { claimSeq: req.claimSeq, outcome: req.outcome, status: (out.data as EdgeCompleteAnswer).status, ...(req.heldReason ? { heldReason: req.heldReason } : {}) });
+    // A2(n) T7b-3 (H36, chu du an 10/11) — after the commit, never in the transaction holding the run row (as T7b-2's URGENT in reportForNode): a run that acted, never latched and ended with no
+    // STOP sweep is told what it still owes. Nothing is sent; the node's answer does not wait for it
+    const ket = ketDoan.r;
+    if (out.http === 200 && ket) {
+      void import("../orchestration/foe/foeEngine")
+        .then((m) => m.baoKetThucKhongQuetSauDoanEdge(runId, ket))
+        .catch((err: unknown) => console.error(`[EdgeExec] run ${runId}: what its end owes could not be told: ${(err as Error)?.message ?? err}`));
+    }
     return out as EdgeAnswer<EdgeCompleteAnswer>;
   } catch (err) {
     if (err instanceof EdgeReplayed) return edgeError("replayed", `Run ${runId}: report already received — refused.`);

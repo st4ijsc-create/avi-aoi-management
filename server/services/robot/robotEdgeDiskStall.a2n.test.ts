@@ -568,6 +568,34 @@ describe("a2n round C — a consume past its bound ends the segment held", () =>
     expect((await abortRun(78, NGUOI, "a2n")).message).toContain("already terminal");
   }, 20_000);
 
+  it("★ T7B3-EDGE-THAT (H36): that failed end through the real complete, once committed: one URGENT names s1 under one key, nothing is sent; Abort answers already terminal, names s1, sends nothing", async () => {
+    const KIND = "foe_outcome_unknown_stop_ended_unswept";
+    const x = await dungThat();
+    themRun(x.central, 79, [move("m1"), move("m2"), stop("s1")], ["s1"]);
+    // what central holds of the run before its end: the workflow and the machine (the stored picture an Abort's sweep reads too)
+    d.store.set("orchestration_workflows", [{ id: 1, ref: "r79", name: "r79", definitionJson: H.defs.get(79), version: 1, status: "active", scopeKey: "global" }]);
+    d.store.set("machines", MACHINES.map((m) => ({ ...m, name: "m", code: "m" })));
+    Object.assign(hangRun(79), { workflowId: 1, workflowRef: "r79", paramsJson: {}, startedBy: 4 });
+    runJobImpl = async () => {
+      (H.robot as Row).driver.lockMotion("test", "locked after m1");
+      return { ok: true, status: "done" };
+    };
+    await x.agent.tick();
+    await hetDoan(x);
+    expect(hangRun(79).status).toBe("failed");
+    await choDen(() => canhBao(KIND).length > 0, "the URGENT of the end");
+    await nghi(30);
+    expect(canhBao(KIND).map((a) => a.dedupKey)).toEqual([`${KIND}:79:s1:-:ket`]);
+    expect(`${String(canhBao(KIND)[0]!.title)} ${String(canhBao(KIND)[0]!.message)}`).toContain(`STOP "s1" was NOT sent`);
+    expect(ten(), "nothing is sent at the end").toEqual(["move"]);
+    const r = await abortRun(79, NGUOI, "a2n");
+    await nghi(30);
+    expect(r.message).toContain("already terminal");
+    expect(r.message).toContain(`"s1"`);
+    expect(ten(), "the press sends nothing").toEqual(["move"]);
+    expect(canhBao(KIND).length, "a press adds none").toBe(1);
+  }, 20_000);
+
   it("★ the narrow case, measured: a run past the admission when another run's consume overran is refused on the unhealthy check: it counts, it ends held", async () => {
     process.env.ROBOT_SAFETY_PREFLIGHT_ENABLED = "true";
     const x = await dungThat();

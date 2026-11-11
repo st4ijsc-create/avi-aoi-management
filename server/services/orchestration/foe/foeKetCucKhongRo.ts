@@ -282,8 +282,10 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
  *   Not state C (H1's exception "read, not pinned"), no word that an Abort sends it: it would not.
  * abortStopNotSent — A2(n) T7b-1 (5a, B2, H1, C4): an Abort of a latched run handed `stepId` (a STOP, `compId` "-") over and it was refused or got no answer: the run is aborted, the STOP stays owed on
  *   its `abort:` row, and a person presses Abort again, with no time limit (the background only repeats this URGENT). Never "it went".
+ * stopEndedUnswept — A2(n) T7b-3 (H36, chu du an 10/11): a run that acted and never latched ended (`ketThuc`) with no STOP sweep, and `stepId` is a pinned STOP still owed by the sweep's own reading
+ *   (`stopKhongXacMinh`: its pins could not be read; BUOC_KHONG_XAC_DINH: the records could not be read). Nothing is sent: a person checks the machine. Under the fixed event "ket". No command has an unknown outcome.
  */
-export type LoaiCanhBaoKhongRo = "abortDefUnread" | "abortSweepUnfinished" | "abortStopNotSent" | "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui";
+export type LoaiCanhBaoKhongRo = "abortDefUnread" | "abortSweepUnfinished" | "abortStopNotSent" | "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui" | "stopEndedUnswept";
 export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>> = Object.freeze({
   held: "foe_outcome_unknown_compensation_held",
   stopSent: "foe_outcome_unknown_stop_compensation_sent",
@@ -306,6 +308,7 @@ export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>
   abortStopNotSent: "foe_outcome_unknown_abort_stop_not_sent",
   abortDefUnread: "foe_outcome_unknown_abort_definition_unread",
   abortSweepUnfinished: "foe_outcome_unknown_abort_sweep_unfinished",
+  stopEndedUnswept: "foe_outcome_unknown_stop_ended_unswept",
 });
 /** n2 — the words a person reads (critical-stop alerts carry raw text, they are not localised — as A2(m2)). */
 export const CHO_NGUOI_TIEU_DE = "waiting for a person";
@@ -332,6 +335,51 @@ export interface CanhBaoKhongRo {
   stopKhongXacMinh?: true;
   /** A2(n) T7b-1c — abortStopNotSent: the words of THE classification (chuStopAbort) */
   chuAbort?: ChuStopAbort;
+  /** A2(n) T7b-3 (H36) — stopEndedUnswept: how the run ended (`completed`: with a step of it failed) */
+  ketThuc?: KetThucKhongQuet;
+}
+
+/** A2(n) T7b-3 (H36) — the terminal statuses of a run that ends with no STOP sweep */
+export type KetThucKhongQuet = "aborted" | "failed" | "completed";
+/** A2(n) T7b-3 (H36) — what such a run still owes, by the sweep's own reading (foeEngine.noKetThucKhongQuet): pinned STOPs; stop-typed steps whose pins could not be read; or the records could not be read at all */
+export interface NoKetThucKhongQuet {
+  ketThuc: KetThucKhongQuet;
+  ghim: readonly string[];
+  chuaXacMinh: readonly string[];
+  khongDoc: boolean;
+}
+/** H36 — how the run ended, in words true of every source: no claim of who or what ended it */
+const cachKetThuc = (ket: KetThucKhongQuet): string => (ket === "completed" ? "ended completed although a step of it failed" : `ended ${ket}`);
+/**
+ * H36 — what a press of Abort can do on such a run, said as it is. Aborted: a press in the window may send it (measured, r2), an upper limit from MOC_CUA_SO, never a promise. Failed / completed: Abort answers
+ * "already terminal" and sends nothing, so no word suggests it does.
+ */
+function chuBamSauKetThuc(ket: KetThucKhongQuet, nhieu: boolean): string {
+  const no = nhieu ? "them" : "it";
+  return ket === "aborted"
+    ? `A press of Abort within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes of ${MOC_CUA_SO} may send ${no}, but may not reach ${no}: none is promised.`
+    : `Abort cannot reach a run that has ${cachKetThuc(ket)} (it answers "already terminal"), so no press sends ${no}.`;
+}
+/** A2(n) T7b-3 (H36) — the words of the URGENT: the STOP by name, NOT sent, the machine on site, and what a press can do (chuBamSauKetThuc). Nothing of the run has an unknown outcome, and no word says so. */
+function chuKetThucKhongQuet(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "stopKhongXacMinh" | "ketThuc">): [string, string] {
+  const ket = a.ketThuc ?? "failed";
+  const dau = `Run ${a.runId} ${cachKetThuc(ket)}, and no STOP sweep ran at that end`;
+  const tay = "Check the machine on site and use its direct STOP / E-STOP.";
+  if (a.stepId === BUOC_KHONG_XAC_DINH) return [`the run ${cachKetThuc(ket)}, which STOP steps were NOT sent could not be told`, `${dau}. Its records could not be read, so which STOP steps of it were NOT sent cannot be told. ${tay} ${chuBamSauKetThuc(ket, true)}`];
+  if (a.stopKhongXacMinh) return [`step "${a.stepId}" NOT sent: the run ${cachKetThuc(ket)}, not verified as a pinned STOP`, `${dau}: step "${a.stepId}" could not be verified as a pinned STOP, so it was NOT sent. ${tay} ${chuBamSauKetThuc(ket, false)}`];
+  return [`STOP "${a.stepId}" NOT sent: the run ${cachKetThuc(ket)} with no STOP sweep`, `${dau}: its STOP "${a.stepId}" was NOT sent. ${tay} ${chuBamSauKetThuc(ket, false)}`];
+}
+/**
+ * A2(n) T7b-3 (H36, brief point 3) — the answer to a press of Abort on a run that has ended `failed` / `completed` and still owes a STOP by the same reading as its URGENT: the STOPs by name, nothing sent, the machine
+ * on site, no promise. "already terminal" stays: the Studio and the callers key on it. Pure.
+ */
+export function chuBamDaKetThuc(runId: number, no: NoKetThucKhongQuet): string {
+  const ten = (ds: readonly string[]) => ds.map((id) => `"${id}"`).join(", ");
+  const cau: string[] = [];
+  if (no.khongDoc) cau.push("Its records could not be read, so whether a STOP step of it was NOT sent when it ended cannot be told.");
+  if (no.ghim.length) cau.push(`STOP steps NOT sent when it ended: ${ten(no.ghim)}.`);
+  if (no.chuaXacMinh.length) cau.push(`Could not be verified as a pinned STOP, NOT sent when it ended: ${ten(no.chuaXacMinh)}.`);
+  return `Run ${runId} already terminal (${no.ketThuc}). ${cau.join(" ")} This press sends nothing: Abort cannot reach a run that has ${cachKetThuc(no.ketThuc)}. Check the machine on site and use its direct STOP / E-STOP.`;
 }
 
 /**
@@ -431,7 +479,8 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
   const khongXd = a.loai === "forwardNotSent" && a.stepId === BUOC_KHONG_XAC_DINH; // T6 — no step to name
   const nhanh = a.loai === "stopUntakenBranch" || a.loai === "abortDefUnread" || a.loai === "abortSweepUnfinished" || khongXd || (a.loai === "abortStopNotSent" && (a.chuAbort === "khongXacMinhKhongHan" || a.chuAbort === "khongXacMinh15")); // `stepId` is the listed STOP: nothing happened to it
   // T7b-1d (H26) — a run that never latched and reached another end: no command of it has an unknown outcome, so no word says one has
-  const khongChot = a.loai === "abortStopNotSent" && (a.chuAbort === "daKetThucChuaKhoa" || a.chuAbort === "daKetThucKhongXacMinh");
+  // T7b-3 (H36) — the same for a run that ended with no sweep and never latched
+  const khongChot = (a.loai === "abortStopNotSent" && (a.chuAbort === "daKetThucChuaKhoa" || a.chuAbort === "daKetThucKhongXacMinh")) || a.loai === "stopEndedUnswept";
   const dau = nhanh ? `another command's outcome is unknown — machine state unknown` : a.biet ? `step "${a.stepId}" failed; another command's outcome is unknown — machine state unknown` : `command "${a.stepId}" outcome unknown — machine state unknown`;
   const mo = nhanh
     ? `A command of run ${a.runId} has an UNKNOWN outcome (${ma}); the state of the machine is unknown.`
@@ -469,6 +518,7 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       abortStopNotSent: chuAbortChuaRa(a),
       abortDefUnread: [`definition of the run unread, a STOP may still not be out`, chuKhongDocDinhNghia(a.runId)],
       abortSweepUnfinished: [`STOP sweep has not finished, a STOP may have gone out or may still go`, chuQuetChuaXong(a.runId)],
+      stopEndedUnswept: chuKetThucKhongQuet(a),
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];

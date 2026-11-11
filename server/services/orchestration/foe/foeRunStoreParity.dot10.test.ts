@@ -439,6 +439,7 @@ import {
   autoResumeInterruptedRuns,
   rehydrateInterruptedRuns,
   FOE_GATE_REQUIRED,
+  baoKetThucKhongQuetSauDoanEdge, // A2(n) T7b-3 (H36)
 } from "./foeEngine";
 import { EDGE_HELD_CTX_KEY, baoKhongXacNhan, buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, dauKhongXacNhan, findSeparateGateApproval, priorStepsOf, quenBenKhongXacNhan, quyetDinhKetThucAnh, persistContext, phanLoaiStopAbort, stopAbortCoGui, stopChuaRaTuHang, themBuocHongKhiTiepTuc, upsertStep, withResolvedAdapter } from "./foeRunStore";
 import { eventsForNode, reportForNode } from "../../edge/edgeReportsCentral";
@@ -950,7 +951,11 @@ async function edgeSegment(x: EdgeHarness, claimSeq: number, opts: { beforeEnd?:
     row.contextJson = { ...(row.contextJson ?? {}), ...edgeContextPatchOf(r.patch, row.contextJson).patch };
   }
   const end = x.stripEndUnknown && out.outcome ? { ...out, outcomeUnknown: undefined, error: undefined } : out;
-  if (end.outcome && !x.quaBaoCao) await applyEdgeSegmentEnd(fake as never, x.runId, { ...(end as any), nodeCode: "EDGE-A", claimSeq, def: d });
+  if (end.outcome && !x.quaBaoCao) {
+    const ket = await applyEdgeSegmentEnd(fake as never, x.runId, { ...(end as any), nodeCode: "EDGE-A", claimSeq, def: d });
+    // A2(n) T7b-3 (H36) — what completeForNodeV2 does once that end has committed: a run that acted, never latched and ended with no STOP sweep is told what it owes
+    await baoKetThucKhongQuetSauDoanEdge(x.runId, ket);
+  }
   return { out, segment: seg };
 }
 
@@ -3957,7 +3962,9 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     await wait(20);
     expect(ids()).toEqual(["f", "q"]);
     expect(hang(c, "cs")).toBeUndefined();
-    expect(h.alerts).toEqual([]);
+    // T7b-3 (H36, chu du an 10/11) — the commands stay as they were; the STOP left unsent by an end with no sweep is now told, by name, once (was: no URGENT)
+    await waitFor(() => h.alerts.length > 0, "the URGENT of the end");
+    expect(h.alerts.map((a) => String(a.dedupKey))).toEqual([`foe_outcome_unknown_stop_ended_unswept:${c}:cs:-:ket`]);
   });
   it("THAN-2-THU-TU a Continue's body and a pass reach one STOP: the pass first, the body takes its answer, one hand-over", async () => {
     seedHalt();
@@ -14975,4 +14982,265 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
       _clearBuffer();
     }
   });
+});
+
+// ══ A2(n) T7b-3 (H36, chu du an 10/11) ═══════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) T7b-3 — a run that acted, never latched, and ended with no STOP sweep: one durable URGENT names each pinned STOP still owed, nothing is sent (H36)", () => {
+  const KIND = "foe_outcome_unknown_stop_ended_unswept";
+  const box = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "sequence", steps }) as never;
+  const parF = (id: string, steps: WorkflowStep[], failFast: boolean): WorkflowStep => ({ id, type: "parallel", failFast, steps }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const PRE = (cach: "abort" | "hold") => ({ precondition: { source: "telemetry", machineId: 1, key: "temp", op: "lt", value: 0 }, onPreconditionFail: cach });
+  const COMP = { compensation: otStop("s") };
+  const sentOf = (id: string) => h.sent.filter((x) => x.stepId === id);
+  const h36 = () => h.alerts.filter((a) => a.kind === KIND);
+  const khoa = (c: number, id: string) => `${KIND}:${c}:${id}:-:ket`;
+  const chu = (a: Record<string, unknown>) => `${String(a.title)} ${String(a.message)}`;
+  const lui = (c: number, phut: number) => (runRow(c).finishedAt = new Date(Date.now() - phut * 60_000));
+  /** a word that a press of Abort sends what the run did not */
+  const hua = /press(?:ing)? Abort again|Abort (?:sends|will send|can send)|\ba (?:later |further )?press (?:sends|will send)/i;
+  const KET = ["aborted", "failed", "completed"];
+
+  // ── the fence of T7b-1d (lượt sửa 4, 5), as T7b-2: a run id range per case, a command of an older run kept apart and judged by ITS run ───────────────────────
+  let lanCa = 0;
+  const LA_STOP = new Set(["abort", "stop", "e_stop"]);
+  const ghim = (x: Record<string, unknown>) => {
+    if (x.robotId != null) return x.name === "abort";
+    const w = (x.writes ?? []) as Array<{ tagKey: string }>;
+    const cua = x.lac === true ? h.caCua(Number(x.runId))?.ghim : null;
+    return w.length > 0 && w.every((v) => (cua ? cua.includes(`${String(x.adapterId)}:${v.tagKey}`) : rows("device_tags").some((t) => t.adapterId === x.adapterId && t.tagKey === v.tagKey && t.stopValue != null)));
+  };
+  const laLoai1 = (x: Record<string, unknown>) => x.sauKhoa === true && !(LA_STOP.has(String(x.name)) && ghim(x)) && x.khongGhi !== true;
+  const lacKhoi: Array<Record<string, unknown>> = [];
+  beforeEach(() => {
+    h.ranhGioi = nhayId(900_000 + ++lanCa * 1000);
+    for (let i = h.sent.length - 1; i >= 0; i--) {
+      const so = /^run(\d+)-/.exec(String(h.sent[i]!.key));
+      if (!so || Number(so[1]) >= h.ranhGioi) continue;
+      const x = h.sent.splice(i, 1)[0]!;
+      Object.assign(x, { lac: true, sauKhoa: h.caCua(Number(so[1]))?.khoa ?? true });
+      h.lacTatCa.push(x);
+      lacKhoi.push(x);
+    }
+    h.caCuaRun.push({ tu: h.ranhGioi, ten: String(expect.getState().currentTestName).split(" > ").pop() ?? "?", khoa: null, ghim: null });
+    h.lac.length = 0;
+    seedHalt();
+    h.ghim = PIN_OK;
+    vi.mocked(logCrudOperation).mockClear();
+    vi.mocked(logCrudOperation).mockImplementation(async () => ({ id: 1 }) as never);
+  });
+  afterEach(() => {
+    try {
+      expect(h.sent.filter(laLoai1).map((x) => x.stepId), "a command that is no pinned STOP reached a device after the latch").toEqual([]);
+    } finally {
+      h.failPlan.clear();
+      const ca = h.caCuaRun[h.caCuaRun.length - 1];
+      if (ca) Object.assign(ca, { khoa: h.traTimeout > 0, ghim: rows("device_tags").filter((t) => t.stopValue != null).map((t) => `${String(t.adapterId)}:${String(t.tagKey)}`) });
+      h.ranhGioi = Number.MAX_SAFE_INTEGER;
+      for (const x of h.lac) lacKhoi.push(x);
+    }
+  });
+  afterAll(() => {
+    console.log(`[T7B3 lac] ${lacKhoi.length} commands of an older run kept apart in the block: ${lacKhoi.map((x) => `${String(x.key)}:${String(x.name)}:sauKhoa=${String(x.sauKhoa)}`).join(" ") || "-"}`);
+    expect(lacKhoi.filter(laLoai1).map((x) => String(x.key)), "a command kept apart is no pinned STOP and went after its run's latch").toEqual([]);
+  });
+
+  /** central's own walk to its end: `hong` — y is refused every attempt */
+  async function trungTam(steps: WorkflowStep[], ref: string, hong = false) {
+    if (hong) h.failPlan.set("y", Infinity);
+    const c = await centralRun(def(ref, steps), 1);
+    await waitFor(() => KET.includes(String(runRow(c).status)), "the run ended");
+    await wait(150); // the walk tells before it returns: whatever it adds has landed by now
+    h.failPlan.clear();
+    return c;
+  }
+  /** the words of one H36 URGENT: the STOP by name, NOT sent, the machine on site; the window only on an aborted run and from MOC_CUA_SO; no promise */
+  function kiemChu(a: Record<string, unknown>, ket: string, id = "s") {
+    const t = chu(a);
+    expect(t).toContain(`"${id}"`);
+    expect(String(a.message), "the message names it too, not only the title").toContain(`"${id}"`);
+    expect(t).toContain("NOT sent");
+    expect(t).toMatch(/check the machine on site/i);
+    expect(t).toContain("E-STOP");
+    expect(t).toContain(`ended ${ket}`);
+    expect(t, "no promise").not.toMatch(hua);
+    expect(t, "nothing of the run has an unknown outcome").not.toMatch(/UNKNOWN|outcome/);
+    if (ket === "aborted") expect(t).toContain("within 15 minutes of when the run was aborted");
+    else {
+      expect(t, "no window on a run Abort cannot reach").not.toMatch(/\d+ minutes/);
+      expect(t).toContain("already terminal");
+    }
+  }
+  /** a press of Abort after the end: aborted — in the window s goes, as before T7b-3 (r2); failed / completed — "already terminal", now naming s, nothing sent, as before */
+  async function bam(c: number, ket: string, ids: string[] = ["s"]) {
+    h.sent.length = 0;
+    if (ket === "aborted") {
+      lui(c, 14);
+      await abortRun(c, OWNER, "press");
+      await wait(80);
+      for (const id of ids) expect(sentOf(id).length, `within the window a press sends ${id}, as before T7b-3`).toBe(1);
+      return;
+    }
+    const r = await abortRun(c, OWNER, "press");
+    await wait(80);
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain("already terminal");
+    for (const id of ids) expect(r.message).toContain(`"${id}"`);
+    expect(r.message).toMatch(/check the machine on site/i);
+    expect(r.message, "no promise").not.toMatch(hua);
+    expect(r.message).not.toMatch(/\d+ minutes/);
+    expect(h.sent.map((x) => `${String(x.stepId)}:${String(x.name)}`), "the press sends nothing, as before T7b-3").toEqual([]);
+  }
+
+  type Ca = { ten: string; steps: () => WorkflowStep[]; ket: "aborted" | "failed" | "completed"; hong?: boolean };
+  const NO: Ca[] = [
+    { ten: "PRE-ABORT (a) a forward STOP behind a precondition that aborts", steps: () => [gate(), ot("o"), move("x", PRE("abort")), otStop("s")], ket: "aborted" },
+    { ten: "PRE-ABORT (b) the STOP compensation of o, completed before it", steps: () => [gate(), ot("o", COMP), move("x", PRE("abort"))], ket: "aborted" },
+    { ten: "PRE-HOLD (a) a forward STOP behind a precondition that holds", steps: () => [gate(), ot("o"), move("x", PRE("hold")), otStop("s")], ket: "failed" },
+    { ten: "PRE-HOLD (b) the STOP compensation of o", steps: () => [gate(), ot("o", COMP), move("x", PRE("hold"))], ket: "failed" },
+    { ten: "THAT-BAI (a) a forward STOP behind y, refused every attempt", steps: () => [gate(), ot("o"), ot("y"), otStop("s")], ket: "failed", hong: true },
+    { ten: "THAT-BAI (b) the STOP compensation of o, y refused every attempt", steps: () => [gate(), ot("o", COMP), ot("y")], ket: "failed", hong: true },
+    { ten: "FF-TRUE (b) the STOP compensation of o, failFast true", steps: () => [gate(), ot("o", COMP), parF("p", [ot("y"), delay("w", 200)], true)], ket: "failed", hong: true },
+    { ten: "FF-FALSE (b) the STOP compensation of o, failFast false: the run completed with y failed", steps: () => [gate(), ot("o", COMP), parF("p", [ot("y"), delay("w", 200)], false)], ket: "completed", hong: true },
+  ];
+  for (const ca of NO) {
+    it(`T7B3-${ca.ten}: one URGENT names s under one fixed key, nothing sent; a boot and a press add none; the press's words true`, async () => {
+      const c = await trungTam(ca.steps(), `t7b3n${NO.indexOf(ca)}`, ca.hong);
+      expect(runRow(c).status).toBe(ca.ket);
+      expect(sentOf("s"), "nothing is sent at the end (H36 sends nothing)").toEqual([]);
+      expect(h36().map((a) => a.dedupKey), "one URGENT, one fixed key per (run, STOP)").toEqual([khoa(c, "s")]);
+      expect(h.alerts.length, "nothing else is told").toBe(1);
+      expect(h36()[0]!.recipients).toContain(OWNER.id);
+      kiemChu(h36()[0]!, ca.ket);
+      await rehydrateInterruptedRuns();
+      await autoResumeInterruptedRuns([c]);
+      await wait(40);
+      expect(h36().length, "a boot adds none").toBe(1);
+      await bam(c, ca.ket);
+      expect(h36().length, "a press adds none").toBe(1);
+    });
+  }
+
+  it("T7B3-FF (a) a forward STOP in the branch that goes on, failFast true and false: s goes, nothing is owed, no URGENT", async () => {
+    for (const ff of [true, false]) {
+      h.alerts.length = 0;
+      h.sent.length = 0;
+      const c = await trungTam([gate(), ot("o"), parF("p", [ot("y"), box("bb", [delay("w", 200), otStop("s")])], ff)], `t7b3ff${String(ff)}`, true);
+      expect(runRow(c).status).toBe(ff ? "failed" : "completed");
+      expect(sentOf("s").length, `failFast ${String(ff)}: s went in its branch`).toBe(1);
+      expect(h36(), `failFast ${String(ff)}: nothing owed`).toEqual([]);
+    }
+  });
+
+  it("T7B3-CHUA-TAC-DONG (i) nothing acted (a delay's precondition aborts before any command): R-6-b stands, no URGENT", async () => {
+    const c = await trungTam([gate(), { id: "x", type: "delay", ms: 20, ...PRE("abort") } as never, otStop("s")], "t7b3i");
+    expect(runRow(c).status).toBe("aborted");
+    expect(sentOf("s")).toEqual([]);
+    expect(h36(), "a run that never acted is not told (R-6-b)").toEqual([]);
+    expect(h.alerts.map((a) => String(a.kind))).toEqual([]);
+  });
+
+  it("T7B3-CHUA-TAC-DONG-LENH (i) r2's shape: a command's precondition aborts before it is handed over; R-6-b reads its failed row as a step that may have acted (a press sends s, r2): told, by the same reading", async () => {
+    const c = await trungTam([gate(), move("x", PRE("abort")), otStop("s")], "t7b3il");
+    expect(runRow(c).status).toBe("aborted");
+    expect(sentOf("s")).toEqual([]);
+    expect(h36().map((a) => a.dedupKey), "H36-a, dieu-phoi 11/11: R-6-b is the one test of acted; the row failed of x counts as may have acted").toEqual([khoa(c, "s")]);
+    kiemChu(h36()[0]!, "aborted");
+    await bam(c, "aborted");
+    expect(h36().length).toBe(1);
+  });
+
+  it("T7B3-HOAN-TAT a clean completion owes no compensation: no URGENT, the press keeps its old words", async () => {
+    const c = await trungTam([gate(), ot("o", COMP), ot("y")], "t7b3ok");
+    expect(runRow(c).status).toBe("completed");
+    expect(h36()).toEqual([]);
+    const r = await abortRun(c, OWNER, "press");
+    expect(r.message).toBe(`Run ${c} already terminal.`);
+  });
+
+  it("T7B3-KHONG-GHIM a stop-typed step whose pins were read and are none: no STOP, no URGENT, the press keeps its old words", async () => {
+    h.ghim = async () => ({ pinnedStop: false, loiDocGhim: null });
+    const c = await trungTam([gate(), ot("o"), ot("y"), { id: "s", type: "command", machineId: 1, command: "stop", args: { tagKey: "run", value: 0 } } as never], "t7b3kg", true);
+    expect(runRow(c).status).toBe("failed");
+    expect(h36(), "a step read as no pinned STOP is owed nothing (the sweep's own verification)").toEqual([]);
+    const r = await abortRun(c, OWNER, "press");
+    expect(r.message).toBe(`Run ${c} already terminal.`);
+  });
+
+  it("T7B3-CHUA-DOC the pins unreadable: told by name as not verified, nothing sent; the press says the same", async () => {
+    h.classifyLoi = true;
+    const c = await trungTam([gate(), ot("o"), ot("y"), otStop("s")], "t7b3cd", true);
+    expect(runRow(c).status).toBe("failed");
+    expect(sentOf("s")).toEqual([]);
+    expect(h36().map((a) => a.dedupKey)).toEqual([khoa(c, "s")]);
+    kiemChu(h36()[0]!, "failed");
+    expect(chu(h36()[0]!)).toContain(`step "s" could not be verified as a pinned STOP`);
+    await bam(c, "failed");
+    expect(String((await abortRun(c, OWNER, "press")).message)).toContain(`Could not be verified as a pinned STOP, NOT sent when it ended: "s"`);
+  });
+
+  it("T7B3-HAI two STOPs owed, a forward one and a compensation: one URGENT each, the press names both", async () => {
+    const c = await trungTam([gate(), ot("o", COMP), ot("y"), otStop("t")], "t7b3hai", true);
+    expect(runRow(c).status).toBe("failed");
+    expect(h36().map((a) => String(a.dedupKey)).sort()).toEqual([khoa(c, "s"), khoa(c, "t")].sort());
+    kiemChu(h36().find((a) => String(a.dedupKey) === khoa(c, "t"))!, "failed", "t");
+    await bam(c, "failed", ["s", "t"]);
+  });
+
+  it("T7B3-KHOA a latched run that ends failed keeps its own end (H2): the STOP compensation of o, due by an unlatched reading, raises no H36 URGENT", async () => {
+    h.timeoutDispatch.add("x");
+    const c = await trungTam([gate(), ot("o", COMP), ot("x")], "t7b3khoa");
+    h.timeoutDispatch.clear();
+    expect(runRow(c).status).toBe("failed");
+    expect(String(runRow(c).error)).toMatch(/UNKNOWN/);
+    expect(h.alerts.some((a) => String(a.kind).startsWith("foe_outcome_unknown_") && a.kind !== KIND), "the latched run's own URGENT is there").toBe(true);
+    expect(h36(), "a latched end is no H36 end").toEqual([]);
+  });
+
+  it("T7B3-KHOA-EDGE the same on the edge: the end central applies is latched by the rows' code: no H36 URGENT", async () => {
+    const d = def("t7b3khoae", [gate(), ot("o", COMP), ot("x")]);
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    h.timeoutDispatch.clear();
+    await wait(100);
+    expect(["failed", "held"]).toContain(String(runRow(e.runId).status));
+    expect(stepRows(e.runId).some((r) => /UNKNOWN/.test(String(r.error ?? ""))), "the rows carry the latch").toBe(true);
+    expect(h36(), "a latched end is no H36 end").toEqual([]);
+  });
+
+  const EDGE: Ca[] = [
+    { ten: "EDGE-ABORTED (a) a forward STOP behind a precondition that aborts on the edge", steps: () => [gate(), ot("o"), move("x", PRE("abort")), otStop("s")], ket: "aborted" },
+    { ten: "EDGE-ABORTED (b) the STOP compensation of o", steps: () => [gate(), ot("o", COMP), move("x", PRE("abort"))], ket: "aborted" },
+    { ten: "EDGE-FAILED (a) a forward STOP behind y, refused every attempt on the edge", steps: () => [gate(), ot("o"), ot("y"), otStop("s")], ket: "failed", hong: true },
+    { ten: "EDGE-FAILED (b) the STOP compensation of o", steps: () => [gate(), ot("o", COMP), ot("y")], ket: "failed", hong: true },
+  ];
+  for (const ca of EDGE) {
+    it(`T7B3-${ca.ten}: central tells once the end is applied, one fixed key, nothing sent; the end replayed adds none; the press's words true`, async () => {
+      if (ca.hong) h.failPlan.set("y", Infinity);
+      const d = def(`t7b3e${EDGE.indexOf(ca)}`, ca.steps());
+      const e = await edgeAssignedRun(d);
+      await edgeSegment(e, 1);
+      await approveEdgeGate(e);
+      const s2 = await edgeSegment(e, 2);
+      await wait(100);
+      h.failPlan.clear();
+      expect(runRow(e.runId).status).toBe(ca.ket);
+      expect(sentOf("s"), "nothing is sent at the end").toEqual([]);
+      expect(h36().map((a) => a.dedupKey)).toEqual([khoa(e.runId, "s")]);
+      expect(h.alerts.length, "nothing else is told").toBe(1);
+      kiemChu(h36()[0]!, ca.ket);
+      // the same end again (a complete replayed): nothing changes, nothing more is told
+      const wf = rows("orchestration_workflows").find((w) => w.id === runRow(e.runId).workflowId)!;
+      const lai = await applyEdgeSegmentEnd(fake as never, e.runId, { ...(s2.out as any), nodeCode: "EDGE-A", claimSeq: 2, def: wf.definitionJson as WorkflowDefinition });
+      await baoKetThucKhongQuetSauDoanEdge(e.runId, lai);
+      expect(lai).toMatchObject({ changed: false });
+      expect(h36().length, "a replayed end adds none").toBe(1);
+      await bam(e.runId, ca.ket);
+      expect(h36().length, "a press adds none").toBe(1);
+    });
+  }
 });

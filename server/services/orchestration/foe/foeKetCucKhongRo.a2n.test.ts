@@ -2217,3 +2217,51 @@ describe("A2(n) T5 — state C, the pure parts", () => {
     expect(docAnomalyKhongRo(nguon)?.vi).toBeUndefined();
   });
 });
+
+// A2(n) T7b-3 (H36, chu du an 10/11) — the words of a STOP a run that acted, never latched, ended with and no sweep sent: pure
+describe("A2(n) T7b-3 — the words of a pinned STOP a run ended with, unswept (H36)", () => {
+  const n = (ketThuc: "aborted" | "failed" | "completed", extra: Record<string, unknown> = {}) =>
+    noiDungCanhBaoKhongRo({ loai: "stopEndedUnswept", runId: 9, stepId: "s", compId: KHONG_CO_BU_TRU, error: "FOE_STOP_NOT_SENT", lan: "ket", ketThuc, ...extra } as never);
+  const hua = /press(?:ing)? Abort again|Abort (?:sends|will send|can send)|\ba (?:later |further )?press (?:sends|will send)/i;
+  it("T7B3-CHU each end: the STOP by name, NOT sent, the machine on site; the window only on an aborted run, from when it was aborted; nothing unknown, no promise; one key", () => {
+    for (const ket of ["aborted", "failed", "completed"] as const) {
+      const x = n(ket);
+      const t = `${x.title} ${x.message}`;
+      expect(x.kind).toBe("foe_outcome_unknown_stop_ended_unswept");
+      expect(x.dedupKey).toBe("foe_outcome_unknown_stop_ended_unswept:9:s:-:ket");
+      expect(t).toContain(`"s"`);
+      expect(String(x.message), "the message names it too, not only the title").toContain(`"s"`);
+      expect(t).toContain("NOT sent");
+      expect(t).toContain(`ended ${ket}`);
+      expect(t).toMatch(/check the machine on site/i);
+      expect(t).toContain("E-STOP");
+      expect(t, ket).not.toMatch(hua);
+      expect(t, ket).not.toMatch(/UNKNOWN|outcome/);
+      if (ket === "aborted") expect(t).toContain("within 15 minutes of when the run was aborted");
+      else {
+        expect(t, ket).not.toMatch(/\d+ minutes/);
+        expect(t, ket).toContain("already terminal");
+      }
+    }
+  });
+  it("T7B3-CHU-CHUA-DOC a step whose pins could not be read: not verified as a pinned STOP, never called a STOP that went; the records unread: no step named", () => {
+    const x = n("failed", { stopKhongXacMinh: true });
+    expect(`${x.title} ${x.message}`).toContain(`step "s" could not be verified as a pinned STOP`);
+    const k = noiDungCanhBaoKhongRo({ loai: "stopEndedUnswept", runId: 9, stepId: "?", compId: KHONG_CO_BU_TRU, error: "FOE_STOP_NOT_SENT", lan: "ket", ketThuc: "aborted" } as never);
+    expect(`${k.title} ${k.message}`).toContain("could not be read");
+    expect(`${k.title} ${k.message}`).not.toContain(`"?"`);
+    expect(`${k.title} ${k.message}`).toContain("within 15 minutes of when the run was aborted");
+  });
+  it("T7B3-NGUON the edge end's URGENT is raised after its transaction has committed, never inside it (the FakeDb has no real transaction: a source pin)", () => {
+    const src = readFileSync(resolve(__dirname, "../../edge/edgeExecutionCentral.ts"), "utf8").replace(/\r\n/g, "\n");
+    const ham = src.slice(src.indexOf("export async function completeForNodeV2("), src.indexOf("export async function releaseForNodeV2("));
+    const tx0 = ham.indexOf("await d.transaction(async (tx) => {");
+    const tx1 = ham.indexOf("\n    });\n", tx0);
+    expect(tx0, "the transaction").toBeGreaterThan(0);
+    expect(tx1, "its end").toBeGreaterThan(tx0);
+    expect(ham.slice(tx0, tx1), "nothing of H36 inside the transaction").not.toMatch(/baoKetThucKhongQuet|canhBaoKetCucKhongRo/);
+    const goi = ham.indexOf("m.baoKetThucKhongQuetSauDoanEdge(runId, ket)");
+    expect(goi, "the call, after the commit").toBeGreaterThan(tx1);
+    expect(ham.split("baoKetThucKhongQuetSauDoanEdge").length - 1, "one call").toBe(1);
+  });
+});

@@ -37,6 +37,7 @@ import {
   WF_CORE_COLS,
   auditAbortStop,
   boundedAbortRead,
+  type EdgeSegmentEndResult, // A2(n) T7b-3 (H36)
   centralRunStore,
   enabledAdapterIdsOfMachine,
   loadMachines,
@@ -101,7 +102,7 @@ import {
   type PhanLoaiBuTru,
 } from "./foeBuTruBiNgat";
 // R1b-2b-2a A2(n) — an UNKNOWN outcome never triggers a device write from a non-STOP compensation: split by energy direction
-import { type DangDauVetAbort, type ChuStopAbort, type PhanLoaiStopAbort, chuBamSauKhongDoc, chuKhongDocDinhNghia, chuQuetChuaXong, chuStopAbort, MOC_CUA_SO, STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo } from "./foeKetCucKhongRo";
+import { type DangDauVetAbort, type ChuStopAbort, type PhanLoaiStopAbort, chuBamSauKhongDoc, chuKhongDocDinhNghia, chuQuetChuaXong, chuStopAbort, MOC_CUA_SO, STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo, chuBamDaKetThuc, type KetThucKhongQuet, type NoKetThucKhongQuet } from "./foeKetCucKhongRo";
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED, FOE_NOT_SENT_RUN_LATCHED, FOE_STOP_NOT_SENT } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
 export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
@@ -724,6 +725,8 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   khongGuiDaBao?: Set<string>;
   /** A2(n) T7 — the answers of every URGENT this walk raised (central: stored or not). The end gate reads them: one stored is the run's durable URGENT (decision 1) */
   baoCho?: Array<Promise<boolean>>;
+  /** A2(n) T7b-3 (H36) — finishWalk wrote this end (central, not latched, no sweep): told once the walker has let go of the run (sauLuotDi) */
+  ketThucKhongQuet?: KetThucKhongQuet;
 }
 
 /** R1b-2b-2a T2B — machine-readable code of a non-STOP command step whose dispatch timed out (outcome unknown; not retried). */
@@ -3438,13 +3441,15 @@ async function runCompensation(
  * and the walk continues PAST it (the gate's id is recorded as resolved in context).
  */
 async function driveRun(rc: RunContext): Promise<OrchestrationRun["status"]> {
-  return withLiveRun(rc, async () => {
+  const st = await withLiveRun(rc, async () => {
     // Guarded: a run aborted while still 'queued' (e.g. async mode) is never revived.
     const started = await rc.store.setStatusUnlessAborted(rc.runId, "running", { startedAt: new Date() });
     if (!started) return "aborted";
     const out = await execSequence(rc, rc.def.steps);
     return finishWalk(rc, out);
   });
+  await sauLuotDi(rc);
+  return st;
 }
 
 /**
@@ -3535,6 +3540,8 @@ async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<Orches
   }
   const written = await rc.store.setStatusUnlessAborted(rc.runId, status, patch);
   if (written && rc.store.kind === "central" && (status === "completed" || status === "failed" || status === "aborted")) quenBenKhongXacNhan(rc.runId); // T7 lượt sửa 1 (c)
+  // A2(n) T7b-3 (H36, chu du an 10/11) — this end swept nothing (no Abort, not latched): what the run still owes is told once the walker has let go of the run (sauLuotDi), never here
+  if (written && rc.store.kind === "central" && !giuCong && (status === "completed" || status === "failed" || status === "aborted") && !daChotKhongRo(rc)) rc.ketThucKhongQuet = status;
   // A2(n) (M-5) — held (or paused) over an unknown outcome: the URGENT already said Continue. A lost context never turns that into 'failed': the
   // run stays as it is, a Continue re-walks and splits again (the forward key is replayed, never a new attempt)
   // (m-N) — the same for ANY end of a latched run that a person answers (a gate inside a compensation)
@@ -4899,7 +4906,7 @@ function runGateChangedError(runId: number): TRPCError {
  * Gate CHƯA duyệt (nếu có) sẽ pause lại như thường.
  */
 async function driveRunFromResume(rc: RunContext): Promise<OrchestrationRun["status"]> {
-  return withLiveRun(rc, async () => {
+  const st = await withLiveRun(rc, async () => {
     // The CAS already set 'running'. Re-assert it GUARDED: an abort that landed between the CAS
     // and this registration (abortRun could not reach a live handle yet) must stop the walk here.
     const stillOurs = await rc.store.setStatusUnlessAborted(rc.runId, "running");
@@ -4912,6 +4919,8 @@ async function driveRunFromResume(rc: RunContext): Promise<OrchestrationRun["sta
     const out = await execSequence(rc, rc.def.steps);
     return finishWalk(rc, out);
   });
+  await sauLuotDi(rc);
+  return st;
 }
 
 // ── final wave F8 — migration 0367 (orchestration_workflows."scopeKey") schema guard ─────────────────────────────────
@@ -6531,6 +6540,114 @@ async function noSauAbortKhoa(rc: RunContext): Promise<unknown> {
   return loiCtx;
 }
 
+// ── A2(n) T7b-3 (H36, chu du an 10/11) — a run that ACTED, never latched, and ended with no STOP sweep (a precondition's abort or hold, a step refused every attempt, a parallel failFast true or false,
+// an edge's failed / aborted end): nothing is sent, a durable URGENT names each pinned STOP still owed and sends a person to the machine. "Still owed" is what an Abort's sweep of the run would send now:
+// ONE source, the sweep's own picture (sweepSource), verification (verifyStops), R-6-b (runHasActuated), planner (planAbortSweep), and its trace rule for what could not be verified. Read only. ─────────────
+
+/**
+ * H36 — what such a run owes. `live`: the walker that just let go of it (its memory is the picture, as the sweep's); else the stored run. null ⇔ nothing to tell: a latched run (its end gate and H2 words are
+ * its own), a run that never acted (R-6-b), a completion with no failed step (nothing was undone, nothing is due), or nothing owed. `khongDoc`: the definition or the rows could not be read: which STOP is
+ * owed cannot be told, and that is told. Pins unreadable: `chuaXacMinh`, the sweep's own class (laStopTheoBuoc / laBuTruStop "chuaDoc"), never a STOP called sent. Never throws past its reads.
+ */
+async function noKetThucKhongQuet(runId: number, x: { live?: RunContext | null; run?: OrchestrationRun; ketThuc: KetThucKhongQuet }): Promise<NoKetThucKhongQuet | null> {
+  const store = centralRunStore;
+  const src = await store.sweepSource({ live: x.live ?? null, run: x.run, hasLiveDriver: (id) => liveRuns.has(id) }).catch(() => null);
+  const ctx = (x.live?.context ?? (x.run?.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+  if (runDaChotKhongRo(ctx) || (x.live != null && daChotKhongRo(x.live)) || chotTuHang((src?.hang ?? []) as Parameters<typeof chotTuHang>[0]) !== null) return null;
+  // a completion is a run that went to its end: only one with a failed step (a parallel failFast false) left work undone, and only rows read can say so
+  if (x.ketThuc === "completed" && !(src?.hang ?? []).some((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX) && r.status === "failed")) return null;
+  if (!src?.def || !src.rowsKnown) return { ketThuc: x.ketThuc, ghim: [], chuaXacMinh: [], khongDoc: true };
+  const def = src.def;
+  const v = await store.verifyStops(runId, def, src.machineById);
+  if (!runHasActuated(def, src, v)) return null; // R-6-b
+  const plan = await planAbortSweep(src, def, v);
+  const xem = x.live ?? rcTuHang(runId, def, ctx, src, store, SYSTEM_FOE_USER, x.run?.startedBy ?? null);
+  // the sweep's trace rule (runAbortStopSweep, a run not latched): stop-typed, its pins unread, bounded; past the bound the side that keeps a STOP
+  const [khongXacMinh, docLai] = await Promise.all([
+    Promise.all(
+      plan.unverified.map(async (id) => {
+        const s = findStepDeep(def.steps, id);
+        return s?.type === "command" && (await withDeadline(laStopTheoBuoc(s, src.machineById), STOP_DB_STEP_DEADLINE_MS, `FOE run ${runId} end, stop ${id}`).catch(() => true)) ? id : null;
+      }),
+    ),
+    Promise.all(
+      plan.notPinned.map(async (id) => {
+        const s = findStepDeep(def.steps, id);
+        return s && (await withDeadline(laBuTruStop(xem, s), STOP_DB_STEP_DEADLINE_MS, `FOE run ${runId} end, stop ${id}`).catch(() => "chuaDoc" as const)) === "chuaDoc" ? id : null;
+      }),
+    ),
+  ]);
+  const ghim = plan.send.map((s) => s.id);
+  const chuaXacMinh = [...khongXacMinh, ...docLai].filter((id): id is string => id !== null);
+  return ghim.length || chuaXacMinh.length ? { ketThuc: x.ketThuc, ghim, chuaXacMinh, khongDoc: false } : null;
+}
+
+/** H36 — the URGENTs: one per STOP owed (one, with no step named, when the records could not be read), under ONE fixed key per (run, STOP): the event "ket". Each bounded; never a command; never throws. */
+async function baoKetThucKhongQuet(runId: number, owner: number | null, no: NoKetThucKhongQuet): Promise<void> {
+  const ds = no.khongDoc ? [{ id: BUOC_KHONG_XAC_DINH, xm: false }] : [...no.ghim.map((id) => ({ id, xm: false })), ...no.chuaXacMinh.map((id) => ({ id, xm: true }))];
+  await Promise.all(
+    ds.map((x) =>
+      withDeadline(canhBaoKetCucKhongRo({ loai: "stopEndedUnswept", runId, stepId: x.id, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "ket", ketThuc: no.ketThuc, ...(x.xm ? { stopKhongXacMinh: true as const } : {}), owner }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE run ${runId} STOP ${x.id} owed at its end URGENT`)
+        .then((ben) => {
+          if (!ben) console.error(`[FOE] run ${runId}: the URGENT of STOP ${x.id}, owed at an end with no sweep, is not stored`);
+        })
+        .catch((err: unknown) => console.error(`[FOE] run ${runId}: the URGENT of STOP ${x.id}, owed at an end with no sweep, failed: ${(err as Error)?.message ?? err}`)),
+    ),
+  );
+}
+
+/** H36 — read, then tell. Bounded as a whole (its reads ≤ 4·D, the URGENTs ≤ 5·D); never throws, never a command. */
+async function keVaBaoKetThucKhongQuet(runId: number, x: { live?: RunContext | null; run?: OrchestrationRun; ketThuc: KetThucKhongQuet; owner: number | null }): Promise<void> {
+  await withDeadline(
+    (async () => {
+      const no = await noKetThucKhongQuet(runId, x);
+      if (no) await baoKetThucKhongQuet(runId, x.owner, no);
+    })(),
+    10 * STOP_DB_STEP_DEADLINE_MS,
+    `FOE run ${runId} what its end owes`,
+  ).catch((err: unknown) => console.error(`[FOE] run ${runId}: what an end with no STOP sweep owes could not be told: ${(err as Error)?.message ?? err}; check the machine on site`));
+}
+
+/** H36 — central's own walk: after withLiveRun let go of the run (no Abort finds this walker any more), once. */
+async function sauLuotDi(rc: RunContext): Promise<void> {
+  const ket = rc.ketThucKhongQuet;
+  if (!ket) return;
+  delete rc.ketThucKhongQuet;
+  // an Abort flagged this walker while its end was in flight (RC12b): that Abort's sweep reads the end and tells what did not go (ketThucKhac), not this
+  if (rc.aborting) return;
+  await keVaBaoKetThucKhongQuet(rc.runId, { live: rc, ketThuc: ket, owner: rc.runOwner });
+}
+
+/** A2(n) T7b-3 — the run row, bounded by D. null ⇔ not read or no row. */
+async function docRunGioiHan(runId: number): Promise<OrchestrationRun | null> {
+  const rows = await boundedAbortRead(async () => {
+    const d = await getDb();
+    return d ? d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1) : null;
+  }, `FOE run ${runId} read`);
+  return rows?.[0] ?? null;
+}
+
+/**
+ * H36 — an edge segment's end, once central's transaction that applied it has COMMITTED (edgeExecutionCentral.completeForNodeV2): the run that end wrote terminal is read again (the stored picture, as an Abort's
+ * sweep of it), and told what it owes. An end that changed nothing (replayed, a run already stopped) tells nothing. Never in the transaction holding the run row; never throws, never a command.
+ */
+export async function baoKetThucKhongQuetSauDoanEdge(runId: number, r: EdgeSegmentEndResult): Promise<void> {
+  if (!r.ok || !r.changed || (r.status !== "aborted" && r.status !== "failed" && r.status !== "completed")) return;
+  const ket: KetThucKhongQuet = r.status;
+  const run = await docRunGioiHan(runId);
+  if (!run || run.status !== ket) return; // a later write (an Abort) owns what it says
+  await keVaBaoKetThucKhongQuet(runId, { run, ketThuc: ket, owner: run.startedBy ?? null });
+}
+
+/** H36 (brief point 3) — the answer to a press on a run that has ended `completed` / `failed`: the old words, unless it still owes a STOP by the same reading as its URGENT. Read only, bounded; nothing sent. */
+async function chuDaKetThuc(runId: number, run: OrchestrationRun | null): Promise<string> {
+  const cu = `Run ${runId} already terminal.`;
+  if (!run || (run.status !== "completed" && run.status !== "failed")) return cu;
+  const ket: KetThucKhongQuet = run.status;
+  const no = await withDeadline(noKetThucKhongQuet(runId, { run, ketThuc: ket }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} what its end owes`).catch((): NoKetThucKhongQuet => ({ ketThuc: ket, ghim: [], chuaXacMinh: [], khongDoc: true }));
+  return no ? chuBamDaKetThuc(runId, no) : cu;
+}
+
 async function runAbortStopSweep(
   runId: number,
   run: OrchestrationRun | undefined,
@@ -6964,7 +7081,8 @@ export async function abortRun(
       return resendAbortStops(runId, run, user, scopeFor(user, opts.scope), true); // fix 3 — R-6-d window, audited
     }
     if (["completed", "failed"].includes(run.status)) {
-      return { ok: false, enabled: foeEnabled(), runId, status: run.status, message: `Run ${runId} already terminal.` };
+      // A2(n) T7b-3 (H36, brief point 3) — a STOP still owed by the reading of its URGENT is named, nothing is sent, nothing promised
+      return { ok: false, enabled: foeEnabled(), runId, status: run.status, message: await chuDaKetThuc(runId, run) };
     }
     // R1b-2b-2a A2(n) — read BEFORE the 'aborted' write (the row as the abort found it)
     const khongRoHuy = run.status === "held" || run.status === "awaiting_confirm" ? buTruKhongRoCho(run.contextJson as Record<string, unknown> | null) : [];
@@ -7023,7 +7141,8 @@ export async function abortRun(
     }
     if (confirmed === false) {
       thaSapQuet();
-      return { ok: false, enabled: foeEnabled(), runId, message: `Run ${runId} already terminal.` };
+      // T7b-3 (H36) — no walker of ours: the run ended by another hand meanwhile; what it owes is read again, the same words
+      return { ok: false, enabled: foeEnabled(), runId, message: await chuDaKetThuc(runId, await docRunGioiHan(runId)) };
     }
     // Final review fix #1 — the registry lookup above ran BEFORE the DB write: a driver that
     // registered + wrote 'running' in between (e.g. an async run whose setImmediate fired while
