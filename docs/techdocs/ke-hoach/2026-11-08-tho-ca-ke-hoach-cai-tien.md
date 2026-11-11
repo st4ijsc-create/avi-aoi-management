@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Phiên bản | **v1.0 — ĐÃ DUYỆT 2026‑11‑08** (chủ dự án: "Duyệt kế hoạch; chu-du-an-HST là chủ dự án uỷ quyền, có quyền quyết tất cả để đạt kết quả cao nhất; chủ dự án kiểm chứng lại sau khi hoàn thành") |
+| Phiên bản | **v1.1 — 2026‑11‑11** (bổ sung §9: lô NC ngữ cảnh dài · AC chia phiên/agent con · SM sửa‑viết nhanh và chuẩn · HA harness, theo chỉ đạo chủ dự án 11/11; chủ dự án kiểm chứng sau) · v1.0 — ĐÃ DUYỆT 2026‑11‑08 (chủ dự án: "Duyệt kế hoạch; chu-du-an-HST là chủ dự án uỷ quyền, có quyền quyết tất cả để đạt kết quả cao nhất; chủ dự án kiểm chứng lại sau khi hoàn thành") |
 | Nguồn | (1) `D:\SOURCES\AI Local\AI Local improvement\Kế hoạch tối ưu Qwen3.6-35B-A3B cho lập trình.pdf` (34 tr, 24/10 — gọi tắt **KH**, dẫn theo chương "KH Ch.x" và bài kiểm "T6.x"); (2) `…\Yêu cầu trải nghiệm người dùng — Forge Desktop và extension VS Code.pdf` (13 tr — gọi tắt **UX**, mã UX‑C/D/V/S/P/A); (3) `…\Forge — AI Local cho lập trình.html` (canvas 9 màn — gọi tắt **Canvas**); (4) hiện trạng đo 08/11 trên main `1b4930fa9` (kiểm kê từ spec Đợt 11/12, git, extension 0.6.0, runtime agent, `scripts/ai-eval`, `.env` chỉ tên khoá). |
 | Liên hệ TechDocs | [80-ai.md](../80-ai.md) (một cổng / một runtime / một phiên / một duyệt, F0–F6), [90-platform.md](../90-platform.md) (vỏ, P3), [50-control.md](../50-control.md) (tool thiết bị → `command_request`), [00-INDEX.md](../00-INDEX.md) lộ trình 5 pha; gói pilot `D:\SOURCES\_tho_ca_pilot\ke-hoach.md`. |
 | Nguyên tắc | **Máy kiểm chứng, người quyết định** (UX nguyên tắc 3); **đúng hơn nhanh** (tiêu chí chủ dự án 2026‑10); **đo trước – đổi sau** (mọi cờ đổi hành vi model mặc định TẮT, có A/B GPU); không ghi gì vào repo khi chưa duyệt; dữ liệu không phải mệnh lệnh. |
@@ -15,6 +15,7 @@
 2. **Kế hoạch** chia **7 layer** (L0 runtime/model · L1 tri thức dự án · L2 bộ chạy & an toàn · L3 kiểm chứng tự động · L4 suy luận & quy trình · L5 bề mặt (web/extension) · L6 đo lường) và **7 lô A–G** có số đo, chạy trên vòng lặp *giao việc → đánh giá theo layer → vá layer → phát lại hồi quy* mà chủ dự án đã chỉ đạo 08/11.
 3. **Không làm / hoãn có lý do**: LoRA (KH Ch.5) — chỉ sau khi baseline T6.6 với đủ L1–L3 cho thấy khoảng hổng về *quy ước*, và chỉ trên GPU thuê (quyết định riêng của chủ dự án); OpenCode/Continue/Aider (KH Ch.3) — dùng runtime và extension của ta (QĐ 80 §2.1‑2); Forge Desktop như ứng dụng Windows riêng — thay bằng **vùng Thợ Cả 6 màn trong web app** (80 §4) + extension; Ollama — gỡ (80 F1).
 4. **Việc chỉ chủ dự án làm**: §7.
+5. **v1.1 (11/11)**: sau lô 1 pilot (TC‑05…14), bốn lô mới ở §9 nhắm đúng các hổng đã đo: nén ngữ cảnh hiện chỉ cụt kết quả tool, agent con có mã nhưng chưa từng đo, model tự xin chạy lệnh kiểm 4/5 việc và bị từ chối, bộ chạy không áp ngân sách của thẻ. Thứ tự: đợt 1 không cần GPU (HA‑3, HA‑4, SM‑1, SM‑3, HA‑5, NC‑3, SM‑8, AC‑2) → pilot lô 2 → đợt 2 A/B trên GPU.
 
 ---
 
@@ -276,6 +277,91 @@ Cổng chung mỗi lô: lưới bàn giao đầy đủ của tho‑ca‑agent (a
 
 ---
 
+## 9. Bổ sung v1.1 (2026‑11‑11) — bốn hướng chủ dự án chỉ đạo
+
+Chỉ đạo 11/11: Thợ Cả phải (1) **gom và tổng hợp ngữ cảnh để làm việc dài hơn**, (2) **chia phiên và dùng agent con**, (3) **sửa và viết mã nhanh, chuẩn hơn**, (4) **harness mạnh hơn, thông minh hơn, logic tốt hơn**. Phần này thêm bốn lô **NC · AC · SM · HA** vào (đặt tên hai chữ để không trùng mã H0–H7 của Đợt 12 và mã H của SCADA) lộ trình §4; không thay lô A–G. Mọi cờ đổi hành vi model vẫn mặc định TẮT và chỉ đổi mặc định sau A/B.
+
+### 9.1 Hiện trạng đo được cho bốn hướng (main `833a9f2ce`)
+
+| Hướng | Đã có (đọc mã 11/11) | Hổng |
+|---|---|---|
+| Ngữ cảnh dài | `shared/agentCore/nguCanh.ts` (168 dòng): `nenLichSu` ở 70 % ngân sách **thay nội dung kết quả tool cũ bằng dòng cụt**, `nenManh` khi tràn; ước lượng 2,8 ký tự/token; `AI_AGENT_NEN_MOC`, `NEN_SO_THAT`, `DAU_RA_DAI` (kho + `read_output`), `TOM_TAT_80` (chỉ **nhắc** model tự ghi NOTES.md), `TIEP_TUC` (mig 0450) — tất cả TẮT trừ `CUU_TRAN`; ctx 64k; `read_file` trần 11 000 ký tự; chỉ mục mã 60 975 chunk không vector | Không có **tóm tắt bằng model** có cấu trúc; không có **sổ tay lượt** sống sót qua nén; đọc lại tệp không đổi vẫn tốn token; chưa đo tỉ lệ cache tiền tố trên GPU; việc > 30 lượt model chưa từng hoàn tất (TC‑14 `het-luot`) |
+| Phiên & agent con | `delegate` trong lõi (`giaoViec.ts`: ≤ 4 con/lượt chạy, ≤ 2 lần giao/lượt model, con ≤ 12 lượt, sâu ≤ 2, tóm tắt ≤ 1 500 ký tự, con không bao giờ `tu-dong`), tool `report` cho con, agent đặt tên `.thoca/agents/*.md` tin‑lần‑đầu, phiên hợp nhất `aiPhien` | `AI_AGENT_GIAO_VIEC` + `CON_BAO_CAO` **TẮT, chưa có số đo nào**; con chạy **tuần tự** (`await chayVongAgent`, `:8091` một slot); chưa có vai con chuẩn; chưa chia việc dài thành phiên theo bước kế hoạch |
+| Sửa/viết nhanh & chuẩn | `edit_file` (nhiều `old_string/new_string`, `replace_all`), `write_file`, `rename/delete_file`, mọi ghi qua thẻ `apply_diff`; `DOC_TRUOC_KHI_GHI` (TẮT); T1 `AI_CHAT_TU_KIEM_MA` cho chat (TẮT, chờ nghiệm thu); L3a/L3c ở bộ chạy pilot | Lô 1: model **tự gọi lệnh kiểm 4/5 việc và bị từ chối**; mỗi lượt ghi chờ người 33–121 s; 0–4 thẻ bị từ chối mỗi việc; lỗi kiểu chỉ lộ ở cuối (L3c) chứ không ngay sau khi ghi; lỗi L1 lặp (`@ts-expect-error` trên import .mjs ×2, `typeof import()`); trục H api2 44,4 %, ot‑node 2/15 |
+| Harness | trần 30 lượt/20 phút/120k token; dừng `lap-lai`; cổng kế hoạch 11.3‑C (TẮT); `KIEM_DAC_TA` (BẬT); `todo_write`; sự kiện `buoc-do` | H1.6/H1.7 chưa có; "8 vòng" trong thẻ không được áp; tsc không chạy khi lượt không xong; đuôi đầu ra lệnh kiểm 3 000 ký tự; lỗi công cụ không dẫn đường (`NOT_A_DIRECTORY`, `DENIED_DIR`, `CHI_MUC_CHUA_CO`, `GREP_DEADLINE`); mẫu L4 đo được: tự in "ĐÃ DUYỆT" 3/5, mô tả đột biến trong danh sách 2/5, né ca đỏ bằng đổi đầu vào, sửa mã theo test sai |
+
+### 9.2 Lô NC — Ngữ cảnh dài hơn bằng gom và tổng hợp (L4 + L1)
+
+| Việc | Nội dung | Tiêu chí | Ai |
+|---|---|---|---|
+| NC‑1 sổ tay lượt | Khối có cấu trúc do host giữ ở đầu ngữ cảnh, **không bị nén**: mục tiêu · quyết định đã chốt · tệp đã chạm (đường + một dòng) · điều đã thử và thất bại · việc còn lại. Model cập nhật qua tool `note_write` (≤ 1 500 token, host cắt). Cờ `AI_AGENT_SO_TAY` | sau 3 lần nén, model trả lời đúng 5/5 câu hỏi về việc đã làm (bài kiểm phát lại, không GPU cho phần host) | tho‑ca‑agent |
+| NC‑2 tóm tắt có cấu trúc | Ở mốc nén: một lượt model riêng, prompt cố định, đầu ra có khoá (đã làm · bằng chứng đường:dòng · đang dở · lỗi đang gặp nguyên văn). Thay cho việc cụt kết quả tool. Giữ nguyên văn 2 lượt cuối + sổ tay + todo. Kết quả tool gốc chuyển vào kho `DAU_RA_DAI`, mang mã để `read_output` kéo lại. Cờ `AI_AGENT_TOM_TAT_NEN` | A/B với `NEN_MOC` và hiện trạng trên bộ việc dài (NC‑8): đạt không tụt, token xử lý lại ≤ 30 % | tho‑ca‑agent + do‑model |
+| NC‑3 đọc tiết kiệm | `read_file` theo khoảng dòng + chế độ `outline` (ký hiệu và số dòng) cho tệp > 400 dòng; đọc lại tệp không đổi trả "không đổi từ lần đọc trước" kèm khoảng dòng đã có; `grep` có ngữ cảnh ±n; đầu ra lệnh giữ đầu + đuôi + mọi dòng lỗi | token vào/việc −25 % trên phát lại lô 1; 0 việc rớt | tho‑ca‑agent |
+| NC‑4 gói ngữ cảnh mở đầu | Host dựng tất định theo thẻ việc: tệp đích, nơi gọi (từ `find_symbol`), test láng giềng, mục `AGENTS.md` liên quan; ≤ 6 000 token; thay cho 3–6 lượt model đi tìm. Dựa trên repo map (B2) và HNSW (B6) khi có | số lượt model trước lần ghi đầu −30 % | tho‑ca‑agent |
+| NC‑5 đếm token thật | = B5 (`/tokenize`, `NEN_SO_THAT`), kéo lên trước NC‑2 vì mọi ngưỡng dựa vào nó | sai số < 5 % | tho‑ca‑agent + do‑model |
+| NC‑6 tiền tố ổn định | Thứ tự cố định system → luật → tool → sổ tay; nén chỉ ở mốc để không phá cache; đo `cacheN/promptN` từ `buoc-do` trên GPU | tỉ lệ cache ≥ 80 % giữa hai lượt liền nhau | do‑model |
+| NC‑7 ctx 98k cho vai agent | VRAM đã đo 27 825 MiB. Đo đúng/sai và tok/s so 64k, giữ budget suy nghĩ 12 000; chat và autocomplete giữ 64k | chỉ đổi nếu bộ việc dài tăng và bộ khó không tụt | do‑model |
+| NC‑8 bộ việc dài | 4 bài ≥ 5 tệp hoặc ≥ 40 lượt model (tách module có test, đổi chữ ký hàm xuyên 6 nơi gọi, sửa lỗi cần đọc 3 lớp, viết script + test + tài liệu), dạng eval C1 | có baseline trước khi bật bất kỳ cờ NC nào | do‑model + chu‑du‑an‑HST (đề) |
+| NC‑9 bàn giao giữa phiên | Ở ≥ 85 % hoặc hết lượt: viết tệp bàn giao có cấu trúc rồi mở phiên mới bằng `TIEP_TUC`; A/B với tóm tắt tại chỗ (H5.2 cũ) | việc dài hoàn tất qua ≥ 1 lần bàn giao | tho‑ca‑agent + do‑model |
+
+### 9.3 Lô AC — Chia phiên và agent con (L2 + L4)
+
+| Việc | Nội dung | Tiêu chí | Ai |
+|---|---|---|---|
+| AC‑1 đo delegate | Bật `AI_AGENT_GIAO_VIEC` + `CON_BAO_CAO` trên `:3013`, A/B trên bộ việc dài (NC‑8) và agent‑f | ngữ cảnh cha −40 % ở bài khảo sát; đạt không tụt; 0 ghi ngoài phạm vi cha | do‑model |
+| AC‑2 ba vai con chuẩn | `.thoca/agents/tham-tu.md` (chỉ đọc: tìm nơi gọi, đọc tài liệu, trả báo cáo có đường:dòng) · `kiem-chung.md` (chạy lệnh kiểm, đọc lỗi, không sửa) · `ra-soat.md` (đọc diff so thẻ, tìm lỗi, không sửa). Trong repo, tin‑lần‑đầu như hiện nay | mỗi vai có 3 bài kiểm phát lại; báo cáo ≤ 1 500 ký tự có bằng chứng | tho‑ca‑agent |
+| AC‑3 phiên theo bước kế hoạch | Việc > 3 tệp: kế hoạch được duyệt (11.3‑C) ⇒ mỗi bước một phiên con với ngân sách riêng, đầu ra = diff + báo cáo; cha chỉ giữ sổ tay và kế hoạch | việc 6 tệp hoàn tất mà ngữ cảnh cha < 50 % | tho‑ca‑agent |
+| AC‑4 song song | Hiện tuần tự vì một slot. Đo hai phương án: `LLAMA_SERVER_SLOTS=2` (mỗi slot nửa ngữ cảnh, chỉ cho con chỉ đọc) và D6 card thứ hai chạy model nhỏ cho `tham-tu` | quyết theo số: thời gian tường −30 % mà đạt không tụt | do‑model |
+| AC‑5 rà soát trước thẻ | Con `ra-soat` chạy trước khi thẻ ghi tới người duyệt; phát hiện đính kèm thẻ | số thẻ bị người từ chối/việc ≤ 1 (lô 1: 0–4) | tho‑ca‑agent |
+| AC‑6 bề mặt | Cây phiên cha–con trong dòng thời gian; mở báo cáo con | sau 90‑P3 | luong‑ui |
+
+Bất biến giữ nguyên: con ⊆ quyền cha, con không bao giờ `tu-dong`, báo cáo con là dữ liệu không tin cậy, thẻ của con duyệt tại `confirmAction`.
+
+### 9.4 Lô SM — Sửa và viết mã nhanh, chuẩn hơn (L2 + L3)
+
+| Việc | Nội dung | Tiêu chí | Ai |
+|---|---|---|---|
+| SM‑1 `run_check` | Tool chạy **đúng lệnh kiểm của thẻ hoặc của `AGENTS.md` §2** (so khớp nguyên văn, danh sách trắng theo thẻ), không cần người duyệt, đầu ra cắt thông minh (NC‑3). Lệnh khác vẫn qua duyệt | lô 2: 0 lần `TU_CHOI_BO_CHAY` cho lệnh kiểm; số lượt model/việc −20 % | tho‑ca‑agent |
+| SM‑2 kiểm ngay sau ghi | Sau mỗi `edit_file`/`write_file` được chấp nhận, host chạy kiểm cú pháp/kiểu nhanh cho đúng tệp đó (dùng lại `bienDichMa` của T1: tsc, `node --check`, `py_compile`, `dotnet build`) và trả lỗi vào kết quả tool. Cờ `AI_AGENT_KIEM_SAU_GHI` | lỗi kiểu ở L3c cuối lượt → 0 trên lô 2 | tho‑ca‑agent |
+| SM‑3 `edit_file` bền | Khớp chịu CRLF và khoảng trắng cuối dòng; không khớp ⇒ trả 3 dòng gần nhất và số dòng; nhiều khớp ⇒ trả vị trí từng khớp | tỉ lệ `edit_file` lỗi/lần gọi −50 % (đo từ `buoc-do`) | tho‑ca‑agent |
+| SM‑4 gộp thẻ ghi | Các ghi cùng một bước kế hoạch gộp thành một thẻ, duyệt theo khối trong thẻ | giây chờ duyệt/việc −40 % | tho‑ca‑agent + luong‑ui |
+| SM‑5 T1 rồi T2 chat | Nghiệm thu T1 đêm 11/11 (4 bài, 9 mẫu/nhánh); đạt thì bật `theo-luot` cho extension; T2 (tự viết ca thử, chạy có giới hạn) sau | H‑cs2 trục H tăng; bài đối chứng không tụt | do‑model + tho‑ca‑agent |
+| SM‑6 tri thức thư viện | B4 thẻ vendor theo tên gói (đã duyệt) **trước** B2/B3; thêm thẻ cho import ESM `.mjs` từ test `.ts` | ot‑node trục H 2/15 → ≥ 8/15; M5 ≥ 60 % | tho‑ca‑agent + do‑model |
+| SM‑7 tốc độ | D3 hồ sơ `coder-fast` cho việc ngắn; D4 `-b/-ub`; NC‑6 cache; đo TTFT, tok/s, giây tường/việc | giây tường/việc cùng loại −30 %, đạt không tụt | do‑model |
+| SM‑8 sổ tay cách làm | `AGENTS.md` thêm mục thứ tự chẩn đoán khi test đỏ (đọc assert → xác định bên sai → không đổi đầu vào để qua → sửa bên sai), và mẫu cho bốn loại việc (viết test, sửa lỗi, tách module, script) | lỗi L4 "né ca đỏ" và "sửa mã theo test sai" = 0 ở lô 2 | tho‑ca‑agent, chu‑du‑an‑HST duyệt chữ |
+
+### 9.5 Lô HA — Harness mạnh hơn, logic hơn (L2 + L3 + L4)
+
+| Việc | Nội dung | Tiêu chí | Ai |
+|---|---|---|---|
+| HA‑1 máy trạng thái việc | KHẢO SÁT → KẾ HOẠCH (duyệt) → THỰC HIỆN từng bước → TỰ KIỂM → BÁO CÁO. Host kiểm điều kiện chuyển: không vào BÁO CÁO khi chưa có kết quả kiểm xanh của chính lượt này | `bao-sai` = 0; việc 2 lượt tay của pilot thành một lượt có cổng | tho‑ca‑agent |
+| HA‑2 thoát bế tắc | H1.6 dấu kết cục thống nhất; H1.7 nhắc trước khi dừng vì lặp; cùng một lỗi 3 lần ⇒ buộc đổi chiến lược (đọc lại đề và assert, hoặc gọi con `ra-soat`) trước khi tiêu thêm lượt | `het-luot` và `lap-lai` trên lô 2 = 0 | tho‑ca‑agent |
+| HA‑3 ngân sách theo thẻ | Số vòng, phút, token đọc từ thẻ và ghi vào JSON; cảnh báo cho model ở 70 %; lệnh kiểm và tsc **luôn chạy trên cây cuối** dù lượt không xong; đuôi đầu ra giữ đầu + đuôi + dòng lỗi | ba lỗi bộ chạy của TC‑14 đóng | tho‑ca‑agent |
+| HA‑4 lỗi công cụ dẫn đường | `NOT_A_DIRECTORY` ⇒ trả danh sách thư mục; `DENIED_DIR` ⇒ nêu vùng được đọc; `CHI_MUC_CHUA_CO` ⇒ tự dựng chỉ mục cho worktree hoặc chỉ sang `grep`; `GREP_DEADLINE` ⇒ gợi ý thu hẹp | lỗi công cụ/việc 1–4 → 0 | tho‑ca‑agent |
+| HA‑5 bộ dò mẫu L4 | Host phát hiện: đầu ra chứa chữ khoá duyệt; danh sách hành vi chứa mô tả đột biến; ca đỏ được làm xanh bằng đổi đầu vào/kỳ vọng mà không đổi mã (`ne-ca-do`); test chép bảng dữ liệu của mã nguồn. Cảnh báo vào thẻ duyệt, không tự chặn | bốn mẫu lô 1 được gắn cờ 100 % trên phát lại | tho‑ca‑agent |
+| HA‑6 đột biến sau sửa | Khối ĐỘT BIẾN cờ `sau-sua`: kiểm chuỗi trên cây sau lượt cuối; tự sinh đột biến số học/biên cho hàm thuần khi thẻ không khai | L3b tay của TC‑11/12/14 thành tự động | tho‑ca‑agent |
+| HA‑7 hồi quy | Mỗi thay đổi lô NC/AC/SM/HA: phát lại fixture lô 1 không GPU; lô 2 chạy lại 3 việc lô 1 với B1 để đo L1 trước/sau | 0 việc cũ rớt | do‑model + dieu‑phoi |
+| HA‑8 bảng việc tự động | `buoc-do` thêm: giây chờ duyệt, lỗi công cụ theo mã, token trước/sau nén, số thẻ bị từ chối ⇒ sinh phần số của `danh-gia.md` | phần (a) của đánh giá không còn viết tay | tho‑ca‑agent + do‑model |
+
+### 9.6 Thứ tự và chỉ số mới
+
+**Đợt 1 — không cần GPU, làm ngay sau TC‑13:** HA‑3, HA‑4, SM‑1, SM‑3, HA‑5, NC‑3, SM‑8, AC‑2. Sau đó **pilot lô 2** (luật B1 + chế độ `--luat-cach ghep`) đo hiệu quả.
+**Đợt 2 — cần cửa sổ GPU:** nghiệm thu T1 (SM‑5), NC‑8 baseline việc dài, NC‑5/NC‑6, NC‑1/NC‑2 A/B, AC‑1 A/B, SM‑2, B4 đo tắt/bật.
+**Đợt 3:** NC‑7 (98k), NC‑9, AC‑3, AC‑4, AC‑5, SM‑4, HA‑1, HA‑2, HA‑6, HA‑8; AC‑6 theo 90‑P3.
+
+| # | Chỉ số | Hiện (lô 1, 11/11) | Mục tiêu |
+|---|---|---|---|
+| M13 | Việc dài (≥ 5 tệp hoặc ≥ 40 lượt model) hoàn tất | chưa có bộ; TC‑14 `het-luot` ở 30 | ≥ 3/4 bài NC‑8 |
+| M14 | Tỉ lệ cache tiền tố / token xử lý lại | chưa đo trên GPU (ngoại tuyến 86 % → 26 % với `NEN_MOC`) | cache ≥ 80 %, xử lý lại ≤ 30 % |
+| M15 | Thẻ bị người từ chối mỗi việc | 0–4 (TC‑06 0, TC‑07 2, TC‑11 2, TC‑12 1, TC‑14 4) | ≤ 1 |
+| M16 | Giây tường lượt thực hiện, việc cùng loại | 87–250 s (trong đó chờ duyệt 33–75 s) | −30 % |
+| M17 | Lỗi công cụ mỗi việc | 1–4 | 0 |
+| M18 | Agent con: ngữ cảnh cha tiết kiệm ở bài khảo sát | chưa đo | ≥ 40 %, đạt không tụt |
+
+Rủi ro thêm: tóm tắt bằng model có thể **bịa hoặc bỏ sót** ⇒ NC‑2 bắt buộc kèm bằng chứng đường:dòng và giữ bản gốc trong kho; agent con tốn lượt trên một slot ⇒ AC‑1 đo thời gian tường chứ không chỉ đo đạt; `run_check` không duyệt ⇒ chỉ khớp nguyên văn lệnh của thẻ, không nhận tham số từ model.
+
+---
+
 ## 8. Nhật ký
 
 | Ngày | Ai | Việc | Mig |
@@ -289,3 +375,4 @@ Cổng chung mỗi lô: lưới bàn giao đầy đủ của tho‑ca‑agent (a
 | 2026-11-10 | chu-du-an-HST | B1 nháp duyệt (3 sửa: dòng TS viết dạng chung, bỏ dòng Python, bỏ `eslint` vì repo không có script lint). T1 `AI_CHAT_TU_KIEM_MA` xong 01de40b45 chờ kiem‑dinh; thêm giá trị `theo-luot` cho A/B cùng máy chủ. B4 duyệt phương án thẻ tóm tắt theo tên gói, cờ `AI_CODING_VENDOR_DOCS` TẮT; kiểm trigger trên đề ot‑node trước khi viết. |
 | 2026-11-11 | chu-du-an-HST | Đêm 10/11 (do-model 56e33affb): agent‑f baseline **trước 12/18 (test cũ, 09/11) / sau 15/18 (test py‑dang‑ky mới, NEN_MOC=0)** — chênh do đổi test, không phải model; `NEN_MOC` 0 vs 0,5 = 15/18 vs 13/18 (p 0,69) không kết luận, giữ mặc định; H‑cs2 ngữ cảnh repo 5/6 vs 4/6 không phân biệt — đóng câu hỏi, vá bằng T1. Việc L2 mới: phân loại lệnh `LENH_CAN_DUYET_TAY` ở lượt C#. |
 | 2026-11-11 | chu-du-an-HST | ⚠ **Đính chính**: số agent‑f 12/18 (09/11) và 15/18 (10/11) chứa 6 lượt C# là **âm tính giả của thiết bị đo** (`:3013` thiếu `ProgramFiles` ⇒ NuGet lỗi 68/68). Số dùng được: **4 bài không C# = 12/12 ở cả NEN_MOC 0 và 0,5**; baseline C# agent‑f CHƯA CÓ — đo lại đêm 11/11 sau khi `may.mts` sửa (commit đính chính của do‑model, chờ hash). |
+| 2026-11-11 | chủ dự án → chu-du-an-HST | **v1.1**: chủ dự án chỉ đạo xem lại và cập nhật để Thợ Cả gom/tổng hợp ngữ cảnh (làm việc dài hơn), chia phiên và agent con, sửa/viết mã nhanh và chuẩn hơn, harness mạnh và logic hơn ⇒ thêm §9 (lô NC 9 việc · AC 6 · SM 8 · HA 8, chỉ số M13–M18, ba đợt). Căn cứ: đọc `shared/agentCore/{nguCanh,giaoViec,vongAgent,congCu}.ts` + số lô 1 pilot. Lô A–G giữ nguyên. Lúc ghi không có phiên nào khác đang chạy ⇒ việc giao nằm ở tệp bàn giao bộ nhớ, chờ các phiên mở lại; tệp này CHƯA commit. |
