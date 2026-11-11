@@ -299,7 +299,7 @@ Chỉ đạo 11/11: Thợ Cả phải (1) **gom và tổng hợp ngữ cảnh đ
 | NC‑3 đọc tiết kiệm | `read_file` theo khoảng dòng + chế độ `outline` (ký hiệu và số dòng) cho tệp > 400 dòng; đọc lại tệp không đổi trả "không đổi từ lần đọc trước" kèm khoảng dòng đã có; `grep` có ngữ cảnh ±n; đầu ra lệnh giữ đầu + đuôi + mọi dòng lỗi | token vào/việc −25 % trên phát lại lô 1; 0 việc rớt | tho‑ca‑agent |
 | NC‑4 gói ngữ cảnh mở đầu | Host dựng tất định theo thẻ việc: tệp đích, nơi gọi (từ `find_symbol`), test láng giềng, mục `AGENTS.md` liên quan; ≤ 6 000 token; thay cho 3–6 lượt model đi tìm. Dựa trên repo map (B2) và HNSW (B6) khi có | số lượt model trước lần ghi đầu −30 % | tho‑ca‑agent |
 | NC‑5 đếm token thật | = B5 (`/tokenize`, `NEN_SO_THAT`), kéo lên trước NC‑2 vì mọi ngưỡng dựa vào nó | sai số < 5 % | tho‑ca‑agent + do‑model |
-| NC‑6 tiền tố ổn định | Thứ tự cố định system → luật → tool → sổ tay; nén chỉ ở mốc để không phá cache; đo `cacheN/promptN` từ `buoc-do` trên GPU | tỉ lệ cache ≥ 80 % giữa hai lượt liền nhau | do‑model |
+| NC‑6 tiền tố ổn định (**ĐÃ ĐO 11/11: đạt ở việc ngắn; nén là nguồn phá cache ⇒ NC‑2 nén ít lần và sâu; khối chèn đặt cuối lịch sử**) | Thứ tự cố định system → luật → tool → sổ tay; nén chỉ ở mốc để không phá cache; đo `cacheN/promptN` từ `buoc-do` trên GPU | tỉ lệ cache ≥ 80 % giữa hai lượt liền nhau | do‑model |
 | NC‑7 ctx 98k cho vai agent | VRAM đã đo 27 825 MiB. Đo đúng/sai và tok/s so 64k, giữ budget suy nghĩ 12 000; chat và autocomplete giữ 64k | chỉ đổi nếu bộ việc dài tăng và bộ khó không tụt | do‑model |
 | NC‑8 bộ việc dài | 4 bài đã duyệt 11/11 (`sandbox-projects/agent-f`): ts‑tach‑module, py‑doi‑chu‑ky, js‑loi‑3‑lop, py‑doi‑soat — định nghĩa theo ≥ 5 tệp hoặc độ sâu (bỏ điều kiện 40 lượt vì trần hiện 30); đo hai nhánh: trần 30 và trần nâng (chờ núm HA‑3) | có baseline trước khi bật bất kỳ cờ NC nào | do‑model + chu‑du‑an‑HST (đề) |
 | NC‑9 bàn giao giữa phiên | Ở ≥ 85 % hoặc hết lượt: viết tệp bàn giao có cấu trúc rồi mở phiên mới bằng `TIEP_TUC`; A/B với tóm tắt tại chỗ (H5.2 cũ) | việc dài hoàn tất qua ≥ 1 lần bàn giao | tho‑ca‑agent + do‑model |
@@ -354,7 +354,7 @@ Bất biến bí mật (kiem‑dinh 11/11, lỗi chặn `--cho-phep-db`): lệnh
 | # | Chỉ số | Hiện (lô 1, 11/11) | Mục tiêu |
 |---|---|---|---|
 | M13 | Việc dài (≥ 5 tệp hoặc ≥ 40 lượt model) hoàn tất | chưa có bộ; TC‑14 `het-luot` ở 30 | ≥ 3/4 bài NC‑8 |
-| M14 | Tỉ lệ cache tiền tố / token xử lý lại | chưa đo trên GPU (ngoại tuyến 86 % → 26 % với `NEN_MOC`) | cache ≥ 80 %, xử lý lại ≤ 30 % |
+| M14 | Tỉ lệ cache tiền tố / token xử lý lại | **đo 11/11 trên 54 lượt agent‑f (việc ngắn): cache 0,913, trung vị lượt 0,953**; 94,2 % token tiền tố mất là do NÉN; system/tools 0 lần đổi băm | việc ngắn: giữ ≥ 0,90; **việc dài (`agent-dai`): cache ≥ 0,80, ≤ 2 lần nén/lượt** |
 | M15 | Thẻ bị người từ chối mỗi việc | 0–4 (TC‑06 0, TC‑07 2, TC‑11 2, TC‑12 1, TC‑14 4) | ≤ 1 |
 | M16 | Giây tường lượt thực hiện, việc cùng loại | 87–250 s (trong đó chờ duyệt 33–75 s) | −30 % |
 | M17 | Lỗi công cụ mỗi việc | 1–4 | 0 |
