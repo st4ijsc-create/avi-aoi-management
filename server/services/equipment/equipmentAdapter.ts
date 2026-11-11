@@ -94,6 +94,11 @@ export interface EquipmentCommand {
   hitl: { actionId: string; requestedBy: number; confirmedBy?: number; tool?: string };
   lang?: "vi" | "en" | "zh";
   /**
+   * A2(n) T9 (D2, plan point 8) — a STOP handed over AGAIN after its own unknown attempt: the device stage reads the written tags back after its write (DispatchInput.docLai /
+   * EdgeOtDispatchInput.docLai), whatever OT_READBACK_ENABLED. In-process only: set by the FOE walker of this process, never carried over the network. Absent ⇒ as before.
+   */
+  docLai?: "bat_buoc";
+  /**
    * doc 81 Đợt 10 task D (design §2.14) — EDGE MODE only (AVI_PROCESS_ROLE=edge): the signed per-step authorisation of a
    * non-STOP command (from POST runs/:id/authorize) and the run step it belongs to. On the edge the command is routed to the
    * edge front ends (otEdgeDispatch / robotEdgeDispatch) — never to the DB dispatchers; a STOP needs no authorisation (L-7).
@@ -243,6 +248,7 @@ class OtEquipmentAdapter implements EquipmentAdapter {
         run: command.edge?.run ?? null,
         source: command.edge?.source,
         requestId: command.edge?.requestId ?? null,
+        ...(command.docLai ? { docLai: command.docLai } : {}), // T9 (D2)
       });
       return {
         ok: r.ok,
@@ -269,6 +275,7 @@ class OtEquipmentAdapter implements EquipmentAdapter {
       triggeredBy,
       lang: command.lang,
       idempotencyKey: command.idempotencyKey,
+      ...(command.docLai ? { docLai: command.docLai } : {}), // T9 (D2)
     };
     const res = await otDispatch(input);
     return {

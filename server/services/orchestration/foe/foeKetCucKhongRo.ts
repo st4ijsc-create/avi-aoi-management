@@ -196,15 +196,82 @@ export function runDaChotKhongRo(ctx: Record<string, unknown> | null | undefined
  * derived (the ledger: authorised, no result). null ⇔ nothing says so. Pure.
  */
 export function chotTuHang(
-  rows: ReadonlyArray<{ stepId: string; error?: string | null }>,
+  rows: ReadonlyArray<{ stepId: string; error?: string | null; resultJson?: unknown }>,
   resume?: Record<string, { state?: unknown; khongRo?: unknown; error?: unknown }>,
 ): { stepId: string; ma: MaKetCucKhongRo; at: string } | null {
   const at = new Date().toISOString();
   const r = rows.find((x) => !x.stepId.startsWith("abort:") && loiLaKetCucKhongRo(x.error));
   if (r) return { stepId: r.stepId, ma: maKetCucKhongRoCua(r.error), at };
+  // A2(n) T9 (decision 3, X5) — a row that went after an unknown attempt carries no code (`completed`, error null), only its trace: the latch stays with the run (the trace is never cleared)
+  for (const x of rows) {
+    const t = x.stepId.startsWith("abort:") ? null : khongRoTruocCua(x.resultJson);
+    if (t) return { stepId: t.buoc, ma: t.ma, at };
+  }
   const e = Object.entries(resume ?? {}).find(([, v]) => v?.state === "outcomeUnknown" || v?.khongRo === true);
   return e ? { stepId: e[0], ma: maKetCucKhongRoCua(typeof e[1]?.error === "string" ? e[1].error : null), at } : null;
 }
+
+/**
+ * A2(n) T9 (decision 3, D, X, plan point 8) — the trace a row keeps of an unknown attempt before it: `resultJson.khongRoTruoc`, written by the walk (central or edge) on the row of the STOP that went after
+ * that attempt: the step itself handed over again, or its OWN STOP compensation. `buoc`: the step whose outcome was unknown. `xacNhan` (XAC_NHAN): ONLY when that hand-over was a verified STOP
+ * (laStopGiao), answered ok, not simulated, with the status `acked_verified` (a closed list of one: `ok`, `acked`, `acked_unverified`, a robot's `done` are no confirmation). Pure.
+ */
+export interface KhongRoTruoc {
+  buoc: string;
+  ma: MaKetCucKhongRo;
+  xacNhan: boolean;
+}
+export function khongRoTruocCua(result: unknown): KhongRoTruoc | null {
+  const t = (result as { khongRoTruoc?: { buoc?: unknown; ma?: unknown; xacNhan?: unknown } } | null | undefined)?.khongRoTruoc;
+  if (!t || typeof t !== "object" || typeof t.buoc !== "string" || !t.buoc) return null;
+  return { buoc: t.buoc, ma: maKetCucKhongRoCua(typeof t.ma === "string" ? t.ma : null), xacNhan: t.xacNhan === true };
+}
+/**
+ * A2(n) T9 — run-context key (central-written, by the walk, beside the row's trace: a row of a STOP is a bounded write and may be the one lost): { <unknown step>: { stopId, at } }, XAC_NHAN. Only adds;
+ * never written by an edge (edgeContextPolicy keeps central keys out: an edge's are its rows').
+ */
+export const KET_CUC_KHONG_RO_XAC_NHAN_CTX_KEY = "foeKetCucKhongRoXacNhan";
+/** A2(n) T9 — the unknown steps a confirmed STOP covers (XAC_NHAN): the rows' traces and the context's key. ONE reading for the end gate and the obligation sweep. Pure. */
+export function xacNhanTu(rows: ReadonlyArray<{ stepId: string; resultJson?: unknown }> | null | undefined, ctx: Record<string, unknown> | null | undefined): Set<string> {
+  const out = new Set<string>();
+  for (const r of rows ?? []) {
+    const t = r.stepId.startsWith("abort:") ? null : khongRoTruocCua(r.resultJson);
+    if (t?.xacNhan) out.add(t.buoc);
+  }
+  const c = ctx?.[KET_CUC_KHONG_RO_XAC_NHAN_CTX_KEY];
+  if (c && typeof c === "object" && !Array.isArray(c)) for (const k of Object.keys(c)) out.add(k);
+  return out;
+}
+/**
+ * A2(n) T9 (decision 3, X1, X2, X2-EXC; finding 10 of ra-vong-hai: `khongGuiDau` and `xacNhan` read from ONE source) — does a confirmed STOP alone clear the latch's need of a durable URGENT? Only when EVERY
+ * step whose outcome is unknown (the latch, the rows' codes on commands, their traces, the resume state, the live walk's memory) is covered by XAC_NHAN, AND no forward work was dropped (a row of a
+ * command with the door's code, or the live walk's word): dropped work needs its forwardNotSent durable (decision 3). `laLenh` tells the commands of the definition (a container's row repeats its
+ * child's code); absent ⇒ every coded row counts, so a container is never confirmed: the old rule (the safe side). Pure.
+ */
+export function xacNhanHetChot(x: {
+  chot: { stepId: string } | null;
+  rows: ReadonlyArray<{ stepId: string; error?: string | null; resultJson?: unknown }> | null;
+  ctx: Record<string, unknown> | null | undefined;
+  laLenh?: (stepId: string) => boolean;
+  khongRo?: Iterable<string>;
+  boTien?: boolean;
+}): boolean {
+  if (!x.chot || x.rows === null || x.boTien) return false;
+  const lenh = (id: string) => (x.laLenh ? x.laLenh(id) : true);
+  const can = new Set<string>([x.chot.stepId, ...(x.khongRo ?? [])]);
+  for (const r of x.rows) {
+    if (r.stepId.startsWith("abort:")) continue;
+    if (lenh(r.stepId) && typeof r.error === "string" && r.error.startsWith(DAU_KHONG_GUI_CHOT)) return false;
+    if (lenh(r.stepId) && loiLaKetCucKhongRo(r.error)) can.add(r.stepId);
+    const t = khongRoTruocCua(r.resultJson);
+    if (t) can.add(t.buoc);
+  }
+  const rs = x.ctx?.foeResumeState;
+  if (rs && typeof rs === "object" && !Array.isArray(rs)) for (const [k, v] of Object.entries(rs as Record<string, { state?: unknown; khongRo?: unknown }>)) if (v?.state === "outcomeUnknown" || v?.khongRo === true) can.add(k);
+  const xn = xacNhanTu(x.rows, x.ctx);
+  return [...can].every((id) => xn.has(id));
+}
+
 
 /**
  * A2(n) extension — the steps the rows say may have gone out with no last word: the code on the row, or a row left running (a walk died around the hand-over; its result
@@ -261,8 +328,10 @@ export function buTruBiChanKhongRo(ctx: Record<string, unknown> | null | undefin
 // ── the run's / step rows' texts ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** The error of the held compensation's row and of the held run (the code first: a masked viewer keeps FOE_/EDGE_OUTCOME_UNKNOWN). */
-export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: string): string {
+export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: string, laStopThan = false): string {
   const ma = maKetCucKhongRoCua(stepError);
+  // T9 (THAN-GIU-CONTINUE) — a STOP of a body: a Continue sends only that STOP, no reason asked
+  if (laStopThan) return `${ma}: ${loiLaKetCucKhongRo(stepError) ? `command "${stepId}" outcome unknown` : `step "${stepId}" failed; another command's outcome is unknown`} — machine state unknown — STOP "${compId}" of its compensation NOT sent: not verified as a pinned STOP for its dispatch. Check the device, then Continue (sends only this STOP; no reason is asked) or Abort.`;
   // m-K — a KNOWN failure held on a latched run does not say its own outcome is unknown
   const dau = loiLaKetCucKhongRo(stepError) ? `command "${stepId}" outcome unknown` : `step "${stepId}" failed; another command's outcome is unknown`;
   // data-raw-ok: machine-readable code first (the Studio / masked callers key on it); ids are the workflow's own
@@ -348,6 +417,20 @@ export interface CanhBaoKhongRo {
   ketThuc?: KetThucKhongQuet;
   /** A2(n) T7b-3 (H37) — edgeStreamStuck: the STOP steps of the definition the refused batch named (ids only) */
   stopTrongLo?: readonly string[];
+  /**
+   * A2(n) T9 (HELD-CU, T9-CONTINUE-K1) — the STOP named here went after an earlier URGENT said otherwise: `giu` (a `held` URGENT: not sent, waiting), `chuaRa` (a `stopNotSent` URGENT: it did NOT go out,
+   * Abort sends it). The words say they replace that one. An alert raised on its own needs none
+   */
+  thayCu?: "giu" | "chuaRa";
+  /** A2(n) T9 (T9-CHU-NO-GIA) — stopNotSent of a step the definition does not make a STOP (a refused attempt of it is its row's last word on a latched run): never called a STOP */
+  khongStop?: true;
+  /** A2(n) T9 (T7B1-NOTPINNED, T9-CHU-Q2B) — stopNotSent of a stop-typed step whose pins nobody verified (the marked route): a read may find it no STOP, so nothing is promised */
+  chuaXacMinh?: true;
+  /** A2(n) T9 (MAT-HET-CS, H15) — forwardNotSent of a step of a later walk with no record of whether an earlier walk handed it over; `stopBuTru`: the STOP compensations the containers around it declare */
+  khongBanGhi?: true;
+  stopBuTru?: readonly string[];
+  /** A2(n) T9 (THAN-GIU-CONTINUE) — held: the compensation held is a STOP of a body (stopTrongBuTru): a Continue sends only that STOP and asks no reason */
+  heldStop?: true;
 }
 
 /** A2(n) T7b-3 (H36) — the terminal statuses of a run that ends with no STOP sweep */
@@ -459,12 +542,29 @@ export function chuQuetChuaXong(runId: number): string {
 /** The STOP of state C, as the words name it. */
 const stopCua = (a: Pick<CanhBaoKhongRo, "stepId" | "compId">): string => (a.compId === KHONG_CO_BU_TRU ? a.stepId : a.compId);
 
+/**
+ * A2(n) T9 (T9-CHU-Q2B, T7b-2 ADAPTER_OWNED_BY_EDGE) — central's dispatcher did not write it: the adapter is an edge node's, and it queued an adapter STOP for that node (commandDispatcher.routeEdgeOwnedAdapterCommand). Nothing
+ * comes back to central to confirm it, so the debt stays and a press only queues it again: no word promises that a press sends it.
+ */
+function chuGiaoNut(id: string): string {
+  return `Central's dispatcher did not write STOP ${id} itself: its adapter belongs to an edge node, and it queued an adapter STOP for that edge node (ADAPTER_OWNED_BY_EDGE). Nothing confirms that it reached the device, and central cannot clear it: it stays owed. Check the machine on site and use its direct STOP / E-STOP. A further press of Abort only queues it for the edge node again and confirms nothing.`;
+}
+
 /** A2(n) T5 (H11) — the two sides of the words of state C: true of the source. "did NOT go out" only where nothing reached a driver; "once the read recovers" only where a read failed. */
-function chuStopChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi">): [string, string] {
+function chuStopChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "thayCu" | "khongStop" | "chuaXacMinh">): [string, string] {
   const id = `"${stopCua(a)}"`;
   // T5 fix 1 — never "the run is held": on an edge this is told before central's run row can say so
   const giu = "It stays owed";
   const tay = "Use the machine's direct STOP / E-STOP if needed";
+  const ma0 = a.vi ? ` (${a.vi.ma})` : "";
+  // T9 (T9-CONTINUE-K1) — it went on a later walk: the earlier URGENT of this STOP is replaced, nothing is owed for it any more
+  if (a.thayCu === "chuaRa") return [`STOP ${id} went after all: the earlier URGENT is replaced`, `STOP ${id}, which an earlier URGENT said did NOT go out and stayed owed, was handed over on a later walk and its dispatcher accepted it. This replaces the earlier URGENT about it: it is owed no more. Check the machine on site.`];
+  // T9 (T9-CHU-NO-GIA) — no STOP at all: a refused attempt of it is its row's last word. It did not go out, nothing ever sends it (no Abort either), and no pin is the reason
+  if (a.khongStop) return [`step ${id} NOT sent: it is no STOP`, `Step ${id} is no STOP: its last attempt was refused by its dispatcher before it reached a driver${ma0}, and the record of that refusal was not completed. It did NOT go out, and nothing sends it again, an Abort neither. Check the machine on site.`];
+  // T9 (T7B1-NOTPINNED, T9-CHU-Q2B) — a stop-typed step nobody verified as a pinned STOP: its dispatcher refused it before a driver, and a later read may find it no STOP at all: nothing is promised
+  if (a.chuaXacMinh && a.vi?.nguon !== "doc") return [`step ${id} NOT sent: not verified as a pinned STOP`, `Step ${id} could not be verified as a pinned STOP, and its dispatcher refused it before it reached a driver${ma0}: nothing was written to the device. ${giu}: if a later read finds it a pinned STOP, Abort sends it; if it is not, nothing is sent. Check the machine on site and use its direct STOP / E-STOP if needed.`];
+  // T9 (T9-CHU-Q2B, T7b-2: ADAPTER_OWNED_BY_EDGE) — central's dispatcher only queued an adapter STOP for the node that owns it: nothing confirms it, and central never clears it
+  if (a.vi?.ma === "ADAPTER_OWNED_BY_EDGE") return [`STOP ${id} queued for the edge node, not confirmed out`, chuGiaoNut(id)];
   if (a.vi?.nguon === "driverLoi") return [`STOP ${id} NOT confirmed out`, `STOP ${id} is not confirmed out: it may have reached the device (${a.vi.ma}). ${giu}: Abort sends it again. ${tay}.`];
   if (a.vi?.nguon === "tuChoi") return [`STOP ${id} did NOT go out`, `STOP ${id} did NOT go out: it was refused before it reached a driver (${a.vi.ma}). ${giu}: Abort sends it again. ${tay}.`];
   const ma = a.vi ? ` (${a.vi.ma})` : "";
@@ -481,6 +581,9 @@ function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "ch
   const ma = a.vi ? ` (${a.vi.ma})` : "";
   const tay = "use the machine's direct STOP / E-STOP";
   const chu = a.chuAbort ?? "chuaRaKhongHan";
+  const ketThuc = chu === "daKetThuc" || chu === "daKetThucChuaKhoa" || chu === "daKetThucKhongXacMinh";
+  // T9 (T9-CHU-Q2B, T7b-2) — queued for the edge node that owns the adapter: nothing confirms it, a press queues it again
+  if (!ketThuc && a.vi?.ma === "ADAPTER_OWNED_BY_EDGE") return [`run aborted, STOP ${id} queued for the edge node, NOT confirmed`, `The run is aborted. ${chuGiaoNut(id)}`];
   // T7b-1d lượt sửa 3 (F1, dieu-phoi 10/11, (a)) — "no time limit" is of the debt while it stands. A press that reads it as no pinned STOP ends it (C-CLR); a pin set again after that is sent only within the window of the Abort (H31):
   // the upper limit is said, nothing is promised past it. One key, as before
   const khongHan = `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}. If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes of ${MOC_CUA_SO}: past that, check the machine on site and use its direct STOP / E-STOP.`;
@@ -495,6 +598,9 @@ function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "ch
   if (chu === "khongDocKhongHan" || chu === "khongDoc15") return [`run aborted, STOP ${id}: its records could not be read`, `The run is aborted. Its records could not be read, so whether STOP ${id} went earlier is not known: check the machine on site. The Abort's hand-over was refused or got no answer${ma}. ${chu === "khongDocKhongHan" ? khongHan : han}`];
   // T7b-1d (H22, KS-UNV) — the Abort never handed it over: not "refused", and a press sends it only if its read finds a pinned STOP
   if (chu === "khongXacMinhKhongHan" || chu === "khongXacMinh15") return [`run aborted, step ${id} NOT sent: not verified as a pinned STOP`, `The run is aborted. The Abort could not verify step ${id} as a pinned STOP and did NOT send it. ${chu === "khongXacMinhKhongHan" ? khongHan : `${han} If a press finds it not pinned, nothing is sent.`}`];
+  // T9 (T9-CHU-Q2B, dieu-phoi 08/11 Q2(B) = (i)) — the marked route: the dispatcher answers ONE word (NOT_CONFIRMED) for "not pinned" and for "pins unreadable". True of both: its pins were not verified,
+  // nothing was written, the step may be no STOP at all. What a press can do is the class's own words (khongHan / han), unchanged
+  if (a.vi?.nguon === "doc" && a.vi.ma === "NOT_CONFIRMED") return [`run aborted, step ${id} NOT sent: its pins were not verified`, `The run is aborted. The Abort's hand-over of step ${id} was refused or got no answer${ma}: its dispatcher could not confirm a pinned STOP, the answer it gives both when the step is not pinned and when its pins cannot be read. Step ${id} could not be verified as a pinned STOP, and nothing was written to the device: check the machine on site. ${chu === "chuaRaKhongHan" ? khongHan : han}`];
   const sau = chu === "chuaRaKhongHan" ? khongHan : han;
   if (a.vi?.nguon === "tuChoi") return [`run aborted, STOP ${id} did NOT go out`, `The run is aborted, but its STOP ${id} was refused before it reached a driver${ma}. ${sau}`];
   return [`run aborted, STOP ${id} NOT confirmed out`, `The run is aborted, but its STOP ${id} was refused or got no answer when the Abort handed it over${ma}: it may or may not have reached the device. ${sau}`];
@@ -516,12 +622,17 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       ? `Step "${a.stepId}" of run ${a.runId} failed, but another command of this run has an UNKNOWN outcome (${ma}); the state of the machine is unknown.`
       : `The outcome of command step "${a.stepId}" of run ${a.runId} is UNKNOWN (${ma}); the state of the machine is unknown.`;
   const c = `"${a.compId}"`;
+  // T9 (HELD-CU) — a STOP an earlier URGENT of this walk called held and NOT sent went after all: these words replace that one
+  const thayGiu = a.thayCu === "giu" ? ` This replaces the earlier URGENT that said ${c} was held and NOT sent: it has now been handed to its dispatcher.` : "";
   const [duoi, than] = (
     {
-      held: [`compensation ${c} ${CHO_NGUOI_TIEU_DE}`, `Its compensation ${c} could not be confirmed as a STOP, so it was NOT sent: the run is HELD and the compensation is ${CHO_NGUOI_TIEU_DE}. Check the device on site, then Continue (sends only that compensation; a reason is required) or Abort (sends the run's STOPs, no reason needed; no compensation that is not a STOP is sent).`],
-      stopSent: [`${STOP_DA_GUI_TIEU_DE} (${c})`, `Its compensation ${c} is a STOP and was sent automatically (stopping never waits for a person): ${STOP_DA_GUI_TIEU_DE}. Check the machine state on site.`],
-      stopSimulated: [`STOP compensation ${c} simulated — NOT sent (OT control off)`, `Its STOP compensation ${c} was only SIMULATED (OT control off): nothing reached the device. Check on site and use the machine's direct STOP / E-STOP if needed.`],
-      stopNotConfirmed: [`STOP compensation ${c} handed over, NOT confirmed`, `Its STOP compensation ${c} was handed to the dispatcher but could not be confirmed: check the machine on site and use its direct STOP / E-STOP if needed.`],
+      // T9 (THAN-GIU-CONTINUE) — a STOP of a body held: a Continue sends only that STOP and asks no reason (no compensation of an unknown step is held for it); nothing that is no STOP goes
+      held: a.heldStop
+        ? [`STOP ${c} NOT sent: not verified as a pinned STOP for its dispatch`, `Its compensation holds the STOP ${c}, which could not be verified as a pinned STOP when it was due, so it was NOT sent: the run is HELD. Check the device on site, then Continue (sends only this STOP, and only as a pinned STOP; nothing that is no STOP goes; no reason is asked) or Abort (sends the run's STOPs).`]
+        : [`compensation ${c} ${CHO_NGUOI_TIEU_DE}`, `Its compensation ${c} could not be confirmed as a STOP, so it was NOT sent: the run is HELD and the compensation is ${CHO_NGUOI_TIEU_DE}. Check the device on site, then Continue (sends only that compensation; a reason is required) or Abort (sends the run's STOPs, no reason needed; no compensation that is not a STOP is sent).`],
+      stopSent: [`${STOP_DA_GUI_TIEU_DE} (${c})`, `Its compensation ${c} is a STOP and was sent automatically (stopping never waits for a person): ${STOP_DA_GUI_TIEU_DE}. Check the machine state on site.${thayGiu}`],
+      stopSimulated: [`STOP compensation ${c} simulated — NOT sent (OT control off)`, `Its STOP compensation ${c} was only SIMULATED (OT control off): nothing reached the device. Check on site and use the machine's direct STOP / E-STOP if needed.${thayGiu}`],
+      stopNotConfirmed: [`STOP compensation ${c} handed over, NOT confirmed`, `Its STOP compensation ${c} was handed to the dispatcher but could not be confirmed: check the machine on site and use its direct STOP / E-STOP if needed.${thayGiu}`],
       stopNotHanded: [`STOP compensation ${c} NOT sent`, `Its STOP compensation ${c} was never handed to a dispatcher — check on site and use the machine's direct STOP / E-STOP if needed.`],
       noCompensation: [`no compensation of its own`, `It has no compensation of its own and it is never sent again; a compensation of a step around it may still be due. Check the device on site before running again.`],
       approvedNotConfirmed: [`compensation ${c} NOT confirmed`, `Its compensation ${c}, approved by a Continue, failed or got no answer: it may or may not have reached the device. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
@@ -530,6 +641,9 @@ export function noiDungCanhBaoKhongRo(a: CanhBaoKhongRo): { kind: string; title:
       inFlight: [`${c} in flight at latch time`, `Command ${c} was already handed to the dispatcher when this was decided: it cannot be recalled, and nothing says whether it reached the device. Check the machine on site.`],
       forwardNotSent: khongXd
         ? [`forward work dropped, which command could not be determined`, `Forward work of this run was dropped, and which command was not sent could not be determined: the step records could not be read. Any command of this run may or may not have reached the device, and nothing further goes forward. Check the machine on site.`]
+        : a.khongBanGhi
+          ? // T9 (MAT-HET-CS, H15) — a later walk with no record of an earlier one's hand-over: never "NOT handed"; what the containers around it declare as STOP compensation is named, nothing is sent by itself
+            [`command "${a.stepId}": no record whether it was handed over, forward work dropped`, `There is no record of whether command "${a.stepId}" was handed to a dispatcher by an earlier walk of this run, and nothing further goes forward.${a.stopBuTru?.length ? ` The container around it declares the STOP compensation ${a.stopBuTru.map((x) => `"${x}"`).join(", ")}: with no record of what ran, it is not sent by itself.` : ""} Check the machine on site and use its direct STOP / E-STOP if needed.`]
         : a.vi
           ? // T6c (Q2) — handed to its dispatcher on the marked route, answered "no pinned STOP" before any driver: nothing written (H11, true of the source)
             [`command NOT sent, forward work dropped`, `Command "${a.stepId}" was refused by its dispatcher before any driver (${a.vi.ma}): it is no pinned STOP, nothing was written, and nothing further goes forward. Check the machine on site.`]
@@ -665,8 +779,14 @@ export function viChuaRaCuaLoi(error: string | null | undefined): ViChuaRa | und
   if (!m) return undefined;
   return { nguon: m[1] === "may have gone out" ? "driverLoi" : m[1] === "nobody could decide it" ? "doc" : "tuChoi", ma: m[2] as string };
 }
-/** The run's error while a STOP stays owed: the code first, the way out: Abort, never Continue. */
-export function loiGiuChuaRa(stopId: string, vi: ViChuaRa | undefined): string {
+/**
+ * The run's error while a STOP stays owed: the code first, the way out: Abort, never Continue. T9 — `cach` (the same reading as the URGENT, chuStopChuaRa): `khongStop` a step that is no STOP (T9-CHU-NO-GIA),
+ * `chuaXacMinh` pins nobody verified (T7B1-NOTPINNED); the code ADAPTER_OWNED_BY_EDGE: queued for the node (T9-CHU-Q2B). The code stays first: the row readers key on it.
+ */
+export function loiGiuChuaRa(stopId: string, vi: ViChuaRa | undefined, cach?: { khongStop?: boolean; chuaXacMinh?: boolean }): string {
+  if (cach?.khongStop) return `${FOE_STOP_NOT_SENT}: step "${stopId}" is no STOP: its last attempt was refused before a driver${vi ? ` (${vi.ma})` : ""} and its record was not completed. It did NOT go out and nothing sends it again. The run is held. Check the machine on site.`;
+  if (cach?.chuaXacMinh && vi?.nguon !== "doc") return `${FOE_STOP_NOT_SENT}: step "${stopId}" could not be verified as a pinned STOP and was refused before a driver${vi ? ` (${vi.ma})` : ""}. The run is held: if a later read finds it a pinned STOP, Abort sends it; if it is not, nothing is sent.`;
+  if (vi?.ma === "ADAPTER_OWNED_BY_EDGE") return `${FOE_STOP_NOT_SENT}: STOP "${stopId}" was queued for the edge node that owns its adapter (ADAPTER_OWNED_BY_EDGE): nothing confirms it. The run is held. Check the machine on site.`;
   const dau = `${FOE_STOP_NOT_SENT}: STOP "${stopId}"`;
   if (vi?.nguon === "driverLoi") return `${dau} is not confirmed out: it may have reached the device (${vi.ma}). The run is held: Abort sends it again.`;
   if (vi?.nguon === "tuChoi") return `${dau} did NOT go out: it was refused before it reached a driver (${vi.ma}). The run is held: Abort sends it again.`;
@@ -686,7 +806,9 @@ export function loiGiuKhongBen(runId: number, x: { ma?: MaKetCucKhongRo | null; 
 }
 /** A2(n) T7 — the run's error when its end could not read its step rows: nothing says no STOP is owed, so it does not end. */
 export function loiGiuChuaDocHang(runId: number, ma: MaKetCucKhongRo | null): string {
-  return `${ma ?? "FOE_OUTCOME_UNKNOWN"}: run ${runId}: its step records could not be read at its end, so whether a STOP is still owed cannot be told. The run is held: Continue walks it to its end again, Abort ends it and sends its STOPs. Check the machine on site.`;
+  // T9 (no-cho-T9, dieu-phoi) — a run never latched keeps the code (the Studio and a masked viewer key on it), and its words say what the code means here: its END could not be read, no command is known unknown
+  const chuaKhoa = ma === null ? " Nothing says a command of this run has an unknown outcome: the code here means only that its end could not be read." : "";
+  return `${ma ?? "FOE_OUTCOME_UNKNOWN"}: run ${runId}: its step records could not be read at its end, so whether a STOP is still owed cannot be told. The run is held: Continue walks it to its end again, Abort ends it and sends its STOPs. Check the machine on site.${chuaKhoa}`;
 }
 const docViChuaRa = (v: unknown): ViChuaRa | undefined => {
   const x = v as { nguon?: unknown; ma?: unknown } | null | undefined;

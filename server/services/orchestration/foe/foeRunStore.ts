@@ -48,7 +48,7 @@ import { toRobotJob } from "../../equipment/robotJobMapping";
 import { readEdgeAssignment } from "../../edge/edgeExecutionSchema"; // A2(n) T8 lượt sửa 1 (CHAN-3) — a run given to an edge node: its claim's progress is its heartbeat; lượt sửa 2 (CHAN-4): through the shared read (0370 missing ⇒ no edge)
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, xacNhanHetChot, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
 
@@ -144,6 +144,13 @@ export interface KetCucKhongRoBaoCao {
   biet?: boolean;
   /** A2(n) T6e K1 — forwardNotSent of a stop-typed step whose pin the sweep could not verify (the dispatcher's predicate said pinned). Central only: never on the wire */
   stopKhongXacMinh?: true;
+  /** A2(n) T9 — the words' marks (foeKetCucKhongRo.CanhBaoKhongRo, same names). Central's walk only: never on the wire (an edge's anomaly carries its closed fields only, chiTietAnomalyKhongRo) */
+  thayCu?: "giu" | "chuaRa";
+  heldStop?: true;
+  khongStop?: true;
+  chuaXacMinh?: true;
+  khongBanGhi?: true;
+  stopBuTru?: readonly string[];
 }
 
 export type AuthorizeVerdict =
@@ -357,6 +364,14 @@ export function loiKhongGuiChot(stepId: string): string {
   // data-raw-ok: machine-readable code first (known code, MA_LOI_DA_BIET); ids are the workflow's own
   return `${FOE_NOT_SENT_RUN_LATCHED}: not sent: run latched — command step "${stepId}" was not handed to a dispatcher: another command of this run has an unknown outcome. It is not sent again.`;
 }
+/**
+ * A2(n) T9 (T9-CONTINUE-K1) — what the door of a latched walk returns for a STOP it leaves to the STOP pass: carried up into its containers' rows and the run's error. The code first (the same readers),
+ * and never "not handed to a dispatcher": a pass hands it over, or names it owed.
+ */
+export function loiKhongGuiChotStop(stepId: string): string {
+  // data-raw-ok: machine-readable code first (known code, MA_LOI_DA_BIET); ids are the workflow's own
+  return `${FOE_NOT_SENT_RUN_LATCHED}: run latched — STOP step "${stepId}" is not walked forward here: the run's STOP pass sends it, or names it if it stays owed. Another command of this run has an unknown outcome.`;
+}
 /** Does a stored error say that? Only a row or resume state can (the walk carries khongGuiChot itself). */
 export const laLoiKhongGuiChot = (error: string | null | undefined): boolean => typeof error === "string" && error.startsWith(`${FOE_NOT_SENT_RUN_LATCHED}:`);
 
@@ -526,7 +541,7 @@ export interface AnhKetThuc {
   /** names the owner of a marked compensation in its URGENT, as the report path does */
   def?: Pick<WorkflowDefinition, "steps"> | null;
   /** central's live walk: its latch, the STOPs it left owed, the URGENTs it raised (a bounded row write may be the one lost) */
-  boNho?: { chot: { stepId: string; ma: MaKetCucKhongRo } | null; chuaRa: Iterable<string>; baoCho: ReadonlyArray<Promise<boolean>>; /** why a STOP it left owed stays owed (its row may be the write lost) */ viCua?: (stopId: string) => ViChuaRa | undefined };
+  boNho?: { chot: { stepId: string; ma: MaKetCucKhongRo } | null; chuaRa: Iterable<string>; baoCho: ReadonlyArray<Promise<boolean>>; /** why a STOP it left owed stays owed (its row may be the write lost) */ viCua?: (stopId: string) => ViChuaRa | undefined; /** T9 — how its words read it (no STOP; pins nobody verified) */ cachCua?: (stopId: string) => { khongStop?: true; chuaXacMinh?: true }; /** T9 (XAC_NHAN) — every unknown it decided; whether it dropped forward work */ khongRo?: readonly string[]; boTien?: boolean };
   /** an edge segment: the URGENTs of the reports riding on its end, and the latch they carry */
   daCo?: ReadonlyArray<Promise<boolean>>;
   chotTuBao?: { stepId: string; ma: MaKetCucKhongRo } | null;
@@ -626,7 +641,11 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
   let benChot = true;
   let moi = false;
   let nguoiNhan: number | undefined;
-  if (chot && x.ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null) {
+  // A2(n) T9 (decision 3, XAC_NHAN, X1, X2, X2-EXC) — every unknown covered by a confirmed STOP and no forward work dropped: no URGENT is needed (the trace stays on the rows and in the context). ONE reading
+  // (xacNhanHetChot) for this gate, every end that comes here, and the obligation sweep
+  const lenhCua = x.def ? new Set(allStepsOf(x.def.steps as WorkflowStep[]).filter((s) => s.type === "command").map((s) => s.id)) : null;
+  const xacNhanHet = xacNhanHetChot({ chot, rows: x.rows, ctx: x.ctx, ...(lenhCua ? { laLenh: (id: string) => lenhCua.has(id) } : {}), khongRo: x.boNho?.khongRo, boTien: x.boNho?.boTien });
+  if (chot && x.ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null && !xacNhanHet) {
     benChot = await choi(motBen([...(x.daCo ?? []), ...(x.boNho?.baoCho ?? [])], hanMs, label));
     if (!benChot && !doi) {
       benChot = await choi(
@@ -651,7 +670,7 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
   const ben = benChot && khongXacNhan.length === 0;
   const out: KetQuaKetThuc = { ghi: nguoi || (!giuNo && ben) ? "terminal" : "held", vi: null, urgentBen: ben, chot, no, khongXacNhan, moi, ...(nguoiNhan !== undefined ? { nguoiNhan } : {}) };
   if (nguoi) return out;
-  if (giuNo) return { ...out, vi: "no", loi: loiGiuChuaRa(no[0] as string, viChuaRaCuaLoi(rows.find((r) => r.stepId === no[0])?.error) ?? x.boNho?.viCua?.(no[0] as string)) };
+  if (giuNo) return { ...out, vi: "no", loi: loiGiuChuaRa(no[0] as string, viChuaRaCuaLoi(rows.find((r) => r.stepId === no[0])?.error) ?? x.boNho?.viCua?.(no[0] as string), x.boNho?.cachCua?.(no[0] as string)) };
   if (!ben) return { ...out, vi: "khongBen", loi: loiGiuKhongBen(x.runId, { ma: benChot ? null : (chot?.ma ?? null), khongXacNhan }) };
   return out;
 }
@@ -831,7 +850,8 @@ async function quetMotRun(d: RunDb, run: OrchestrationRun, x: QuetMot): Promise<
   const tuHang = chotTuHang(hang, ctx[RESUME_STATE_CTX_KEY] as Parameters<typeof chotTuHang>[1]);
   const chot = tuCtx?.stepId != null ? { stepId: String(tuCtx.stepId), ma: maKetCucKhongRoCua(typeof tuCtx.ma === "string" ? tuCtx.ma : null) } : tuHang ? { stepId: tuHang.stepId, ma: tuHang.ma } : null;
   const khoaChot = chot ? `${run.id}:${chot.stepId}:chot` : null;
-  const noChot = chot !== null && ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null && dq.chot === null && !quetDaBenTrongProcess.has(khoaChot as string);
+  // T9 (decision 3, census of the latch's readers) — a latch every unknown of which a confirmed STOP covers owes no run_end URGENT: the gate's own reading (no definition here: a coded container counts, the safe side)
+  const noChot = chot !== null && ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null && dq.chot === null && !quetDaBenTrongProcess.has(khoaChot as string) && !xacNhanHetChot({ chot, rows: hang, ctx });
   const dau = hang
     .filter((r) => dauKhongXacNhan(r.resultJson) !== null)
     .map((r) => ({ r, dang: dauKhongXacNhan(r.resultJson) as DangKhongXacNhan, claimSeq: claimCuaHang(r) }))

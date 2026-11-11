@@ -68,6 +68,8 @@ export interface EdgeOtDispatchInput {
   /** robot_motion_lock_requests.id of a central STOP command */
   requestId?: number | null;
   deadlineMs?: number;
+  /** A2(n) T9 (D2) — the FOE walker of this node hands a STOP over again after its unknown attempt: read back after the write (executeOtDeviceWrite, as central's DispatchInput.docLai). In-process only */
+  docLai?: "bat_buoc";
 }
 
 export interface EdgeOtDispatchResult {
@@ -183,6 +185,7 @@ async function runDeviceStage(
         writes: resolved.map((r) => ({ ...r.write })),
         triggeredBy: { kind: "hitl" as const, requestedBy: NO_CONFIRMER },
         idempotencyKey: input.idempotencyKey,
+        ...(input.docLai ? { docLai: input.docLai } : {}), // T9 (D2)
       },
       driver,
       resolved,

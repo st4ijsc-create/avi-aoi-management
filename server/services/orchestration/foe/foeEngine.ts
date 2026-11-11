@@ -60,6 +60,7 @@ import {
   edgeResumeStateOf,
   laLoiKhongGuiChot,
   loiKhongGuiChot,
+  loiKhongGuiChotStop,
   themBuocHongKhiTiepTuc,
   buocTienCua,
   duongToiBuoc,
@@ -102,7 +103,7 @@ import {
   type PhanLoaiBuTru,
 } from "./foeBuTruBiNgat";
 // R1b-2b-2a A2(n) — an UNKNOWN outcome never triggers a device write from a non-STOP compensation: split by energy direction
-import { type DangDauVetAbort, type ChuStopAbort, type PhanLoaiStopAbort, chuBamSauKhongDoc, chuKhongDocDinhNghia, chuQuetChuaXong, chuStopAbort, MOC_CUA_SO, STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo, chuBamDaKetThuc, type KetThucKhongQuet, type NoKetThucKhongQuet } from "./foeKetCucKhongRo";
+import { type DangDauVetAbort, type ChuStopAbort, type PhanLoaiStopAbort, chuBamSauKhongDoc, chuKhongDocDinhNghia, chuQuetChuaXong, chuStopAbort, MOC_CUA_SO, STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_XAC_NHAN_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo, chuBamDaKetThuc, type KetThucKhongQuet, type NoKetThucKhongQuet } from "./foeKetCucKhongRo";
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED, FOE_NOT_SENT_RUN_LATCHED, FOE_STOP_NOT_SENT } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
 export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
@@ -722,6 +723,14 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   stopCoTheRa?: Map<string, string>;
   /** A2(n) T5 — state C told in this walk: once per STOP. */
   chuaRaDaBao?: Set<string>;
+  /** A2(n) T9 (T7B1-NOTPINNED, T9-CHU-Q2B) — STOPs whose last hand-over went by the marked route: nobody verified their pins, so their words promise nothing */
+  danhDauGiao?: Set<string>;
+  /** A2(n) T9 (T9-CHU-NO-GIA) — owed ids the definition does not make a STOP: their words never call them one */
+  khongStopNo?: Set<string>;
+  /** A2(n) T9 (MAT-HET-CS, H15) — forward steps of a later walk with no record of an earlier hand-over: the STOP compensations the containers around them declare */
+  khongBanGhi?: Map<string, string[]>;
+  /** A2(n) T9 (T9-CONTINUE-K1) — the STOPs whose going was told as replacing an earlier "did NOT go out", once per walk */
+  stopDaDiDaBao?: Set<string>;
   /** A2(n) T5 (H1, race) — a STOP that failed before the latch with no code: duongKetThuc puts it in state C if the run latches after all. Not sent again. */
   stopTuChoiTruocKhoa?: Map<string, { attempt: number; vi: ViChuaRa }>;
   /** A2(n) T7b-1 fix 1 (RA-1, R3-E) — what an Abort's sweep of this live walk could not send while the run was not latched: its `abort:` row may be the write lost */
@@ -1140,6 +1149,7 @@ async function execStep(rc: RunContext, step: WorkflowStep, quaCua = false): Pro
     const { chuaRaStop: _boCo, ...conLai } = outcome;
     outcome = conLai;
   }
+  if (step.type === "command" && outcome.kind === "ok") baoStopDaDiSau(rc, step.id); // T9 (T9-CONTINUE-K1) — before its state C is cleared: it went, the earlier "did NOT go out" is replaced
   if (step.type === "command") datChuaRa(rc, step.id, outcome.kind === "failed" ? outcome.chuaRaStop : undefined);
 
   // doc 81 Đợt 6 — finished, or failed ON ITS OWN (an 'aborted' outcome is the abort's: the sweep decides about it). A2(n) T5 — state C is neither: an Abort and a later walk still have it to send
@@ -1389,9 +1399,9 @@ async function stopTrongThan(rc: RunContext, step: WorkflowStep, comp: WorkflowS
 async function stopTrongBuTru(rc: RunContext, step: WorkflowStep, x: WorkflowStep, loi: string, lan: string, keHoach = false): Promise<void> {
   if (rc.aborting || daGuiHoacXong(rc, x.id, keHoach) || (await laBuTruStop(rc, x)) === "khong") return; // A2(n) T5 — unreadable goes by the marked route (THAN-DOC): never no row and nobody told
   if (!(await guiStopKhongRo(rc, { ...step, compensation: x }, x, loi, lan))) return;
-  baoKetCucKhongRo(rc, { loai: "held", stepId: step.id, compId: x.id, error: loi, lan });
+  baoKetCucKhongRo(rc, { loai: "held", stepId: step.id, compId: x.id, error: loi, lan, heldStop: true }); // T9 (THAN-GIU-CONTINUE) — a STOP of a body: a Continue sends only it, no reason asked
   (rc.buTruDaGiu ??= new Set()).add(x.id);
-  const giu: Extract<StepOutcome, { kind: "held" }> = { kind: "held", stepId: x.id, reason: "outcomeUnknown", error: loiGiuBuTruKhongRo(step.id, x.id, loi) };
+  const giu: Extract<StepOutcome, { kind: "held" }> = { kind: "held", stepId: x.id, reason: "outcomeUnknown", error: loiGiuBuTruKhongRo(step.id, x.id, loi, true) };
   (rc.giuCon ??= new Map()).set(x.id, giu);
   rc.giuNen ??= giu;
 }
@@ -1450,7 +1460,12 @@ async function buocTienBiBo(rc: RunContext, src: AbortSweepSource | null): Promi
     // T6c (Q2, item 4) — the last hand-over of this walk, on the marked route, was answered "no pinned STOP" before any driver: nothing written, forward work dropped all the same.
     // An edge keeps no row of it (its evidence reads "may have gone out"): the answer itself is the evidence, and only the last attempt's
     if (n !== "xong" && rc.dispatcherNoiKhongGhim?.has(s.id) === true) return true;
-    return n === "chuaGui" || (n === "chuaDen" && (rc.khongGhimCuoi?.has(s.id) === true || !(await laStopTheoBuoc(s, rc.machineById))));
+    const bo = n === "chuaGui" || (n === "chuaDen" && (rc.khongGhimCuoi?.has(s.id) === true || !(await laStopTheoBuoc(s, rc.machineById))));
+    // T9 (MAT-HET-CS, H15) — nothing says it started, on a walk after an earlier one: there is no record of whether that walk handed it over. The words say so, and name the STOP compensations the
+    // containers around it declare (from the definition); nothing more is sent for it
+    // Only a walk after an interruption (a boot, a Continue of an interrupted run): what an earlier walk did may be lost with its rows (H15: a database rolled back). Any other walk's own memory and rows are whole
+    if (bo && n === "chuaDen" && rc.store.kind === "central" && (rc.context.interrupted === true || rc.context[INTERRUPTED_EARLIER_CTX_KEY] === true)) (rc.khongBanGhi ??= new Map()).set(s.id, await stopBuTruQuanh(rc, s.id));
+    return bo;
   };
   const ten: string[] = [];
   const di = async (steps: readonly WorkflowStep[], songSong: boolean): Promise<void> => {
@@ -1526,7 +1541,8 @@ async function ngatSauChot(rc: RunContext, step: WorkflowStep): Promise<StepOutc
   if (step.type !== "command") return tuChoi;
   if (await laStopTheoBuoc(step, rc.machineById)) { // T5 (H1) — a step nothing resolves is read by its name: the door does not write "not sent" over a STOP a pass still owes
     (rc.denCuaStop ??= new Set()).add(step.id);
-    return tuChoi;
+    // T9 (T9-CONTINUE-K1) — its words, carried up into its containers' rows and the run's error, say the pass has it: never "not handed to a dispatcher" (a pass may hand it over)
+    return { ...tuChoi, error: loiKhongGuiChotStop(step.id) };
   }
   if (rc.attempted.has(step.id) || rc.prior.settled.has(step.id)) return tuChoi; // a last word stays: a device's own error, a hand-over of this walk
   if (!rc.startOrder.includes(step.id)) rc.startOrder.push(step.id);
@@ -1660,13 +1676,25 @@ async function guiStopSauChot(rc: RunContext, cuoi = false): Promise<void> {
   await Promise.allSettled(viec);
 }
 
+/** A2(n) T9 (MAT-HET-CS, H15) — the STOP compensations the containers around `id` declare, innermost first, read from the definition (a compensation of several steps: its STOP-typed commands). */
+async function stopBuTruQuanh(rc: RunContext, id: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const hop of toTienCua(rc.def.steps, id)) {
+    const c = hop.compensation;
+    if (!c) continue;
+    for (const x of c.type === "command" ? [c] : buocTienCua(c)) if (x.type === "command" && !out.includes(x.id) && (await isStopCandidate(x, rc.machineById).catch(() => false))) out.push(x.id);
+  }
+  return out;
+}
+
 /** A2(n) T6 (H13) — forward work dropped, one URGENT per branch dropped, what rc.khongGuiDs names. T7b-1d (H25) — the walk's end and an Abort: `lan` is the event of the key; once per step per walk. */
 function baoBuocTienBiBo(rc: RunContext, lan: string): void {
   for (const id of rc.khongGuiDs ?? []) {
     if (rc.khongGuiDaBao?.has(id)) continue;
     (rc.khongGuiDaBao ??= new Set()).add(id);
     const ma = rc.dispatcherNoiKhongGhim?.get(id); // T6c — handed over and answered "no pinned STOP": not "NOT handed to a dispatcher" (H11)
-    baoKetCucKhongRo(rc, { loai: "forwardNotSent", stepId: id, compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot(id), lan, ...(ma !== undefined ? { vi: { nguon: "tuChoi" as const, ma } } : {}), ...(rc.khongXacMinhGhim?.has(id) ? { stopKhongXacMinh: true as const } : {}) });
+    const banGhi = ma === undefined && !rc.khongXacMinhGhim?.has(id) ? rc.khongBanGhi?.get(id) : undefined; // T9 (MAT-HET-CS) — no record of an earlier hand-over
+    baoKetCucKhongRo(rc, { loai: "forwardNotSent", stepId: id, compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot(id), lan, ...(ma !== undefined ? { vi: { nguon: "tuChoi" as const, ma } } : {}), ...(rc.khongXacMinhGhim?.has(id) ? { stopKhongXacMinh: true as const } : {}), ...(banGhi ? { khongBanGhi: true as const, stopBuTru: banGhi } : {}) });
   }
 }
 
@@ -1735,7 +1763,25 @@ function baoStopChuaRa(rc: RunContext, id: string, vi = rc.chuaRaStop?.get(id)):
   (rc.chuaRaDaBao ??= new Set()).add(id);
   const chu = chuBuTruCua(rc, id);
   const stepId = chu ? chu.step.id : id;
-  baoKetCucKhongRo(rc, { loai: "stopNotSent", stepId, compId: chu ? id : KHONG_CO_BU_TRU, error: loiCuaChot(rc), lan: "chot", ...(ketCucRiengKhongRo(rc, stepId) && chu ? {} : { biet: true }), ...(vi ? { vi } : {}) });
+  baoKetCucKhongRo(rc, { loai: "stopNotSent", stepId, compId: chu ? id : KHONG_CO_BU_TRU, error: loiCuaChot(rc), lan: "chot", ...(ketCucRiengKhongRo(rc, stepId) && chu ? {} : { biet: true }), ...(vi ? { vi } : {}), ...cachChuaRa(rc, id) });
+}
+
+/** A2(n) T9 — how the words of a debt read it: no STOP at all (T9-CHU-NO-GIA), or pins nobody verified (T7B1-NOTPINNED). One reading for the URGENT and the run's error. */
+function cachChuaRa(rc: RunContext, id: string): { khongStop?: true; chuaXacMinh?: true } {
+  if (rc.khongStopNo?.has(id)) return { khongStop: true };
+  return rc.danhDauGiao?.has(id) ? { chuaXacMinh: true } : {};
+}
+
+/**
+ * A2(n) T9 (T9-CONTINUE-K1, no-cho-T9) — a STOP an earlier URGENT called NOT gone and owed (state C: this walk's, or the context's list of an earlier walk) went now, accepted: the words that replace that URGENT,
+ * under this walk's event. Central only: an edge's report carries no such word (central's own walk is the one that told it). Once per walk; never awaited.
+ */
+function baoStopDaDiSau(rc: RunContext, id: string): void {
+  if (rc.store.kind !== "central" || rc.stopDaDiDaBao?.has(id)) return;
+  if (!rc.chuaRaDaBao?.has(id) && !stopChuaRaTuNguCanh(rc.context).includes(id)) return;
+  (rc.stopDaDiDaBao ??= new Set()).add(id);
+  const chu = chuBuTruCua(rc, id);
+  baoKetCucKhongRo(rc, { loai: "stopNotSent", stepId: chu ? chu.step.id : id, compId: chu ? id : KHONG_CO_BU_TRU, error: loiCuaChot(rc), lan: luotDiCua(rc), biet: true, thayCu: "chuaRa" });
 }
 
 /** A2(n) T6d (E-C6) — the one URGENT of a verified STOP the edge snapshot refused as not pinned: a forward STOP in its own name, a compensation's under its owner. Once per walk; the key is durable. */
@@ -1763,8 +1809,11 @@ async function giuStopChuaRa(rc: RunContext, src: AbortSweepSource | null): Prom
   let giu: StepOutcome | undefined;
   for (const id of new Set([...(rc.chuaRaStop?.keys() ?? []), ...(src?.chuaRa ?? [])])) {
     const vi = rc.chuaRaStop?.get(id) ?? viChuaRaCuaLoi((src?.hang ?? []).find((r) => r.stepId === id)?.error);
+    // T9 (T9-CHU-NO-GIA) — a debt the rows hold of a step the definition does not make a STOP (its refused attempt is its row's last word): words only, the debt stays as read
+    const s = findStepDeep(rc.def.steps, id);
+    if (!rc.chuaRaStop?.has(id) && s && !(await isStopCandidate(s, rc.machineById).catch(() => true))) (rc.khongStopNo ??= new Set()).add(id); // a step the definition does not hold: the old words
     baoStopChuaRa(rc, id, vi);
-    giu ??= { kind: "held", stepId: id, reason: "outcomeUnknown", error: loiGiuChuaRa(id, vi) };
+    giu ??= { kind: "held", stepId: id, reason: "outcomeUnknown", error: loiGiuChuaRa(id, vi, cachChuaRa(rc, id)) };
   }
   return giu;
 }
@@ -1822,7 +1871,7 @@ async function quyetDinhKetThuc(x: { rc: RunContext; chiDoi?: boolean } | AnhKet
 /** A2(n) T7 — what a live walk holds beside the rows: the first unknown it decided, the STOPs it left owed, the answers of its URGENTs. */
 function boNhoCua(rc: RunContext): NonNullable<AnhKetThuc["boNho"]> {
   const dau = rc.khongRoTai ? [...rc.khongRoTai][0] : undefined;
-  return { chot: dau ? { stepId: dau[0], ma: maKetCucKhongRoCua(dau[1]) } : null, chuaRa: [...(rc.chuaRaStop?.keys() ?? [])], baoCho: rc.baoCho ?? [], viCua: (id) => rc.chuaRaStop?.get(id) };
+  return { chot: dau ? { stepId: dau[0], ma: maKetCucKhongRoCua(dau[1]) } : null, chuaRa: [...(rc.chuaRaStop?.keys() ?? [])], baoCho: rc.baoCho ?? [], viCua: (id) => rc.chuaRaStop?.get(id), cachCua: (id) => cachChuaRa(rc, id), khongRo: [...(rc.khongRoTai?.keys() ?? [])], boTien: (rc.khongGuiDs?.length ?? 0) > 0 };
 }
 
 /** A2(n) T7 — what the database shows of a run for an end with no walk to ask: its context, owner and step rows, bounded by D. null ⇔ not read: never "not latched". */
@@ -2065,6 +2114,7 @@ async function guiStopKhongRo(rc: RunContext, step: WorkflowStep, comp: Workflow
   if (rc.buTruDaGui?.has(comp.id)) return false; // a concurrent branch reached this container first (checked and marked in one tick)
   (rc.chiStopGhimIds ??= new Set()).add(comp.id);
   (rc.buTruDaGui ??= new Set()).add(comp.id);
+  const daGiuTruoc = rc.buTruDaGiu?.has(comp.id) === true;
   let c: StepOutcome | undefined;
   try {
     // A2(n) T5 (C) — runCompensation runs a body once: state C keeps a STOP's budget here, -a1, -a2 …; a robot STOP its own. Nothing else is ever retried here
@@ -2085,7 +2135,10 @@ async function guiStopKhongRo(rc: RunContext, step: WorkflowStep, comp: Workflow
     baoStopChuaRa(rc, comp.id);
     return false;
   }
-  const ben = baoKetCucKhongRo(rc, { loai: loaiGuiStop(rc, comp.id, c), stepId: step.id, compId: comp.id, error: loi, lan });
+  const loaiDi = loaiGuiStop(rc, comp.id, c);
+  // T9 (HELD-CU) — an earlier URGENT of this walk said it was held and NOT sent: the words of its hand-over replace that one
+  const thayGiu = daGiuTruoc && loaiDi !== "stopNotHanded"; // handed to its dispatcher: sent, simulated or not confirmed
+  const ben = baoKetCucKhongRo(rc, { loai: loaiDi, stepId: step.id, compId: comp.id, error: loi, lan, ...(thayGiu ? { thayCu: "giu" as const } : {}) });
   // R5 — it went: confirmed ends a hold by itself, handed over only with a durable URGENT (H2; an edge's durable word is central's, at its segment end).
   // T6 (H14) — no answer at the last attempt went too: handed over, not confirmed. Only state C (above) did not go
   const khongTraLoi = c?.kind === "failed" && (c.outcomeUnknown === true || c.khongRo === true) && rc.attempted.has(comp.id);
@@ -3182,7 +3235,7 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
       }
     }
   }
-  const cmd = auth.cmd;
+  let cmd = auth.cmd;
   // A2(n) T5 (C-3) — no dispatcher can be asked: refused, not final, its budget stays
   if (auth.chuaRaStop && !rc.chiGuiStopGhim) {
     tt.vi = { nguon: "doc", ma: "ADAPTER_UNRESOLVED" };
@@ -3206,6 +3259,11 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
   // A2(n) T5 — stopChuaDocGhim: the dispatcher decides; the row, or the absent authorisation, lets nothing else through
   const laStopGiao = auth.stopGhim === true || auth.stopXacMinh === true || (robotKind && isStop) || auth.stopChuaDocGhim === true;
   tt.khongGhim = !laStopGiao && auth.ghimKhongDoc !== true;
+  // A2(n) T9 (decision 3, D2, plan point 8) — the step whose unknown attempt this hand-over comes after: the STOP itself handed over AGAIN, or its OWN STOP compensation sent by itself. Nothing else confirms it
+  const chuBu = rc.chiStopGhimIds?.has(step.id) ? chuBuTruCua(rc, step.id) : null;
+  const xnCho = ketCucRiengKhongRo(rc, step.id) ? step.id : chuBu && chuBu.comp.id === step.id && ketCucRiengKhongRo(rc, chuBu.step.id) ? chuBu.step.id : undefined;
+  // D2 — ONLY the STOP handed over again after its own unknown attempt is read back after its write, whatever OT_READBACK_ENABLED. A robot has no read-back (RobotDispatchResult): never asked
+  if (xnCho === step.id && laStopGiao && !robotKind) cmd = { ...cmd, docLai: "bat_buoc" };
   const cong = xetCongBuTru(rc, step.id, laStopGiao);
   // A2(n) — asked before the latch: "not a STOP for this dispatch" answered an unlatched run. A stop-typed step asks once more, now latched, and goes or is refused for what it is. A non-STOP never comes here
   if ((cong?.kind === "khongGui" || cong?.kind === "giu") && isStop && (rc.store.stopHoiLaiDuoc?.(step.id) ?? true) && !rc.hoiLaiStop?.has(`${step.id}#${attempt}`)) return hoiLaiStop(rc, step, attempt);
@@ -3229,6 +3287,8 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
   const already = Array.isArray(rc.context[DISPATCHED_CTX_KEY]) ? (rc.context[DISPATCHED_CTX_KEY] as unknown[]).map(String) : [];
   if (!already.includes(step.id)) rc.context[DISPATCHED_CTX_KEY] = [...already, step.id];
   (rc.dangGui ??= new Map()).set(step.id, laStopGiao); // A2(n) (c) — in flight
+  if (auth.stopChuaDocGhim === true) (rc.danhDauGiao ??= new Set()).add(step.id); // T9 — this hand-over is the marked route's: nobody verified its pins
+  else rc.danhDauGiao?.delete(step.id);
   rc.dispatcherNoiKhongGhim?.delete(step.id); // T6c — only the answer to THIS hand-over counts
   let result: EquipmentCommandResult;
   try {
@@ -3242,6 +3302,13 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
   if (cong) baoKetCucKhongRo(rc, { loai: loaiGuiStop(rc, step.id, result.ok ? { kind: "ok" } : undefined), stepId: cong.chu.step.id, compId: step.id, error: rc.loiBuTru?.get(cong.chu.comp.id) ?? "", lan: luotDiCua(rc) });
   // A refused attempt is not "on its way" any more: a STOP whose retry an abort cancels is sent once more by the sweep.
   if (!result.ok) rc.dispatched.delete(step.id);
+  // A2(n) T9 (XAC_NHAN, D) — a closed list: a verified STOP for this dispatch, ok, not simulated, `acked_verified`. Anything else that went is only its trace (khongRoTruoc, xacNhan false)
+  const xacNhan = xnCho !== undefined && laStopGiao && result.ok && result.status === "acked_verified" && result.detail?.simulated !== true;
+  const vetKhongRo = xnCho !== undefined && result.ok ? { buoc: xnCho, ma: maKetCucKhongRoCua(rc.khongRoTai?.get(xnCho) ?? loiCuaChot(rc)), xacNhan } : null;
+  if (xacNhan && rc.store.kind === "central") {
+    const cu = rc.context[KET_CUC_KHONG_RO_XAC_NHAN_CTX_KEY];
+    rc.context[KET_CUC_KHONG_RO_XAC_NHAN_CTX_KEY] = { ...(cu && typeof cu === "object" && !Array.isArray(cu) ? (cu as Record<string, unknown>) : {}), [xnCho]: { stopId: step.id, at: new Date().toISOString() } };
+  }
   // R1b-2b-2a A2(o) AMENDMENT 2 — the edge refused it because its config went STALE after the authorisation (nothing sent, the
   // authorisation NOT used): HELD — no retry, no compensation; a Continue re-authorises it under the new config.
   const heldBy = result.ok || !rc.store.heldByDispatch ? null : await rc.store.heldByDispatch(step.id, { ok: result.ok, detail: (result.detail ?? null) as Record<string, unknown> | null });
@@ -3276,6 +3343,7 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
           accepted: result.ok,
           simulated: result.detail?.simulated ?? undefined,
           detail: result.detail ?? null,
+          ...(vetKhongRo ? { khongRoTruoc: vetKhongRo } : {}), // T9 (X5) — the trace of the unknown attempt before it: never cleared, the row carries no code
         },
       }),
     ),
