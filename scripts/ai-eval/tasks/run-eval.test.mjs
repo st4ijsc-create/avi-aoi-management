@@ -600,14 +600,25 @@ test("--tu-kiem-ma tat mà máy chủ trả done.tuKiemMa KHÔNG đọc được
   assert.ok(!fs.existsSync(ra) || fs.readdirSync(ra).length === 0);
 });
 
-test("--tu-kiem-ma giá trị lạ hoặc không phải trục H: thoát 2, không gọi model", async () => {
-  const g = await giaChatT1("luot");
-  for (const args of [["--truc", "H", "--base", g.url, "--cookie", ckT1("ckT1x.txt"), "--tu-kiem-ma", "co"], ["--truc", "M", "--tu-kiem-ma", "bat"]]) {
-    const r = await chay([...args, "--url", g.url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", path.join(tam, "raT1x")]);
+test("--tu-kiem-ma giá trị lạ: thoát 2 NGAY, lỗi nêu --tu-kiem-ma, không cần máy chủ (kiem-dinh P3: trước đây đột biến làm treo thay vì đỏ)", { timeout: 15_000 }, async () => {
+  const t0 = Date.now();
+  const r = await chay(["--truc", "H", "--base", "http://127.0.0.1:9", "--cookie", ckT1("ckT1z.txt"), "--url", "http://127.0.0.1:9", "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", path.join(tam, "raT1z"), "--tu-kiem-ma", "xyz"]);
+  assert.equal(r.ma, 2);
+  assert.match(r.err, /--tu-kiem-ma tat\|bat\|xen-ke, nhận: xyz/);
+  assert.ok(Date.now() - t0 < 10_000, `${Date.now() - t0} ms`);
+});
+
+// Không dựng máy chủ giả: nếu assert đỏ giữa chừng mà server chưa close thì tệp test treo (kiem-dinh m14). Cổng chết ⇒ lỗi phải đến từ kiểm cờ.
+test("--tu-kiem-ma giá trị lạ hoặc không phải trục H: thoát 2 trước khi gọi gì, lỗi nêu đúng lý do", { timeout: 15_000 }, async () => {
+  const CHET = "http://127.0.0.1:9";
+  for (const [args, loi] of [
+    [["--truc", "H", "--base", CHET, "--cookie", ckT1("ckT1x.txt"), "--tu-kiem-ma", "co"], /--tu-kiem-ma tat\|bat\|xen-ke, nhận: co/],
+    [["--truc", "M", "--tu-kiem-ma", "bat"], /--tu-kiem-ma chỉ dùng với --truc H/],
+  ]) {
+    const r = await chay([...args, "--url", CHET, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", path.join(tam, "raT1x")]);
     assert.equal(r.ma, 2, args.join(" "));
+    assert.match(r.err, loi, args.join(" "));
   }
-  g.sv.close();
-  assert.equal(g.yeuCau.length, 0);
 });
 
 test("không có --tu-kiem-ma: thân yêu cầu như cũ, hàng không có tuKiemMaLuot, báo cáo không có bảng T1", async () => {
