@@ -1,0 +1,11 @@
+{
+  "name": "bao-cao-don",
+  "version": "1.4.2",
+  "private": true,
+  "type": "module",
+  "description": "Báo cáo đơn hàng ra CSV cho kế toán — Node thuần, không phụ thuộc ngoài.",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "node --test test/baoCao.test.mjs"
+  }
+}

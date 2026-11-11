@@ -20,9 +20,10 @@ function danhSach() {
   for (const t of docJson("tasks-api2.json")) {
     ra.push({ stack: t.nhom, id: t.id, prompt: t.prompt, bai: { id: t.id, kieu: "ma-don", bo: "tasks-api2", lang: t.lang, ten: t.name, nguon: { tep: "tasks-api2.json", id: t.id }, canDb: false } });
   }
+  // (11/11, NC-8) bài `nhom: "dai"` (việc dài, nhiều tệp) vào bộ RIÊNG `agent-dai`: `--bo agent-f` vẫn đúng 6 bài cũ, so được với các đêm trước.
   for (const t of docJson("agent-f/bai.json")) {
     const duAn = `sandbox-projects/agent-f/${t.id}`;
-    ra.push({ stack: t.lang, id: t.id, prompt: t.cauHoi.replaceAll("{DA}", duAn), bai: { id: t.id, kieu: "agent-f", bo: "agent-f", lang: t.lang, ten: t.moTa, nguon: { tep: "agent-f/bai.json", id: t.id }, duAn, canDb: false } });
+    ra.push({ stack: t.lang, id: t.id, prompt: t.cauHoi.replaceAll("{DA}", duAn), bai: { id: t.id, kieu: "agent-f", bo: t.nhom === "dai" ? "agent-dai" : "agent-f", lang: t.lang, ten: t.moTa, nguon: { tep: "agent-f/bai.json", id: t.id }, duAn, canDb: false } });
   }
   return ra;
 }

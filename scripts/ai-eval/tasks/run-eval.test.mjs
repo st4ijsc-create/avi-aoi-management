@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { bangMarkdown, bangTuKiem, CHE_DO_TU_KIEM, coBaoCao, locCo, loiThamSo, LUAT_GIA_TRI, nhanTienTrinhNang, tachTenCongCu, tachTuKiemMa, tenBaoCao, tenCongCuBiet, tieuDeKhoa, tinhBang, tongHopTai, tuKiemMaChoLuot } from "./run-eval.mjs";
+import { bangMarkdown, bangTuKiem, CHE_DO_TU_KIEM, coBaoCao, hangAgentF, locCo, loiThamSo, LUAT_GIA_TRI, nhanTienTrinhNang, tachTenCongCu, tachTuKiemMa, tenBaoCao, tenCongCuBiet, tieuDeKhoa, tinhBang, tongHopTai, tuKiemMaChoLuot } from "./run-eval.mjs";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = JSON.parse(fs.readFileSync(path.join(DIR, "../codegen-chay-duoc/fake-hard.json"), "utf8"));
@@ -297,6 +297,21 @@ test("agent-f qua run-f --config mau --noi tam: mỗi bài một lần, gom đú
   assert.equal(bc.tong.dat, 1);
   assert.equal(bc.tong.cut, null);
   assert.equal(bc.hang[0].stack, "js");
+  // config mau: có bộ chấm (testDem) nhưng không có agent ⇒ không có buocDo
+  assert.equal(bc.hang[0].buocDo, undefined);
+  assert.ok(bc.hang[0].testDem.pass >= 12, JSON.stringify(bc.hang[0].testDem));
+  assert.equal(bc.hang[0].testDem.fail, 0);
+});
+
+test("hangAgentF: chuyển buocDo + testDem; vắng nguồn hoặc số hỏng thì không bịa trường", () => {
+  const buocDo = { soBuocDo: 3, luotMax: 3, soNen: 1, soCuuTran: 0, soDoiBam: 0, tokenUocDinh: 9000, vaoThatDinh: 8800, soCoCache: 3, cacheNTong: 5000, promptNTong: 4000 };
+  const x = { id: "py-a", luot: 2, dat: false, cham: { lyDo: ["TEST_DO"], dem: { pass: 9, fail: 4 }, canToiThieu: 13 }, agent: { usage: { ra: 77 }, ms: 1234, lyDo: "het-luot", buocDo } };
+  assert.deepEqual(hangAgentF(x, "py"), { id: "py-a", stack: "py", bo: "agent-f", mau: 2, dat: false, lyDo: ["TEST_DO"], cut: null, tokRa: 77, ms: 1234, lyDoDung: "het-luot", buocDo, testDem: { pass: 9, fail: 4, can: 13 } });
+  const tron = hangAgentF({ id: "py-b", luot: 1, dat: true }, "py");
+  assert.equal("buocDo" in tron, false);
+  assert.equal("testDem" in tron, false);
+  assert.deepEqual(hangAgentF({ id: "c", luot: 1, cham: { dem: { pass: "9" } }, agent: { buocDo: null } }, "py").testDem, undefined);
+  assert.deepEqual(hangAgentF({ id: "d", luot: 1, cham: { dem: { pass: 3 }, canToiThieu: "x" } }, "py").testDem, { pass: 3, fail: null, can: null });
 });
 
 test("tieuDeKhoa: tệp thắng khoá env; tệp hỏng không rơi về khoá env; không cấu hình thì không có tiêu đề", () => {

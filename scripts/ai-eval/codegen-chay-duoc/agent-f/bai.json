@@ -78,5 +78,57 @@
     },
     "soTest": { "hienThi": 7, "an": 8 },
     "tranGiayMs": 300000
+  },
+  {
+    "id": "py-doi-chu-ky",
+    "lang": "py",
+    "kieu": "pytest",
+    "nhom": "dai",
+    "moTa": "Đổi chữ ký hàm dùng ở 6 nơi trong 5 module (có gọi qua partial và qua tham số hàm), thêm 2 dataclass, giữ hành vi",
+    "cauHoi": "Dự án {DA} (Python, gói `van_chuyen` tính phí giao hàng, xem README) cần đổi chữ ký hàm `tinh_phi` trong `van_chuyen/phi.py`.\n\n1. Thêm vào `van_chuyen/phi.py` hai dataclass BẤT BIẾN (`frozen=True`):\n   - `DonVanChuyen(khoi_luong, khoang_cach)` — kg và km.\n   - `BieuPhi(co_ban=15000, moi_kg=2000, moi_km=500, toi_thieu=20000)`, và hằng `BIEU_PHI_CHUAN = BieuPhi()`.\n2. Đổi `tinh_phi(khoi_luong, khoang_cach)` thành `tinh_phi(don, *, bieu_phi=BIEU_PHI_CHUAN)`: `don` là `DonVanChuyen`, `bieu_phi` CHỈ truyền theo tên. Công thức như cũ nhưng lấy số từ `bieu_phi`: `co_ban + moi_kg * ceil(khoi_luong) + moi_km * ceil(khoang_cach)`, không thấp hơn `toi_thieu`.\n   - `don` không phải `DonVanChuyen` (ví dụ lời gọi kiểu cũ `tinh_phi(2, 10)`) ⇒ `TypeError`. Khối lượng hoặc khoảng cách âm ⇒ `ValueError` như cũ.\n3. Sửa MỌI nơi trong gói đang dùng `tinh_phi` (trực tiếp hoặc gián tiếp) sang chữ ký mới. Hành vi công khai của gói GIỮ NGUYÊN: mọi hàm và phương thức khác (`DonHang.phi_giao`, `bao_gia_nhieu`, `bao_gia_re_nhat`, `tong_hoa_don`, `phi_giao_noi_thanh`, `phi_sau_giam`) giữ chữ ký và trả đúng số như trước. Ví dụ: `DonHang(\"A1\", 100000, 2.3, 12.5).phi_giao()` vẫn là `27500`; `phi_giao_noi_thanh(3.5)` vẫn là `25500`.\n4. Xuất `DonVanChuyen`, `BieuPhi`, `BIEU_PHI_CHUAN` từ `van_chuyen/__init__.py` (cả trong `__all__`).\n\nTest hiện có phải vẫn xanh: `python -m pytest {DA}/tests`.",
+    "testHienThi": ["tests/test_van_chuyen.py"],
+    "tepBaoVe": ["tests/test_van_chuyen.py", "conftest.py"],
+    "testAn": ["tests/test_an_f_chu_ky.py"],
+    "soTest": { "hienThi": 6, "an": 10 },
+    "tranGiayMs": 60000
+  },
+  {
+    "id": "py-doi-soat",
+    "lang": "py",
+    "kieu": "pytest",
+    "nhom": "dai",
+    "moTa": "Công cụ đối soát tồn kho: gói 3 module + CLI có mã thoát + test của bài làm + mục README có lệnh mẫu chạy thật",
+    "cauHoi": "Dự án {DA} (Python, tiện ích tồn kho, xem README) cần công cụ ĐỐI SOÁT tồn sổ sách với tồn kiểm kê. Hai tệp vào là CSV UTF-8, dòng đầu là tiêu đề, có các cột `ma,ten,so_luong` (xem `du_lieu/`).\n\n1. Gói mới `doi_soat/` (ở gốc dự án), xuất từ `doi_soat/__init__.py`: `doc_ton`, `so_khop`, `dinh_dang`, `ChenhLech`.\n   - `doi_soat/doc_csv.py` — `doc_ton(duong) -> dict[str, int]`: mã → tổng số lượng. Mã chuẩn hoá bằng `chuan_hoa_ma` (có sẵn trong `chuan_hoa.py`); mã trùng trong một tệp thì CỘNG DỒN; `so_luong` bỏ khoảng trắng hai đầu rồi đọc số nguyên. Thiếu một trong ba cột ⇒ `ValueError(\"thiếu cột: <tên cột>\")`. `so_luong` không phải số nguyên ⇒ `ValueError` có chữ `dòng <n>` (n đếm cả dòng tiêu đề là dòng 1).\n   - `doi_soat/so_khop.py` — `ChenhLech` có thuộc tính `ma`, `so_sach`, `kiem_ke`, `chenh` (= `kiem_ke - so_sach`); `so_khop(so_sach, kiem_ke)` nhận hai dict như trên, trả list `ChenhLech` của các mã có `chenh != 0`, xếp theo mã tăng dần; mã chỉ có ở một phía thì phía kia là 0.\n   - `doi_soat/bao_cao.py` — `dinh_dang(ds) -> str`, ĐÚNG từng ký tự: dòng đầu `MA|SO_SACH|KIEM_KE|CHENH`; mỗi chênh lệch một dòng `<ma>|<so_sach>|<kiem_ke>|<chenh>`; dòng cuối `TONG|<số dòng chênh>|<tổng chenh>`. `chenh` và tổng ghi DẤU khi dương (`+2`), âm như thường (`-3`), không là `0`. Mỗi dòng kết thúc bằng `\n` (kể cả dòng cuối). Danh sách rỗng ⇒ `MA|SO_SACH|KIEM_KE|CHENH\nTONG|0|0\n`.\n2. CLI `scripts/chay_doi_soat.py`, chạy từ gốc dự án: `python scripts/chay_doi_soat.py <so_sach.csv> <kiem_ke.csv> [--out <tệp>]`.\n   - In báo cáo (`dinh_dang`) ra stdout. Có `--out`: ghi báo cáo ra tệp đó, stdout chỉ in đúng một dòng `Đã ghi báo cáo <N> dòng chênh ra <tệp>` (N = số dòng chênh, `<tệp>` y như tham số).\n   - Mã thoát: 0 nếu không có chênh lệch, 1 nếu có, 2 nếu lỗi dữ liệu vào (tệp không mở được, thiếu cột, số lượng hỏng): khi đó stdout rỗng và stderr bắt đầu bằng `Lỗi: `.\n   - Test chạy CLI trong tiến trình con với `PYTHONUTF8=1`.\n3. Test của bạn: `tests/test_doi_soat.py`, ít nhất 4 hàm `test_...`, phải xanh.\n4. Thêm vào `README.md` một mục tiêu đề đúng `## Đối soát tồn kho`, có một khối ```bash mà dòng lệnh đầu tiên chạy được nguyên văn từ gốc dự án trên dữ liệu mẫu `du_lieu/so_sach.csv` và `du_lieu/kiem_ke.csv`.\n\nTest hiện có phải vẫn xanh: `python -m pytest {DA}/tests`.",
+    "testHienThi": ["tests/test_chuan_hoa.py"],
+    "tepBaoVe": ["tests/test_chuan_hoa.py", "conftest.py"],
+    "testAn": ["tests/test_an_f_doi_soat.py"],
+    "soTest": { "hienThi": 3, "an": 11 },
+    "tranGiayMs": 180000
+  },
+  {
+    "id": "ts-tach-module",
+    "lang": "ts",
+    "kieu": "node",
+    "nhom": "dai",
+    "moTa": "Tách một module 4 phần thành 4 module + index, tệp cũ chỉ còn re-export, không import ngược/vòng, test riêng cho từng module",
+    "cauHoi": "Dự án {DA} (TypeScript chạy thẳng bằng Node 24 — type stripping, xem README): `src/donHang.ts` gom cả bốn phần nghiệp vụ vào một tệp. Hãy TÁCH nó thành các module trong thư mục mới `src/donHang/`, hành vi giữ nguyên:\n\n1. Mỗi module xuất ĐÚNG các tên sau (giá trị lúc chạy; kiểu `type`/`interface` đi theo module của nó):\n   - `src/donHang/phanTich.ts`: `LoiDinhDang`, `phanTichDong`, `phanTichDon` (cùng kiểu `LoaiHang`, `DongDon`).\n   - `src/donHang/gia.ts`: `BANG_MA_GIAM`, `thanhTien`, `tamTinh`, `timMaGiam`, `tienGiam` (cùng kiểu `MaGiam`).\n   - `src/donHang/thue.ts`: `THUE_SUAT`, `thueDong`, `tongThue`.\n   - `src/donHang/dinhDang.ts`: `dinhDangVnd`, `tongKet`, `inHoaDon` (cùng kiểu `TongKet`).\n   - `src/donHang/index.ts`: xuất lại tất cả các tên trên.\n2. Thân hàm/lớp chỉ nằm ở MỘT chỗ — module của nó. `src/donHang.ts` chỉ còn các câu `export … from \"./donHang/…\"` (giữ đường import cũ cho người dùng); `src/index.ts` vẫn là điểm vào công khai.\n3. Module trong `src/donHang/` KHÔNG import `src/donHang.ts` hay `src/index.ts`, và không import vòng lẫn nhau. Node chạy TS bằng type stripping: kiểu chỉ import bằng `import type`.\n4. Thêm test cho từng module: `test/donHang/phanTich.test.ts`, `gia.test.ts`, `thue.test.ts`, `dinhDang.test.ts` — mỗi tệp ít nhất 2 ca `test(...)`, import thẳng module đó (`../../src/donHang/<tên>.ts`), và phải xanh.\n\nTest hiện có phải vẫn xanh: `node --test {DA}/test/donHang.test.ts`.",
+    "testHienThi": ["test/donHang.test.ts"],
+    "tepBaoVe": ["test/donHang.test.ts"],
+    "testAn": ["test/an-f.test.ts"],
+    "soTest": { "hienThi": 5, "an": 6 },
+    "tranGiayMs": 180000
+  },
+  {
+    "id": "js-loi-3-lop",
+    "lang": "js",
+    "kieu": "node",
+    "nhom": "dai",
+    "moTa": "Sửa lỗi lệch 1 đồng khi trả hàng: triệu chứng ở CSV, gốc ở phép làm tròn dùng chung, đi qua lớp cộng dồn; kèm test hồi quy đỏ-trước-xanh-sau",
+    "cauHoi": "Báo lỗi từ kế toán, dự án {DA} (báo cáo đơn hàng ra CSV, Node thuần, xem README):\n\n> Báo cáo CSV tháng này lệch 1 đồng ở mấy đơn có trả hàng, đối chiếu với sổ không khớp. Ví dụ đơn DH-102: khách mua 1 áo giá 12.345 đ có giảm 10 %, hôm sau trả lại đúng cái áo đó. Đơn này phải ra tổng 0 đ, nhưng file CSV ghi dòng `DH-102,2,-1,0,-1`. Đơn không có trả hàng thì đúng.\n\nYêu cầu:\n- Tìm nguyên nhân và sửa TẬN GỐC: một dòng trả hàng phải đúng bằng số âm của dòng bán tương ứng ở mọi khoản (tiền sau giảm, thuế), với mọi đơn giá và mức giảm. Số của đơn không có trả hàng giữ nguyên.\n- KHÔNG đổi định dạng CSV (phần mềm kế toán đọc theo cột).\n- Thêm một tệp test hồi quy mới trong `test/` (đuôi `.test.mjs`) tái hiện đúng lỗi này: phải đỏ trên mã trước khi sửa và xanh sau khi sửa.\n\nTest hiện có phải vẫn xanh: `node --test {DA}/test/baoCao.test.mjs`.",
+    "testHienThi": ["test/baoCao.test.mjs"],
+    "tepBaoVe": ["test/baoCao.test.mjs"],
+    "testAn": ["test/an-f.test.mjs"],
+    "soTest": { "hienThi": 4, "an": 6 },
+    "tranGiayMs": 120000
   }
 ]
