@@ -574,6 +574,13 @@ export interface LiveRunHandle {
 
 /** runId → live driver handle (the RunContext itself). Entry removed when the driver returns. */
 const liveRuns = new Map<number, RunContext>();
+/**
+ * A2(n) T8 lượt sửa 1 (CHAN-3) — is a walker of this run alive in THIS process: what the URGENT obligation sweep (foeRunStore.quetUrgentChuaBen, its required `walkerSong`) asks before it tells a central
+ * run. One central engine process assumed (foeRunStore.cheDoProcessEngine). T12 wires it. A boolean only: nothing of the run is read out.
+ */
+export function coWalkerSongTrongProcess(runId: number): boolean {
+  return liveRuns.has(runId);
+}
 
 interface RunContext extends LiveRunHandle, RunStoreContext {
   runId: number;

@@ -264,6 +264,9 @@ const ALLOW_ENGINE: Record<string, string> = {
     "EDGE only: acts on a walker alive in THIS process (liveRuns) on central's stop signal, and only STOPS (L-7) — nothing to see, nothing new to start",
   resendStopsOfAbortedRun:
     "EDGE only: re-sends the unconfirmed STOPs of a run the DB shows ABORTED (never aborts or reads out anything; only STOPs, L-7) — listed for THIS node by central (its assignment)",
+  // A2(n) T8 lượt sửa 1 (CHAN-3)
+  coWalkerSongTrongProcess:
+    "central, no caller identity: a boolean of this process's own memory (liveRuns) for the URGENT obligation sweep (foeRunStore.quetUrgentChuaBen, its required walkerSong; T12 wires it); reads no row, returns nothing of the run to anyone, sends nothing",
   // A2(n) T7b-3 (H36)
   baoKetThucKhongQuetSauDoanEdge:
     "central, no caller identity: called only by completeForNodeV2 once the end of THIS node's segment has committed (after its claim, assignment and stream checks); reads the run that end wrote, raises the URGENT of a STOP still owed to the run's owner + admins / supervisors, returns nothing to anyone and sends nothing",

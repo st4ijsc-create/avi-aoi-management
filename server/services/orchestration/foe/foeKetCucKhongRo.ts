@@ -156,6 +156,12 @@ export const KET_CUC_KHONG_RO_CHOT_CTX_KEY = "foeKetCucKhongRoChot";
  */
 export const KET_CUC_KHONG_RO_DA_BAO_CTX_KEY = "foeKetCucKhongRoDaBao";
 /**
+ * A2(n) T8 lượt sửa 1 (CHAN-1, CHAN-2) — run-context key (central-written, by the URGENT obligation sweep foeRunStore.quetUrgentChuaBen ONLY): what the sweep stored, the latch's run_end and each mark's URGENT
+ * by its key. Never DA_BAO: DA_BAO keeps "the walker's end told the latch", which an Abort's sweep reads to say the walk's words again (foeEngine.abortStopSweep, `tien`); that reader never reads this key.
+ * Never written by an edge (edgeContextPolicy keeps central keys out).
+ */
+export const KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY = "foeKetCucKhongRoDaBaoQuet";
+/**
  * A2(n) T7b-1 (no-cho-T7b, DUYỆT) — run-context key (central-written, by the walk: foeEngine.datChuaRa, persisted with the context, the `held` write of the end gate too): the STOPs this run's
  * walk left in state C, ids only. The debt is the rows' AND this (foeRunStore.stopChuaRaTuHang): a row in state C is a bounded write and may be the one lost. It only ADDS evidence of a debt; it
  * never clears one a row names. Never written by an edge (edgeContextPolicy keeps central keys out).

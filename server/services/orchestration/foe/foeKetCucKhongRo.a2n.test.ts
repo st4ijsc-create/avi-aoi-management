@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { banSaoHang } from "../../../routers/__otFakeDb"; // A2(n) T7b-1d lượt sửa 1 — one definition of what a database hands back
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import ts from "typescript"; // A2(n) T8 — the sweeper census reads the sources
 
@@ -2289,10 +2289,13 @@ describe("A2(n) T7b-3 H37 — the words of a stuck edge report stream", () => {
 });
 
 // A2(n) T8 (plan point 4, dieu-phoi 11/11) — CENSUS (AST): the URGENT obligation sweeper only raises. Every function it reaches, followed through foeRunStore.ts and foeKetCucKhongRo.ts (the modules of its
-// raises), calls no walk, no engine, no dispatcher, no status write. A call into another module is allowed only from the list below (its read, its raise, its bound)
+// raises), calls no walk, no engine, no dispatcher, no status write. lượt sửa 1 (rà T8 M12, M13): a call by a computed name (`o["dis" + "patch"](…)`) is refused outright, a `.set(…)` takes an object literal
+// only (no variable, no spread), and every name called that is not a function of the two files is in the list CHO_PHEP below: a new one is red until it is read and listed
 describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes no status", () => {
   const TEP = ["foeRunStore.ts", "foeKetCucKhongRo.ts"];
   const CAM = new Set(["execStep", "dispatch", "sendCommand", "dispatchRobotJob", "getAdapter", "abortRun", "abortStopSweep", "runAbortStopSweep", "resumeRun", "startRun", "driveRun", "driveRunFromResume", "guiStopSauChot", "resendAbortStops", "setRunStatus", "setRunStatusUnlessAborted", "setRunStatusUnlessAbortedOn", "upsertStep", "upsertStepOn", "recordEdgeStepRows", "applyEdgeSegmentEnd"]);
+  /** the names it may call that are no function of the two files: the database's reads and the mark's write, the bound, the alert, the log, the language's own */
+  const CHO_PHEP = new Set<string>(["Number", "String", "add", "allStepsOf", "and", "catch", "clear", "createAuditContext", "delete", "entries", "eq", "error", "exec", "filter", "find", "flatMap", "for", "from", "fromEntries", "get", "getDb", "getTime", "has", "inArray", "isArray", "isFinite", "isSafeInteger", "join", "keys", "limit", "logCrudOperation", "map", "max", "napAudit", "napCanhBao", "next", "now", "push", "raiseCriticalStopAlert", "resolve", "round", "select", "set", "soNguoiNhan", "some", "sort", "startsWith", "t", "test", "then", "toISOString", "transaction", "trim", "update", "walkerSong", "warn", "where", "withDeadline", "xong"]);
   const nguon = new Map(TEP.map((t) => [t, ts.createSourceFile(t, readFileSync(resolve(__dirname, t), "utf8"), ts.ScriptTarget.Latest, true)] as const));
   /** every top-level function of the two files, by name (a declaration, or a const holding an arrow / function) */
   const ham = new Map<string, ts.Node>();
@@ -2302,26 +2305,33 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
       if (ts.isVariableStatement(st)) for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name) && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) ham.set(d.name.text, d.initializer.body);
     }
   }
-  /** the names called in a body (a.b(): b), and the object literals of a .set(...) */
+  /** the names called in a body (a.b(): b), the calls by a computed name, and the argument of a one-argument .set(...) (an update's) that is no plain object literal or that writes `status` */
   const goiTrong = (n: ts.Node) => {
     const goi: string[] = [];
+    const tenTinh: string[] = [];
     const ghiTrangThai: string[] = [];
     const di = (x: ts.Node) => {
       if (ts.isCallExpression(x)) {
-        const e = x.expression;
+        let e: ts.Expression = x.expression;
+        while (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e) || ts.isAsExpression(e)) e = e.expression;
         const ten = ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : null;
         if (ten) goi.push(ten);
-        if (ten === "set") for (const a of x.arguments) if (ts.isObjectLiteralExpression(a) && a.properties.some((p) => p.name && ts.isIdentifier(p.name) && p.name.text === "status")) ghiTrangThai.push(a.getText().slice(0, 80));
+        else if (ts.isElementAccessExpression(e)) tenTinh.push(x.getText().slice(0, 80));
+        if (ten === "set" && x.arguments.length === 1) // a drizzle update's .set (a Map's .set takes two)
+          for (const a of x.arguments) {
+            if (!ts.isObjectLiteralExpression(a) || a.properties.some((p) => ts.isSpreadAssignment(p) || (p.name !== undefined && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && p.name.text === "status") || (p.name !== undefined && ts.isComputedPropertyName(p.name)))) ghiTrangThai.push(a.getText().slice(0, 80));
+          }
       }
       ts.forEachChild(x, di);
     };
     di(n);
-    return { goi, ghiTrangThai };
+    return { goi, tenTinh, ghiTrangThai };
   };
   const tamVoi = () => {
     const thay = new Set<string>();
     const cho = ["quetUrgentChuaBen"];
     const goi = new Set<string>();
+    const tenTinh: string[] = [];
     const ghiTrangThai: string[] = [];
     while (cho.length) {
       const t = cho.pop()!;
@@ -2330,23 +2340,31 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
       const than = ham.get(t);
       if (!than) continue;
       const g = goiTrong(than);
+      tenTinh.push(...g.tenTinh);
       ghiTrangThai.push(...g.ghiTrangThai);
       for (const x of g.goi) {
         goi.add(x);
         if (ham.has(x)) cho.push(x);
       }
     }
-    return { thay, goi, ghiTrangThai };
+    return { thay, goi, tenTinh, ghiTrangThai };
   };
-  it("the sweeper is there, and what it reaches: its raises (baoKhongXacNhan, canhBaoKetCucKhongRo), the bound, the reads, the DA_BAO write", () => {
+  it("the sweeper is there, and what it reaches: its raises (baoKhongXacNhan, canhBaoKetCucKhongRo), the bound, the reads, its own mark's write", () => {
     const { thay } = tamVoi();
-    for (const t of ["quetUrgentChuaBen", "quetMotRun", "ghiDaBaoQuet", "baoKhongXacNhan", "canhBaoKetCucKhongRo", "motBen"]) expect([...thay], t).toContain(t);
+    for (const t of ["quetUrgentChuaBen", "quetMotRun", "ghiDaBaoQuet", "docDaBaoQuet", "baoKhongXacNhan", "canhBaoKetCucKhongRo", "motBen"]) expect([...thay], t).toContain(t);
   });
   it("no walk, no engine, no dispatcher, no step-row write: none of them is called by anything it reaches", () => {
     const { goi } = tamVoi();
     expect([...goi].filter((x) => CAM.has(x))).toEqual([]);
   });
-  it("no status write: no .set({ status }) in anything it reaches (DA_BAO is a context write)", () => {
+  it("no call by a computed name (M12): a name the census cannot read is refused", () => {
+    expect(tamVoi().tenTinh).toEqual([]);
+  });
+  it("every name it calls outside the two files is listed (CHO_PHEP): nothing new reaches it unread", () => {
+    const { goi } = tamVoi();
+    expect([...goi].filter((x) => !ham.has(x) && !CHO_PHEP.has(x)).sort()).toEqual([]);
+  });
+  it("no status write: a .set(...) takes an object literal only, no variable, no spread, no computed key, no status (M13); its mark is a context write", () => {
     expect(tamVoi().ghiTrangThai).toEqual([]);
   });
   it("no static import of a dispatcher, the equipment adapter or the engine in the two files (a type import is no code)", () => {
@@ -2354,5 +2372,35 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
       const imp = sf.statements.filter(ts.isImportDeclaration).filter((d) => !d.importClause?.isTypeOnly).map((d) => (d.moduleSpecifier as ts.StringLiteral).text);
       expect(imp.filter((m) => /commandDispatcher|robotCommandDispatcher|foeEngine|equipmentAdapter$/.test(m)), t).toEqual([]);
     }
+  });
+  // lượt sửa 1 (CHAN-1, kế hoạch mục 13 "Bài học": census of the readers of a mark) — who reads DA_BAO, who reads the sweep's own mark
+  it("CHAN1-DOC-DA_BAO the readers of DA_BAO and of the sweep's mark DA_BAO_QUET: the sweep alone reads its own mark; abortStopSweep reads DA_BAO only; the raw keys only at their constants", () => {
+    const GOC = resolve(__dirname, "../../..");
+    const tep = (dir: string, out: string[] = []): string[] => {
+      for (const ten of readdirSync(dir)) {
+        const p = resolve(dir, ten);
+        if (statSync(p).isDirectory()) tep(p, out);
+        else if (/\.tsx?$/.test(ten) && !/\.test\.tsx?$/.test(ten) && !ten.startsWith("__")) out.push(p);
+      }
+      return out;
+    };
+    const ten = (p: string) => p.slice(GOC.length + 1).replace(/\\/g, "/");
+    const ds = tep(GOC);
+    const co = (re: RegExp) => ds.filter((p) => re.test(readFileSync(p, "utf8"))).map(ten).sort();
+    expect(co(/KET_CUC_KHONG_RO_DA_BAO_CTX_KEY\b/), "DA_BAO").toEqual(["services/orchestration/foe/foeEngine.ts", "services/orchestration/foe/foeKetCucKhongRo.ts", "services/orchestration/foe/foeRunStore.ts"]);
+    expect(co(/KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY\b/), "DA_BAO_QUET").toEqual(["services/orchestration/foe/foeKetCucKhongRo.ts", "services/orchestration/foe/foeRunStore.ts"]);
+    expect(co(/"foeKetCucKhongRoDaBao(Quet)?"/), "the raw keys").toEqual(["services/orchestration/foe/foeKetCucKhongRo.ts"]);
+    // in foeRunStore the sweep's mark is read and written only by the sweep's own functions
+    const sf = nguon.get("foeRunStore.ts")!;
+    const nguoiDoc: string[] = [];
+    for (const st of sf.statements) {
+      const tenHam = ts.isFunctionDeclaration(st) && st.name ? st.name.text : null;
+      if (tenHam && st.getText().includes("KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY")) nguoiDoc.push(tenHam);
+    }
+    expect(nguoiDoc.sort()).toEqual(["ghiDaBaoQuet", "quetMotRun"]);
+    const e = readFileSync(resolve(__dirname, "foeEngine.ts"), "utf8");
+    const tien = e.split(/\r?\n/).filter((l) => /const tien = /.test(l));
+    expect(tien, "abortStopSweep: the walker's word (DA_BAO), never the sweep's mark").toHaveLength(1);
+    expect(tien[0]).toMatch(/KET_CUC_KHONG_RO_DA_BAO_CTX_KEY\] == null/);
   });
 });

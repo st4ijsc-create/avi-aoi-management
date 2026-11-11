@@ -14,6 +14,7 @@
  * the edge store answers a STOP without asking central.
  */
 import { randomUUID } from "node:crypto";
+import cluster from "node:cluster"; // A2(n) T8 lượt sửa 1 (CHAN-3) — cheDoProcessEngine
 import { isStopCommandType } from "../../ot/loaiLenhStop";
 import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
@@ -44,9 +45,10 @@ import {
   type GateRequiredReason,
 } from "./foeGateApproval";
 import { toRobotJob } from "../../equipment/robotJobMapping";
+import { runEdgeAssignments } from "../../edge/edgeExecutionSchema"; // A2(n) T8 lượt sửa 1 (CHAN-3) — a run given to an edge node: its claim's progress is its heartbeat
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
 
@@ -617,7 +619,8 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
   const doi = x.chiDoi === true || giuNo; // held is no end: nothing new is raised
   const dau = rows.filter((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX) && dauKhongXacNhan(r.resultJson) !== null);
   const label = `FOE run ${x.runId} end-of-run URGENT`;
-  // N-3 — the one bound of every wait together: once it is past, a wait that has no answer yet is no yes; an answer already there still counts (it settles first)
+  // N-3 — the one bound of every wait together: once it is past, every later wait reads no (an answer already in, too: motBen settles a few microtasks after the bound's own promise). The outcome is
+  // held either way (one wait already failed); only the list of marks named in the held words may then name one stored. Every raise is still made
   const hetTong: Promise<false> | null = tongMs === undefined ? null : withDeadline(new Promise<never>(() => undefined), tongMs, `${label} (all waits)`, { unref: true }).catch(() => false as const);
   const choi = (p: Promise<boolean>): Promise<boolean> => (hetTong ? Promise.race([p, hetTong]) : p);
   let benChot = true;
@@ -659,43 +662,97 @@ export const KET_DOAN_EDGE_TONG_MS = 5 * STOP_DB_STEP_DEADLINE_MS;
 /** A2(n) T8 — a live run (a walker may still reach its own end and raise its own URGENT) is swept only once nothing of it has changed for this long. T12 sets the period. */
 export const QUET_URGENT_TUOI_TOI_THIEU_MS = 5 * 60_000;
 const QUET_URGENT_STATUS = ["held", "awaiting_confirm", "aborted", "running", "compensating", "queued"] as const;
+/** M9a — the statuses a walker may still be on: the minimum age applies to each of them */
 const QUET_URGENT_SONG: ReadonlySet<string> = new Set(["running", "compensating", "queued"]);
+/** T8 lượt sửa 1 (CHAN-3) — the statuses of a run a CENTRAL walker walks */
+const QUET_URGENT_WALKER_TRUNG_TAM: ReadonlySet<string> = new Set(["running", "compensating"]);
 
-/** the latest moment the run or one of its rows changed; NaN ⇔ nothing says (then the run is old enough: the side that raises) */
-function mocMoiNhat(run: { updatedAt?: unknown; startedAt?: unknown }, rows: ReadonlyArray<{ startedAt?: unknown; finishedAt?: unknown; createdAt?: unknown }>): number {
+/**
+ * A2(n) T8 lượt sửa 1 (CHAN-3) — how many processes may run the central engine. The live-walker check of the sweep (`walkerSong`, the engine's liveRuns) sees this process only: it holds on the
+ * assumption of ONE central engine process (the Dockerfile's `node dist/index.js`). What this process can see of more: a cluster worker, pm2's NODE_APP_INSTANCE, WEB_CONCURRENCY above 1 ("nhieu");
+ * WEB_CONCURRENCY that is no positive integer ("khongRo"). Another host or container running the engine is not visible from here: the assumption is the deployment's (bàn giao).
+ */
+export type CheDoProcessEngine = "mot" | "nhieu" | "khongRo";
+export function cheDoProcessEngine(env: NodeJS.ProcessEnv = process.env, laWorker: boolean = cluster.isWorker === true): CheDoProcessEngine {
+  if (laWorker || env.NODE_APP_INSTANCE !== undefined) return "nhieu";
+  const wc = env.WEB_CONCURRENCY;
+  if (wc === undefined || wc.trim() === "") return "mot";
+  const n = Number(wc);
+  if (!Number.isSafeInteger(n) || n < 1) return "khongRo";
+  return n > 1 ? "nhieu" : "mot";
+}
+
+/** the latest moment the run, its rows or its edge claim (the node's progress: the edge walker's heartbeat) changed; NaN ⇔ nothing says (then the run is old enough: the side that raises) */
+function mocMoiNhat(run: { updatedAt?: unknown; startedAt?: unknown }, rows: ReadonlyArray<{ startedAt?: unknown; finishedAt?: unknown; createdAt?: unknown }>, claim: { lastProgressAt?: unknown; claimedAt?: unknown } | null): number {
   const t = (v: unknown) => (v instanceof Date || typeof v === "string" || typeof v === "number" ? new Date(v as string).getTime() : NaN);
-  const ts = [t(run.updatedAt), t(run.startedAt), ...rows.flatMap((r) => [t(r.startedAt), t(r.finishedAt), t(r.createdAt)])].filter((n) => Number.isFinite(n));
+  const ts = [t(run.updatedAt), t(run.startedAt), ...rows.flatMap((r) => [t(r.startedAt), t(r.finishedAt), t(r.createdAt)]), t(claim?.lastProgressAt), t(claim?.claimedAt)].filter((n) => Number.isFinite(n));
   return ts.length ? Math.max(...ts) : NaN;
 }
 
-/** DA_BAO written by the sweep: under the row lock, merged into the context as it is now (one key, nothing else of it rewritten), never over one already there. Bounded by D, best-effort. */
-async function ghiDaBaoQuet(d: RunDb, runId: number, stepId: string): Promise<void> {
+/**
+ * T8 lượt sửa 1 (CHAN-1, CHAN-2) — the sweep's OWN durable mark, never DA_BAO: DA_BAO keeps its meaning "the walker's end told the latch" (abortStopSweep's `tien` reads it to say the walk's words again,
+ * and must not take the sweep's run_end for them). `{ chot?: { stepId, at }, dau?: { <run>:<step>:<form>:<claim>: at } }`: the latch's run_end and each mark's URGENT the sweep stored. Read by the sweep only.
+ * A value that is no such object is a READ ERROR: the sweep raises again (one line for that process: an URGENT repeated is noise, one lost is type (2)) and logs it; its write puts a sound value back.
+ */
+interface DauQuet {
+  chot: { stepId: string; at: string } | null;
+  dau: Record<string, string>;
+}
+function docDaBaoQuet(v: unknown): DauQuet | "loi" {
+  if (v === undefined || v === null) return { chot: null, dau: {} };
+  if (typeof v !== "object" || Array.isArray(v)) return "loi";
+  const o = v as { chot?: unknown; dau?: unknown };
+  const chot = o.chot === undefined || o.chot === null ? null : typeof o.chot === "object" && typeof (o.chot as { stepId?: unknown }).stepId === "string" ? { stepId: (o.chot as { stepId: string }).stepId, at: String((o.chot as { at?: unknown }).at ?? "") } : "loi";
+  if (chot === "loi") return "loi";
+  if (o.dau !== undefined && (typeof o.dau !== "object" || o.dau === null || Array.isArray(o.dau))) return "loi";
+  const dau: Record<string, string> = {};
+  for (const [k, x] of Object.entries((o.dau ?? {}) as Record<string, unknown>)) {
+    if (typeof x !== "string") return "loi";
+    dau[k] = x;
+  }
+  return { chot, dau };
+}
+
+/** The sweep's mark, under the row lock, merged into the context as it is now (only its own key; DA_BAO never), adding what this round stored. Bounded by D, best-effort: a lost write raises again. */
+async function ghiDaBaoQuet(d: RunDb, runId: number, them: { chot?: string; dau?: readonly string[] }): Promise<void> {
   await withDeadline(
     d.transaction(async (tx) => {
       const [run] = await tx.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).for("update").limit(1);
       if (!run) return;
       const ctx = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
-      if (ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] != null) return;
-      await tx.update(orchestrationRuns).set({ contextJson: { ...ctx, [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId, at: new Date().toISOString() } } }).where(eq(orchestrationRuns.id, runId));
+      const cu = docDaBaoQuet(ctx[KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY]);
+      const goc: DauQuet = cu === "loi" ? { chot: null, dau: {} } : cu;
+      const at = new Date().toISOString();
+      const moi = { chot: goc.chot ?? (them.chot ? { stepId: them.chot, at } : null), dau: { ...goc.dau, ...Object.fromEntries((them.dau ?? []).filter((k) => !(k in goc.dau)).map((k) => [k, at] as const)) } };
+      await tx.update(orchestrationRuns).set({ contextJson: { ...ctx, [KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY]: moi } }).where(eq(orchestrationRuns.id, runId));
     }),
     STOP_DB_STEP_DEADLINE_MS,
-    `FOE run ${runId} DA_BAO (sweep)`,
-  ).catch((err: unknown) => console.error(`[FOE] run ${runId}: DA_BAO not written by the sweep: ${(err as Error)?.message ?? err}`));
+    `FOE run ${runId} DA_BAO_QUET`,
+  ).catch((err: unknown) => console.error(`[FOE] run ${runId}: the sweep's mark (DA_BAO_QUET) not written: ${(err as Error)?.message ?? err}`));
+}
+
+/** T8 lượt sửa 1 — what this process stored already: a lost mark write, or an unreadable one, raises once per process, not at every round */
+const quetDaBenTrongProcess = new Set<string>();
+/** Tests only: a restart forgets this process's memory (the durable mark DA_BAO_QUET must carry the rest). */
+export function __quenBoNhoQuetChoTest(): void {
+  quetDaBenTrongProcess.clear();
 }
 
 /**
  * A2(n) T8 (plan point 4, C-4, B) — THE sweep of the durable-URGENT obligation. A run whose URGENT never became durable and that no end will ever reach (an edge node dead for good: no record again, no
  * segment end; a held run whose URGENT failed) is told again, until it is stored:
- *   • chosen by its ROWS and its context: the latch (the context's key, else chotTuHang of the rows and of central's resume state) without DA_BAO; each marked row (stopKhongXacNhan) whose URGENT
- *     has no durable answer in this process. Status held / awaiting_confirm / aborted, and running / compensating / queued once nothing of the run changed for `tuoiMs` (a live walker raises its own);
- *   • the SAME URGENTs, under the SAME keys, as the end gate: run_end `…:<run>:<latch step>:-:chot` (canhBaoKetCucKhongRo), the mark's of the report path (baoKhongXacNhan). One key each: a sweep
- *     again raises nothing once it is durable (DA_BAO for the latch; the marks' answers in this process, as the end gate reads them: a restart raises a mark once more, the durable dedup answers);
- *   • it ONLY raises: no walk, no engine, no command, no status. DA_BAO is written merged, under the row lock, when the latch's URGENT is stored.
- * Another call's raise counts only when it said stored (Q-7): an answer of false, or none in time, is raised again. Confirmation (XAC_NHAN, decision 3) is T9's: every latched run is told until then.
- * Placement: plan point 4 puts it in foeKetCucKhongRo.ts. It lives here (dieu-phoi 11/11): it raises through baoKhongXacNhan and reads benKhongXacNhanCho, both of this module, which imports
- * foeKetCucKhongRo already (a cycle otherwise). Nothing calls it at boot or on a period yet: T12 does, once the SELECT is measured on DEV (no-cho-T12.md). Never throws.
+ *   • chosen by its ROWS and its context: the latch (the context's key, else chotTuHang of the rows and of central's resume state) told neither by the walker (DA_BAO) nor by the sweep (DA_BAO_QUET);
+ *     each marked row (stopKhongXacNhan) whose URGENT the sweep has not stored (DA_BAO_QUET, durable: no 24-hour dedup window behind it). Status held / awaiting_confirm / aborted; running /
+ *     compensating / queued once nothing of the run changed for `tuoiMs`: the run row, its rows, and for a run given to an edge node its claim's progress (the node's heartbeat);
+ *   • lượt sửa 1 (CHAN-3) — a run a CENTRAL walker walks (no edge assignment) is skipped while `walkerSong` says its walker is alive. `walkerSong` is required (the engine's liveRuns: injected, no import
+ *     cycle; T12 wires foeEngine.coWalkerSongTrongProcess). It sees ONE process: when cheDoProcessEngine says more, or cannot tell, a central `running` / `compensating` run is not told (logged).
+ *     A run given to an edge node has no central walker: the age of its reports decides, whatever the mode (a dead node's run stays `running` at central);
+ *   • the SAME URGENTs, under the SAME keys, as the end gate: run_end `…:<run>:<latch step>:-:chot` (canhBaoKetCucKhongRo), the mark's of the report path (baoKhongXacNhan);
+ *   • it ONLY raises: no walk, no engine, no command, no status. Its mark is written merged, under the row lock, once a raise is stored.
+ * Another call's raise counts only when it said stored (Q-7). Confirmation (XAC_NHAN, decision 3) is T9's. Placement: plan point 4 puts it in foeKetCucKhongRo.ts. It lives here (dieu-phoi 11/11): it raises
+ * through baoKhongXacNhan and reads benKhongXacNhanCho, both of this module, which imports foeKetCucKhongRo already (a cycle otherwise). Nothing calls it at boot or on a period yet: T12 does. Never throws.
  */
-export async function quetUrgentChuaBen(o: { gioiHan?: number; bayGio?: number; tuoiMs?: number } = {}): Promise<{ quet: number; ben: number; chuaBen: number }> {
+export async function quetUrgentChuaBen(o: { walkerSong: (runId: number) => boolean; cheDo?: CheDoProcessEngine; gioiHan?: number; bayGio?: number; tuoiMs?: number }): Promise<{ quet: number; ben: number; chuaBen: number }> {
   const out = { quet: 0, ben: 0, chuaBen: 0 };
   let d: RunDb | null = null;
   try {
@@ -704,8 +761,7 @@ export async function quetUrgentChuaBen(o: { gioiHan?: number; bayGio?: number; 
     return out;
   }
   if (!d) return out;
-  const bayGio = o.bayGio ?? Date.now();
-  const tuoi = o.tuoiMs ?? QUET_URGENT_TUOI_TOI_THIEU_MS;
+  const x: QuetMot = { bayGio: o.bayGio ?? Date.now(), tuoi: o.tuoiMs ?? QUET_URGENT_TUOI_TOI_THIEU_MS, walkerSong: o.walkerSong, cheDo: o.cheDo ?? cheDoProcessEngine(), boQuaNhieuProcess: [] };
   const gioiHan = o.gioiHan ?? 100;
   let runs: OrchestrationRun[];
   try {
@@ -718,7 +774,7 @@ export async function quetUrgentChuaBen(o: { gioiHan?: number; bayGio?: number; 
     if (out.quet >= gioiHan) break;
     let ben: boolean | null;
     try {
-      ben = await quetMotRun(d, run, bayGio, tuoi);
+      ben = await quetMotRun(d, run, x);
     } catch (err) {
       console.error(`[FOE] run ${run.id}: URGENT obligation sweep failed: ${(err as Error)?.message ?? err}`);
       ben = false;
@@ -728,22 +784,48 @@ export async function quetUrgentChuaBen(o: { gioiHan?: number; bayGio?: number; 
     if (ben) out.ben += 1;
     else out.chuaBen += 1;
   }
+  if (x.boQuaNhieuProcess.length) console.warn(`[FOE] URGENT obligation sweep: the central engine may run in more than one process (${x.cheDo}): central run(s) ${x.boQuaNhieuProcess.join(", ")} (running / compensating) not told, a walker may be alive elsewhere`);
   return out;
 }
 
-/** One run of the sweep: null ⇔ nothing owed (or too young); else whether everything owed is durable now. */
-async function quetMotRun(d: RunDb, run: OrchestrationRun, bayGio: number, tuoi: number): Promise<boolean | null> {
+interface QuetMot {
+  bayGio: number;
+  tuoi: number;
+  walkerSong: (runId: number) => boolean;
+  cheDo: CheDoProcessEngine;
+  boQuaNhieuProcess: number[];
+}
+
+/** One run of the sweep: null ⇔ nothing owed (or too young, or its central walker alive); else whether everything owed is durable now. */
+async function quetMotRun(d: RunDb, run: OrchestrationRun, x: QuetMot): Promise<boolean | null> {
   const ctx = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
   const hang = ((await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, run.id))) as Array<HangKetThuc & { startedAt?: unknown; finishedAt?: unknown; createdAt?: unknown }>).filter((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX));
+  const daBaoQuet = docDaBaoQuet(ctx[KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY]);
+  if (daBaoQuet === "loi") console.warn(`[FOE] run ${run.id}: the sweep's mark (DA_BAO_QUET) could not be read: what it may have stored is raised again (once in this process)`);
+  const dq: DauQuet = daBaoQuet === "loi" ? { chot: null, dau: {} } : daBaoQuet;
   const tuCtx = ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId?: unknown; ma?: unknown } | null | undefined;
   const tuHang = chotTuHang(hang, ctx[RESUME_STATE_CTX_KEY] as Parameters<typeof chotTuHang>[1]);
   const chot = tuCtx?.stepId != null ? { stepId: String(tuCtx.stepId), ma: maKetCucKhongRoCua(typeof tuCtx.ma === "string" ? tuCtx.ma : null) } : tuHang ? { stepId: tuHang.stepId, ma: tuHang.ma } : null;
-  const noChot = chot !== null && ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null;
-  const dau = hang.filter((r) => dauKhongXacNhan(r.resultJson) !== null);
+  const khoaChot = chot ? `${run.id}:${chot.stepId}:chot` : null;
+  const noChot = chot !== null && ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null && dq.chot === null && !quetDaBenTrongProcess.has(khoaChot as string);
+  const dau = hang
+    .filter((r) => dauKhongXacNhan(r.resultJson) !== null)
+    .map((r) => ({ r, dang: dauKhongXacNhan(r.resultJson) as DangKhongXacNhan, claimSeq: claimCuaHang(r) }))
+    .map((m) => ({ ...m, khoa: khoaKhongXacNhan(run.id, m.r.stepId, m.dang, m.claimSeq) }))
+    .filter((m) => !(m.khoa in dq.dau) && !quetDaBenTrongProcess.has(m.khoa));
   if (!noChot && dau.length === 0) return null;
+  // CHAN-3 — whose walker: a run given to an edge node has none at central; its claim's progress is its heartbeat
+  const [claim] = (await d.select().from(runEdgeAssignments).where(eq(runEdgeAssignments.runId, run.id)).limit(1)) as Array<{ lastProgressAt?: unknown; claimedAt?: unknown }>;
+  if (!claim && QUET_URGENT_WALKER_TRUNG_TAM.has(run.status)) {
+    if (x.walkerSong(run.id)) return null;
+    if (x.cheDo !== "mot") {
+      x.boQuaNhieuProcess.push(run.id);
+      return null;
+    }
+  }
   if (QUET_URGENT_SONG.has(run.status)) {
-    const moc = mocMoiNhat(run, hang);
-    if (Number.isFinite(moc) && bayGio - moc < tuoi) return null;
+    const moc = mocMoiNhat(run, hang, claim ?? null);
+    if (Number.isFinite(moc) && x.bayGio - moc < x.tuoi) return null;
   }
   const han = 5 * STOP_DB_STEP_DEADLINE_MS;
   const label = `FOE run ${run.id} URGENT obligation sweep`;
@@ -756,24 +838,27 @@ async function quetMotRun(d: RunDb, run: OrchestrationRun, bayGio: number, tuoi:
   } catch {
     def = null;
   }
-  let phat = false;
   let ben = true;
+  const daBen: { chot?: string; dau: string[] } = { dau: [] };
   if (noChot && chot) {
-    phat = true;
     const b = await withDeadline(canhBaoKetCucKhongRo({ loai: "runEnd", runId: run.id, stepId: chot.stepId, compId: KHONG_CO_BU_TRU, error: chot.ma, lan: "chot", owner }), han, label).catch(() => false);
-    if (b) await ghiDaBaoQuet(d, run.id, chot.stepId);
-    else ben = false;
+    if (b) {
+      daBen.chot = chot.stepId;
+      quetDaBenTrongProcess.add(khoaChot as string);
+    } else ben = false;
   }
-  for (const r of dau) {
-    const dang = dauKhongXacNhan(r.resultJson) as DangKhongXacNhan;
-    const claimSeq = claimCuaHang(r);
+  for (const m of dau) {
     // Q-7 — another call's raise is proof only when it said stored
-    const cho = benKhongXacNhanCho.get(khoaKhongXacNhan(run.id, r.stepId, dang, claimSeq));
-    if (cho && (await motBen([cho], han, label))) continue;
-    phat = true;
-    if (!(await motBen([baoKhongXacNhan({ runId: run.id, def, stepId: r.stepId, dang, claimSeq, owner })], han, label))) ben = false;
+    const cho = benKhongXacNhanCho.get(m.khoa);
+    const b = (cho && (await motBen([cho], han, label))) || (await motBen([baoKhongXacNhan({ runId: run.id, def, stepId: m.r.stepId, dang: m.dang, claimSeq: m.claimSeq, owner })], han, label));
+    if (b) {
+      daBen.dau.push(m.khoa);
+      quetDaBenTrongProcess.add(m.khoa);
+    } else ben = false;
   }
-  return phat ? ben : null;
+  if (quetDaBenTrongProcess.size > 50_000) quetDaBenTrongProcess.clear();
+  if (daBen.chot || daBen.dau.length) await ghiDaBaoQuet(d, run.id, daBen);
+  return ben;
 }
 
 /** doc 81 Đợt 4 fix round 1 (finding 7) — the step error per reason; the Studio keys its text on `FOE_GATE_REQUIRED(<reason>)`. */

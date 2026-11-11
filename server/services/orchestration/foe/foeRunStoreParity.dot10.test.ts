@@ -440,15 +440,16 @@ import {
   rehydrateInterruptedRuns,
   FOE_GATE_REQUIRED,
   baoKetThucKhongQuetSauDoanEdge, // A2(n) T7b-3 (H36)
+  coWalkerSongTrongProcess, // A2(n) T8 lượt sửa 1 (CHAN-3)
 } from "./foeEngine";
-import { EDGE_HELD_CTX_KEY, baoKhongXacNhan, buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, dauKhongXacNhan, findSeparateGateApproval, priorStepsOf, quenBenKhongXacNhan, quyetDinhKetThucAnh, quetUrgentChuaBen, QUET_URGENT_TUOI_TOI_THIEU_MS, persistContext, phanLoaiStopAbort, stopAbortCoGui, stopChuaRaTuHang, themBuocHongKhiTiepTuc, upsertStep, withResolvedAdapter } from "./foeRunStore";
+import { EDGE_HELD_CTX_KEY, baoKhongXacNhan, buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, dauKhongXacNhan, findSeparateGateApproval, priorStepsOf, quenBenKhongXacNhan, quyetDinhKetThucAnh, quetUrgentChuaBen, QUET_URGENT_TUOI_TOI_THIEU_MS, __quenBoNhoQuetChoTest, cheDoProcessEngine, persistContext, phanLoaiStopAbort, stopAbortCoGui, stopChuaRaTuHang, themBuocHongKhiTiepTuc, upsertStep, withResolvedAdapter } from "./foeRunStore";
 import { eventsForNode, reportForNode } from "../../edge/edgeReportsCentral";
 import { docRunAbortCanGuiLaiStop } from "../../edge/edgeExecutionCentral"; // A2(n) T7b-2 (P4)
 import { EdgeStreamShipper } from "../../edge/edgeStreams";
 import { hashEdgeSecret } from "../../edge/edgeNodeCredentials";
 import { edgeNodeProtocol } from "../../edge/edgeControlSchema";
 import { edgeRunStream } from "../../edge/edgeProtocol";
-import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, buTruBiChanKhongRo, canhBaoKetCucKhongRo, chotTuHang, chuStopAbort, loiGiuChuaRa, nhanBuocSauChot, viChuaRaCuaLoi } from "./foeKetCucKhongRo";
+import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, buTruBiChanKhongRo, canhBaoKetCucKhongRo, chotTuHang, chuStopAbort, loiGiuChuaRa, nhanBuocSauChot, viChuaRaCuaLoi } from "./foeKetCucKhongRo";
 import { getDb } from "../../../db/connection";
 import { raiseCriticalStopAlert } from "../../robot/criticalStopAlert";
 import { logCrudOperation } from "../../auditTrailService";
@@ -516,6 +517,7 @@ beforeEach(() => {
   };
   fake.store.clear();
   resetSeq();
+  __quenBoNhoQuetChoTest(); // A2(n) T8 lượt sửa 1 — run ids restart with every case: the sweep's memory of this process too
   fake.setUnique(orchestrationRunSteps, [["runId", "stepId"]]);
   fake.seed(machines, [
     { id: 1, machineType: "AUTOMATION", capabilities: null, code: "M1", name: "Auto-1", operationStatus: "stopped", stationId: 1 },
@@ -7499,7 +7501,7 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
     await wait(40);
     // T8 turns this green by one call of its obligation sweeper here (the URGENT not yet durable, raised again), nothing else:
     // not the expectation below, not the crash above
-    await quetUrgentChuaBen({ bayGio: Date.now() + QUET_URGENT_TUOI_TOI_THIEU_MS + 1 });
+    await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: Date.now() + QUET_URGENT_TUOI_TOI_THIEU_MS + 1 });
     expect(benKhiChet, "the crashed raise stays without an answer").toBe(0);
     expect(h.alertDurable, "a raise outside the crash is stored: baoBen(true)").toBe(true);
     expect(loaiCB("stopGhimLech"), "T8: exactly one durable stop_pin_mismatch URGENT after the crash").toHaveLength(1);
@@ -7537,18 +7539,20 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
     const status0 = runRow(c).status;
     // the case's clock: the sweep at now (too young, a live walker may still reach its own end), then past the minimum age
     const now = Date.now();
-    const tre = await quetUrgentChuaBen({ bayGio: now });
+    const tre = await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: now });
     expect(tre.quet, "too young: not swept").toBe(0);
     expect(h.alerts.length, "too young: nothing raised").toBe(0);
-    const r1 = await quetUrgentChuaBen({ bayGio: now + QUET_URGENT_TUOI_TOI_THIEU_MS + 1 });
+    const r1 = await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: now + QUET_URGENT_TUOI_TOI_THIEU_MS + 1 });
     expect(r1).toMatchObject({ quet: 1, ben: 1, chuaBen: 0 });
     expect(runEndCua(), "the latch's URGENT under its one fixed key").toEqual([`${CANH_BAO_KHONG_RO_KIND.runEnd}:${c}:${k}:${KHONG_CO_BU_TRU}:chot`]);
     expect(loaiCB("stopGhimLech").map((a) => String(a.dedupKey)), "the mark's URGENT under the report path's own key").toEqual([`${CANH_BAO_KHONG_RO_KIND.stopGhimLech}:${c}:s1:${KHONG_CO_BU_TRU}:claim2`]);
-    expect((runRow(c).contextJson as Record<string, unknown>)[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY], "durable: the latch is told").toMatchObject({ stepId: k });
+    // lượt sửa 1 (CHAN-1, dieu-phoi 11/11): the sweep's own mark; DA_BAO stays the walker's word (an Abort's sweep reads it)
+    expect((runRow(c).contextJson as Record<string, any>)[KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY]?.chot, "durable: the latch is told, in the sweep's own mark").toMatchObject({ stepId: k });
+    expect((runRow(c).contextJson as Record<string, unknown>)[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY], "never DA_BAO").toBeUndefined();
     expect(runRow(c).status, "the sweep only raises: the run's status is not its to write").toBe(status0);
     expect(lenh() - lenh0, "the sweep sends nothing").toBe(0);
     const n1 = h.alerts.length;
-    const r2 = await quetUrgentChuaBen({ bayGio: now + 2 * QUET_URGENT_TUOI_TOI_THIEU_MS });
+    const r2 = await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: now + 2 * QUET_URGENT_TUOI_TOI_THIEU_MS });
     expect(r2.chuaBen).toBe(0);
     expect(h.alerts.length, "a second sweep: nothing more").toBe(n1);
     expect(lenh() - lenh0, "nor a command").toBe(0);
@@ -8097,6 +8101,29 @@ describe("A2(n) T6e — one pinned predicate for the sweep's verifier and the di
     expect(s).not.toMatch(/Abort/);
     expect(s).not.toMatch(/NOT handed/);
   };
+  // A2(n) T8 lượt sửa 1 (CHAN-1, rà T8 RA-K1-ABORT): the obligation sweep before an Abort must not silence what the Abort says again of the walk (abortStopSweep `tien` reads DA_BAO, the walker's word only)
+  const abortSauK1 = async (ref: string, quet: boolean) => {
+    h.alerts.length = 0;
+    h.traTimeout = 0; // the latch the harness counts is this run's: the first run's timeout is not this one's
+    h.alertDurable = false;
+    const c = await haiThoiDiem(def(ref, [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [khongPin("st")])])])]));
+    expect(runRow(c).status, "every URGENT failed at the walk's end").toBe("held");
+    h.alertDurable = true;
+    h.timeoutDispatch.delete("x");
+    if (quet) expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: Date.now() + QUET_URGENT_TUOI_TOI_THIEU_MS + 1 })).toMatchObject({ quet: 1, ben: 1 });
+    const n0 = h.alerts.length;
+    const s0 = h.sent.length;
+    await abortRun(c, OWNER, "checked on site");
+    await wait(80);
+    return { urg: h.alerts.slice(n0).map((a) => `${String(a.kind).replace("foe_outcome_unknown_", "")}|${String(a.dedupKey).split(":").slice(2).join(":")}`).sort(), lenh: h.sent.slice(s0).map((x) => String(x.stepId)), daBao: (runRow(c).contextJson as any)?.[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] ?? null };
+  };
+  it("CHAN1-K1-ABORT-QUET-T8 the T6E-K1 STOP not verified, every URGENT failed at the walk's end (held), the alerts back: a sweep before the Abort leaves the Abort's words as without one (forward_not_sent of st), the same commands", async () => {
+    const khong = await abortSauK1("c1k1a", false);
+    const co = await abortSauK1("c1k1b", true);
+    expect(khong.urg, "without a sweep the Abort tells st again").toContain("forward_not_sent|st:-:abort");
+    expect(co.urg, "a sweep first changes nothing the Abort says").toEqual(khong.urg);
+    expect(co.lenh).toEqual(khong.lenh);
+  });
   it("T6E-K1-NP1 two moments, a container never begun: not sent, not state C, exactly one URGENT names st as a STOP whose pin could not be verified; no Abort", async () => {
     const c = await haiThoiDiem(def("t6ek1np1", [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [khongPin("st")])])])]));
     expect(ids()).toEqual(["x"]);
@@ -15584,6 +15611,8 @@ describe("A2(n) T8 — the edge end gate: no durable URGENT holds the run (G6), 
   /** the latch the gate and the sweeper name: central's context key (here the report riding on the end), else the rows' first code */
   const buocKhoa = (c: number) => String(((runRow(c).contextJson as Record<string, any> | null)?.[KET_CUC_KHONG_RO_CHOT_CTX_KEY]?.stepId) ?? chotTuHang(stepRows(c) as never)!.stepId);
   const daBao = (c: number) => (runRow(c).contextJson as Record<string, unknown> | null)?.[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY];
+  /** lượt sửa 1 (CHAN-1) — the sweep's own mark */
+  const daBaoQuet = (c: number) => (runRow(c).contextJson as Record<string, any> | null)?.[KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY];
   const lenh = () => h.sent.length + h.lac.length + vi.mocked(dispatch).mock.calls.length + vi.mocked(dispatchRobotJob).mock.calls.length;
   const SAU = () => Date.now() + QUET_URGENT_TUOI_TOI_THIEU_MS + 1;
   /** x answers no word: the run latches on the edge; b's STOP compensation goes at once (L-7) */
@@ -15676,7 +15705,7 @@ describe("A2(n) T8 — the edge end gate: no durable URGENT holds the run (G6), 
     h.alerts.length = 0;
     h.alertDurable = true;
     const l0 = lenh();
-    const r = await quetUrgentChuaBen({ bayGio: SAU() });
+    const r = await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() });
     expect(r).toMatchObject({ quet: 2, ben: 2, chuaBen: 0 });
     expect(runEnd().sort()).toEqual([khoaRunEnd(a.runId, buocKhoa(a.runId)), khoaRunEnd(b.runId, buocKhoa(b.runId))].sort());
     expect(lenh() - l0, "the sweep sends nothing").toBe(0);
@@ -15689,14 +15718,15 @@ describe("A2(n) T8 — the edge end gate: no durable URGENT holds the run (G6), 
     const c = e.runId;
     const k = khoaRunEnd(c, buocKhoa(c));
     h.alerts.length = 0;
-    expect(await quetUrgentChuaBen({ bayGio: SAU() })).toMatchObject({ quet: 1, ben: 0, chuaBen: 1 });
-    expect(daBao(c)).toBeUndefined();
-    expect(await quetUrgentChuaBen({ bayGio: SAU() })).toMatchObject({ chuaBen: 1 });
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 1, ben: 0, chuaBen: 1 });
+    expect(daBaoQuet(c)).toBeUndefined();
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ chuaBen: 1 });
     h.alertDurable = true;
-    expect(await quetUrgentChuaBen({ bayGio: SAU() })).toMatchObject({ ben: 1 });
-    expect(await quetUrgentChuaBen({ bayGio: SAU() })).toMatchObject({ quet: 0 });
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ ben: 1 });
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 0 });
     expect(runEnd()).toEqual([k, k, k]);
-    expect(daBao(c)).toBeTruthy();
+    expect(daBaoQuet(c)?.chot, "lượt sửa 1 (CHAN-1): the sweep's own mark").toBeTruthy();
+    expect(daBao(c), "never DA_BAO").toBeUndefined();
   });
   it("G12-T8 the sweeper meets another call's raise of a mark (the report path's): it failed, so it is no proof; the sweeper raises it under the same key and counts only its own answer (Q-7)", async () => {
     const e = await edgeAssignedRun(def("t8g12", [gate(), box("b", [robotStop("s1")])]));
@@ -15713,11 +15743,11 @@ describe("A2(n) T8 — the edge end gate: no durable URGENT holds the run (G6), 
     expect(await truoc).toBe(false);
     h.alertDurable = true;
     h.alerts.length = 0;
-    const r = await quetUrgentChuaBen({ bayGio: SAU() });
+    const r = await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() });
     expect(r, "another call's 'no' is no proof: raised again").toMatchObject({ quet: 1, ben: 1 });
     expect(h.alerts.map((a) => String(a.dedupKey))).toEqual([`${CANH_BAO_KHONG_RO_KIND.stopKhongXacNhanDoc}:${c}:s1:${KHONG_CO_BU_TRU}:claim2`]);
     // and its own yes is remembered: a sweep again raises nothing
-    expect(await quetUrgentChuaBen({ bayGio: SAU() })).toMatchObject({ quet: 0 });
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 0 });
     expect(h.alerts.length).toBe(1);
     quenBenKhongXacNhan(c);
   });
@@ -15745,5 +15775,196 @@ describe("A2(n) T8 — the edge end gate: no durable URGENT holds the run (G6), 
     console.log(`[PROBE T8 UQS] sent ${JSON.stringify(ids)} status ${runRow(c).status}`);
     expect(ids.filter((x) => x === "r1"), "r1 never again").toEqual(["r1"]);
     expect(ids, "b's STOP compensation is due: r1 may have gone out").toContain("cs");
+  });
+
+  // ── T8 lượt sửa 1 (rà T8, dieu-phoi 11/11): CHAN-1, CHAN-2, CHAN-3, M9a, M9b ──────────────────────────────────────────
+  /** a dead edge: segment 2 latched on the edge, its rows committed by the report path, then nothing again (no end), the run still running at central */
+  const edgeChet = async (ref: string) => {
+    const e = await edgeAssignedRun(def(ref, [gate(), box("b", [move("x"), move("y")], { compensation: robotStop("cs") })]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("x");
+    e.quaBaoCao = true;
+    const { segment } = await edgeSegment(e, 2);
+    await apHang(e.runId, segment);
+    h.timeoutDispatch.delete("x");
+    expect(runRow(e.runId).status).toBe("running");
+    return e.runId;
+  };
+  /** an aborted run (never latched) whose STOP row carries a mark with no durable URGENT */
+  const danhDauAborted = async (ref: string) => {
+    const e = await edgeAssignedRun(def(ref, [gate(), box("b", [robotStop("s1")])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    const c = e.runId;
+    runRow(c).status = "aborted";
+    const s1 = stepRows(c).find((r) => r.stepId === "s1")!;
+    s1.resultJson = { ...(s1.resultJson ?? {}), stopKhongXacNhan: "docLoi", edge: { claimSeq: 2 } };
+    return c;
+  };
+  const khoaDoc = (c: number) => `${CANH_BAO_KHONG_RO_KIND.stopKhongXacNhanDoc}:${c}:s1:${KHONG_CO_BU_TRU}:claim2`;
+  /** a restart: this process forgets every answer it held (the marks' answers, the sweep's memory) */
+  const khoiDongLai = (...runs: number[]) => {
+    for (const r of runs) quenBenKhongXacNhan(r);
+    __quenBoNhoQuetChoTest();
+  };
+  const GIO25 = 25 * 3600_000;
+
+  it("CHAN1-TIEN-QUET-T8 a dead edge latched on its rows, Abort pressed: a sweep first leaves the Abort's words as without one (forward_not_sent, run_end), the same commands; the sweep writes its own mark, never DA_BAO", async () => {
+    const abortSauChet = async (ref: string, quet: boolean) => {
+      h.alerts.length = 0;
+      const c = await edgeChet(ref);
+      if (quet) {
+        expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 1, ben: 1 });
+        expect(daBao(c), "the walker's word only").toBeUndefined();
+        expect(daBaoQuet(c)?.chot).toMatchObject({ stepId: buocKhoa(c) });
+      }
+      const n0 = h.alerts.length;
+      const s0 = h.sent.length;
+      await abortRun(c, OWNER, "checked on site");
+      await wait(80);
+      return {
+        urg: h.alerts.slice(n0).filter((a) => String(a.dedupKey).split(":")[1] === String(c)).map((a) => `${String(a.kind).replace("foe_outcome_unknown_", "")}|${String(a.dedupKey).split(":").slice(2).join(":")}`).sort(),
+        lenh: h.sent.slice(s0).map((x) => `${String(x.stepId)}:${String(x.kind)}`),
+      };
+    };
+    const khong = await abortSauChet("c1ta", false);
+    const co = await abortSauChet("c1tb", true);
+    expect(khong.urg.some((u) => u.startsWith("forward_not_sent|")), `without a sweep the Abort says what was dropped: ${JSON.stringify(khong.urg)}`).toBe(true);
+    expect(co.urg, "a sweep first changes nothing the Abort says").toEqual(khong.urg);
+    expect(co.lenh).toEqual(khong.lenh);
+  });
+
+  it("CHAN2-25H-T8 stored once, then a restart 25 hours later (the process remembers nothing, the 24-hour dedup window is past): 0 rows more, the sweep's durable mark holds each key", async () => {
+    h.alertDurable = false;
+    const a = await denKhoa("c2ha");
+    const c = await danhDauAborted("c2hb");
+    h.alertDurable = true;
+    h.alerts.length = 0;
+    const now = Date.now();
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: now + QUET_URGENT_TUOI_TOI_THIEU_MS + 1 })).toMatchObject({ quet: 2, ben: 2 });
+    expect(h.alerts.map((x) => String(x.dedupKey)).sort()).toEqual([khoaRunEnd(a.runId, buocKhoa(a.runId)), khoaDoc(c)].sort());
+    expect(Object.keys(daBaoQuet(c)?.dau ?? {}), "the mark's key, durable").toEqual([`${c}:s1:docLoi:2`]);
+    khoiDongLai(a.runId, c);
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: now + GIO25 })).toMatchObject({ quet: 0 });
+    expect(h.alerts.length, "no row more, 25 hours later").toBe(2);
+  });
+
+  it("CHAN2-DOC-LOI-T8 the sweep's mark cannot be read at a restart: raised again, exactly one line for that process, and a warning; once rewritten, a restart 25 hours later raises nothing", async () => {
+    const c = await danhDauAborted("c2dl");
+    h.alerts.length = 0;
+    runRow(c).contextJson = { ...(runRow(c).contextJson ?? {}), [KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY]: "hong" }; // what was stored, unreadable
+    const warn = vi.spyOn(console, "warn");
+    try {
+      expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 1, ben: 1 });
+      expect(h.alerts.map((x) => String(x.dedupKey)), "unreadable is no 'stored': raised again").toEqual([khoaDoc(c)]);
+      expect(warn.mock.calls.some((x) => /DA_BAO_QUET\) could not be read/.test(String(x[0]))), "and said").toBe(true);
+      expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 0 });
+      expect(h.alerts.length, "one line for this process").toBe(1);
+      expect(Object.keys(daBaoQuet(c)?.dau ?? {}), "a sound mark written back").toEqual([`${c}:s1:docLoi:2`]);
+      khoiDongLai(c);
+      expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: Date.now() + GIO25 })).toMatchObject({ quet: 0 });
+      expect(h.alerts.length).toBe(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("CHAN3-SONG-DELAY-T8 a central walker alive in a 6-minute delay after the latch, swept 6 minutes on (the case's clock): 0 URGENT, no mark; the same run with a walker this process does not see: told", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutDispatch.add("x");
+    const d = def("c3sd", [gate(), parF("p", [move("x"), box("b", [delay("w", 360_000), otStop("s")])])]);
+    const p = centralRun(d, 1);
+    await waitFor(() => h.sent.some((x) => x.stepId === "x"), "x handed over");
+    const c = Number(h.sent.find((x) => x.stepId === "x")!.runId);
+    await waitFor(() => (runRow(c).contextJson as Record<string, unknown> | null)?.[KET_CUC_KHONG_RO_CHOT_CTX_KEY] != null, "the latch");
+    await wait(30);
+    h.alerts.length = 0;
+    const l0 = lenh();
+    const r = await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, cheDo: "mot", bayGio: Date.now() + 6 * 60_000 });
+    expect(runEnd(), "its walker is alive: no run_end").toEqual([]);
+    expect(r.quet).toBe(0);
+    expect(daBaoQuet(c)).toBeUndefined();
+    expect(runRow(c).status).toBe("running");
+    expect(coWalkerSongTrongProcess(c), "the walker is alive in this process").toBe(true);
+    // control: a walker this process does not see (dead after a crash, or not modelled): told
+    const r2 = await quetUrgentChuaBen({ walkerSong: () => false, cheDo: "mot", bayGio: Date.now() + 6 * 60_000 });
+    expect(r2).toMatchObject({ quet: 1, ben: 1 });
+    expect(runEnd()).toEqual([khoaRunEnd(c, buocKhoa(c))]);
+    expect(lenh() - l0, "the sweep sends nothing").toBe(0);
+    await abortRun(c, OWNER, "end of the case");
+    await p.catch(() => undefined);
+    await wait(30);
+    expect(coWalkerSongTrongProcess(c)).toBe(false);
+  });
+
+  it("CHAN3-NHIEU-T8 more than one engine process, or not known: a dead edge's run is told exactly once (its reports' age decides); a central compensating run is not, and it is logged; one process: told", async () => {
+    const e = await edgeChet("c3ne");
+    h.timeoutDispatch.add("x");
+    h.alertDurable = false;
+    const c = await centralRun(def("c3nc", [gate(), ot("x")]), 1);
+    await wait(20);
+    expect(runRow(c).status).toBe("held");
+    runRow(c).status = "compensating";
+    h.alertDurable = true;
+    h.alerts.length = 0;
+    const warn = vi.spyOn(console, "warn");
+    try {
+      await quetUrgentChuaBen({ walkerSong: () => false, cheDo: "nhieu", bayGio: SAU() });
+      expect(runEnd(), "the edge run once, the central run not").toEqual([khoaRunEnd(e, buocKhoa(e))]);
+      expect(warn.mock.calls.some((x) => /more than one process \(nhieu\): central run\(s\) \d+/.test(String(x[0])))).toBe(true);
+      await quetUrgentChuaBen({ walkerSong: () => false, cheDo: "khongRo", bayGio: SAU() });
+      expect(runEnd(), "not known: the same, and the edge run not again").toEqual([khoaRunEnd(e, buocKhoa(e))]);
+      expect(warn.mock.calls.some((x) => /\(khongRo\)/.test(String(x[0])))).toBe(true);
+      await quetUrgentChuaBen({ walkerSong: () => false, cheDo: "mot", bayGio: SAU() });
+      expect(runEnd(), "one process, no walker alive: the central run is told").toEqual([khoaRunEnd(e, buocKhoa(e)), khoaRunEnd(c, buocKhoa(c))]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("CHEDO-T8 the engine's process mode from what this process can see: a cluster worker, pm2's NODE_APP_INSTANCE, WEB_CONCURRENCY", () => {
+    expect(cheDoProcessEngine({}, false)).toBe("mot");
+    expect(cheDoProcessEngine({ WEB_CONCURRENCY: "1" }, false)).toBe("mot");
+    expect(cheDoProcessEngine({ WEB_CONCURRENCY: "4" }, false)).toBe("nhieu");
+    expect(cheDoProcessEngine({ NODE_APP_INSTANCE: "0" }, false)).toBe("nhieu");
+    expect(cheDoProcessEngine({}, true)).toBe("nhieu");
+    expect(cheDoProcessEngine({ WEB_CONCURRENCY: "abc" }, false)).toBe("khongRo");
+    expect(cheDoProcessEngine({ WEB_CONCURRENCY: "0" }, false)).toBe("khongRo");
+  });
+
+  it("M9A-T8 the minimum age holds for compensating and queued too: young, nothing; old, told", async () => {
+    for (const st of ["compensating", "queued"]) {
+      const c = await edgeChet(`m9a${st}`);
+      runRow(c).status = st;
+      h.alerts.length = 0;
+      expect((await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: Date.now() })).quet, `${st}, young`).toBe(0);
+      expect(runEnd()).toEqual([]);
+      expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() }), `${st}, old`).toMatchObject({ quet: 1, ben: 1 });
+      expect(runEnd()).toEqual([khoaRunEnd(c, buocKhoa(c))]);
+    }
+  });
+
+  it("M9B-T8 the age of a run given to an edge node is its newest report: a row of a minute ago, or the claim's progress of a minute ago (the node's heartbeat), keeps an old-looking run young", async () => {
+    const c = await edgeChet("m9b");
+    const cu = new Date(Date.now() - 2 * 3600_000);
+    Object.assign(runRow(c), { updatedAt: cu, startedAt: cu, createdAt: cu });
+    const hs = stepRows(c);
+    for (const r of hs) Object.assign(r, { startedAt: cu, finishedAt: cu, createdAt: cu });
+    const [asg] = rows("orchestration_run_edge_assignments").filter((r) => r.runId === c);
+    Object.assign(asg, { lastProgressAt: null, claimedAt: cu });
+    const now = Date.now();
+    h.alerts.length = 0;
+    hs[hs.length - 1]!.finishedAt = new Date(now);
+    expect((await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: now + 60_000 })).quet, "a row a minute old: young").toBe(0);
+    hs[hs.length - 1]!.finishedAt = cu;
+    asg.lastProgressAt = new Date(now);
+    expect((await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: now + 60_000 })).quet, "the node's progress a minute old: young").toBe(0);
+    expect(runEnd()).toEqual([]);
+    asg.lastProgressAt = cu;
+    expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: now + 60_000 }), "nothing of it newer than two hours: told").toMatchObject({ quet: 1, ben: 1 });
+    expect(runEnd()).toEqual([khoaRunEnd(c, buocKhoa(c))]);
   });
 });
