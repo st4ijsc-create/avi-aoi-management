@@ -63,6 +63,8 @@ export interface KetQuaKiem {
   vitest: KetQuaVitest;
   /** lỗi khởi chạy tiến trình nếu có */
   loi?: string;
+  /** tên các ca ĐỎ trích từ TOÀN BỘ đầu ra (không chỉ đuôi), đã lọc URL/giá trị bí mật; tối đa 40 tên, mỗi tên ≤ 200 ký tự */
+  tenCaDo?: string[];
 }
 
 const boMau = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -71,6 +73,71 @@ const boMau = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
  * `--cho-phep-db`: lọc chuỗi kết nối CSDL (có thể kèm mật khẩu) khỏi ĐẦU RA LỆNH KIỂM trước khi nó vào lời nhắc của model, JSON `kiem` hay nhật ký.
  * Postgres.js/drizzle có thể in URL trong lỗi kết nối. Chỉ áp cho đầu ra lệnh kiểm do BỘ CHẠY chạy; công cụ model tự gọi không đi qua đây.
  */
+/** Mật khẩu (đã giải mã) trong URL CSDL, để lọc khỏi đầu ra ở MỌI dạng. Rỗng / quá ngắn (< 6) ⇒ không có gì để lọc. */
+export function giaTriBiMatTuUrl(url: string | undefined): string[] {
+  if (!url) return [];
+  try {
+    const mk = decodeURIComponent(new URL(url).password);
+    return mk.length >= 6 ? [mk] : [];
+  } catch {
+    return [];
+  }
+}
+
+const thoatRegex = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Mọi dạng một giá trị bí mật có thể xuất hiện trong đầu ra: nguyên dạng, urlencoded, base64 (3 căn chỉnh, chuẩn + url-safe), hex, đảo ngược, tách ký tự. */
+export function cacDangBiMat(mk: string): { chuoi: string[]; tachKyTu: RegExp } {
+  const dang = new Set<string>([mk, encodeURIComponent(mk), encodeURI(mk), mk.split("").reverse().join("")]);
+  const buf = Buffer.from(mk, "utf8");
+  dang.add(buf.toString("hex"));
+  dang.add(buf.toString("hex").toUpperCase());
+  for (let k = 0; k < 3; k++) {
+    const b = Buffer.concat([Buffer.alloc(k), buf]).toString("base64");
+    // chỉ những ký tự base64 nằm HOÀN TOÀN trong các byte của mật khẩu (không phụ thuộc byte đứng trước/sau)
+    const dau = Math.ceil((k * 8) / 6);
+    const cuoi = Math.floor(((k + buf.length) * 8) / 6);
+    const manh = b.slice(dau, cuoi);
+    if (manh.length >= 6) {
+      dang.add(manh);
+      dang.add(manh.replace(/\+/g, "-").replace(/\//g, "_"));
+    }
+  }
+  const tach = mk.split("").map(thoatRegex).join("[^A-Za-z0-9]{0,3}");
+  return { chuoi: [...dang].filter((x) => x.length >= 6).sort((a, b) => b.length - a.length), tachKyTu: new RegExp(tach, "gi") };
+}
+
+/** Xoá mọi dạng của các giá trị bí mật khỏi `s` (thay bằng ***). */
+export function xoaGiaTriBiMat(s: string, giaTri: readonly string[]): string {
+  let ra = s;
+  for (const mk of giaTri) {
+    if (mk.length < 6) continue;
+    const { chuoi, tachKyTu } = cacDangBiMat(mk);
+    for (const d of chuoi) ra = ra.split(d).join("***").split(d.toLowerCase()).join("***").split(d.toUpperCase()).join("***");
+    ra = ra.replace(tachKyTu, "***");
+  }
+  return ra;
+}
+
+/** Tên ca ĐỎ trong đầu ra vitest (dòng `×` / `FAIL <tệp> > …`), KHÔNG kèm thông điệp lỗi (`→ …`). Thuần. */
+export function trichTenCaDo(sach: string): string[] {
+  const ra: string[] = [];
+  const them = (t: string) => {
+    const x = t.replace(/\s+\d+ms\s*$/, "").trim().slice(0, 200);
+    if (x !== "" && !ra.includes(x)) ra.push(x);
+  };
+  for (const dong of sach.split(/\r?\n/)) {
+    const m1 = /^\s*[×✗✕]\s+(.+)$/.exec(dong);
+    if (m1) {
+      them(m1[1]);
+      continue;
+    }
+    const m2 = /^\s*FAIL\s+\S+\s+>\s+(.+)$/.exec(dong);
+    if (m2) them(m2[1]);
+  }
+  return ra.slice(0, 40);
+}
+
 export function loaiUrlCsdl(s: string): string {
   return s
     .replace(/postgres(?:ql)?:\/\/\S+/gi, "postgres://***")
@@ -297,7 +364,7 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
     const env: NodeJS.ProcessEnv = { ...envSachChoTienTrinhCon(process.env, opt), CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" };
     const ketThuc = (exit: number | null, loi?: string) => {
       clearTimeout(dongHo);
-      const sach = loaiUrlCsdl(boMau(dau));
+      const sach = xoaGiaTriBiMat(loaiUrlCsdl(boMau(dau)), giaTriBiMatTuUrl(opt.testDbUrl));
       xong({
         lenh,
         exit,
@@ -305,6 +372,7 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
         giay: Math.round(((Date.now() - t0) / 1000) * 10) / 10,
         duoi: sach.length > 3000 ? sach.slice(-3000) : sach,
         vitest: phanTichVitest(sach),
+        tenCaDo: trichTenCaDo(sach),
         ...(loi ? { loi } : {}),
       });
     };

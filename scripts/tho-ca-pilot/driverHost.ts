@@ -16,7 +16,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { chuanDuong, kiemDiffTheoThe, vungCamCua, type TheViec } from "./theViec";
-import { chayLenhKiem, loaiUrlCsdl, type ChayKiem, type KetQuaKiem } from "./kiemChung";
+import { chayLenhKiem, loaiUrlCsdl, xoaGiaTriBiMat, type ChayKiem, type KetQuaKiem } from "./kiemChung";
 import type { DauVaoDriver, KetQuaDriver } from "./chayMotViec";
 
 export const NHAN_PILOT = "pilot-tho-ca";
@@ -171,6 +171,30 @@ export function tomTatKiemChoModel(k: KetQuaKiem, lan: number): string {
   ].join("\n"));
 }
 
+/**
+ * `--cho-phep-db`: lời nhắc cho model sau lần tự chạy lệnh kiểm CHỈ gồm con số (mã thoát, Test Files, Tests) và TÊN các ca đỏ — KHÔNG đuôi đầu ra, không thông điệp lỗi.
+ * Tên ca do model đặt nên cũng qua bộ lọc giá trị bí mật (nguyên dạng, urlencoded, base64, hex, đảo, tách ký tự) và bộ lọc URL.
+ */
+export function tomTatChiSoChoModel(k: KetQuaKiem, lan: number, giaTriBiMat: readonly string[]): string {
+  const tep = k.vitest.tep ? `Test Files ${k.vitest.tep.hong > 0 ? `${k.vitest.tep.hong} failed | ` : ""}${k.vitest.tep.dat} passed (${k.vitest.tep.tong})` : "Test Files: (không có dòng tổng kết)";
+  const ca = k.vitest.ca ? `Tests ${k.vitest.ca.hong > 0 ? `${k.vitest.ca.hong} failed | ` : ""}${k.vitest.ca.dat} passed (${k.vitest.ca.tong})` : "Tests: (không có dòng tổng kết)";
+  const dau = k.hetGio ? `hết hạn sau ${k.giay}s` : k.loi ? "không khởi chạy được" : `thoát mã ${k.exit}`;
+  const ten = k.tenCaDo && k.tenCaDo.length > 0 ? k.tenCaDo.map((t) => `- ${t}`).join("\n") : "(không ghi nhận được tên ca đỏ)";
+  return xoaGiaTriBiMat(
+    loaiUrlCsdl(
+      [
+        `[pilot] KHÔNG PHẢI bị người từ chối: bộ chạy đã TỰ CHẠY lệnh kiểm này thay bạn (lần ${lan}); đây là KẾT QUẢ THẬT. ${dau}.`,
+        tep,
+        ca,
+        "--- tên ca đỏ (đầu ra chi tiết KHÔNG được cung cấp vì lượt này chạm CSDL _test) ---",
+        ten,
+        "Đỏ ⇒ đọc lại mã và test của bạn, sửa tệp rồi gọi lại đúng lệnh này; xanh ⇒ báo kết quả cuối. Bộ chạy cũng tự chạy lại lệnh kiểm khi bạn kết thúc.",
+      ].join("\n"),
+    ),
+    giaTriBiMat,
+  );
+}
+
 // ── Phụ thuộc ──────────────────────────────────────────────────────────────────────────────────────
 
 type SuKien = { loai: string; [k: string]: unknown };
@@ -255,7 +279,7 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
         }
         const k = await (v.chayKiem ?? dep.chayKiem ?? chayLenhKiem)(loc.lenh, v.wt, 300);
         ghiChu.push(`tự chạy lệnh kiểm lần ${soTuChay}: exit ${k.exit}${k.vitest.ca ? `, Tests ${k.vitest.ca.dat} passed / ${k.vitest.ca.tong}` : ""}`);
-        await dep.bac(actionId, tomTatKiemChoModel(k, soTuChay));
+        await dep.bac(actionId, v.cheDoKiem === "chi-so" ? tomTatChiSoChoModel(k, soTuChay, v.giaTriBiMat ?? []) : tomTatKiemChoModel(k, soTuChay));
         return;
       }
       th.soLanCho++;

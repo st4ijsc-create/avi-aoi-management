@@ -12,7 +12,7 @@ import { taoChayLenhKiem, type ChayKiem } from "./kiemChung";
 
 const git = (cwd: string, ...a: string[]) => spawnSync("git", a, { cwd, encoding: "utf8" }).stdout.trim();
 const DAU = "MATKHAU_GIA_123";
-const URL_GIA = `postgresql://avi_app:${DAU}@127.0.0.1:5434/aoi_management_test`;
+const URL_GIA = `postgresql://tho_ca_test:${DAU}@127.0.0.1:5434/aoi_management_test`;
 const TEP = "server/db/statisticsScope.test.ts";
 const THE = `MÃ: TC-96
 MỤC TIÊU: thử rò URL
@@ -65,7 +65,7 @@ describe("URL CSDL có mật khẩu KHÔNG rò ra đầu ra của bộ chạy", 
   });
 
   it("★★★ lý do từ chối cũng không in URL (URL sai tên CSDL / owner aoi / rác)", async () => {
-    for (const url of [`postgresql://avi_app:${DAU}@h/aoi_management`, `postgresql://aoi:${DAU}@h/aoi_management_test`, `${DAU}-khong-phai-url`]) {
+    for (const url of [`postgresql://tho_ca_test:${DAU}@h/aoi_management`, `postgresql://aoi:${DAU}@h/aoi_management_test`, `${DAU}-khong-phai-url`]) {
       const r = await chayMotViec({ van: THE, wt, base: "HEAD", driver: "kho", ra, choPhepKhoRieng: true, luat: "# l\n", chayKiem: chayKiemXanh, choPhepDb: true, testDbUrl: url });
       expect(r.ketCuc).toBe("tu-choi");
       expect(JSON.stringify(r)).not.toContain(DAU);

@@ -3,13 +3,13 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { chayMotViec, ghepLenh, kiemChoPhepDb, thamSoDbTuDongLenh, type Driver } from "./chayMotViec";
+import { chayMotViec, docUrlTuTep, ghepLenh, kiemChoPhepDb, thamSoDbTuDongLenh, type Driver } from "./chayMotViec";
 import { docTheViec } from "./theViec";
 import { ENV_DB_CHET, envSachChoTienTrinhCon, taoChayLenhKiem, type ChayKiem } from "./kiemChung";
 
 const git = (cwd: string, ...a: string[]) => spawnSync("git", a, { cwd, encoding: "utf8" }).stdout.trim();
 
-const URL_TEST = "postgresql://avi_app:matkhau@127.0.0.1:5434/aoi_management_test";
+const URL_TEST = "postgresql://tho_ca_test:matkhau@127.0.0.1:5434/aoi_management_test";
 const TEP_DB = "server/db/statisticsScope.test.ts";
 const DONG_CSDL = "CSDL: chạm aoi_management_test (CHỈ CSDL _test; mọi ghi nằm trong giao dịch ROLLBACK; bộ chạy chạy với --cho-phep-db)";
 const the = (csdl: string | null = DONG_CSDL) => `MÃ: TC-97
@@ -96,8 +96,8 @@ describe("--cho-phep-db — điều kiện 3: URL CSDL của tiến trình", () 
   it.each([
     ["thiếu URL", undefined],
     ["URL rác", "khong-phai-url"],
-    ["đúng máy nhưng CSDL aoi_management (không _test)", "postgresql://avi_app:x@127.0.0.1:5434/aoi_management"],
-    ["CSDL tên gần giống aoi_management_test2", "postgresql://avi_app:x@127.0.0.1:5434/aoi_management_test2"],
+    ["đúng máy nhưng CSDL aoi_management (không _test)", "postgresql://tho_ca_test:x@127.0.0.1:5434/aoi_management"],
+    ["CSDL tên gần giống aoi_management_test2", "postgresql://tho_ca_test:x@127.0.0.1:5434/aoi_management_test2"],
     ["owner aoi", "postgresql://aoi:x@127.0.0.1:5434/aoi_management_test"],
     ["owner AOI viết hoa", "postgresql://AOI:x@127.0.0.1:5434/aoi_management_test"],
     ["owner aoi mã hoá %61oi", "postgresql://%61oi:x@127.0.0.1:5434/aoi_management_test"],
@@ -119,43 +119,45 @@ describe("--cho-phep-db — điều kiện 3: URL CSDL của tiến trình", () 
 describe("--cho-phep-db — máy chủ, cổng, vai (danh sách trắng) và token tên CSDL", () => {
   const M = (url: string) => kiemChoPhepDb({ csdl: DONG_CSDL }, url);
   it.each([
-    ["127.0.0.1", "postgresql://avi_app:x@127.0.0.1:5434/aoi_management_test"],
-    ["localhost", "postgresql://avi_app:x@localhost:5434/aoi_management_test"],
-    ["LOCALHOST viết hoa", "postgresql://avi_app:x@LOCALHOST:5434/aoi_management_test"],
-    ["::1", "postgresql://avi_app:x@[::1]:5434/aoi_management_test"],
+    ["127.0.0.1", "postgresql://tho_ca_test:x@127.0.0.1:5434/aoi_management_test"],
+    ["localhost", "postgresql://tho_ca_test:x@localhost:5434/aoi_management_test"],
+    ["LOCALHOST viết hoa", "postgresql://tho_ca_test:x@LOCALHOST:5434/aoi_management_test"],
+    ["::1", "postgresql://tho_ca_test:x@[::1]:5434/aoi_management_test"],
   ])("★★ máy chủ %s ⇒ được", (_t, url) => {
     expect(M(url)).toBeNull();
   });
   it.each([
-    ["10.9.9.9", "postgresql://avi_app:x@10.9.9.9:5434/aoi_management_test"],
-    ["tên miền ngoài", "postgresql://avi_app:x@db.noi-bo.local:5434/aoi_management_test"],
-    ["127.0.0.2", "postgresql://avi_app:x@127.0.0.2:5434/aoi_management_test"],
-    ["0.0.0.0", "postgresql://avi_app:x@0.0.0.0:5434/aoi_management_test"],
-    ["localhost.evil.com", "postgresql://avi_app:x@localhost.evil.com:5434/aoi_management_test"],
+    ["10.9.9.9", "postgresql://tho_ca_test:x@10.9.9.9:5434/aoi_management_test"],
+    ["tên miền ngoài", "postgresql://tho_ca_test:x@db.noi-bo.local:5434/aoi_management_test"],
+    ["127.0.0.2", "postgresql://tho_ca_test:x@127.0.0.2:5434/aoi_management_test"],
+    ["0.0.0.0", "postgresql://tho_ca_test:x@0.0.0.0:5434/aoi_management_test"],
+    ["localhost.evil.com", "postgresql://tho_ca_test:x@localhost.evil.com:5434/aoi_management_test"],
   ])("★★★ máy chủ %s ⇒ từ chối", (_t, url) => {
     expect(M(url)).toContain("máy chủ CSDL");
   });
   it.each([
-    ["cổng 5432", "postgresql://avi_app:x@127.0.0.1:5432/aoi_management_test"],
-    ["cổng 5433", "postgresql://avi_app:x@127.0.0.1:5433/aoi_management_test"],
-    ["không nêu cổng", "postgresql://avi_app:x@127.0.0.1/aoi_management_test"],
-    ["cổng 54340", "postgresql://avi_app:x@127.0.0.1:54340/aoi_management_test"],
+    ["cổng 5432", "postgresql://tho_ca_test:x@127.0.0.1:5432/aoi_management_test"],
+    ["cổng 5433", "postgresql://tho_ca_test:x@127.0.0.1:5433/aoi_management_test"],
+    ["không nêu cổng", "postgresql://tho_ca_test:x@127.0.0.1/aoi_management_test"],
+    ["cổng 54340", "postgresql://tho_ca_test:x@127.0.0.1:54340/aoi_management_test"],
   ])("★★★ %s ⇒ từ chối", (_t, url) => {
     expect(M(url)).toContain("cổng CSDL");
   });
   it.each([
+    ["avi_app (vai ứng dụng cũ, chung mật khẩu DEV)", "postgresql://avi_app:x@127.0.0.1:5434/aoi_management_test"],
     ["aoi_owner", "postgresql://aoi_owner:x@127.0.0.1:5434/aoi_management_test"],
-    ["avi_app2", "postgresql://avi_app2:x@127.0.0.1:5434/aoi_management_test"],
-    ["AVI_APP viết hoa", "postgresql://AVI_APP:x@127.0.0.1:5434/aoi_management_test"],
+    ["tho_ca_test_ro", "postgresql://tho_ca_test_ro:x@127.0.0.1:5434/aoi_management_test"],
+    ["tho_ca_test2", "postgresql://tho_ca_test2:x@127.0.0.1:5434/aoi_management_test"],
+    ["THO_CA_TEST viết hoa", "postgresql://THO_CA_TEST:x@127.0.0.1:5434/aoi_management_test"],
     ["postgres", "postgresql://postgres:x@127.0.0.1:5434/aoi_management_test"],
     ["không có vai", "postgresql://127.0.0.1:5434/aoi_management_test"],
     ["aoi", "postgresql://aoi:x@127.0.0.1:5434/aoi_management_test"],
-    ["avi_app mã hoá thêm", "postgresql://avi_app%20:x@127.0.0.1:5434/aoi_management_test"],
-  ])("★★★ vai %s ⇒ từ chối (danh sách trắng chỉ avi_app)", (_t, url) => {
-    expect(M(url)).toContain("avi_app");
+    ["tho_ca_test mã hoá thêm", "postgresql://tho_ca_test%20:x@127.0.0.1:5434/aoi_management_test"],
+  ])("★★★ vai %s ⇒ từ chối (danh sách trắng chỉ tho_ca_test)", (_t, url) => {
+    expect(M(url)).toContain("tho_ca_test");
   });
-  it("★★ avi_app mã hoá %61vi_app ⇒ giải mã rồi khớp danh sách trắng (được)", () => {
-    expect(M("postgresql://%61vi_app:x@127.0.0.1:5434/aoi_management_test")).toBeNull();
+  it("★★ tho_ca_test mã hoá %74ho_ca_test ⇒ giải mã rồi khớp danh sách trắng (được)", () => {
+    expect(M("postgresql://%74ho_ca_test:x@127.0.0.1:5434/aoi_management_test")).toBeNull();
   });
   it.each([
     ["aoi_management_test_x", "CSDL: chạm aoi_management_test_x"],
@@ -202,6 +204,32 @@ describe("--cho-phep-db — chayKiem tới driver (vòng tự chạy trong lư�
 
     const khong = await dung(the(null).split(TEP_DB).join("client/src/lib/a.test.ts"), false);
     expect(khong.nhan).toBeUndefined();
+  });
+});
+
+describe("--cho-phep-db — chế độ `chi-so` và giá trị bí mật tới driver (lớp 1)", () => {
+  const MK = "Mk9xPz3Qw7Ab";
+  const URL_MK = `postgresql://tho_ca_test:${MK}@127.0.0.1:5434/aoi_management_test`;
+  const nhanDauVao = async (van: string, co: boolean, url: string) => {
+    let thay: { cheDoKiem?: string; giaTriBiMat?: string[] } = {};
+    const drv: Driver = async (v) => {
+      thay = { cheDoKiem: v.cheDoKiem, giaTriBiMat: v.giaTriBiMat };
+      return { ghiChu: [], vong: 1, token: null, hetGio: false } as never;
+    };
+    await chayMotViec({ van, wt, base: "HEAD", driver: drv, ra, choPhepKhoRieng: true, luat: "# l\n", chayKiem: chayKiemXanh, choPhepDb: co, testDbUrl: url });
+    return thay;
+  };
+  it("★★★ có cờ ⇒ driver nhận cheDoKiem=chi-so và danh sách giá trị bí mật = [mật khẩu đã giải mã]", async () => {
+    expect(await nhanDauVao(the(), true, URL_MK)).toEqual({ cheDoKiem: "chi-so", giaTriBiMat: [MK] });
+  });
+  it("★★★ mật khẩu mã hoá %-URL trong URL ⇒ giá trị bí mật là dạng ĐÃ GIẢI MÃ", async () => {
+    const mk = "p@ss/w0rd!XyZ9";
+    const url = `postgresql://tho_ca_test:${encodeURIComponent(mk)}@127.0.0.1:5434/aoi_management_test`;
+    expect((await nhanDauVao(the(), true, url)).giaTriBiMat).toEqual([mk]);
+  });
+  it("★★★ không cờ ⇒ driver KHÔNG nhận chế độ chi-so hay giá trị bí mật (hành vi cũ)", async () => {
+    const van = the(null).split(TEP_DB).join("client/src/lib/a.test.ts");
+    expect(await nhanDauVao(van, false, URL_MK)).toEqual({ cheDoKiem: undefined, giaTriBiMat: undefined });
   });
 });
 
@@ -274,10 +302,35 @@ describe("--cho-phep-db — nhà máy hàm chạy lệnh kiểm và dòng lệnh
     expect(r.ketCuc).toBe("xong");
     expect("choPhepDb" in r).toBe(false);
   });
-  it("★★ thamSoDbTuDongLenh: --cho-phep-db (có hoặc không giá trị) ⇒ true; vắng ⇒ false; URL lấy từ DATABASE_URL", () => {
-    expect(thamSoDbTuDongLenh({ "cho-phep-db": "1" }, { DATABASE_URL: URL_TEST })).toEqual({ choPhepDb: true, testDbUrl: URL_TEST });
-    expect(thamSoDbTuDongLenh({}, { DATABASE_URL: URL_TEST })).toEqual({ choPhepDb: false, testDbUrl: URL_TEST });
-    expect(thamSoDbTuDongLenh({ "cho-phep-db": "1" }, {}).testDbUrl).toBeUndefined();
+  it("★★★ thamSoDbTuDongLenh: vắng cờ ⇒ TẮT, KHÔNG đọc tệp; DATABASE_URL của tiến trình KHÔNG còn là nguồn URL", () => {
+    let doc = 0;
+    const kq = thamSoDbTuDongLenh({ "tep-url-csdl": "x" }, () => (doc++, URL_TEST));
+    expect(kq).toEqual({ choPhepDb: false, testDbUrl: undefined });
+    expect(doc).toBe(0);
+  });
+  it("★★★ có cờ + tệp ⇒ URL đọc từ TỆP (docTep nhận đúng đường dẫn)", () => {
+    const duong: string[] = [];
+    const kq = thamSoDbTuDongLenh({ "cho-phep-db": "1", "tep-url-csdl": "D:/bi-mat/x.url" }, (d) => (duong.push(d), URL_TEST));
+    expect(kq).toEqual({ choPhepDb: true, testDbUrl: URL_TEST });
+    expect(duong).toEqual(["D:/bi-mat/x.url"]);
+  });
+  it.each([[undefined], ["1"], [""]])("★★★ có cờ mà --tep-url-csdl vắng / không giá trị (%s) ⇒ lỗi, không có URL", (v) => {
+    const kq = thamSoDbTuDongLenh(v === undefined ? { "cho-phep-db": "1" } : { "cho-phep-db": "1", "tep-url-csdl": v }, () => URL_TEST);
+    expect(kq.loi).toContain("--tep-url-csdl");
+    expect(kq.testDbUrl).toBeUndefined();
+  });
+  it("★★★ docTep ném lỗi ⇒ trả lỗi của nó, KHÔNG có URL", () => {
+    const kq = thamSoDbTuDongLenh({ "cho-phep-db": "1", "tep-url-csdl": "x" }, () => {
+      throw new Error("--tep-url-csdl: tệp rỗng");
+    });
+    expect(kq).toEqual({ choPhepDb: true, testDbUrl: undefined, loi: "--tep-url-csdl: tệp rỗng" });
+  });
+  it("★★ docTep ném thứ không phải Error ⇒ lỗi chung, không lộ giá trị", () => {
+    const kq = thamSoDbTuDongLenh({ "cho-phep-db": "1", "tep-url-csdl": "x" }, () => {
+      throw "MAT_KHAU_TRONG_NGOAI_LE";
+    });
+    expect(kq.loi).toContain("--tep-url-csdl");
+    expect(JSON.stringify(kq)).not.toContain("MAT_KHAU");
   });
 });
 
@@ -362,7 +415,7 @@ describe("môi trường tiến trình con của lệnh kiểm", () => {
     try {
       const lenh = `node -p "const U=function(s){const u=new URL(s);return u.host+u.pathname+' user='+u.username}; U(process.env.TEST_DATABASE_URL)+' | '+U(process.env.DATABASE_URL)"`;
       const co = await taoChayLenhKiem({ testDbUrl: URL_TEST })(lenh, cwd, 60);
-      expect(co.duoi).toContain("127.0.0.1:5434/aoi_management_test user=avi_app");
+      expect(co.duoi).toContain("127.0.0.1:5434/aoi_management_test user=tho_ca_test");
       expect(co.duoi).toContain("127.0.0.1:9/aoi_management user=pilot_kiem");
       expect(co.duoi).not.toContain("matkhau");
       const khong = await taoChayLenhKiem()(lenh, cwd, 60);
@@ -372,4 +425,89 @@ describe("môi trường tiến trình con của lệnh kiểm", () => {
       fs.rmSync(cwd, { recursive: true, force: true });
     }
   }, 150_000);
+});
+
+describe("docUrlTuTep — đọc URL vai tho_ca_test từ TỆP ngoài repo (lớp 2)", () => {
+  const CR = String.fromCharCode(13);
+  const NL = String.fromCharCode(10);
+  const DAU = "MATKHAU_GIA_456";
+  const URL_TEP = `postgresql://tho_ca_test:${DAU}@127.0.0.1:5434/aoi_management_test`;
+  let thu: string;
+  let tepUrl: string;
+  beforeEach(() => {
+    thu = fs.mkdtempSync(path.join(os.tmpdir(), "tcu-tep-"));
+    tepUrl = path.join(thu, "tho_ca_test.url");
+  });
+  afterEach(() => fs.rmSync(thu, { recursive: true, force: true }));
+  const loiCua = (f: () => unknown): string => {
+    try {
+      f();
+    } catch (e) {
+      return (e as Error).message;
+    }
+    return "KHONG_NEM";
+  };
+
+  it("★★★ tệp một dòng ⇒ trả đúng dòng đó (cắt khoảng trắng, bỏ xuống dòng cuối)", () => {
+    fs.writeFileSync(tepUrl, `  ${URL_TEP}  ${NL}`);
+    expect(docUrlTuTep(tepUrl)).toBe(URL_TEP);
+  });
+  it("★★ CRLF và dòng trống thừa ⇒ vẫn một URL", () => {
+    fs.writeFileSync(tepUrl, `${NL}${URL_TEP}${CR}${NL}${NL}`);
+    expect(docUrlTuTep(tepUrl)).toBe(URL_TEP);
+  });
+  it("★★★ tệp vắng ⇒ lỗi, không nêu nội dung", () => {
+    expect(loiCua(() => docUrlTuTep(path.join(thu, "khong-co.url")))).toBe("--tep-url-csdl: không có tệp");
+  });
+  it("★★★ tệp rỗng / chỉ khoảng trắng ⇒ lỗi", () => {
+    fs.writeFileSync(tepUrl, `   ${NL}${NL}`);
+    expect(loiCua(() => docUrlTuTep(tepUrl))).toBe("--tep-url-csdl: tệp rỗng");
+  });
+  it("★★★ tệp NHIỀU dòng ⇒ lỗi, thông báo KHÔNG chứa nội dung (kể cả mật khẩu)", () => {
+    fs.writeFileSync(tepUrl, `${URL_TEP}${NL}postgresql://khac:${DAU}@h/db${NL}`);
+    const loi = loiCua(() => docUrlTuTep(tepUrl));
+    expect(loi).toBe("--tep-url-csdl: tệp phải có đúng MỘT dòng");
+    expect(loi).not.toContain(DAU);
+  });
+  it("★★★ tệp nằm TRONG thư mục cấm (repo / worktree) ⇒ lỗi; nằm ngoài ⇒ qua", () => {
+    fs.writeFileSync(tepUrl, URL_TEP);
+    expect(loiCua(() => docUrlTuTep(tepUrl, [thu]))).toContain("trong repo / worktree");
+    expect(loiCua(() => docUrlTuTep(path.join(thu, "con", "..", "tho_ca_test.url"), [thu]))).toContain("trong repo / worktree");
+    expect(docUrlTuTep(tepUrl, [path.join(thu, "khac")])).toBe(URL_TEP);
+    expect(docUrlTuTep(tepUrl, [])).toBe(URL_TEP);
+  });
+  it("★★★ tệp ở thư mục anh em CÙNG TIỀN TỐ (thu-2) với thư mục cấm (thu) KHÔNG bị tính là nằm trong thư mục cấm", () => {
+    const anhEm = `${thu}-2`;
+    fs.mkdirSync(anhEm, { recursive: true });
+    try {
+      const tep = path.join(anhEm, "tho_ca_test.url");
+      fs.writeFileSync(tep, URL_TEP);
+      expect(docUrlTuTep(tep, [thu])).toBe(URL_TEP);
+    } finally {
+      fs.rmSync(anhEm, { recursive: true, force: true });
+    }
+  });
+  it("★★★ dòng lệnh thật: --cho-phep-db mà thiếu --tep-url-csdl ⇒ thoát mã 2, thông báo nêu --tep-url-csdl, chưa đọc thẻ hay chạm gì", () => {
+    const ra = spawnSync("npx", ["tsx", "scripts/tho-ca-pilot/chayMotViec.ts", "--the", path.join(thu, "khong-co-the.txt"), "--cho-phep-db"], { cwd: process.cwd(), encoding: "utf8", shell: true, timeout: 120_000 });
+    expect(ra.status).toBe(2);
+    expect(String(ra.stderr)).toContain("--tep-url-csdl");
+    const ra2 = spawnSync("npx", ["tsx", "scripts/tho-ca-pilot/chayMotViec.ts", "--the", path.join(thu, "khong-co-the.txt"), "--cho-phep-db", "--tep-url-csdl", path.join(thu, "khong-co.url")], { cwd: process.cwd(), encoding: "utf8", shell: true, timeout: 120_000 });
+    expect(ra2.status).toBe(2);
+    expect(String(ra2.stderr)).toContain("không có tệp");
+  }, 300_000);
+  it("★★★ URL đọc từ tệp đi hết đường: kiemChoPhepDb nhận vai tho_ca_test; tệp chứa URL avi_app thì kiemChoPhepDb từ chối", () => {
+    fs.writeFileSync(tepUrl, URL_TEP);
+    expect(kiemChoPhepDb({ csdl: DONG_CSDL }, docUrlTuTep(tepUrl))).toBeNull();
+    fs.writeFileSync(tepUrl, `postgresql://avi_app:${DAU}@127.0.0.1:5434/aoi_management_test`);
+    expect(kiemChoPhepDb({ csdl: DONG_CSDL }, docUrlTuTep(tepUrl))).toContain("tho_ca_test");
+  });
+  it("★★★ JSON ghi vaiCsdl=tho_ca_test khi có cờ; vắng cờ ⇒ không có khoá", async () => {
+    const r = await chay({ choPhepDb: true, testDbUrl: URL_TEP, khoGhi: { [TEP_DB]: TEST_MOI } });
+    expect(r.ketCuc).toBe("xong");
+    expect(r.vaiCsdl).toBe("tho_ca_test");
+    expect(JSON.stringify(r)).not.toContain(DAU);
+    const van = the(null).split(TEP_DB).join("client/src/lib/a.test.ts");
+    const khong = await chay({ van, khoGhi: { "client/src/lib/a.test.ts": TEST_MOI } });
+    expect("vaiCsdl" in khong).toBe(false);
+  });
 });
