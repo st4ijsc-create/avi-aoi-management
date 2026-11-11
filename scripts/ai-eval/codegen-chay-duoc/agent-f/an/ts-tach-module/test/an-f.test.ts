@@ -6,6 +6,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+// `node --test` đặt NODE_TEST_CONTEXT cho tệp test; `node --test` lồng mà kế thừa nó thì thoát 0 dù đỏ ⇒ bỏ biến này.
+const ENV_CON = { ...process.env };
+delete ENV_CON.NODE_TEST_CONTEXT;
 const DA = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const THU_MUC = path.join(DA, "src", "donHang");
 const XUAT: Record<string, string[]> = {
@@ -86,6 +89,6 @@ test("test của bài làm: mỗi module một tệp, ≥ 2 ca, import thẳng m
     assert.ok(s.includes(`src/donHang/${ten}.ts`), `${rel}: phải import thẳng src/donHang/${ten}.ts`);
     ds.push(rel);
   }
-  const r = spawnSync(process.execPath, ["--test", ...ds], { cwd: DA, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000 });
+  const r = spawnSync(process.execPath, ["--test", ...ds], { cwd: DA, env: ENV_CON, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000 });
   assert.equal(r.status, 0, (r.stdout ?? "").slice(-1500));
 });

@@ -1,0 +1,13 @@
+{
+  "id": "js-loi-3-lop",
+  "kieu": "agent-f",
+  "bo": "agent-dai",
+  "lang": "js",
+  "ten": "Sửa lỗi lệch 1 đồng khi trả hàng: triệu chứng ở CSV, gốc ở phép làm tròn dùng chung, đi qua lớp cộng dồn; kèm test hồi quy đỏ-trước-xanh-sau",
+  "nguon": {
+    "tep": "agent-f/bai.json",
+    "id": "js-loi-3-lop"
+  },
+  "duAn": "sandbox-projects/agent-f/js-loi-3-lop",
+  "canDb": false
+}

@@ -117,5 +117,18 @@
     "testAn": ["test/an-f.test.ts"],
     "soTest": { "hienThi": 5, "an": 6 },
     "tranGiayMs": 180000
+  },
+  {
+    "id": "js-loi-3-lop",
+    "lang": "js",
+    "kieu": "node",
+    "nhom": "dai",
+    "moTa": "Sửa lỗi lệch 1 đồng khi trả hàng: triệu chứng ở CSV, gốc ở phép làm tròn dùng chung, đi qua lớp cộng dồn; kèm test hồi quy đỏ-trước-xanh-sau",
+    "cauHoi": "Báo lỗi từ kế toán, dự án {DA} (báo cáo đơn hàng ra CSV, Node thuần, xem README):\n\n> Báo cáo CSV tháng này lệch 1 đồng ở mấy đơn có trả hàng, đối chiếu với sổ không khớp. Ví dụ đơn DH-102: khách mua 1 áo giá 12.345 đ có giảm 10 %, hôm sau trả lại đúng cái áo đó. Đơn này phải ra tổng 0 đ, nhưng file CSV ghi dòng `DH-102,2,-1,0,-1`. Đơn không có trả hàng thì đúng.\n\nYêu cầu:\n- Tìm nguyên nhân và sửa TẬN GỐC: một dòng trả hàng phải đúng bằng số âm của dòng bán tương ứng ở mọi khoản (tiền sau giảm, thuế), với mọi đơn giá và mức giảm. Số của đơn không có trả hàng giữ nguyên.\n- KHÔNG đổi định dạng CSV (phần mềm kế toán đọc theo cột).\n- Thêm một tệp test hồi quy mới trong `test/` (đuôi `.test.mjs`) tái hiện đúng lỗi này: phải đỏ trên mã trước khi sửa và xanh sau khi sửa.\n\nTest hiện có phải vẫn xanh: `node --test {DA}/test/baoCao.test.mjs`.",
+    "testHienThi": ["test/baoCao.test.mjs"],
+    "tepBaoVe": ["test/baoCao.test.mjs"],
+    "testAn": ["test/an-f.test.mjs"],
+    "soTest": { "hienThi": 4, "an": 6 },
+    "tranGiayMs": 120000
   }
 ]
