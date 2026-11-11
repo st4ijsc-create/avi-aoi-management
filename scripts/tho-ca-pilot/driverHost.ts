@@ -161,34 +161,32 @@ export function tomTatKiemChoModel(k: KetQuaKiem, lan: number): string {
   const tep = k.vitest.tep ? `Test Files ${k.vitest.tep.hong > 0 ? `${k.vitest.tep.hong} failed | ` : ""}${k.vitest.tep.dat} passed (${k.vitest.tep.tong})` : "Test Files: (không có dòng tổng kết)";
   const ca = k.vitest.ca ? `Tests ${k.vitest.ca.hong > 0 ? `${k.vitest.ca.hong} failed | ` : ""}${k.vitest.ca.dat} passed (${k.vitest.ca.tong})` : "Tests: (không có dòng tổng kết)";
   const dau = k.hetGio ? `hết hạn sau ${k.giay}s` : k.loi ? `không khởi chạy được: ${k.loi}` : `thoát mã ${k.exit}`;
-  return loaiUrlCsdl([
+  return [
     `[pilot] KHÔNG PHẢI bị người từ chối: bộ chạy đã TỰ CHẠY lệnh kiểm này thay bạn (lần ${lan}); đây là KẾT QUẢ THẬT. ${dau}.`,
     tep,
     ca,
     "--- đuôi đầu ra ---",
     k.duoi.length > 1800 ? k.duoi.slice(-1800) : k.duoi,
     "Đỏ ⇒ sửa tệp rồi gọi lại đúng lệnh này; xanh ⇒ báo kết quả cuối. Bộ chạy cũng tự chạy lại lệnh kiểm khi bạn kết thúc.",
-  ].join("\n"));
+  ].join("\n");
 }
 
 /**
- * `--cho-phep-db`: lời nhắc cho model sau lần tự chạy lệnh kiểm CHỈ gồm con số (mã thoát, Test Files, Tests) và TÊN các ca đỏ — KHÔNG đuôi đầu ra, không thông điệp lỗi.
- * Tên ca do model đặt nên cũng qua bộ lọc giá trị bí mật (nguyên dạng, urlencoded, base64, hex, đảo, tách ký tự) và bộ lọc URL.
+ * `--cho-phep-db`: lời nhắc cho model sau lần tự chạy lệnh kiểm CHỈ gồm CON SỐ: mã thoát, `Test Files`, `Tests` (kèm số ca đỏ). KHÔNG đuôi đầu ra, KHÔNG tên ca (tên ca do model đặt nên cũng mang được bí mật),
+ * KHÔNG thông điệp lỗi / văn bản lỗi khởi chạy. Đầu ra đầy đủ đi vào TỆP KẾT QUẢ cho người duyệt (xem `v.ra`). Văn bản vẫn qua bộ lọc URL + giá trị bí mật như lưới thứ hai.
  */
 export function tomTatChiSoChoModel(k: KetQuaKiem, lan: number, giaTriBiMat: readonly string[]): string {
   const tep = k.vitest.tep ? `Test Files ${k.vitest.tep.hong > 0 ? `${k.vitest.tep.hong} failed | ` : ""}${k.vitest.tep.dat} passed (${k.vitest.tep.tong})` : "Test Files: (không có dòng tổng kết)";
   const ca = k.vitest.ca ? `Tests ${k.vitest.ca.hong > 0 ? `${k.vitest.ca.hong} failed | ` : ""}${k.vitest.ca.dat} passed (${k.vitest.ca.tong})` : "Tests: (không có dòng tổng kết)";
   const dau = k.hetGio ? `hết hạn sau ${k.giay}s` : k.loi ? "không khởi chạy được" : `thoát mã ${k.exit}`;
-  const ten = k.tenCaDo && k.tenCaDo.length > 0 ? k.tenCaDo.map((t) => `- ${t}`).join("\n") : "(không ghi nhận được tên ca đỏ)";
   return xoaGiaTriBiMat(
     loaiUrlCsdl(
       [
         `[pilot] KHÔNG PHẢI bị người từ chối: bộ chạy đã TỰ CHẠY lệnh kiểm này thay bạn (lần ${lan}); đây là KẾT QUẢ THẬT. ${dau}.`,
         tep,
         ca,
-        "--- tên ca đỏ (đầu ra chi tiết KHÔNG được cung cấp vì lượt này chạm CSDL _test) ---",
-        ten,
-        "Đỏ ⇒ đọc lại mã và test của bạn, sửa tệp rồi gọi lại đúng lệnh này; xanh ⇒ báo kết quả cuối. Bộ chạy cũng tự chạy lại lệnh kiểm khi bạn kết thúc.",
+        "(đầu ra chi tiết và tên ca KHÔNG được cung cấp vì lượt này chạm CSDL _test; chỉ có con số ở trên)",
+        "Số ca đỏ > 0 ⇒ đọc lại mã và test của bạn, sửa tệp rồi gọi lại đúng lệnh này; toàn xanh ⇒ báo kết quả cuối. Bộ chạy cũng tự chạy lại lệnh kiểm khi bạn kết thúc.",
       ].join("\n"),
     ),
     giaTriBiMat,
@@ -278,6 +276,15 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
           return;
         }
         const k = await (v.chayKiem ?? dep.chayKiem ?? chayLenhKiem)(loc.lenh, v.wt, 300);
+        if (v.cheDoKiem === "chi-so") {
+          // đầu ra ĐẦY ĐỦ (đã lọc URL + bí mật) chỉ cho NGƯỜI duyệt đọc — tệp kết quả, không bao giờ đi vào lời nhắc của model
+          try {
+            fs.mkdirSync(v.ra, { recursive: true });
+            fs.writeFileSync(path.join(v.ra, `${v.the.ma}.kiem-trong-luot-lan${soTuChay}.txt`), k.dauRaDayDu ?? k.duoi, "utf8");
+          } catch {
+            /* ghi tệp phụ không được làm hỏng lượt */
+          }
+        }
         ghiChu.push(`tự chạy lệnh kiểm lần ${soTuChay}: exit ${k.exit}${k.vitest.ca ? `, Tests ${k.vitest.ca.dat} passed / ${k.vitest.ca.tong}` : ""}`);
         await dep.bac(actionId, v.cheDoKiem === "chi-so" ? tomTatChiSoChoModel(k, soTuChay, v.giaTriBiMat ?? []) : tomTatKiemChoModel(k, soTuChay));
         return;

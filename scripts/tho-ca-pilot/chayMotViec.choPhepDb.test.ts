@@ -511,3 +511,26 @@ describe("docUrlTuTep — đọc URL vai tho_ca_test từ TỆP ngoài repo (l�
     expect("vaiCsdl" in khong).toBe(false);
   });
 });
+
+describe("--cho-phep-db — đầu ra đầy đủ của lệnh kiểm cuối ra TỆP cho người duyệt, không vào JSON", () => {
+  const DAY_DU = "ĐẦU RA ĐẦY ĐỦ cho người duyệt\nTests 1 passed (1)";
+  const chayKiemCoDayDu: ChayKiem = async (lenh) => ({
+    lenh, exit: 0, hetGio: false, giay: 1, duoi: "đuôi ngắn",
+    vitest: { tep: { dat: 1, hong: 0, boQua: 0, tong: 1 }, ca: { dat: 1, hong: 0, boQua: 0, tong: 1 } },
+    dauRaDayDu: DAY_DU, tenCaDo: [],
+  });
+  it("★★★ có cờ: tệp <ra>/<mã>.kiem-cuoi.txt có đúng nội dung; JSON `kiem` KHÔNG có dauRaDayDu", async () => {
+    const r = await chay({ choPhepDb: true, testDbUrl: URL_TEST, chayKiem: chayKiemCoDayDu, khoGhi: { [TEP_DB]: TEST_MOI } });
+    expect(r.ketCuc).toBe("xong");
+    expect(fs.readFileSync(path.join(ra, "TC-97.kiem-cuoi.txt"), "utf8")).toBe(DAY_DU);
+    expect(JSON.stringify(r)).not.toContain("ĐẦU RA ĐẦY ĐỦ");
+    expect(r.kiem && "dauRaDayDu" in r.kiem).toBe(false);
+  });
+  it("★★ không cờ: KHÔNG tạo tệp kiem-cuoi, JSON `kiem` không có dauRaDayDu", async () => {
+    const van = the(null).split(TEP_DB).join("client/src/lib/a.test.ts");
+    const r = await chay({ van, chayKiem: chayKiemCoDayDu, khoGhi: { "client/src/lib/a.test.ts": TEST_MOI } });
+    expect(r.ketCuc).toBe("xong");
+    expect(fs.existsSync(path.join(ra, "TC-97.kiem-cuoi.txt"))).toBe(false);
+    expect(r.kiem && "dauRaDayDu" in r.kiem).toBe(false);
+  });
+});

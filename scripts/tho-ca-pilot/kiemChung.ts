@@ -65,6 +65,8 @@ export interface KetQuaKiem {
   loi?: string;
   /** tên các ca ĐỎ trích từ TOÀN BỘ đầu ra (không chỉ đuôi), đã lọc URL/giá trị bí mật; tối đa 40 tên, mỗi tên ≤ 200 ký tự */
   tenCaDo?: string[];
+  /** (chỉ khi `--cho-phep-db`) TOÀN BỘ đầu ra đã lọc URL + giá trị bí mật, cho NGƯỜI duyệt đọc qua tệp kết quả — KHÔNG bao giờ đưa cho model; tối đa ~400 KB (cắt giữa) */
+  dauRaDayDu?: string;
 }
 
 const boMau = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -362,9 +364,13 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
     let dau = "";
     let hetGio = false;
     const env: NodeJS.ProcessEnv = { ...envSachChoTienTrinhCon(process.env, opt), CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" };
+    const locLoi = (x: string) => (opt.testDbUrl !== undefined ? xoaGiaTriBiMat(loaiUrlCsdl(x), giaTriBiMatTuUrl(opt.testDbUrl)) : x);
     const ketThuc = (exit: number | null, loi?: string) => {
       clearTimeout(dongHo);
-      const sach = xoaGiaTriBiMat(loaiUrlCsdl(boMau(dau)), giaTriBiMatTuUrl(opt.testDbUrl));
+      const coDb = opt.testDbUrl !== undefined;
+      const tho = boMau(dau);
+      // CỜ TẮT ⇒ đầu ra KHÔNG đổi một byte; chỉ khi có `--cho-phep-db` mới lọc URL / giá trị bí mật và ghi tên ca đỏ, đầu ra đầy đủ
+      const sach = coDb ? xoaGiaTriBiMat(loaiUrlCsdl(tho), giaTriBiMatTuUrl(opt.testDbUrl)) : tho;
       xong({
         lenh,
         exit,
@@ -372,7 +378,9 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
         giay: Math.round(((Date.now() - t0) / 1000) * 10) / 10,
         duoi: sach.length > 3000 ? sach.slice(-3000) : sach,
         vitest: phanTichVitest(sach),
-        tenCaDo: trichTenCaDo(sach),
+        ...(coDb ? { tenCaDo: trichTenCaDo(sach), dauRaDayDu: sach.length > 400_000 ? `${sach.slice(0, 100_000)}
+…(cắt giữa)…
+${sach.slice(-300_000)}` : sach } : {}),
         ...(loi ? { loi } : {}),
       });
     };
@@ -380,7 +388,7 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
     try {
       con = spawn(lenh, { cwd: wt, env, shell: true, windowsHide: true });
     } catch (e) {
-      xong({ lenh, exit: null, hetGio: false, giay: 0, duoi: "", vitest: { tep: null, ca: null }, loi: loaiUrlCsdl(String(e)) });
+      xong({ lenh, exit: null, hetGio: false, giay: 0, duoi: "", vitest: { tep: null, ca: null }, loi: locLoi(String(e)) });
       return;
     }
     const dongHo = setTimeout(() => {
@@ -390,7 +398,7 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
     }, Math.max(1, hanGiay) * 1000);
     con.stdout?.on("data", (b) => (dau += String(b)));
     con.stderr?.on("data", (b) => (dau += String(b)));
-    con.on("error", (e) => ketThuc(null, loaiUrlCsdl(String(e))));
+    con.on("error", (e) => ketThuc(null, locLoi(String(e))));
     con.on("close", (ma) => ketThuc(hetGio ? null : ma));
   });
 

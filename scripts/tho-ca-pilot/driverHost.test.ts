@@ -425,53 +425,55 @@ describe("driverHost — TỰ CHẠY lệnh kiểm thay thẻ run_command chờ 
     await driverHost(dep)(dauVao(ra));
     expect(goiPhuThuoc).toEqual([THE.lenhKiem]);
   });
-  it("★★★ KÊNH tới model: lý do thẻ bác (tomTatKiemChoModel) không chứa mật khẩu dù hàm chạy lệnh kiểm trả URL chưa lọc", async () => {
-    const DAU = "MATKHAU_GIA_123";
-    const { dep, dd } = taoDep(
-      async (phat) => {
-        phat(canDuyet("run_command", { command: THE.lenhKiem }));
-        await new Promise((r) => setTimeout(r, 120));
-        phat({ loai: "xong", lyDo: "hoan-thanh" });
-      },
-      async () => ({ quyet: "chap-nhan" }),
-      { chayKiem: async (l) => kiemFake({ lenh: l, duoi: `ECONNREFUSED postgresql://avi_app:${DAU}@127.0.0.1:5434/aoi_management_test`, exit: null, loi: `spawn lỗi avi_app:${DAU}@127.0.0.1:5434` }) },
+  it("★★★ CỜ TẮT ⇒ KHÔNG ĐỔI MỘT BYTE: tomTatKiemChoModel giữ nguyên văn đuôi đầu ra, kể cả khi đuôi có chuỗi giống URL", () => {
+    const duoi = "ECONNREFUSED postgresql://u:matkhau@h:5434/db và avi_app:matkhau@h:5434";
+    const k = kiemFake({ duoi, exit: 1 });
+    const s = tomTatKiemChoModel(k, 1);
+    expect(s).toContain(duoi);
+    expect(s).not.toContain("***");
+    // tái dựng đúng văn bản kỳ vọng từ các phần đã biết (không dựa vào hàm đang thử)
+    expect(s).toBe(
+      [
+        "[pilot] KHÔNG PHẢI bị người từ chối: bộ chạy đã TỰ CHẠY lệnh kiểm này thay bạn (lần 1); đây là KẾT QUẢ THẬT. thoát mã 1.",
+        "Test Files 1 failed | 0 passed (1)",
+        "Tests 1 failed | 3 passed (4)",
+        "--- đuôi đầu ra ---",
+        duoi,
+        "Đỏ ⇒ sửa tệp rồi gọi lại đúng lệnh này; xanh ⇒ báo kết quả cuối. Bộ chạy cũng tự chạy lại lệnh kiểm khi bạn kết thúc.",
+      ].join("\n"),
     );
-    await driverHost(dep)(dauVao(ra));
-    expect(dd.bac).toHaveLength(1);
-    expect(dd.bac[0]).not.toContain(DAU);
-    expect(dd.bac[0]).toContain("postgres://***");
   });
-  describe("chế độ `chi-so` (--cho-phep-db): model chỉ nhận con số + tên ca đỏ, KHÔNG đuôi đầu ra", () => {
+  describe("chế độ `chi-so` (--cho-phep-db): model chỉ nhận CON SỐ — không đuôi, không tên ca, không văn bản lỗi", () => {
     const MK = "Mk9xPz3Qw7Ab";
     const DUOI_BI_MAT = `DUOI_KHONG_DUOC_LOT assertion: password=${MK} postgresql://u:${MK}@h/db`;
     const kiemDo = (over: Partial<KetQuaKiem> = {}) =>
       kiemFake({ duoi: DUOI_BI_MAT, tenCaDo: ["nhóm > ca một", "nhóm > ca hai"], loi: undefined, ...over });
-    it("★★★ tomTatChiSoChoModel: có mã thoát, Test Files, Tests, tên ca đỏ; KHÔNG có đuôi đầu ra", () => {
+    it("★★★ tomTatChiSoChoModel: có mã thoát, Test Files, Tests (số ca đỏ); KHÔNG đuôi và KHÔNG tên ca", () => {
       const s = tomTatChiSoChoModel(kiemDo(), 2, [MK]);
       expect(s).toContain("lần 2");
       expect(s).toContain("thoát mã 1");
       expect(s).toContain("Test Files 1 failed | 0 passed (1)");
       expect(s).toContain("Tests 1 failed | 3 passed (4)");
-      expect(s).toContain("- nhóm > ca một");
-      expect(s).toContain("- nhóm > ca hai");
+      expect(s).not.toContain("nhóm > ca một");
+      expect(s).not.toContain("nhóm > ca hai");
       expect(s).not.toContain("DUOI_KHONG_DUOC_LOT");
       expect(s).not.toContain("assertion");
       expect(s).not.toContain(MK);
     });
-    it("★★★ tên ca do model đặt mà mang mật khẩu ở mọi dạng ⇒ bị xoá khỏi lời nhắc", () => {
+    it("★★★ tên ca do model đặt mà mang mật khẩu ở mọi dạng ⇒ KHÔNG xuất hiện (tên ca không được đưa cho model)", () => {
       const buf = Buffer.from(MK);
       const ten = [`ca ${MK}`, `ca ${buf.toString("base64")}`, `ca ${buf.toString("hex")}`, `ca ${MK.split("").reverse().join("")}`, `ca ${MK.split("").join(" ")}`, `ca ${encodeURIComponent(MK)}`];
       const s = tomTatChiSoChoModel(kiemDo({ tenCaDo: ten }), 1, [MK]);
+      for (const t of ten) expect(s).not.toContain(t);
       expect(s).not.toContain(MK);
       expect(s).not.toContain(buf.toString("base64"));
       expect(s).not.toContain(buf.toString("hex"));
       expect(s).not.toContain(MK.split("").reverse().join(""));
       expect(s).not.toContain(MK.split("").join(" "));
     });
-    it("★★ URL trong tên ca cũng bị lọc; không tên ca ⇒ nói rõ", () => {
-      expect(tomTatChiSoChoModel(kiemDo({ tenCaDo: [`ca postgresql://u:${MK}@h/db`] }), 1, [])).not.toContain(MK);
-      expect(tomTatChiSoChoModel(kiemDo({ tenCaDo: [] }), 1, [MK])).toContain("không ghi nhận được tên ca đỏ");
-      expect(tomTatChiSoChoModel(kiemDo({ tenCaDo: undefined }), 1, [MK])).toContain("không ghi nhận được tên ca đỏ");
+    it("★★ lưới thứ hai: dòng tổng kết giả mang mật khẩu (k.vitest) vẫn không lọt vì chỉ số được in từ SỐ, không từ văn bản", () => {
+      const s = tomTatChiSoChoModel(kiemDo({ duoi: `Tests ${MK}` }), 1, [MK]);
+      expect(s).not.toContain(MK);
     });
     it("★★ lỗi khởi chạy / hết hạn: nói ngắn, KHÔNG chép văn bản lỗi (có thể mang bí mật)", () => {
       const s = tomTatChiSoChoModel(kiemDo({ exit: null, loi: `spawn lỗi ${MK}` }), 1, [MK]);
@@ -479,34 +481,63 @@ describe("driverHost — TỰ CHẠY lệnh kiểm thay thẻ run_command chờ 
       expect(s).not.toContain("spawn lỗi");
       expect(tomTatChiSoChoModel(kiemDo({ exit: null, hetGio: true }), 1, [MK])).toContain("hết hạn sau 2s");
     });
-    it("★★★ driverHost: DauVaoDriver.cheDoKiem=chi-so ⇒ lý do thẻ bác gửi model KHÔNG có đuôi; không đặt ⇒ vẫn có đuôi (hành vi cũ)", async () => {
-      const chay = async (cheDo: boolean) => {
-        const { dep, dd } = taoDep(
-          async (phat) => {
-            phat(canDuyet("run_command", { command: THE.lenhKiem }));
-            await new Promise((r) => setTimeout(r, 120));
-            phat({ loai: "xong", lyDo: "hoan-thanh" });
-          },
-          async () => ({ quyet: "chap-nhan" }),
-          { chayKiem: async (l) => kiemDo({ lenh: l, tenCaDo: ["nhóm > ca một", `tên mang bí mật ${MK}`] }) },
-        );
-        await driverHost(dep)({ ...dauVao(ra), ...(cheDo ? { cheDoKiem: "chi-so" as const, giaTriBiMat: [MK] } : {}) });
-        return dd.bac[0];
-      };
-      const co = await chay(true);
-      expect(co).toContain("- nhóm > ca một");
+    it("★★ không có dòng tổng kết vitest ⇒ nói rõ, không bịa số", () => {
+      const s = tomTatChiSoChoModel(kiemDo({ vitest: { tep: null, ca: null } }), 1, [MK]);
+      expect(s).toContain("Test Files: (không có dòng tổng kết)");
+      expect(s).toContain("Tests: (không có dòng tổng kết)");
+    });
+    const chayHost = async (cheDo: boolean, ra: string) => {
+      const { dep, dd } = taoDep(
+        async (phat) => {
+          phat(canDuyet("run_command", { command: THE.lenhKiem }));
+          await new Promise((r) => setTimeout(r, 120));
+          phat({ loai: "xong", lyDo: "hoan-thanh" });
+        },
+        async () => ({ quyet: "chap-nhan" }),
+        { chayKiem: async (l) => kiemDo({ lenh: l, dauRaDayDu: `ĐẦY ĐỦ cho người duyệt ${MK}`, tenCaDo: ["nhóm > ca một", `tên mang bí mật ${MK}`] }) },
+      );
+      await driverHost(dep)({ ...dauVao(ra), ...(cheDo ? { cheDoKiem: "chi-so" as const, giaTriBiMat: [MK] } : {}) });
+      return dd.bac[0];
+    };
+    it("★★★ driverHost: cheDoKiem=chi-so ⇒ lý do thẻ bác gửi model chỉ có số, không đuôi, không tên ca, không mật khẩu", async () => {
+      const co = await chayHost(true, ra);
+      expect(co).toContain("Tests 1 failed | 3 passed (4)");
+      expect(co).not.toContain("nhóm > ca một");
+      expect(co).not.toContain("tên mang bí mật");
       expect(co).not.toContain("DUOI_KHONG_DUOC_LOT");
       expect(co).not.toContain(MK);
-      expect(co).toContain("tên mang bí mật ***");
-      const khong = await chay(false);
+    });
+    it("★★★ driverHost: không đặt cheDoKiem ⇒ hành vi cũ (có đuôi đầu ra)", async () => {
+      const khong = await chayHost(false, ra);
       expect(khong).toContain("DUOI_KHONG_DUOC_LOT");
     });
-  });
-  it("tomTatKiemChoModel: URL trong đuôi và trong lỗi khởi chạy đều bị lọc; chữ thường giữ nguyên", () => {
-    const DAU = "MATKHAU_GIA_123";
-    const s = tomTatKiemChoModel(kiemFake({ duoi: `postgres://u:${DAU}@h/db`, loi: `không chạy: postgresql://u:${DAU}@h/db`, exit: null }), 1);
-    expect(s).not.toContain(DAU);
-    expect(s).toContain("Test Files");
+    it("★★★ chi-so: đầu ra ĐẦY ĐỦ ghi ra TỆP kết quả cho người duyệt (đúng nội dung k.dauRaDayDu), KHÔNG vào lời nhắc model; không chi-so ⇒ không tạo tệp", async () => {
+      const lenhModel = await chayHost(true, ra);
+      const tep = path.join(ra, `${THE.ma}.kiem-trong-luot-lan1.txt`);
+      expect(fs.existsSync(tep)).toBe(true);
+      expect(fs.readFileSync(tep, "utf8")).toBe(`ĐẦY ĐỦ cho người duyệt ${MK}`);
+      expect(lenhModel).not.toContain("ĐẦY ĐỦ cho người duyệt");
+      const ra2 = fs.mkdtempSync(path.join(os.tmpdir(), "drv2-"));
+      try {
+        await chayHost(false, ra2);
+        expect(fs.readdirSync(ra2).filter((f) => f.includes("kiem-trong-luot"))).toEqual([]);
+      } finally {
+        fs.rmSync(ra2, { recursive: true, force: true });
+      }
+    });
+    it("★★ chi-so mà chayKiem không có dauRaDayDu ⇒ tệp ghi `duoi` (không rỗng, không ném)", async () => {
+      const { dep } = taoDep(
+        async (phat) => {
+          phat(canDuyet("run_command", { command: THE.lenhKiem }));
+          await new Promise((r) => setTimeout(r, 120));
+          phat({ loai: "xong", lyDo: "hoan-thanh" });
+        },
+        async () => ({ quyet: "chap-nhan" }),
+        { chayKiem: async (l) => kiemFake({ lenh: l, duoi: "ĐUÔI NGẮN" }) },
+      );
+      await driverHost(dep)({ ...dauVao(ra), cheDoKiem: "chi-so", giaTriBiMat: [] });
+      expect(fs.readFileSync(path.join(ra, `${THE.ma}.kiem-trong-luot-lan1.txt`), "utf8")).toBe("ĐUÔI NGẮN");
+    });
   });
   it("tomTatKiemChoModel: hết hạn / không khởi chạy được / xanh đều nói rõ", () => {
     expect(tomTatKiemChoModel(kiemFake({ hetGio: true, exit: null }), 2)).toContain("hết hạn sau 2s");

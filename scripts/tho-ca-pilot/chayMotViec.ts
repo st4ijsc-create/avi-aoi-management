@@ -545,6 +545,14 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     lyDoKiem = `ketCuc ${ketCuc} giữ nguyên; lệnh kiểm chạy bổ sung: exit ${kiem.exit}${kiem.vitest.ca ? `, Tests ${kiem.vitest.ca.dat} passed / ${kiem.vitest.ca.tong}` : ""}`;
   }
 
+  // `--cho-phep-db`: đầu ra ĐẦY ĐỦ của lần chạy lệnh kiểm cuối (đã lọc URL + bí mật) ra TỆP cho người duyệt; không vào JSON, không vào lời nhắc model
+  if (dbCho && kiem?.dauRaDayDu !== undefined) {
+    try {
+      fs.writeFileSync(path.join(p.ra, `${the.ma}.kiem-cuoi.txt`), kiem.dauRaDayDu, "utf8");
+    } catch {
+      /* tệp phụ */
+    }
+  }
   return {
     ma: the.ma,
     ok: ketCuc === "xong",
@@ -567,7 +575,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     crlf,
     diff: diffPath,
     lenhKiem: the.lenhKiem,
-    ...(kiem ? { kiem: (({ lenh: _l, ...r }) => r)(kiem) } : {}),
+    ...(kiem ? { kiem: (({ lenh: _l, dauRaDayDu: _d, ...r }) => r)(kiem) } : {}),
     ...(p.coAiAgent ? { coAiAgent: p.coAiAgent } : {}),
     ...(dbCho ? { choPhepDb: true as const, vaiCsdl: VAI_DUOC_PHEP } : {}),
     luat: { sha256: sha256Hex(luat), nguon: luatNguon, byte: Buffer.byteLength(luat, "utf8") },
