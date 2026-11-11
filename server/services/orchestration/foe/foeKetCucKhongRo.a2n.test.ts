@@ -2293,7 +2293,11 @@ describe("A2(n) T7b-3 H37 — the words of a stuck edge report stream", () => {
 // object literal only (no variable, no spread), and every name called that is not a function of the two files is in the list CHO_PHEP below: a new one is red until it is read and listed.
 // lượt sửa 2 (rà T8 fix1 RV-D1..D3): no `import()` in what it reaches; a bare name called is a function of the two files, a local function of that body, an import, a global or a Promise's `resolve`,
 // never a name bound otherwise in that body (an alias: `const { dispatch: t } = …`); `.set(…)` on an `update(…)` is checked whatever its arguments and casts; `update(…)` of `orchestrationRuns`
-// only, no `insert(…)`, no `delete(…)` of a table (a step row is never written)
+// only, no `insert(…)`, no `delete(…)` of a table (a step row is never written).
+// lượt sửa 3 (rà T8 fix2 RV2-C4, C5, C7): a forbidden name (CAM) or a loader of a dispatcher / the engine / the equipment adapter is not named at all in what it reaches, in any form (a call, an
+// argument, a property, a destructured key, a string); `resolve` is a Promise executor's parameter only.
+// The census is a second net; parity is the first (scada-master ruling 11/11). What it does NOT see (it needs data flow): an update builder held in a variable and its `.set(…)` later
+// (`const u = tx.update(orchestrationRuns); u.set(vao, 0)`, rà RV2-C6): parity cases URGENT-EDGE-CHET-T8, G13, CHAN1-TIEN-QUET-T8, CHAN3-SONG-DELAY-T8, DAU-GOP-T8, RV2-D1-T8 catch a status written there (measured, lượt sửa 3: RV2-C6 red in those 6)
 describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes no status", () => {
   const TEP = ["foeRunStore.ts", "foeKetCucKhongRo.ts"];
   const CAM = new Set(["execStep", "dispatch", "sendCommand", "dispatchRobotJob", "getAdapter", "abortRun", "abortStopSweep", "runAbortStopSweep", "resumeRun", "startRun", "driveRun", "driveRunFromResume", "guiStopSauChot", "resendAbortStops", "setRunStatus", "setRunStatusUnlessAborted", "setRunStatusUnlessAbortedOn", "upsertStep", "upsertStepOn", "recordEdgeStepRows", "applyEdgeSegmentEnd"]);
@@ -2302,7 +2306,7 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
   /** the lazy loaders of the two files (napMotLan of ONE module each) and the names a body may take from what they load: a name destructured from anything else is an alias */
   const NAP: Record<string, { module: string; ten: readonly string[] }> = { napCanhBao: { module: "../../robot/criticalStopAlert", ten: ["raiseCriticalStopAlert"] }, napAudit: { module: "../../auditTrailService", ten: ["logCrudOperation", "createAuditContext"] } };
   /** a bare name called that is bound by nothing of the body: the language's own, and a Promise's resolve */
-  const TOAN_CUC = new Set(["Number", "String", "Boolean", "Array", "Object", "Promise", "Date", "JSON", "Error", "Set", "Map", "isFinite", "resolve"]);
+  const TOAN_CUC = new Set(["Number", "String", "Boolean", "Array", "Object", "Promise", "Date", "JSON", "Error", "Set", "Map", "isFinite"]);
   const nguon = new Map(TEP.map((t) => [t, ts.createSourceFile(t, readFileSync(resolve(__dirname, t), "utf8"), ts.ScriptTarget.Latest, true)] as const));
   /** every top-level function of the two files, by name (a declaration, or a const holding an arrow / function) */
   const ham = new Map<string, ts.Node>();
@@ -2310,10 +2314,13 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
   const nhap = new Set<string>();
   /** the tables the two files import from the schema */
   const bang = new Set<string>();
+  /** lượt sửa 3 — the lazy loaders of the two files that load a dispatcher, the engine or the equipment adapter: never named in what the sweep reaches */
+  const napCam = new Set<string>();
   for (const sf of nguon.values()) {
     for (const st of sf.statements) {
       if (ts.isFunctionDeclaration(st) && st.name && st.body) ham.set(st.name.text, st.body);
       if (ts.isVariableStatement(st)) for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name) && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) ham.set(d.name.text, d.initializer.body);
+      if (ts.isVariableStatement(st)) for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name) && d.initializer && /import\("[^"]*(commandDispatcher|robotCommandDispatcher|foeEngine|equipmentAdapter)"\)/.test(d.initializer.getText())) napCam.add(d.name.text);
       if (ts.isImportDeclaration(st) && st.importClause && !st.importClause.isTypeOnly) {
         const m = (st.moduleSpecifier as ts.StringLiteral).text;
         const ten: string[] = [];
@@ -2333,7 +2340,9 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
     const ghiTrangThai: string[] = [];
     const ghiBang: string[] = [];
     const biDanh: string[] = [];
+    const nhacCam: string[] = [];
     const hamCucBo = new Set<string>();
+    const thamPromise = new Set<string>();
     const tenKhac = new Set<string>();
     const ganTen = (b: ts.BindingName) => {
       if (ts.isIdentifier(b)) tenKhac.add(b.text);
@@ -2351,18 +2360,28 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
         else if (tuNap && ts.isObjectBindingPattern(x.name) && x.name.elements.every((el) => !el.propertyName && ts.isIdentifier(el.name) && tuNap.ten.includes(el.name.text))) for (const el of x.name.elements) hamCucBo.add((el.name as ts.Identifier).text);
         else ganTen(x.name);
       } else if (ts.isFunctionDeclaration(x) && x.name && x !== n) hamCucBo.add(x.name.text);
-      else if (ts.isParameter(x)) ganTen(x.name);
+      else if (ts.isParameter(x)) {
+        // a Promise executor's parameter (`new Promise((resolve) => …)`): its resolve, nothing else
+        const ham0 = x.parent;
+        const laExecutor = (ts.isArrowFunction(ham0) || ts.isFunctionExpression(ham0)) && ts.isNewExpression(ham0.parent) && ham0.parent.expression.getText() === "Promise" && ham0.parent.arguments?.[0] === ham0;
+        if (laExecutor && ts.isIdentifier(x.name)) thamPromise.add(x.name.text);
+        else ganTen(x.name);
+      }
       ts.forEachChild(x, khaiBao);
     };
     khaiBao(n);
     const di = (x: ts.Node) => {
+      // lượt sửa 3 — a forbidden name in any form: an identifier, a property, a destructured key, a string
+      const tenNut = ts.isIdentifier(x) || ts.isPrivateIdentifier(x) ? x.text : ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) ? x.text : null;
+      if (tenNut !== null && (CAM.has(tenNut) || napCam.has(tenNut))) nhacCam.push(`${tenNut}: ${x.parent.getText().slice(0, 70)}`);
       if (ts.isCallExpression(x)) {
         const e = thao(x.expression);
         if (x.expression.kind === ts.SyntaxKind.ImportKeyword) tenTinh.push(`import(): ${x.getText().slice(0, 70)}`);
         const ten = ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : null;
         if (ten) goi.push(ten);
         else if (ts.isElementAccessExpression(e)) tenTinh.push(x.getText().slice(0, 80));
-        if (ts.isIdentifier(e) && !TOAN_CUC.has(e.text) && !((hamCucBo.has(e.text) || ham.has(e.text) || nhap.has(e.text) || e.text in NAP) && !tenKhac.has(e.text))) biDanh.push(e.text);
+        if (ts.isIdentifier(e) && !TOAN_CUC.has(e.text) && !((hamCucBo.has(e.text) || ham.has(e.text) || nhap.has(e.text) || e.text in NAP || thamPromise.has(e.text)) && !tenKhac.has(e.text))) biDanh.push(e.text);
+        if (ts.isIdentifier(e) && TOAN_CUC.has(e.text) && tenKhac.has(e.text)) biDanh.push(`${e.text} (bound in the body)`);
         // an update's .set: whatever its arguments, its casts; a one-argument .set anywhere (a Map's takes two)
         const nhanUpdate = ts.isPropertyAccessExpression(e) && ts.isCallExpression(thao(e.expression)) && (() => {
           const c = thao((thao(e.expression) as ts.CallExpression).expression);
@@ -2380,7 +2399,7 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
       ts.forEachChild(x, di);
     };
     di(n);
-    return { goi, tenTinh, ghiTrangThai, ghiBang, biDanh };
+    return { goi, tenTinh, ghiTrangThai, ghiBang, biDanh, nhacCam };
   };
   const tamVoi = () => {
     const thay = new Set<string>();
@@ -2390,6 +2409,7 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
     const ghiTrangThai: string[] = [];
     const ghiBang: string[] = [];
     const biDanh: string[] = [];
+    const nhacCam: string[] = [];
     while (cho.length) {
       const t = cho.pop()!;
       if (thay.has(t)) continue;
@@ -2401,12 +2421,13 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
       ghiTrangThai.push(...g.ghiTrangThai);
       ghiBang.push(...g.ghiBang);
       biDanh.push(...g.biDanh.map((b) => `${t}: ${b}`));
+      nhacCam.push(...g.nhacCam.map((b) => `${t}: ${b}`));
       for (const x of g.goi) {
         goi.add(x);
         if (ham.has(x)) cho.push(x);
       }
     }
-    return { thay, goi, tenTinh, ghiTrangThai, ghiBang, biDanh };
+    return { thay, goi, tenTinh, ghiTrangThai, ghiBang, biDanh, nhacCam };
   };
   it("the sweeper is there, and what it reaches: its raises (baoKhongXacNhan, canhBaoKetCucKhongRo), the bound, the reads, its own mark's write", () => {
     const { thay } = tamVoi();
@@ -2418,6 +2439,10 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
   });
   it("no call by a computed name (M12), no import() (an alias's source, rà fix1 RV-D1): a name the census cannot read is refused", () => {
     expect(tamVoi().tenTinh).toEqual([]);
+  });
+  it("no forbidden name in any form (rà fix2 RV2-C4 a callback, RV2-C5 a property, RV2-C7 a destructured key): CAM and the loaders of a dispatcher / the engine / the adapter are not named in what it reaches", () => {
+    expect(tamVoi().nhacCam).toEqual([]);
+    expect([...napCam].sort(), "the loaders the census knows").toEqual(["napDispatcher"]);
   });
   it("no alias (rà fix1 RV-D1): a bare name called is a function of the two files, a local function of its body, an import, a global, or a listed name of a listed loader (NAP), and nothing else of that body bears the name", () => {
     expect(tamVoi().biDanh).toEqual([]);
@@ -2462,6 +2487,8 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
     expect(co(/KET_CUC_KHONG_RO_DA_BAO_CTX_KEY\b/), "DA_BAO").toEqual(["services/orchestration/foe/foeEngine.ts", "services/orchestration/foe/foeKetCucKhongRo.ts", "services/orchestration/foe/foeRunStore.ts"]);
     expect(co(/KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY\b/), "DA_BAO_QUET").toEqual(["services/orchestration/foe/foeKetCucKhongRo.ts", "services/orchestration/foe/foeRunStore.ts"]);
     expect(co(/foeKetCucKhongRoDaBao/), "the raw keys, in any form").toEqual(["services/orchestration/foe/foeKetCucKhongRo.ts"]);
+    // lượt sửa 3 (rà fix2 RV2-D1): a key built from pieces (`"foeKetCucKhongRo" + "DaBaoQuet"`): no string piece of it elsewhere. A split this does not match is the parity case RV2-D1-T8's
+    expect(co(/["'`][^"'`\n]*(DaBaoQuet|KhongRoDaBao|DaBao["'`])/), "a piece of the keys in a string").toEqual(["services/orchestration/foe/foeKetCucKhongRo.ts"]);
     const nguoiNoi = (sf: ts.SourceFile) => {
       const ra: string[] = [];
       for (const st of sf.statements) {

@@ -16128,4 +16128,126 @@ describe("A2(n) T8 — the edge end gate: no durable URGENT holds the run (G6), 
     expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 0 });
     expect(runEnd(), "one line for this process").toEqual([khoaRunEnd(c, buocKhoa(c))]);
   });
+
+  // ── T8 lượt sửa 3 (rà T8 fix2, dieu-phoi 11/11): CHAN-5, RV2-G1, RV2-G2, RV2-D1 ─────────────────────────────────────
+  /** the process's environment for one call, then as it was */
+  const voiEnv = async <T,>(env: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> => {
+    const cu = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]] as const));
+    for (const [k, v] of Object.entries(env)) if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+    try {
+      return await fn();
+    } finally {
+      for (const [k, v] of Object.entries(cu)) if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  };
+  it("CHAN5-CO-SAI-T8 FOE_ENGINE_MOT_PROCESS=1 beside WEB_CONCURRENCY=2, 5 sweeps: the mode is several processes, exactly ONE warning names the flag and what was seen, the skipped central run is named once; no central run skipped: the flag's warning all the same", async () => {
+    const c = await trungTamKhoa("c5sai");
+    runRow(c).status = "running";
+    const e = await edgeChet("c5saie");
+    h.alerts.length = 0;
+    const warn = vi.spyOn(console, "warn");
+    try {
+      await voiEnv({ FOE_ENGINE_MOT_PROCESS: "1", WEB_CONCURRENCY: "2", NODE_APP_INSTANCE: undefined }, async () => {
+        expect(cheDoProcessEngine(undefined, false)).toBe("nhieu");
+        for (let i = 0; i < 5; i++) await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() });
+      });
+      const dong = warn.mock.calls.map((x) => String(x[0]));
+      expect(dong.filter((l) => /FOE_ENGINE_MOT_PROCESS=1/.test(l)), "one warning names the flag, once per process").toHaveLength(1);
+      expect(dong.find((l) => /FOE_ENGINE_MOT_PROCESS=1/.test(l))).toMatch(/WEB_CONCURRENCY=2/);
+      expect(dong.filter((l) => new RegExp(`central run\\(s\\) ${c}\\b`).test(l)), "the skipped run named once, not at every sweep").toHaveLength(1);
+      expect(runEnd(), "the edge run told once, the central run not").toEqual([khoaRunEnd(e, buocKhoa(e))]);
+      // a later process life: no central run to skip, the flag still wrong: still said, once
+      __quenBoNhoQuetChoTest();
+      runRow(c).status = "held";
+      runRow(c).contextJson = { ...(runRow(c).contextJson ?? {}), [KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY]: { chot: { stepId: buocKhoa(c), at: "t" } } };
+      warn.mockClear();
+      await voiEnv({ FOE_ENGINE_MOT_PROCESS: "1", WEB_CONCURRENCY: "2", NODE_APP_INSTANCE: undefined }, async () => {
+        for (let i = 0; i < 5; i++) await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() });
+      });
+      expect(warn.mock.calls.map((x) => String(x[0])).filter((l) => /FOE_ENGINE_MOT_PROCESS=1/.test(l))).toHaveLength(1);
+      // the flag absent: no word about it
+      __quenBoNhoQuetChoTest();
+      warn.mockClear();
+      await voiEnv({ FOE_ENGINE_MOT_PROCESS: undefined, WEB_CONCURRENCY: "2", NODE_APP_INSTANCE: undefined }, () => quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() }));
+      expect(warn.mock.calls.map((x) => String(x[0])).filter((l) => /FOE_ENGINE_MOT_PROCESS/.test(l))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it("RV2-G1-T8 a run whose read failed in one sweep is swept again at the next: not dropped for the life of the process", async () => {
+    const c = await trungTamKhoa("g1loi");
+    h.alerts.length = 0;
+    let lan = 0;
+    const goc = (fake as any).select;
+    (fake as any).select = (...x: unknown[]) => {
+      const q = FakeDb.prototype.select.apply(fake, x as never);
+      const f = q.from.bind(q);
+      q.from = (t: unknown) => {
+        if (t === orchestrationRunSteps && lan++ === 0) throw new Error("the rows cannot be read this once (test)");
+        return f(t);
+      };
+      return q;
+    };
+    const err = vi.spyOn(console, "error");
+    try {
+      expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 1, ben: 0, chuaBen: 1 });
+      expect(runEnd()).toEqual([]);
+      expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() }), "the next sweep reads it and tells it").toMatchObject({ quet: 1, ben: 1 });
+      expect(runEnd()).toEqual([khoaRunEnd(c, buocKhoa(c))]);
+    } finally {
+      (fake as any).select = goc;
+      err.mockRestore();
+    }
+  });
+  it("RV2-G2-T8 the edge assignment read fails with another error than 42P01 (a lost connection): no 'no edge' — the run stays unconcluded (not told as a central run, no mark), counted and logged; the next sweep reads it and tells it as the edge run it is", async () => {
+    const e = await edgeChet("g2loi");
+    h.alerts.length = 0;
+    let lan = 0;
+    const goc = (fake as any).select;
+    (fake as any).select = (...x: unknown[]) => {
+      const q = FakeDb.prototype.select.apply(fake, x as never);
+      const f = q.from.bind(q);
+      q.from = (t: unknown) => {
+        if (t === runEdgeAssignments && lan++ === 0) throw Object.assign(new Error("Connection terminated unexpectedly"), { code: "08006" });
+        return f(t);
+      };
+      return q;
+    };
+    const err = vi.spyOn(console, "error");
+    try {
+      expect(await quetUrgentChuaBen({ walkerSong: () => false, cheDo: "nhieu", bayGio: SAU() })).toMatchObject({ quet: 1, ben: 0, chuaBen: 1 });
+      expect(err.mock.calls.some((x) => new RegExp(`run ${e}: URGENT obligation sweep failed: Connection terminated`).test(String(x[0])))).toBe(true);
+      expect(runEnd()).toEqual([]);
+      expect(daBaoQuet(e)).toBeUndefined();
+      expect(await quetUrgentChuaBen({ walkerSong: () => false, cheDo: "nhieu", bayGio: SAU() }), "read now: the edge run, told whatever the mode").toMatchObject({ quet: 1, ben: 1 });
+      expect(runEnd()).toEqual([khoaRunEnd(e, buocKhoa(e))]);
+    } finally {
+      (fake as any).select = goc;
+      err.mockRestore();
+    }
+  });
+  it("RV2-D1-T8 the sweep told the latch, then a person presses Abort: the Abort's end duty is as without a sweep (one bounded run_end try, its audit row foe_outcome_unknown_abort): no reader of the sweep's mark in it, in any form", async () => {
+    const motLan = async (ref: string, quet: boolean) => {
+      vi.mocked(logCrudOperation).mockClear();
+      const c = await trungTamKhoa(ref);
+      h.alerts.length = 0;
+      if (quet) expect(await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: SAU() })).toMatchObject({ quet: 1, ben: 1 });
+      const n0 = runEnd().length;
+      const a = await abortRun(c, OWNER, "checked on site");
+      expect(a.ok, String(a.message)).toBe(true);
+      await wait(40);
+      const audit = vi
+        .mocked(logCrudOperation)
+        .mock.calls.map((x) => (x[1] as { details?: { operation?: string; metadata?: Record<string, any> } }).details)
+        .filter((d) => d?.operation === "foe_outcome_unknown_abort")
+        .map((d) => ({ via: d!.metadata!.via, latchStepId: d!.metadata!.latchStepId }));
+      return { audit, runEnd: runEnd().length - n0 };
+    };
+    const khong = await motLan("d1a", false);
+    const co = await motLan("d1b", true);
+    expect(khong.audit, "without a sweep: the Abort's audit row").toHaveLength(1);
+    expect(co, "a sweep first changes nothing of the Abort's end duty").toEqual(khong);
+  });
 });

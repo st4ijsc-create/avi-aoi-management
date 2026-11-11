@@ -684,6 +684,19 @@ export function cheDoProcessEngine(env: NodeJS.ProcessEnv = process.env, laWorke
   }
   return env.FOE_ENGINE_MOT_PROCESS === "1" ? "mot" : "khongRo";
 }
+/**
+ * A2(n) T8 lượt sửa 3 (CHAN-5) — FOE_ENGINE_MOT_PROCESS=1 beside a sign of more than one process this process can see: the mode is not "mot" (cheDoProcessEngine), and the flag is said to be wrong, ONCE
+ * per process (not at every sweep, whether or not a run is skipped). What it cannot see (helm `replicaCount`, another host) it cannot say: the flag is the deployment's word there.
+ */
+let daCanhBaoCoMotProcess = false;
+function canhBaoCoMotProcess(env: NodeJS.ProcessEnv = process.env, laWorker: boolean = cluster.isWorker === true): void {
+  if (daCanhBaoCoMotProcess || env.FOE_ENGINE_MOT_PROCESS !== "1") return;
+  const che = cheDoProcessEngine(env, laWorker);
+  if (che === "mot") return;
+  const thay = [laWorker ? "a cluster worker" : null, env.NODE_APP_INSTANCE !== undefined ? `NODE_APP_INSTANCE=${env.NODE_APP_INSTANCE}` : null, env.WEB_CONCURRENCY !== undefined && env.WEB_CONCURRENCY.trim() !== "" ? `WEB_CONCURRENCY=${env.WEB_CONCURRENCY}` : null].filter((x): x is string => x !== null);
+  daCanhBaoCoMotProcess = true;
+  console.warn(`[FOE] FOE_ENGINE_MOT_PROCESS=1 says the central engine runs in ONE process, but this process sees ${thay.join(", ")} (${che}): the flag is not taken; central running / compensating runs are not told by the URGENT obligation sweep. Unset the flag or run one engine process.`);
+}
 
 /** the latest moment the run, its rows or its edge claim (the node's progress: the edge walker's heartbeat) changed; NaN ⇔ nothing says (then the run is old enough: the side that raises) */
 function mocMoiNhat(run: { updatedAt?: unknown; startedAt?: unknown }, rows: ReadonlyArray<{ startedAt?: unknown; finishedAt?: unknown; createdAt?: unknown }>, claim: { lastProgressAt?: unknown; claimedAt?: unknown } | null): number {
@@ -739,7 +752,11 @@ const quetDaBenTrongProcess = new Set<string>();
 /** Tests only: a restart forgets this process's memory (the durable mark DA_BAO_QUET must carry the rest). */
 export function __quenBoNhoQuetChoTest(): void {
   quetDaBenTrongProcess.clear();
+  daCanhBaoBoQua.clear();
+  daCanhBaoCoMotProcess = false;
 }
+/** T8 lượt sửa 3 (CHAN-5) — the central runs this process already named as skipped, by mode: a run is named once per mode (a mode that changes is news), not at every sweep */
+const daCanhBaoBoQua = new Set<string>();
 
 /**
  * A2(n) T8 (plan point 4, C-4, B) — THE sweep of the durable-URGENT obligation. A run whose URGENT never became durable and that no end will ever reach (an edge node dead for good: no record again, no
@@ -764,6 +781,7 @@ export async function quetUrgentChuaBen(o: { walkerSong: (runId: number) => bool
     return out;
   }
   if (!d) return out;
+  canhBaoCoMotProcess();
   const x: QuetMot = { bayGio: o.bayGio ?? Date.now(), tuoi: o.tuoiMs ?? QUET_URGENT_TUOI_TOI_THIEU_MS, walkerSong: o.walkerSong, cheDo: o.cheDo ?? cheDoProcessEngine(), boQuaNhieuProcess: [] };
   const gioiHan = o.gioiHan ?? 100;
   let runs: OrchestrationRun[];
@@ -787,7 +805,10 @@ export async function quetUrgentChuaBen(o: { walkerSong: (runId: number) => bool
     if (ben) out.ben += 1;
     else out.chuaBen += 1;
   }
-  if (x.boQuaNhieuProcess.length) console.warn(`[FOE] URGENT obligation sweep: the central engine may run in more than one process (${x.cheDo}): central run(s) ${x.boQuaNhieuProcess.join(", ")} (running / compensating) not told, a walker may be alive elsewhere`);
+  const moi = x.boQuaNhieuProcess.filter((id) => !daCanhBaoBoQua.has(`${x.cheDo}:${id}`));
+  for (const id of moi) daCanhBaoBoQua.add(`${x.cheDo}:${id}`);
+  if (daCanhBaoBoQua.size > 50_000) daCanhBaoBoQua.clear();
+  if (moi.length) console.warn(`[FOE] URGENT obligation sweep: the central engine may run in more than one process (${x.cheDo}): central run(s) ${moi.join(", ")} (running / compensating) not told, a walker may be alive elsewhere`);
   return out;
 }
 
