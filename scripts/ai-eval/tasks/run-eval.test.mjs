@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { bangMarkdown, bangTuKiem, CHE_DO_TU_KIEM, coBaoCao, hangAgentF, locCo, loiThamSo, LUAT_GIA_TRI, nhanTienTrinhNang, tachTenCongCu, tachTuKiemMa, tenBaoCao, tenCongCuBiet, tieuDeKhoa, tinhBang, tongHopTai, tuKiemMaChoLuot } from "./run-eval.mjs";
+import { bangMarkdown, bangTuKiem, CHE_DO_TU_KIEM, coBaoCao, docTai, hangAgentF, locCo, loiThamSo, LUAT_GIA_TRI, nhanTienTrinhNang, tachTenCongCu, tachTuKiemMa, tenBaoCao, tenCongCuBiet, tieuDeKhoa, tinhBang, tongHopTai, tuKiemMaChoLuot } from "./run-eval.mjs";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = JSON.parse(fs.readFileSync(path.join(DIR, "../codegen-chay-duoc/fake-hard.json"), "utf8"));
@@ -78,10 +78,11 @@ test("hai mẫu một đạt một trượt và cụt: đúng pass@1, pass@N, s�
   assert.ok(fs.existsSync(path.join(tam, "tho", "2026-11-08", "H-ts1-1.txt")), "câu trả lời thô ở ngoài thư mục báo cáo");
 });
 
-test("--ghi-chu và tải máy vào báo cáo: slot bận được đếm, mẫu tải đọc thật trên máy", async () => {
+// (11/11, dieu-phoi: đỏ 1/4 khi máy bận vì đọc CPU thật ra null) tải máy tiêm GIẢ qua RUN_EVAL_TAI_GIA ⇒ tất định; đọc thật có ca riêng.
+test("--ghi-chu và tải máy vào báo cáo: slot bận được đếm, mẫu tải (tiêm giả) vào báo cáo và ghi rõ là giả", async () => {
   const { sv, url } = await gia([OK], { slotBan: true });
   const ra = path.join(tam, "ra6");
-  const r = await chay(["--mau-tai-giay", "600", "--url", url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra, "--ngay", "2026-11-08", "--ghi-chu", "lan dau goi model that"]);
+  const r = await chay(["--mau-tai-giay", "600", "--url", url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra, "--ngay", "2026-11-08", "--ghi-chu", "lan dau goi model that"], { ...process.env, RUN_EVAL_TAI_GIA: JSON.stringify({ cpu: 37, ds: [] }) });
   sv.close();
   assert.equal(r.ma, 0, r.err);
   const bc = JSON.parse(fs.readFileSync(path.join(ra, "2026-11-08.json"), "utf8"));
@@ -89,8 +90,10 @@ test("--ghi-chu và tải máy vào báo cáo: slot bận được đếm, mẫu
   assert.equal(bc.taiMay.soLuotSlotBan, 1);
   assert.equal(bc.taiMay.sach, false);
   assert.ok(bc.taiMay.soMauTai >= 1);
-  assert.equal(typeof bc.taiMay.cpuTb, "number", "mẫu tải phải đọc được CPU thật");
+  assert.equal(bc.taiMay.cpuTb, 37);
+  assert.equal(bc.taiMay.nguon, "gia");
   const md = fs.readFileSync(path.join(ra, "2026-11-08.md"), "utf8");
+  assert.match(md, /Tải máy GIẢ \(RUN_EVAL_TAI_GIA/);
   assert.match(md, /Ghi chú: lan dau goi model that/);
   assert.match(md, /có tiến trình khác trong lúc đo/);
 });
@@ -126,6 +129,25 @@ test("nhanTienTrinhNang: dịch vụ thường trực không vào nhãn; tsc và
   assert.deepEqual(nhan("node node_modules/typescript/lib/tsc.js -p tsconfig.tests.json"), ["tsc"]);
   assert.deepEqual(nhan("npx tsc --noEmit"), ["tsc"]);
   assert.deepEqual(nhan("node node_modules/@playwright/test/cli.js test e2e/a.spec.ts"), ["playwright"]);
+});
+
+test("docTai thật (không tiêm): trả cpu số hoặc null (máy bận), nhan là mảng, không ném; không có cờ giả", { timeout: 60_000 }, async () => {
+  const m = await docTai({ truoc: null }, 60, {});
+  assert.ok(m.cpu === null || typeof m.cpu === "number", String(m.cpu));
+  assert.ok(Array.isArray(m.nhan));
+  assert.equal(m.gia, undefined);
+});
+
+test("docTai tiêm giả: nhãn tiến trình tính như thật, JSON hỏng ⇒ cpu null; tongHopTai chỉ ghi nguon gia khi có mẫu giả", async () => {
+  const tt = { truoc: new Map([[11, 0]]) };
+  const m = await docTai(tt, 1, { RUN_EVAL_TAI_GIA: JSON.stringify({ cpu: 55, ds: [{ pid: 11, cha: 1, lenh: "node vitest run", cpuMs: 5000 }] }) });
+  assert.deepEqual(m, { cpu: 55, nhan: ["vitest"], gia: true });
+  assert.deepEqual(await docTai({ truoc: null }, 1, { RUN_EVAL_TAI_GIA: "{hong" }), { cpu: null, nhan: [], gia: true });
+  assert.equal(tongHopTai([{ cpu: 1, nhan: [] }], 0).nguon, undefined);
+  assert.equal(tongHopTai([{ cpu: 1, nhan: [] }, { cpu: 2, nhan: [], gia: true }], 0).nguon, "gia");
+  // kiem-dinh P3: mẫu giả không tiến trình nặng, slot rảnh vẫn KHÔNG sạch; mẫu thật như vậy thì sạch.
+  assert.equal(tongHopTai([{ cpu: 2, nhan: [], gia: true }], 0).sach, false);
+  assert.equal(tongHopTai([{ cpu: 2, nhan: [] }], 0).sach, true);
 });
 
 test("tongHopTai: gộp mẫu; sạch chỉ khi không tiến trình nặng và slot không bận", () => {
@@ -305,8 +327,10 @@ test("agent-f qua run-f --config mau --noi tam: mỗi bài một lần, gom đú
 
 test("hangAgentF: chuyển buocDo + testDem; vắng nguồn hoặc số hỏng thì không bịa trường", () => {
   const buocDo = { soBuocDo: 3, luotMax: 3, soNen: 1, soCuuTran: 0, soDoiBam: 0, tokenUocDinh: 9000, vaoThatDinh: 8800, soCoCache: 3, cacheNTong: 5000, promptNTong: 4000 };
-  const x = { id: "py-a", luot: 2, dat: false, cham: { lyDo: ["TEST_DO"], dem: { pass: 9, fail: 4 }, canToiThieu: 13 }, agent: { usage: { ra: 77 }, ms: 1234, lyDo: "het-luot", buocDo } };
-  assert.deepEqual(hangAgentF(x, "py"), { id: "py-a", stack: "py", bo: "agent-f", mau: 2, dat: false, lyDo: ["TEST_DO"], cut: null, tokRa: 77, ms: 1234, lyDoDung: "het-luot", buocDo, testDem: { pass: 9, fail: 4, can: 13 } });
+  const x = { id: "py-a", luot: 2, dat: false, cham: { lyDo: ["TEST_DO"], dem: { pass: 9, fail: 4 }, canToiThieu: 13 }, agent: { usage: { ra: 77 }, ms: 1234, lyDo: "het-luot", buocDo, ctxMax: 83 } };
+  assert.deepEqual(hangAgentF(x, "py"), { id: "py-a", stack: "py", bo: "agent-f", mau: 2, dat: false, lyDo: ["TEST_DO"], cut: null, tokRa: 77, ms: 1234, lyDoDung: "het-luot", buocDo, ctxMax: 83, testDem: { pass: 9, fail: 4, can: 13 } });
+  assert.equal("ctxMax" in hangAgentF({ id: "e", luot: 1, agent: { ctxMax: null } }, "py"), false);
+  assert.equal("ctxMax" in hangAgentF({ id: "f", luot: 1, agent: { ctxMax: "83" } }, "py"), false);
   const tron = hangAgentF({ id: "py-b", luot: 1, dat: true }, "py");
   assert.equal("buocDo" in tron, false);
   assert.equal("testDem" in tron, false);

@@ -110,12 +110,29 @@ export function tongHopTai(mau, soLuotSlotBan) {
     cpuMax: cpu.length ? Math.max(...cpu) : null,
     tienTrinhNang,
     soLuotSlotBan,
-    sach: Object.keys(tienTrinhNang).length === 0 && soLuotSlotBan === 0,
+    // (kiem-dinh P3) có mẫu giả thì KHÔNG BAO GIỜ "sạch": người đọc chỉ nhìn `sach` không bị đánh lừa.
+    sach: !mau.some((m) => m.gia) && Object.keys(tienTrinhNang).length === 0 && soLuotSlotBan === 0,
+    ...(mau.some((m) => m.gia) ? { nguon: "gia" } : {}),
   };
 }
 
-/** Một mẫu tải máy. Không đọc được thì trả cpu null, không làm hỏng lượt đo. `trangThai.truoc` giữ cpuMs của mẫu trước. */
-function docTai(trangThai, giay) {
+/**
+ * Một mẫu tải máy. Không đọc được thì trả cpu null, không làm hỏng lượt đo. `trangThai.truoc` giữ cpuMs của mẫu trước.
+ * (11/11) `RUN_EVAL_TAI_GIA` = JSON `{cpu, ds}` CHỈ cho test: không gọi PowerShell (máy bận thì đọc CPU thật có lúc ra null ⇒ test
+ * chập chờn). Mẫu giả mang `gia: true` và báo cáo ghi `taiMay.nguon: "gia"` ⇒ một đêm đo thật không thể âm thầm dùng số giả.
+ */
+export function docTai(trangThai, giay, env = process.env) {
+  if (env.RUN_EVAL_TAI_GIA !== undefined) {
+    try {
+      const j = JSON.parse(env.RUN_EVAL_TAI_GIA);
+      const ds = Array.isArray(j.ds) ? j.ds : [];
+      const nhan = nhanTienTrinhNang(ds, process.pid, trangThai.truoc, giay);
+      trangThai.truoc = new Map(ds.map((x) => [x.pid, x.cpuMs]));
+      return Promise.resolve({ cpu: typeof j.cpu === "number" ? j.cpu : null, nhan, gia: true });
+    } catch {
+      return Promise.resolve({ cpu: null, nhan: [], gia: true });
+    }
+  }
   return new Promise((resolve) => {
     const lenh = "$c=(Get-CimInstance Win32_Processor | Measure-Object LoadPercentage -Average).Average; $p=Get-CimInstance Win32_Process | Select-Object @{n='pid';e={$_.ProcessId}},@{n='cha';e={$_.ParentProcessId}},@{n='lenh';e={$_.CommandLine}},@{n='cpuMs';e={[math]::Round(($_.KernelModeTime+$_.UserModeTime)/10000)}}; @{cpu=$c;ds=@($p)} | ConvertTo-Json -Depth 3 -Compress";
     const c = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", lenh], { windowsHide: true });
@@ -192,6 +209,7 @@ export function bangMarkdown(bc) {
     `Cờ: ${Object.keys(bc.co).length ? Object.entries(bc.co).map(([k, v]) => `\`${k}=${v}\``).join(" ") : "không đặt"}`,
     ...(bc.coBoQua?.length ? [`Cờ bị loại khỏi báo cáo (tên/giá trị dáng bí mật, chỉ ghi tên): ${bc.coBoQua.join(", ")}`] : []),
     ...(bc.ghiChu ? [`Ghi chú: ${bc.ghiChu}`] : []),
+    ...(bc.taiMay?.nguon === "gia" ? ["**Tải máy GIẢ (RUN_EVAL_TAI_GIA, chỉ dùng trong test) — số tải dưới đây không phải của máy.**"] : []),
     ...(bc.taiMay ? [bc.taiMay.sach ? `Tải máy: không thấy tiến trình nặng, slot không bận (${bc.taiMay.soMauTai} mẫu, CPU TB ${bc.taiMay.cpuTb ?? "?"} %, đỉnh ${bc.taiMay.cpuMax ?? "?"} %)` : `**Tải máy: có tiến trình khác trong lúc đo, thời gian có thể méo.** ${Object.entries(bc.taiMay.tienTrinhNang).map(([k, v]) => `${k} ${v}/${bc.taiMay.soMauTai} mẫu`).join(", ") || "không có tiến trình nặng"}; slot bận ${bc.taiMay.soLuotSlotBan} lượt; CPU TB ${bc.taiMay.cpuTb ?? "?"} %, đỉnh ${bc.taiMay.cpuMax ?? "?"} %`] : []),
     ...(bc.dungSom ? ["", `**Dừng sớm: ${bc.dungSom}. Số dưới đây chưa đủ mẫu.**`] : []),
     ...(bc.tong.cut ? ["", `**Cụt ${bc.tong.cut}/${bc.tong.luot}: số dưới đây là chặn dưới.**`] : []),
@@ -463,6 +481,8 @@ export function hangAgentF(x, stack) {
   return {
     id: x.id, stack, bo: "agent-f", mau: x.luot, dat: x.dat, lyDo: x.cham?.lyDo ?? [], cut: null, tokRa: x.agent?.usage?.ra ?? null, ms: x.agent?.ms ?? null, lyDoDung: x.agent?.lyDo ?? null,
     ...(x.agent?.buocDo ? { buocDo: x.agent.buocDo } : {}),
+    // (11/11, chu-du-an-HST) % ngữ cảnh đỉnh của lượt (khachAgent: max `usage.ctxPhanTram`); vắng = máy chủ không báo.
+    ...(Number.isFinite(x.agent?.ctxMax) ? { ctxMax: x.agent.ctxMax } : {}),
     ...(dem && (Number.isFinite(dem.pass) || Number.isFinite(dem.fail)) ? { testDem: { pass: Number.isFinite(dem.pass) ? dem.pass : null, fail: Number.isFinite(dem.fail) ? dem.fail : null, can: Number.isFinite(x.cham.canToiThieu) ? x.cham.canToiThieu : null } } : {}),
   };
 }
