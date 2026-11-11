@@ -14563,18 +14563,24 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
     expect(khoaCua("forwardNotSent", "m2").length, "central raises forward_not_sent m2, one key").toBe(1);
     // a press at central: its own words of the same items under central's key (the node's are under its claim, `claim<seq>`, I-5): one more key per item at most, as a press made them at the base
     // (lượt sửa 1, đo: nền raised them only at the press). One key for both needs the event of the key on the wire: the edge report contract, not done here (bao-cao). A second press adds nothing
+    // lượt sửa 2 (dieu-phoi 11/11, plan item 22): EXACTLY two inbox rows per item: the node's (`claim2`) and central's own (`chot` / `abort`), after the first press and still after the second
     const keys = () => ({ s: khoaCua("stopUntakenBranch", "s"), m: khoaCua("forwardNotSent", "m"), m2: khoaCua("forwardNotSent", "m2") });
-    const giuKhoa: string[] = [];
+    const daThay = { s: new Set(keys().s), m: new Set(keys().m), m2: new Set(keys().m2) };
+    const gop = () => {
+      const k = keys();
+      for (const t of ["s", "m", "m2"] as const) for (const x of k[t]) daThay[t].add(x);
+    };
     const a = await bam(c);
     expect(a.ok).toBe(true);
-    if ((a.abortStops?.untakenBranch ?? []).length) expect(String(a.message ?? ""), "never beside an untaken branch").not.toMatch(/owes no STOP step/);
-    const sau1 = keys();
-    for (const [ten, ds] of Object.entries(sau1)) expect(ds.length, `the press adds at most its own one key for ${ten}`).toBeLessThanOrEqual(1);
-    giuKhoa.push(...sau1.s, ...sau1.m, ...sau1.m2);
+    gop();
+    // H28's words of a press that found nothing owed never stand beside a branch never evaluated
+    expect(a.abortStops?.untakenBranch, "the press names the branch never evaluated").toEqual(["s"]);
+    expect(String(a.message ?? ""), "not the words of nothing owed").not.toContain("its records hold no STOP step owed");
+    for (const t of ["s", "m", "m2"] as const) expect([...daThay[t]].length, `exactly two inbox rows for ${t} after the first press: the node's and central's`).toBe(2);
     const a2 = await bam(c);
     expect(a2.ok).toBe(true);
-    const sau2 = keys();
-    expect([...sau2.s, ...sau2.m, ...sau2.m2].filter((k) => !giuKhoa.includes(k)), "a second press adds no key").toEqual([]);
+    gop();
+    for (const t of ["s", "m", "m2"] as const) expect([...daThay[t]].length, `still exactly two for ${t} after the second press`).toBe(2);
   });
   // ── lượt sửa 1 (rà H) — the package READ nt's pins and found none: the edge's marked route is not for it ────────────────────────────────────────────────────
   for (const nem of [false, true]) {
@@ -14653,6 +14659,17 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
     expect(hang(c, "abort:x"), "no row for a step that is no STOP").toBeUndefined();
     expect(urgentCua("abortStopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "x")).toEqual([]);
     expect(hang(c, "abort:nt")?.status, "the STOP's own record still lands").toBe("failed");
+  });
+  // lượt sửa 2 (rà fix1, RA-RC-URGENT-KHONG-COMMIT): a batch refused by a StreamAnswer thrown INSIDE a record's handler, after nt's abort_stop was read: it does not commit, nobody is told of
+  // nt from it. What a refused batch becomes beyond that is the limit waiting on the owner (ke-hoach.md mục 22 "Lô rollback"): nothing else is asserted here
+  it("T7B2-EDGE-C-409 the batch carrying nt's abort_stop is refused by a later record of it (a non-STOP's result with no authorisation central issued: 409, rolled back): no abort_stop_not_sent URGENT names nt", async () => {
+    const x = await songRoiSua("t2d409", (_recs, e) => {
+      const goc = e.records.find((r: any) => r.kind === "step" && r.stepId === "x") as any;
+      e.records.push({ ...goc, attempt: 7, status: "completed", startedAt: Date.now(), finishedAt: Date.now(), error: null, result: { routedTo: "ot-dispatcher", status: "acked" }, jti: null } as never);
+    });
+    await wait(40);
+    expect(urgentCua("abortStopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "nt").map((a) => String(a.dedupKey)), "nobody told of a batch that did not commit").toEqual([]);
+    void x;
   });
   it("T7B2-EDGE-C-COMMIT the batch carrying nt's abort_stop fails to commit once: no row, no URGENT; the shipper sends it again: the row with its code, exactly one URGENT", async () => {
     let lan = 0;
