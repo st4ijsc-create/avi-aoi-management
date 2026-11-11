@@ -332,6 +332,8 @@ Bất biến giữ nguyên: con ⊆ quyền cha, con không bao giờ `tu-dong`,
 
 Bất biến bí mật (kiem‑dinh 11/11, lỗi chặn `--cho-phep-db`): lệnh kiểm nào chạy với bí mật trong env (ví dụ URL CSDL `_test`) thì **đầu ra về model chỉ gồm số (Test Files/Tests, mã thoát) và tên ca đỏ** — lọc regex không đủ (5/9 cách né lọt). Đầu ra đầy đủ chỉ dành cho lệnh kiểm thuần chạy với env đã lọc và DB chết. Áp cho SM‑1, SM‑2 và HA‑3.
 
+Bất biến thực thi (dieu‑phoi 11/11): lệnh kiểm chạy mã do model viết dưới cùng tài khoản HĐH với bộ chạy, nên mã đó đọc được `.env` của repo chính (URL vai ứng dụng, nối được DEV). Vì vậy **mã model viết chỉ được thực thi sau khi (a) người duyệt đã chấp nhận diff chứa nó, hoặc (b) tiến trình chạy dưới tài khoản HĐH cách ly không đọc được `.env` và thư mục bí mật**. SM‑1, SM‑2 và chế độ `tu-dong` phải giữ bất biến này; trước khi có (b), pilot không dùng `tu-dong` cho việc có test hoặc script.
+
 ### 9.5 Lô HA — Harness mạnh hơn, logic hơn (L2 + L3 + L4)
 
 | Việc | Nội dung | Tiêu chí | Ai |
@@ -344,6 +346,7 @@ Bất biến bí mật (kiem‑dinh 11/11, lỗi chặn `--cho-phep-db`): lệnh
 | HA‑6 đột biến sau sửa | Khối ĐỘT BIẾN cờ `sau-sua`: kiểm chuỗi trên cây sau lượt cuối; tự sinh đột biến số học/biên cho hàm thuần khi thẻ không khai | L3b tay của TC‑11/12/14 thành tự động | tho‑ca‑agent |
 | HA‑7 hồi quy | Mỗi thay đổi lô NC/AC/SM/HA: phát lại fixture lô 1 không GPU; lô 2 chạy lại 3 việc lô 1 với B1 để đo L1 trước/sau | 0 việc cũ rớt | do‑model + dieu‑phoi |
 | HA‑8 bảng việc tự động | `buoc-do` thêm: giây chờ duyệt, lỗi công cụ theo mã, token trước/sau nén, số thẻ bị từ chối ⇒ sinh phần số của `danh-gia.md` | phần (a) của đánh giá không còn viết tay | tho‑ca‑agent + do‑model |
+| HA‑9 quét tĩnh diff + cách ly | Bộ quét cảnh báo trên thẻ chờ duyệt: đường tuyệt đối ngoài worktree/thư mục tạm, `.env`, `bi-mat`, `DATABASE_URL`/`process.env` ngoài danh sách của thẻ, `child_process`/`spawn`/`exec`, ghi tệp ngoài thư mục tạm, mạng ngoài `127.0.0.1:5434`, `eval`/`Function`/import động. Người duyệt vẫn quyết. Bước sau: chạy lệnh kiểm dưới tài khoản HĐH cách ly (chủ dự án tạo tài khoản + ACL) | 9 mẫu có ca test + đột biến; sau cách ly: mã test đọc `.env` bị từ chối ở mức HĐH | tho‑ca‑agent; cách ly = chủ dự án + dieu‑phoi |
 
 ### 9.6 Thứ tự và chỉ số mới
 
