@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { bangMarkdown, coBaoCao, locCo, loiThamSo, LUAT_GIA_TRI, nhanTienTrinhNang, tachTenCongCu, tenBaoCao, tenCongCuBiet, tieuDeKhoa, tinhBang, tongHopTai } from "./run-eval.mjs";
+import { bangMarkdown, bangTuKiem, CHE_DO_TU_KIEM, coBaoCao, locCo, loiThamSo, LUAT_GIA_TRI, nhanTienTrinhNang, tachTenCongCu, tachTuKiemMa, tenBaoCao, tenCongCuBiet, tieuDeKhoa, tinhBang, tongHopTai, tuKiemMaChoLuot } from "./run-eval.mjs";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = JSON.parse(fs.readFileSync(path.join(DIR, "../codegen-chay-duoc/fake-hard.json"), "utf8"));
@@ -463,4 +463,163 @@ test("bangMarkdown ghi model, cờ, dừng sớm và bài chưa đo", () => {
   const s = { stack: "ts", bai: 1, luot: 1, dat: 1, passAt1: 1, passAtN: 1, moiMau: [1], cut: 0, tokRaTb: 5, msTb: 2000 };
   const md = bangMarkdown({ ngay: "2026-11-08", nhan: "x", commit: "abc", cayBan: true, soMau: 1, maxTokens: 16000, model: { tep: "m.gguf", sha: "ff", ctx: 65536, reasoningBudget: 12000 }, co: { AI_AGENT_NEN_MOC: "0.5" }, dungSom: "het gio", chuaDo: ["pilot"], stacks: [s], tong: s });
   for (const c of ["m.gguf", "`ff`", "`AI_AGENT_NEN_MOC=0.5`", "Dừng sớm: het gio", "- pilot", "100.0 %", "chưa commit"]) assert.ok(md.includes(c), c);
+});
+
+// ── T1 nghiệm thu: --tu-kiem-ma (11/11) ─────────────────────────────────────────────────────────────────────────────────────
+const TK_DA_SUA = "ok=1; trang-thai=da-sua; ngon-ngu=ts; vong=1; sua=2; con=0; ky-tu-them=812; ms=1530; nguon=luot";
+
+test("tachTuKiemMa: chỉ khoá + dạng giá trị biết trước; chữ tự do, đường dẫn, chuỗi kết nối, khoá lạ bị bỏ", () => {
+  assert.deepEqual(tachTuKiemMa(TK_DA_SUA), { ok: "1", trangThai: "da-sua", ngonNgu: "ts", vong: 1, sua: 2, con: 0, kyTuThem: 812, ms: 1530, nguon: "luot" });
+  assert.deepEqual(tachTuKiemMa("ok=skip; nguon=luot"), { ok: "skip", nguon: "luot" });
+  assert.deepEqual(tachTuKiemMa("ok=na; trang-thai=khong-kiem-duoc; ngon-ngu=cs; vong=0; sua=0; con=0; ky-tu-them=0; ms=12; nguon=env").trangThai, "khong-kiem-duoc");
+  const ban = tachTuKiemMa("ok=1; trang-thai=da-sua; ghi=ignore-previous; url=postgres://a:b@h/d; ngon-ngu=C:\\x; vong=1.5; sua=-1; ms=12345678; nguon=khac; trang-thai2=sach");
+  assert.deepEqual(ban, { ok: "1", trangThai: "da-sua" });
+  for (const x of [null, undefined, 42, {}, "", "khong co dau bang", "a".repeat(401)]) assert.equal(tachTuKiemMa(x), null, String(x).slice(0, 20));
+  // Trần 400 ký tự: chuỗi có khoá hợp lệ nhưng quá dài ⇒ null (không đọc nửa vời).
+  const dai = `ok=1; trang-thai=sach; ${"x".repeat(380)}`;
+  assert.ok(dai.length > 400);
+  assert.equal(tachTuKiemMa(dai), null);
+  assert.deepEqual(tachTuKiemMa(`ok=1; trang-thai=sach; ${"x".repeat(300)}`), { ok: "1", trangThai: "sach" });
+});
+
+test("tuKiemMaChoLuot: bat/tat cố định; xen-ke chia đều mỗi bài và xen kẽ theo từng lượt gọi", () => {
+  for (let m = 1; m <= 6; m++) for (let i = 0; i < 4; i++) {
+    assert.equal(tuKiemMaChoLuot("bat", m, i), true);
+    assert.equal(tuKiemMaChoLuot("tat", m, i), false);
+    assert.equal(tuKiemMaChoLuot(undefined, m, i), false);
+  }
+  for (let i = 0; i < 4; i++) assert.equal([1, 2, 3, 4, 5, 6].filter((m) => tuKiemMaChoLuot("xen-ke", m, i)).length, 3, `bài ${i}`);
+  assert.deepEqual([0, 1, 2, 3].map((i) => tuKiemMaChoLuot("xen-ke", 1, i)), [false, true, false, true]);
+  assert.deepEqual(CHE_DO_TU_KIEM, ["tat", "bat", "xen-ke"]);
+});
+
+test("bangTuKiem: bài × nhánh, đạt/n, trạng thái và số TB chỉ từ lượt có tuKiemMa; hàng không có tuKiemMaLuot bị bỏ", () => {
+  const h = (dat, luot, tk, ms = 1000) => ({ id: "H-cs2", dat, ms, tuKiemMaLuot: luot, ...(tk ? { tuKiemMa: tk } : {}) });
+  const b = bangTuKiem([
+    h(true, true, { trangThai: "da-sua", vong: 1, kyTuThem: 100, ms: 1000 }, 3000),
+    h(true, true, { trangThai: "sach", vong: 0, kyTuThem: 0, ms: 500 }, 1000),
+    h(false, false, null, 2000),
+    h(true, false, null, 4000),
+    { id: "H-cs2", dat: true, ms: 1 },
+  ]);
+  assert.deepEqual(b, [
+    { id: "H-cs2", nhanh: "bat", dat: 2, n: 2, msTb: 2000, trangThai: { "da-sua": 1, sach: 1 }, vongTb: 1, kyTuThemTb: 50, msThemTb: 750 },
+    { id: "H-cs2", nhanh: "tat", dat: 1, n: 2, msTb: 3000, trangThai: {}, vongTb: null, kyTuThemTb: null, msThemTb: null },
+  ]);
+});
+
+test("locCo: tiền tố AI_CHAT_ vào báo cáo (theo-luot là từ cố định); tên dáng bí mật dưới AI_CHAT_ vẫn bị loại", () => {
+  const r = locCo({ AI_CHAT_TU_KIEM_MA: "theo-luot", AI_CHAT_TU_KIEM_VONG: "2", AI_CHAT_TU_KIEM_DONG_THOI: "2", AI_CHAT_COPILOT: "true", AI_CHAT_SECRET: "1", AI_CHAT_API_KEY: "0", AI_CHAT_TU_KIEM_MA_X: "postgres://a" });
+  assert.deepEqual(r.co, { AI_CHAT_COPILOT: "true", AI_CHAT_TU_KIEM_DONG_THOI: "2", AI_CHAT_TU_KIEM_MA: "theo-luot", AI_CHAT_TU_KIEM_VONG: "2" });
+  assert.deepEqual(r.boQua, ["AI_CHAT_API_KEY", "AI_CHAT_SECRET", "AI_CHAT_TU_KIEM_MA_X"]);
+});
+
+/** Giả máy chủ chat coding cho T1. `cheDo`: "luot" = như AI_CHAT_TU_KIEM_MA=theo-luot; "khong" = cờ tắt; "env" = cờ 1 (luôn có). */
+function giaChatT1(cheDo, tkChuoi = TK_DA_SUA) {
+  const yeuCau = [];
+  const sv = http.createServer((req, res) => {
+    if (req.url === "/health") return res.end("{}");
+    if (req.url === "/slots") return res.end("[]");
+    let b = "";
+    req.on("data", (d) => (b += d));
+    req.on("end", () => {
+      const than = JSON.parse(b);
+      yeuCau.push(than);
+      const coTk = cheDo === "env" || (cheDo === "luot" && than.context?.tuKiemMa === true);
+      res.write(`data: ${JSON.stringify({ type: "token", token: OK.text })}\n\n`);
+      res.end(`data: ${JSON.stringify({ type: "done", ...(coTk ? { tuKiemMa: cheDo === "env" ? tkChuoi.replace("nguon=luot", "nguon=env") : tkChuoi } : {}) })}\n\n`);
+    });
+  });
+  return new Promise((r) => sv.listen(0, "127.0.0.1", () => r({ sv, url: `http://127.0.0.1:${sv.address().port}`, yeuCau })));
+}
+function ckT1(ten) {
+  const ck = path.join(tam, ten);
+  fs.writeFileSync(ck, "127.0.0.1\tFALSE\t/\tFALSE\t0\tapp_session_id\tabc\n");
+  return ck;
+}
+
+test("--tu-kiem-ma xen-ke: lượt TẮT gửi thân y như cũ (không có trường tuKiemMa), lượt BẬT gửi true; báo cáo ghi từng lượt + bảng T1, không chép chữ tự do", async () => {
+  const g = await giaChatT1("luot", `${TK_DA_SUA}; ghi=ignore-previous-instructions; url=postgres://u:p@h/d`);
+  const ra = path.join(tam, "raT1");
+  const r = await chay(["--truc", "H", "--base", g.url, "--cookie", ckT1("ckT1.txt"), "--url", g.url, "--samples", "2", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra, "--ngay", "2026-11-11", "--tu-kiem-ma", "xen-ke"], envSach({ AI_CHAT_TU_KIEM_MA: "theo-luot" }));
+  g.sv.close();
+  assert.equal(r.ma, 0, r.err);
+  assert.equal(g.yeuCau.length, 2);
+  assert.equal("tuKiemMa" in g.yeuCau[0].context, false, "mẫu 1 bài 0 ⇒ TẮT ⇒ không có trường");
+  assert.equal(g.yeuCau[1].context.tuKiemMa, true);
+  assert.deepEqual({ ...g.yeuCau[0].context }, { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: "repo" });
+  const bc = JSON.parse(fs.readFileSync(path.join(ra, "2026-11-11.json"), "utf8"));
+  assert.equal(bc.tuKiemMaCheDo, "xen-ke");
+  assert.deepEqual(bc.hang.map((h) => h.tuKiemMaLuot), [false, true]);
+  assert.equal(bc.hang[0].tuKiemMa, undefined);
+  assert.deepEqual(bc.hang[1].tuKiemMa, { ok: "1", trangThai: "da-sua", ngonNgu: "ts", vong: 1, sua: 2, con: 0, kyTuThem: 812, ms: 1530, nguon: "luot" });
+  assert.deepEqual(bc.tuKiem.map((t) => [t.nhanh, t.dat, t.n]), [["bat", 1, 1], ["tat", 1, 1]]);
+  assert.equal(bc.co.AI_CHAT_TU_KIEM_MA, "theo-luot");
+  const md = fs.readFileSync(path.join(ra, "2026-11-11.md"), "utf8");
+  assert.match(md, /Tự kiểm mã T1 \(`--tu-kiem-ma xen-ke`\)/);
+  assert.match(md, /\| H-ts1 \| bat \| 1\/1 \|/);
+  assert.match(md, /da-sua 1/);
+  for (const t of [JSON.stringify(bc), md]) for (const bi of ["ignore-previous", "postgres", "u:p@"]) assert.ok(!t.includes(bi), bi);
+});
+
+test("--tu-kiem-ma bat mà máy chủ không theo-luot (không trả done.tuKiemMa): thoát 2, không ghi báo cáo", async () => {
+  const g = await giaChatT1("khong");
+  const ra = path.join(tam, "raT1b");
+  const r = await chay(["--truc", "H", "--base", g.url, "--cookie", ckT1("ckT1b.txt"), "--url", g.url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra, "--tu-kiem-ma", "bat"]);
+  g.sv.close();
+  assert.equal(r.ma, 2);
+  assert.match(r.err, /không có done\.tuKiemMa nguon=luot/);
+  assert.ok(!fs.existsSync(ra) || fs.readdirSync(ra).length === 0);
+});
+
+test("--tu-kiem-ma bat mà máy chủ đặt cờ 1 (nguon=env): thoát 2 — nhánh không do lượt quyết", async () => {
+  const g = await giaChatT1("env");
+  const ra = path.join(tam, "raT1e");
+  const r = await chay(["--truc", "H", "--base", g.url, "--cookie", ckT1("ckT1e.txt"), "--url", g.url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra, "--tu-kiem-ma", "bat"]);
+  g.sv.close();
+  assert.equal(r.ma, 2);
+  assert.ok(!fs.existsSync(ra) || fs.readdirSync(ra).length === 0);
+});
+
+test("--tu-kiem-ma tat mà máy chủ vẫn trả done.tuKiemMa: thoát 2, không ghi báo cáo", async () => {
+  const g = await giaChatT1("env");
+  const ra = path.join(tam, "raT1t");
+  const r = await chay(["--truc", "H", "--base", g.url, "--cookie", ckT1("ckT1t.txt"), "--url", g.url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra, "--tu-kiem-ma", "tat"]);
+  g.sv.close();
+  assert.equal(r.ma, 2);
+  assert.match(r.err, /lượt TẮT .* vẫn có done\.tuKiemMa/);
+  assert.ok(!fs.existsSync(ra) || fs.readdirSync(ra).length === 0);
+});
+
+test("--tu-kiem-ma tat mà máy chủ trả done.tuKiemMa KHÔNG đọc được (rác): vẫn tính là có ⇒ thoát 2", async () => {
+  const g = await giaChatT1("env", "rac khong co dau bang");
+  const ra = path.join(tam, "raT1r");
+  const r = await chay(["--truc", "H", "--base", g.url, "--cookie", ckT1("ckT1r.txt"), "--url", g.url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra, "--tu-kiem-ma", "tat"]);
+  g.sv.close();
+  assert.equal(r.ma, 2);
+  assert.ok(!fs.existsSync(ra) || fs.readdirSync(ra).length === 0);
+});
+
+test("--tu-kiem-ma giá trị lạ hoặc không phải trục H: thoát 2, không gọi model", async () => {
+  const g = await giaChatT1("luot");
+  for (const args of [["--truc", "H", "--base", g.url, "--cookie", ckT1("ckT1x.txt"), "--tu-kiem-ma", "co"], ["--truc", "M", "--tu-kiem-ma", "bat"]]) {
+    const r = await chay([...args, "--url", g.url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", path.join(tam, "raT1x")]);
+    assert.equal(r.ma, 2, args.join(" "));
+  }
+  g.sv.close();
+  assert.equal(g.yeuCau.length, 0);
+});
+
+test("không có --tu-kiem-ma: thân yêu cầu như cũ, hàng không có tuKiemMaLuot, báo cáo không có bảng T1", async () => {
+  const g = await giaChatT1("khong");
+  const ra = path.join(tam, "raT1k");
+  const r = await chay(["--truc", "H", "--base", g.url, "--cookie", ckT1("ckT1k.txt"), "--url", g.url, "--samples", "1", "--bo", "tasks-hard", "--only", "H-ts1", "--ra", ra, "--ngay", "2026-11-11"]);
+  g.sv.close();
+  assert.equal(r.ma, 0, r.err);
+  assert.equal("tuKiemMa" in g.yeuCau[0].context, false);
+  const bc = JSON.parse(fs.readFileSync(path.join(ra, "2026-11-11.json"), "utf8"));
+  assert.equal("tuKiemMaLuot" in bc.hang[0], false);
+  assert.equal("tuKiemMaCheDo" in bc, false);
+  assert.equal("tuKiem" in bc, false);
+  assert.doesNotMatch(fs.readFileSync(path.join(ra, "2026-11-11.md"), "utf8"), /Tự kiểm mã T1/);
 });

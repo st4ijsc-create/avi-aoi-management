@@ -6,7 +6,11 @@
  *   node scripts/ai-eval/tasks/run-eval.mjs --samples 3 [--bo tasks-hard,tasks-api2,agent-f] [--only <id,…|stack>] [--nhan <nhãn>]
  *       [--url http://127.0.0.1:8091] [--max-tokens 16000] [--sha] [--tran-phut 180] [--ra docs/ai/eval] [--tho D:/DO-AI/eval]
  *       [--agent-config agent|mau] [--noi tai-cho|tam] [--ghi-chu <chữ vào báo cáo>] [--mau-tai-giay 60]
- *       [--truc M|H] [--base http://127.0.0.1:3013] [--cookie <tệp>] [--project-id <id>]
+ *       [--truc M|H] [--base http://127.0.0.1:3013] [--cookie <tệp>] [--project-id <id>] [--tu-kiem-ma tat|bat|xen-ke]
+ *
+ * `--tu-kiem-ma` (chỉ trục H, nghiệm thu T1): máy chủ đặt AI_CHAT_TU_KIEM_MA=theo-luot; lượt BẬT gửi `context.tuKiemMa: true`, lượt TẮT không gửi
+ * trường nào (thân yêu cầu y như trước). `xen-ke`: bật khi (mẫu + thứ tự bài) chẵn ⇒ mỗi bài nửa số mẫu mỗi nhánh, cùng máy chủ, cùng giờ.
+ * Có cờ này thì máy chủ phải trả đúng: lượt BẬT có `done.tuKiemMa` với nguon=luot, lượt TẮT không có ⇒ sai là VỨT (thoát 2, không ghi báo cáo).
  *
  * Trước lượt đo chạy `kiem-thuoc.mjs`: thước hỏng thì số vô nghĩa.
  * Thoát 0 = đo xong (kể cả có bài trượt) · 2 = VỨT, không ghi báo cáo (llama-server chết, thước hỏng) · 3 = chạm trần thời gian, báo cáo có `dungSom`.
@@ -28,7 +32,7 @@ import { docTienTrinh, layBam, tachDongLenh } from "../../ai/kiem-he-thong.mjs";
 const SAMPLING = { temperature: 0.2, top_p: 0.9 };
 const TEP_RUN_F = `${BENCH_CODEGEN}/agent-f/run-f.mjs`;
 
-const CO_GIA_TRI = ["--samples", "--bo", "--only", "--nhan", "--url", "--max-tokens", "--tran-phut", "--ra", "--tho", "--agent-config", "--noi", "--ghi-chu", "--mau-tai-giay", "--truc", "--base", "--cookie", "--project-id", "--ngay"];
+const CO_GIA_TRI = ["--samples", "--bo", "--only", "--nhan", "--url", "--max-tokens", "--tran-phut", "--ra", "--tho", "--agent-config", "--noi", "--ghi-chu", "--mau-tai-giay", "--truc", "--base", "--cookie", "--project-id", "--ngay", "--tu-kiem-ma"];
 const CO_BAT = ["--sha"];
 
 /**
@@ -52,7 +56,7 @@ export function loiThamSo(argv) {
 
 const CU_PHAP = `node scripts/ai-eval/tasks/run-eval.mjs [--samples N] [--bo …] [--only …] [--nhan …] [--url …] [--max-tokens N] [--sha]
   [--tran-phut N] [--ra …] [--tho …] [--agent-config agent|mau] [--noi tai-cho|tam] [--ghi-chu …] [--mau-tai-giay N]
-  [--truc M|H] [--base …] [--cookie …] [--project-id …] [--ngay YYYY-MM-DD]
+  [--truc M|H] [--base …] [--cookie …] [--project-id …] [--ngay YYYY-MM-DD] [--tu-kiem-ma tat|bat|xen-ke]
 Không có chế độ khô: thiếu lỗi tham số là CHẠY THẬT lên model. Xem docblock đầu tệp.`;
 
 /** Nhãn tiến trình làm méo số đo. Báo cáo vào repo chỉ ghi nhãn, không ghi dòng lệnh (có thể chứa bí mật). */
@@ -198,6 +202,18 @@ export function bangMarkdown(bc) {
     dong({ ...bc.tong, stack: "**TỔNG**" }),
     "",
     ...(bc.chuaDo.length ? ["Chưa đo:", ...bc.chuaDo.map((c) => `- ${c}`), ""] : []),
+    ...(bc.tuKiem
+      ? [
+          `## Tự kiểm mã T1 (\`--tu-kiem-ma ${bc.tuKiemMaCheDo}\`)`,
+          "",
+          "| Bài | Nhánh | Đạt | Giây tường TB | Trạng thái (bật) | Vòng TB | Ký tự sinh thêm TB | ms thêm TB |",
+          "|---|---|---|---|---|---|---|---|",
+          ...bc.tuKiem.map((t) => `| ${t.id} | ${t.nhanh} | ${t.dat}/${t.n} | ${t.msTb === null ? "—" : (t.msTb / 1000).toFixed(1)} | ${Object.entries(t.trangThai).map(([k, v]) => `${k} ${v}`).join(", ") || "—"} | ${t.vongTb ?? "—"} | ${t.kyTuThemTb ?? "—"} | ${t.msThemTb ?? "—"} |`),
+          "",
+          "Ký tự sinh thêm là số ký tự (máy chủ đếm `ky-tu-them`), không phải token.",
+          "",
+        ]
+      : []),
   ].join("\n");
 }
 
@@ -225,12 +241,13 @@ export function tieuDeKhoa(env = process.env) {
   return khoa ? { authorization: `Bearer ${khoa}` } : {};
 }
 
-const TIEN_TO_CO = /^(AI_AGENT_|AI_AGENTIC_|AI_CODING_)[A-Z0-9_]+$/;
+// 11/11: thêm AI_CHAT_ (4 cờ thật: AI_CHAT_TU_KIEM_MA 0|1|theo-luot, AI_CHAT_TU_KIEM_VONG, AI_CHAT_TU_KIEM_DONG_THOI, AI_CHAT_COPILOT) cho nghiệm thu T1.
+const TIEN_TO_CO = /^(AI_AGENT_|AI_AGENTIC_|AI_CODING_|AI_CHAT_)[A-Z0-9_]+$/;
 // Lớp 1, GIÁ TRỊ: chỉ nhận rỗng, số ngắn (≤ 10 ký tự, có thể âm/thập phân), hoặc MỘT từ trong tập cố định. Cờ thật dưới ba tiền tố
 // (10/11) là bool/số, cộng hai cờ chuỗi: AI_CODING_MODEL_TASK (code|chat) và AI_CODING_ABLATION_NGU_CANH (hai giá trị dưới).
 // Thêm cờ chuỗi mới ⇒ thêm giá trị vào tập này; giá trị lạ bị loại (chỉ ghi tên vào coBoQua), không đoán.
 const SO_CO = /^-?\d{1,9}(\.\d{1,6})?$/;
-const TU_CO = new Set(["true", "false", "on", "off", "yes", "no", "code", "chat", "auto", "persona-khong-khoi", "khoi-khong-persona"]);
+const TU_CO = new Set(["true", "false", "on", "off", "yes", "no", "code", "chat", "auto", "persona-khong-khoi", "khoi-khong-persona", "theo-luot"]);
 // Lớp 2, TÊN: đoạn tên có dáng bí mật bị loại kể cả khi đúng tiền tố. 48 cờ thật dưới ba tiền tố (10/11) không tên nào khớp.
 const DOAN_BI_MAT =
   /(^|_)(KEYS?|APIKEY|PRIVKEY|PRIVATEKEY|SECRETS?|PASSWORD|PASSWD|PASS|PWD|PW|PASSPHRASE|PASSCODE|PIN|CREDS?|CREDENTIALS?|BEARER|O?AUTH|COOKIES?|SESSION|SESSID|SID|PRIVATE|JWT|DSN|URL|URI|CONN|CONNECTION|CONNSTR|WEBHOOK|HOOK|SALT|HMAC|M?OTP|TOTP|MFA|SIGNATURE|SIGNING|SIG|CERT|PEM|SSH|GPG|PGP|ENCRYPTION|CIPHER|NONCE|ACCOUNT|USER|USERNAME|LOGIN|EMAIL|PHONE|LICENSE|LICENCE|SEED|SIGN|SERIAL|ACTIVATION)(_|$)/;
@@ -310,18 +327,72 @@ async function goiModel(url, sys, prompt, maxTokens) {
   return { text: c?.message?.content ?? "", cut: c?.finish_reason === "length", tokRa: j.usage?.completion_tokens ?? null, ms: Date.now() - t0 };
 }
 
-/** Một bài qua đường sản phẩm. Đọc SSE như client thật: `done.answerRevised` thay văn bản đã tích luỹ. */
-async function goiDuongSanPham(base, cookie, prompt) {
+// T1: `done.tuKiemMa` là chuỗi `headerTuKiemMa` (server/services/ai/tuKiemMa/tuKiemMa.ts), ví dụ
+// "ok=1; trang-thai=da-sua; ngon-ngu=cs; vong=1; sua=2; con=0; ky-tu-them=812; ms=1530; nguon=luot". Chỉ nhận khoá và dạng giá trị biết trước
+// (enum hoặc số nguyên); khoá lạ, giá trị lạ, chữ tự do đều bỏ ⇒ báo cáo không bao giờ chép văn bản máy chủ.
+const TU_KIEM_ENUM = {
+  ok: new Set(["1", "0", "na", "skip"]),
+  "trang-thai": new Set(["bo-qua", "sach", "da-sua", "con-loi", "khong-kiem-duoc"]),
+  "ngon-ngu": new Set(["cs", "ts", "py", "-"]),
+  nguon: new Set(["env", "luot"]),
+};
+const TU_KIEM_SO = { vong: "vong", sua: "sua", con: "con", "ky-tu-them": "kyTuThem", ms: "ms" };
+const TU_KIEM_TEN = { ok: "ok", "trang-thai": "trangThai", "ngon-ngu": "ngonNgu", nguon: "nguon" };
+export function tachTuKiemMa(s) {
+  if (typeof s !== "string" || s.length > 400) return null;
+  const o = {};
+  for (const phan of s.split(";")) {
+    const m = phan.trim().match(/^([a-z-]{1,16})=([A-Za-z0-9-]{1,16})$/);
+    if (!m) continue;
+    const [, k, v] = m;
+    if (TU_KIEM_ENUM[k]?.has(v)) o[TU_KIEM_TEN[k]] = v;
+    else if (TU_KIEM_SO[k] && /^\d{1,7}$/.test(v)) o[TU_KIEM_SO[k]] = Number(v);
+  }
+  return Object.keys(o).length ? o : null;
+}
+
+export const CHE_DO_TU_KIEM = ["tat", "bat", "xen-ke"];
+/** Lượt (mẫu `mau` từ 1, bài thứ `iBai` từ 0) có gửi `context.tuKiemMa: true` không. `xen-ke`: chẵn ⇒ bật. */
+export function tuKiemMaChoLuot(cheDo, mau, iBai) {
+  if (cheDo === "bat") return true;
+  if (cheDo === "xen-ke") return (mau + iBai) % 2 === 0;
+  return false;
+}
+
+/** Bảng nghiệm thu T1: bài × nhánh (bật/tắt) — đạt/n, giây tường TB, và ở nhánh bật: trạng thái, vòng TB, ký tự sinh thêm TB, ms thêm TB. */
+export function bangTuKiem(hang) {
+  const nhom = new Map();
+  for (const h of hang) {
+    if (h.tuKiemMaLuot === undefined) continue;
+    const k = `${h.id}\t${h.tuKiemMaLuot ? "bat" : "tat"}`;
+    if (!nhom.has(k)) nhom.set(k, []);
+    nhom.get(k).push(h);
+  }
+  const tb = (xs) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
+  return [...nhom].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, hs]) => {
+    const [id, nhanh] = k.split("\t");
+    const tk = hs.map((h) => h.tuKiemMa).filter(Boolean);
+    const dem = {};
+    for (const t of tk) dem[t.trangThai ?? "?"] = (dem[t.trangThai ?? "?"] ?? 0) + 1;
+    const so = (f) => tb(tk.map((t) => t[f]).filter((x) => typeof x === "number"));
+    return { id, nhanh, dat: hs.filter((h) => h.dat).length, n: hs.length, msTb: tb(hs.map((h) => h.ms).filter((x) => typeof x === "number")), trangThai: dem, vongTb: so("vong"), kyTuThemTb: so("kyTuThem"), msThemTb: so("ms") };
+  });
+}
+
+/** Một bài qua đường sản phẩm. Đọc SSE như client thật: `done.answerRevised` thay văn bản đã tích luỹ. `tuKiemMa` true ⇒ thêm `context.tuKiemMa`. */
+async function goiDuongSanPham(base, cookie, prompt, tuKiemMa = false) {
   const t0 = Date.now();
+  const context = { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: "repo", ...(tuKiemMa ? { tuKiemMa: true } : {}) };
   const r = await fetch(`${base}/api/ai/local-kb/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: cookie },
-    body: JSON.stringify({ question: prompt, topK: 5, history: [], userRole: "admin", context: { route: "/ai-coding-workspace", uiLanguage: "vi", codingMode: true, projectId: "repo" } }),
+    body: JSON.stringify({ question: prompt, topK: 5, history: [], userRole: "admin", context }),
   });
   // 401/403/404 là cấu hình lượt đo sai, không phải bài trượt.
   if (!r.ok) throw new Vut(`${base}/api/ai/local-kb/stream HTTP ${r.status}`);
   let text = "";
   let buf = "";
+  let tk = null;
   const dec = new TextDecoder();
   for await (const c of r.body) {
     buf += dec.decode(c, { stream: true });
@@ -336,12 +407,15 @@ async function goiDuongSanPham(base, cookie, prompt) {
         continue;
       }
       if (o.type === "token") text += o.token ?? "";
-      else if (o.type === "done" && o.answerRevised === true && typeof o.answer === "string") text = o.answer;
+      else if (o.type === "done") {
+        if (o.answerRevised === true && typeof o.answer === "string") text = o.answer;
+        if (o.tuKiemMa !== undefined) tk = tachTuKiemMa(o.tuKiemMa) ?? { hong: true };
+      }
     }
   }
   // Server từ chối dự án (`codingProjectDeniedMessage`) mà không gọi model: lượt đo cấu hình sai, không phải bài trượt (đêm 09/11).
   if (TU_CHOI_DU_AN.test(text.trimStart())) throw new Vut(`server từ chối dự án "repo" (thiếu trong AI_REPO_SANDBOX_ROOTS?): ${text.slice(0, 120)}`);
-  return { text, cut: null, tokRa: null, ms: Date.now() - t0 };
+  return { text, cut: null, tokRa: null, ms: Date.now() - t0, tuKiemMa: tk };
 }
 
 const TU_CHOI_DU_AN = /^(Dự án đang chọn \(`|The selected project \(`|所选项目（`)/;
@@ -419,6 +493,9 @@ async function main() {
   const base = lay("--base", "").replace(/\/$/, "");
   const tepCookie = lay("--cookie");
   if (truc === "H" && baiMa.length && (!base || !tepCookie)) throw new Vut("--truc H cần --base và --cookie");
+  const cheDoTuKiem = lay("--tu-kiem-ma");
+  if (cheDoTuKiem !== undefined && !CHE_DO_TU_KIEM.includes(cheDoTuKiem)) throw new Vut(`--tu-kiem-ma ${CHE_DO_TU_KIEM.join("|")}, nhận: ${cheDoTuKiem}`);
+  if (cheDoTuKiem !== undefined && (truc !== "H" || !baiMa.length)) throw new Vut("--tu-kiem-ma chỉ dùng với --truc H và bài ma-don");
   const canModel = baiMa.length > 0 || (baiF.length > 0 && lay("--agent-config", "agent") === "agent");
   if (canModel && !(await suKhoe(url))) throw new Vut(`${url}/health không khoẻ trước khi đo`);
 
@@ -437,19 +514,23 @@ async function main() {
   const henTai = giayTai > 0 ? setInterval(() => void (dangDocTai = dangDocTai.then(() => docTai(trangThaiTai, giayTai)).then((m) => void mauTai.push(m))), giayTai * 1000) : null;
   // Vòng ngoài theo MẪU: dừng sớm vẫn còn mỗi mẫu đủ bài, không lệch về bài đầu danh sách.
   ngoai: for (let mau = 1; mau <= soMau; mau++) {
-    for (const b of baiMa) {
+    for (const [iBai, b] of baiMa.entries()) {
       if (Date.now() - t0 > tranMs) {
         dungSom = `chạm trần ${tranMs / 60_000} phút ở mẫu ${mau}, bài ${b.id}`;
         break ngoai;
       }
       const prompt = fs.readFileSync(`${b.dir}/prompt.md`, "utf8").trimEnd();
       if (await slotBan(url)) soLuotSlotBan++;
-      const g = truc === "H" ? await goiDuongSanPham(base, cookie, prompt) : await goiModel(url, SYS, prompt, maxTokens);
+      const luotBat = cheDoTuKiem !== undefined ? tuKiemMaChoLuot(cheDoTuKiem, mau, iBai) : undefined;
+      const g = truc === "H" ? await goiDuongSanPham(base, cookie, prompt, luotBat === true) : await goiModel(url, SYS, prompt, maxTokens);
+      // Nghiệm thu T1: máy chủ phải theo đúng nhánh của lượt, không thì A/B vô nghĩa.
+      if (luotBat === true && g.tuKiemMa?.nguon !== "luot") throw new Vut(`lượt BẬT ${b.id} mẫu ${mau} không có done.tuKiemMa nguon=luot (máy chủ chưa đặt AI_CHAT_TU_KIEM_MA=theo-luot?)`);
+      if (luotBat === false && g.tuKiemMa) throw new Vut(`lượt TẮT ${b.id} mẫu ${mau} vẫn có done.tuKiemMa (máy chủ đặt AI_CHAT_TU_KIEM_MA=1?)`);
       const tep = `${thoDir}/${b.id}-${mau}.txt`;
       fs.writeFileSync(tep, g.text);
       const c = await chamMaDon(b, tep);
-      hang.push({ id: b.id, stack: b.stack, bo: b.bo, mau, dat: c.dat, lyDo: c.lyDo, cut: g.cut, tokRa: g.tokRa, ms: g.ms });
-      console.error(`mẫu ${mau} ${b.stack}/${b.id} ${c.dat ? "ĐẠT" : "TRƯỢT"}${g.cut ? " CỤT" : ""} ${g.ms} ms`);
+      hang.push({ id: b.id, stack: b.stack, bo: b.bo, mau, dat: c.dat, lyDo: c.lyDo, cut: g.cut, tokRa: g.tokRa, ms: g.ms, ...(luotBat !== undefined ? { tuKiemMaLuot: luotBat } : {}), ...(g.tuKiemMa ? { tuKiemMa: g.tuKiemMa } : {}) });
+      console.error(`mẫu ${mau} ${b.stack}/${b.id} ${c.dat ? "ĐẠT" : "TRƯỢT"}${g.cut ? " CỤT" : ""} ${g.ms} ms${luotBat === undefined ? "" : ` tu-kiem ${luotBat ? `BAT ${g.tuKiemMa?.trangThai ?? "?"}` : "TAT"}`}`);
       if (!(await suKhoe(url))) throw new Vut(`llama-server chết sau ${b.id} mẫu ${mau}`);
     }
   }
@@ -477,6 +558,7 @@ async function main() {
     model: { tep: p.model ? p.model.split(/[\\/]/).pop() : null, sha, ctx: p.ctx, reasoningBudget: p.reasoningBudget, slot: p.slot },
     ...(({ co, boQua }) => ({ co, ...(boQua.length ? { coBoQua: boQua } : {}) }))(locCo(process.env)),
     ghiChu: lay("--ghi-chu") ?? null,
+    ...(cheDoTuKiem !== undefined ? { tuKiemMaCheDo: cheDoTuKiem, tuKiem: bangTuKiem(hang) } : {}),
     taiMay: giayTai > 0 ? tongHopTai(mauTai, soLuotSlotBan) : null,
     dungSom,
     chuaDo: baiPilot.length ? [`pilot-repo (${baiPilot.map((b) => b.id).join(", ")}): cần bộ chạy pilot và lượt _test`] : [],
