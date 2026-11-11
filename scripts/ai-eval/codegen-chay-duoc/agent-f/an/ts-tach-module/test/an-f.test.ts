@@ -50,7 +50,7 @@ test("hành vi qua từng module", async () => {
 test("tệp cũ src/donHang.ts chỉ còn câu re-export từ src/donHang/", () => {
   const cau = boChuThich(fs.readFileSync(path.join(DA, "src", "donHang.ts"), "utf8")).split(";").map((s) => s.trim()).filter(Boolean);
   assert.ok(cau.length >= 1);
-  for (const c of cau) assert.match(c, /^export (\*|type \{[^}]*\}|\{[^}]*\}) from "\.\/donHang\/[A-Za-z]+\.ts"$/, c);
+  for (const c of cau) assert.match(c, /^export (\*|type \{[^}]*\}|\{[^}]*\}) from ["']\.\/donHang\/[A-Za-z0-9_-]+\.ts["']$/, c);
 });
 
 test("module mới không import ngược tệp cũ hay src/index.ts, và không có vòng import", () => {

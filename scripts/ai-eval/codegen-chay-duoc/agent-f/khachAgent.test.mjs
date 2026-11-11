@@ -28,6 +28,10 @@ test("tomTatBuocDo: đếm lượt, nén, cứu tràn, đổi băm; đỉnh toke
   });
 });
 
+test("tomTatBuocDo: cuuTran chỉ tính khi đúng `true` (kiem-dinh b7: 1, \"true\", {} không tính)", () => {
+  assert.equal(tomTatBuocDo([bd(1, { cuuTran: true }), bd(2, { cuuTran: 1 }), bd(3, { cuuTran: "true" }), bd(4, { cuuTran: {} })]).soCuuTran, 1);
+});
+
 test("tomTatBuocDo: không có buoc-do (hoặc đầu vào hỏng) ⇒ null, không phải 0", () => {
   for (const x of [[], undefined, null, "x", [{ loai: "usage" }], [{ loai: "buoc-do" }], [{ loai: "buoc-do", luot: "1" }]]) assert.equal(tomTatBuocDo(x), null);
 });

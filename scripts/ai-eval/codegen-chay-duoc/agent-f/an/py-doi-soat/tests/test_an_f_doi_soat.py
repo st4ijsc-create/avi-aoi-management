@@ -93,7 +93,7 @@ def test_lenh_mau_trong_readme_chay_that():
     assert m, "thiếu mục ## Đối soát tồn kho"
     khoi = re.search(r"```bash\n(.*?)```", m.group(1), re.S)
     assert khoi, "mục thiếu khối ```bash"
-    lenh = next(d.strip() for d in khoi.group(1).splitlines() if d.strip())
+    lenh = next(d.strip() for d in khoi.group(1).splitlines() if d.strip() and not d.strip().startswith("#"))
     phan = shlex.split(lenh)
     assert phan[0] in ("python", "python3"), lenh
     r = chay(*phan[1:])

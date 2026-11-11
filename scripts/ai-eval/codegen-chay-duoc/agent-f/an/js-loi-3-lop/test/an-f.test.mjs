@@ -32,8 +32,9 @@ test("dòng trả hàng đúng bằng số âm của dòng bán ở mọi khoả
   }
 });
 
-test("tận gốc: phép tính tiền dùng chung đối xứng quanh 0, số dương không đổi", () => {
-  for (const x of [0.5, 2.5, 1234.5, 3.49, 3.51, 7]) assert.equal(lamTron(-x) + 0, -lamTron(x) + 0, String(x));
+// kiem-dinh 11/11: chấm theo HÀNH VI của phép tính tiền dùng chung (src/tien.mjs), không ép sửa ở lamTron hay phanTramCua.
+test("tận gốc: phép tính phần trăm tiền dùng chung đối xứng quanh 0, số dương không đổi", () => {
+  for (const [st, pt] of [[12345, 10], [25, 10], [1, 50], [999, 50], [77777, 15], [3, 50]]) assert.equal(phanTramCua(-st, pt) + 0, -phanTramCua(st, pt) + 0, `${st} @${pt}`);
   assert.equal(lamTron(2.5), 3);
   assert.equal(lamTron(2.4), 2);
   assert.equal(lamTron(1234.5), 1235);
