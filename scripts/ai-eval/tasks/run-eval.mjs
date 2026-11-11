@@ -375,9 +375,22 @@ function doAgentF(baiF, soMau, y) {
     // run-f: 2 = vứt. Ở chế độ kiểm thước 1 cũng là thước hỏng.
     if (r.status === 2 || (y.agentConfig !== "agent" && r.status !== 0)) throw new Vut(`run-f ${b.id} thoát ${r.status}`);
     const bc = JSON.parse(fs.readFileSync(`${BENCH_CODEGEN}/reports/${nhan}.json`, "utf8"));
-    for (const x of bc.rows) ra.push({ id: x.id, stack: b.stack, bo: "agent-f", mau: x.luot, dat: x.dat, lyDo: x.cham?.lyDo ?? [], cut: null, tokRa: x.agent?.usage?.ra ?? null, ms: x.agent?.ms ?? null, lyDoDung: x.agent?.lyDo ?? null });
+    for (const x of bc.rows) ra.push(hangAgentF(x, b.stack));
   }
   return ra;
+}
+
+/**
+ * Một hàng báo cáo run-f (`rows[i]`) ⇒ hàng run-eval. (11/11, NC-8) thêm `buocDo` (tóm tắt số của khachAgent: lượt, nén, token vào đỉnh,
+ * cứu tràn, cache) và `testDem` (pass/fail của bộ chấm + mức cần) để thấy "dừng ở đâu" khi trượt. Vắng nguồn ⇒ không có trường.
+ */
+export function hangAgentF(x, stack) {
+  const dem = x.cham?.dem;
+  return {
+    id: x.id, stack, bo: "agent-f", mau: x.luot, dat: x.dat, lyDo: x.cham?.lyDo ?? [], cut: null, tokRa: x.agent?.usage?.ra ?? null, ms: x.agent?.ms ?? null, lyDoDung: x.agent?.lyDo ?? null,
+    ...(x.agent?.buocDo ? { buocDo: x.agent.buocDo } : {}),
+    ...(dem && (Number.isFinite(dem.pass) || Number.isFinite(dem.fail)) ? { testDem: { pass: Number.isFinite(dem.pass) ? dem.pass : null, fail: Number.isFinite(dem.fail) ? dem.fail : null, can: Number.isFinite(x.cham.canToiThieu) ? x.cham.canToiThieu : null } } : {}),
+  };
 }
 
 /** Tên tệp báo cáo không đè lượt cùng ngày. */
