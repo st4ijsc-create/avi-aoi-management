@@ -110,7 +110,8 @@ export function tongHopTai(mau, soLuotSlotBan) {
     cpuMax: cpu.length ? Math.max(...cpu) : null,
     tienTrinhNang,
     soLuotSlotBan,
-    sach: Object.keys(tienTrinhNang).length === 0 && soLuotSlotBan === 0,
+    // (kiem-dinh P3) có mẫu giả thì KHÔNG BAO GIỜ "sạch": người đọc chỉ nhìn `sach` không bị đánh lừa.
+    sach: !mau.some((m) => m.gia) && Object.keys(tienTrinhNang).length === 0 && soLuotSlotBan === 0,
     ...(mau.some((m) => m.gia) ? { nguon: "gia" } : {}),
   };
 }

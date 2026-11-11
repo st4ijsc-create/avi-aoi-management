@@ -145,6 +145,9 @@ test("docTai tiêm giả: nhãn tiến trình tính như thật, JSON hỏng ⇒
   assert.deepEqual(await docTai({ truoc: null }, 1, { RUN_EVAL_TAI_GIA: "{hong" }), { cpu: null, nhan: [], gia: true });
   assert.equal(tongHopTai([{ cpu: 1, nhan: [] }], 0).nguon, undefined);
   assert.equal(tongHopTai([{ cpu: 1, nhan: [] }, { cpu: 2, nhan: [], gia: true }], 0).nguon, "gia");
+  // kiem-dinh P3: mẫu giả không tiến trình nặng, slot rảnh vẫn KHÔNG sạch; mẫu thật như vậy thì sạch.
+  assert.equal(tongHopTai([{ cpu: 2, nhan: [], gia: true }], 0).sach, false);
+  assert.equal(tongHopTai([{ cpu: 2, nhan: [] }], 0).sach, true);
 });
 
 test("tongHopTai: gộp mẫu; sạch chỉ khi không tiến trình nặng và slot không bận", () => {
