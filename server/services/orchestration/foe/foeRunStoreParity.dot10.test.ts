@@ -441,7 +441,7 @@ import {
   FOE_GATE_REQUIRED,
   baoKetThucKhongQuetSauDoanEdge, // A2(n) T7b-3 (H36)
 } from "./foeEngine";
-import { EDGE_HELD_CTX_KEY, baoKhongXacNhan, buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, dauKhongXacNhan, findSeparateGateApproval, priorStepsOf, quenBenKhongXacNhan, quyetDinhKetThucAnh, persistContext, phanLoaiStopAbort, stopAbortCoGui, stopChuaRaTuHang, themBuocHongKhiTiepTuc, upsertStep, withResolvedAdapter } from "./foeRunStore";
+import { EDGE_HELD_CTX_KEY, baoKhongXacNhan, buTruLaStopGhimTrungTam, chuBuTruTrongDinhNghia, dauKhongXacNhan, findSeparateGateApproval, priorStepsOf, quenBenKhongXacNhan, quyetDinhKetThucAnh, quetUrgentChuaBen, QUET_URGENT_TUOI_TOI_THIEU_MS, persistContext, phanLoaiStopAbort, stopAbortCoGui, stopChuaRaTuHang, themBuocHongKhiTiepTuc, upsertStep, withResolvedAdapter } from "./foeRunStore";
 import { eventsForNode, reportForNode } from "../../edge/edgeReportsCentral";
 import { docRunAbortCanGuiLaiStop } from "../../edge/edgeExecutionCentral"; // A2(n) T7b-2 (P4)
 import { EdgeStreamShipper } from "../../edge/edgeStreams";
@@ -454,7 +454,8 @@ import { raiseCriticalStopAlert } from "../../robot/criticalStopAlert";
 import { logCrudOperation } from "../../auditTrailService";
 import { FOE_NOT_SENT_RUN_LATCHED, edgeResumeStateOf } from "./foeRunStore";
 import { verifiedStopStepIds } from "./foeStepClass";
-import { lyDoStopKhoaMoiCho, phanLoaiStopGhimChoFoe } from "../../ot/commandDispatcher";
+import { dispatch, lyDoStopKhoaMoiCho, phanLoaiStopGhimChoFoe } from "../../ot/commandDispatcher";
+import { dispatchRobotJob } from "../../robot/robotCommandDispatcher"; // A2(n) T8 — the obligation sweeper sends nothing: both dispatchers counted
 import { analyseDefinition } from "../../edge/edgeRunAnalysis";
 import { edgeContextPatchOf } from "../../edge/edgeContextPolicy";
 import { createEdgeRunStore, type EdgeRunRecordIn, type EdgeStepAuthorizeOutcome, type EdgeStepAuthorizeRequest } from "../../edge/edgeRunStore";
@@ -7498,9 +7499,59 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
     await wait(40);
     // T8 turns this green by one call of its obligation sweeper here (the URGENT not yet durable, raised again), nothing else:
     // not the expectation below, not the crash above
+    await quetUrgentChuaBen({ bayGio: Date.now() + QUET_URGENT_TUOI_TOI_THIEU_MS + 1 });
     expect(benKhiChet, "the crashed raise stays without an answer").toBe(0);
     expect(h.alertDurable, "a raise outside the crash is stored: baoBen(true)").toBe(true);
     expect(loaiCB("stopGhimLech"), "T8: exactly one durable stop_pin_mismatch URGENT after the crash").toHaveLength(1);
+  });
+  // ── T8: the edge dies for good: no record again, no segment end, ever ──────────────────────────────────────────────
+  it("URGENT-EDGE-CHET-T8 the edge dies for good after its records (no segment end, ever): the obligation sweeper raises the latch's run_end and the mark's stop_pin_mismatch once each, durable; DA_BAO; nothing sent, the run untouched; a second sweep raises nothing", async () => {
+    const x = await chayGiua(dMot("uec"), undefined, false);
+    const c = x.e.runId;
+    await chuanBi(x.e, 2);
+    const J = nhatKy();
+    const S = edgeRunStream(c, 2);
+    for (const r of x.e.records.slice(x.moc)) J.them(S, r as never);
+    const sh = new EdgeStreamShipper(J as never, trungTam(c) as never, { log: () => undefined });
+    sh.setClaim(c, 2, TOKEN);
+    for (const t of rows("device_tags")) if (t.tagKey === "halt") t.stopValue = null;
+    // the crash inside the raise of the mismatch URGENT (as URGENT-LECH-MAT-T8): nothing stored, no `baoBen`
+    const chet: Array<Record<string, any>> = [];
+    h.raiseChet = chet;
+    await sh.flush(S);
+    await wait(30);
+    h.raiseChet = null;
+    expect(dau(c, "s1")).toBe("ghimLech");
+    expect(chet.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.stopGhimLech), "the crash took the raise of the mismatch URGENT").toHaveLength(1);
+    // the node is gone: no record again, no segment end, ever. Central still holds the run as running, latched on its rows
+    const chot = chotTuHang(stepRows(c) as never);
+    expect(chot, "the rows hold the latch (the first row with the code)").not.toBeNull();
+    const k = chot!.stepId;
+    expect(runRow(c).status).toBe("running");
+    expect(loaiCB("stopGhimLech"), "nothing durable about the mark").toEqual([]);
+    const runEndCua = () => h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.runEnd).map((a) => String(a.dedupKey));
+    expect(runEndCua(), "nothing about the latch either").toEqual([]);
+    expect((runRow(c).contextJson as Record<string, unknown> | null)?.[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]).toBeUndefined();
+    const lenh = () => h.sent.length + h.lac.length + vi.mocked(dispatch).mock.calls.length + vi.mocked(dispatchRobotJob).mock.calls.length;
+    const lenh0 = lenh();
+    const status0 = runRow(c).status;
+    // the case's clock: the sweep at now (too young, a live walker may still reach its own end), then past the minimum age
+    const now = Date.now();
+    const tre = await quetUrgentChuaBen({ bayGio: now });
+    expect(tre.quet, "too young: not swept").toBe(0);
+    expect(h.alerts.length, "too young: nothing raised").toBe(0);
+    const r1 = await quetUrgentChuaBen({ bayGio: now + QUET_URGENT_TUOI_TOI_THIEU_MS + 1 });
+    expect(r1).toMatchObject({ quet: 1, ben: 1, chuaBen: 0 });
+    expect(runEndCua(), "the latch's URGENT under its one fixed key").toEqual([`${CANH_BAO_KHONG_RO_KIND.runEnd}:${c}:${k}:${KHONG_CO_BU_TRU}:chot`]);
+    expect(loaiCB("stopGhimLech").map((a) => String(a.dedupKey)), "the mark's URGENT under the report path's own key").toEqual([`${CANH_BAO_KHONG_RO_KIND.stopGhimLech}:${c}:s1:${KHONG_CO_BU_TRU}:claim2`]);
+    expect((runRow(c).contextJson as Record<string, unknown>)[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY], "durable: the latch is told").toMatchObject({ stepId: k });
+    expect(runRow(c).status, "the sweep only raises: the run's status is not its to write").toBe(status0);
+    expect(lenh() - lenh0, "the sweep sends nothing").toBe(0);
+    const n1 = h.alerts.length;
+    const r2 = await quetUrgentChuaBen({ bayGio: now + 2 * QUET_URGENT_TUOI_TOI_THIEU_MS });
+    expect(r2.chuaBen).toBe(0);
+    expect(h.alerts.length, "a second sweep: nothing more").toBe(n1);
+    expect(lenh() - lenh0, "nor a command").toBe(0);
   });
   it("BC-HET-KHONG-BEN-T7 a run with a marked row ends only on a durable URGENT: not durable (nobody to tell), and the sink throwing: held, at the end gate", async () => {
     const ket: string[] = [];
@@ -15519,5 +15570,180 @@ describe("A2(n) T7b-3 H37 — a run's edge report stream wedged by a batch refus
     expect(khoaCo()).toEqual([khoa(x.c, x.S, "unauthorised_actuation")]);
     expect(String(h37()[0]!.message)).toContain(`"nt"`);
     expect(h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.abortStopNotSent && String(a.dedupKey).split(":")[2] === "nt"), "the batch did not commit").toEqual([]);
+  });
+});
+
+// ═══ A2(n) T8 ══════════════════════════════════════════════════════════════════════════════════════════════════════
+describe("A2(n) T8 — the edge end gate: no durable URGENT holds the run (G6), one key across segments (G7), the waits bounded in the transaction (N-3); the obligation sweeper (G12, G13)", () => {
+  const box = (id: string, steps: WorkflowStep[], extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "sequence", steps, ...extra }) as never;
+  const parF = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const runEnd = () => h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.runEnd).map((a) => String(a.dedupKey));
+  const khoaRunEnd = (c: number, step: string) => `${CANH_BAO_KHONG_RO_KIND.runEnd}:${c}:${step}:${KHONG_CO_BU_TRU}:chot`;
+  /** the latch the gate and the sweeper name: central's context key (here the report riding on the end), else the rows' first code */
+  const buocKhoa = (c: number) => String(((runRow(c).contextJson as Record<string, any> | null)?.[KET_CUC_KHONG_RO_CHOT_CTX_KEY]?.stepId) ?? chotTuHang(stepRows(c) as never)!.stepId);
+  const daBao = (c: number) => (runRow(c).contextJson as Record<string, unknown> | null)?.[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY];
+  const lenh = () => h.sent.length + h.lac.length + vi.mocked(dispatch).mock.calls.length + vi.mocked(dispatchRobotJob).mock.calls.length;
+  const SAU = () => Date.now() + QUET_URGENT_TUOI_TOI_THIEU_MS + 1;
+  /** x answers no word: the run latches on the edge; b's STOP compensation goes at once (L-7) */
+  const dG = (ref: string) => def(ref, [gate(), box("b", [move("x")], { compensation: robotStop("cs") })]);
+  /** segment 2 latched on the edge, its end applied by central */
+  const denKhoa = async (ref: string) => {
+    const e = await edgeAssignedRun(dG(ref));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await wait(20);
+    return e;
+  };
+  /** the rows of a segment the harness did not apply (quaBaoCao), applied as edgeSegment does: what the report path commits */
+  const apHang = async (runId: number, seg: EdgeRunRecordIn[]) => {
+    const write = seg.filter((r) => r.kind === "step").map((r: any) => ({ stepId: r.stepId, stepType: r.stepType, status: r.status, attempt: r.attempt, startedAt: r.startedAt == null ? null : new Date(r.startedAt), finishedAt: r.finishedAt == null ? null : new Date(r.finishedAt), error: r.error, result: r.result ?? undefined }));
+    await recordEdgeStepRows(fake as never, runId, write);
+  };
+
+  // ── G6, G7: the end gate on the edge ───────────────────────────────────────────────────────────────────────────────
+  it("G6 edge, the URGENT not durable: central holds the run (the end gate's words), one run_end under the fixed key, no DA_BAO; the STOP compensation went once", async () => {
+    h.alertDurable = false;
+    const e = await denKhoa("t8g6");
+    const c = e.runId;
+    expect(runRow(c).status, "no durable URGENT, no end").toBe("held");
+    expect(String(runRow(c).error)).toMatch(/^FOE_OUTCOME_UNKNOWN: run \d+ has a command whose outcome is unknown, and no URGENT about it could be stored/);
+    const k = buocKhoa(c);
+    expect(runEnd()).toEqual([khoaRunEnd(c, k)]);
+    expect(daBao(c)).toBeUndefined();
+    expect(h.sent.filter((x) => x.stepId === "cs").length).toBe(1);
+  });
+  it("G7 handed back, the next segment: the same key, cs once; the URGENT lands at the second end: the run ends, DA_BAO", async () => {
+    h.alertDurable = false;
+    const e = await denKhoa("t8g7");
+    const c = e.runId;
+    expect(runRow(c).status).toBe("held");
+    const k = buocKhoa(c);
+    h.alertDurable = true;
+    const r = await continueOutcomeUnknown(e, "checked on site");
+    expect(r.status, String((r as { message?: string }).message)).toBe("queued");
+    await edgeSegment(e, 3);
+    await wait(20);
+    expect(["failed", "completed", "aborted"]).toContain(runRow(c).status);
+    expect(runEnd(), "two segment ends, one key: the claim is not in it").toEqual([khoaRunEnd(c, k), khoaRunEnd(c, k)]);
+    expect(daBao(c)).toMatchObject({ stepId: k });
+    expect(h.sent.filter((x) => x.stepId === "cs").length, "cs once over both segments").toBe(1);
+  });
+
+  // ── N-3: the waits of the gate inside the batch's transaction ─────────────────────────────────────────────────────
+  it("N3-GIU-KHOA-T8 the URGENTs never answer at a segment end (the latch and a marked row): every wait together stays within 5·D (it held the row ~15·D before), all raised all the same, held (H2)", async () => {
+    h.heSoHan = 0.04; // 5·D = 200 ms on the case's clock
+    const e = await edgeAssignedRun(def("t8n3", [gate(), parF("p", [move("x"), box("b", [delay("w", 30), robotStop("s1")])])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("x");
+    e.quaBaoCao = true;
+    const { out, segment } = await edgeSegment(e, 2);
+    const c = e.runId;
+    await apHang(c, segment);
+    const s1 = stepRows(c).find((r) => r.stepId === "s1")!;
+    expect(s1.status).toBe("completed");
+    s1.resultJson = { ...(s1.resultJson ?? {}), stopKhongXacNhan: "ghimLech", edge: { claimSeq: 2 } }; // what the report path writes of a STOP central could not verify
+    expect(chotTuHang(stepRows(c) as never), "latched on the rows").not.toBeNull();
+    expect(runRow(c).status).toBe("running");
+    h.alertTreo = true;
+    const D = STOP_DB_STEP_DEADLINE_MS * h.heSoHan;
+    const t0 = performance.now();
+    const ket = await applyEdgeSegmentEnd(fake as never, c, { ...(out as any), nodeCode: "EDGE-A", claimSeq: 2, def: rows("orchestration_workflows").find((w) => w.id === runRow(c).workflowId)!.definitionJson as never });
+    const giu = performance.now() - t0;
+    console.log(`[PROBE T8 N3] giu ${Math.round(giu)} ms = ${(giu / D).toFixed(1)} D, treo ${h.treoLan}`);
+    expect(ket).toMatchObject({ ok: true, status: "held" });
+    expect(h.treoLan, "raised all the same: the report riding on the end, the latch's run_end, the mark's").toBe(3);
+    expect(giu, "every wait of the gate together within 5·D (plus the case's slack)").toBeLessThan(5 * D + 2 * D);
+    expect(runRow(c).status).toBe("held");
+    h.alertTreo = false;
+  });
+
+  // ── the obligation sweeper ─────────────────────────────────────────────────────────────────────────────────────────
+  it("G13 the sweeper on held, awaiting_confirm and aborted runs whose latch was never told: one run_end each, 0 commands; a run told (DA_BAO) or not latched: nothing", async () => {
+    h.alertDurable = false;
+    const a = await denKhoa("t8g13a"); // held: the edge's end gate
+    const b = await denKhoa("t8g13b");
+    runRow(b.runId).status = "aborted";
+    const k = await denKhoa("t8g13k");
+    runRow(k.runId).contextJson = { ...(runRow(k.runId).contextJson ?? {}), [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: "x", at: "t" } };
+    const sach = await edgeAssignedRun(def("t8g13s", [gate(), move("y")]));
+    await edgeSegment(sach, 1);
+    expect(runRow(sach.runId).status).toBe("awaiting_confirm");
+    h.alerts.length = 0;
+    h.alertDurable = true;
+    const l0 = lenh();
+    const r = await quetUrgentChuaBen({ bayGio: SAU() });
+    expect(r).toMatchObject({ quet: 2, ben: 2, chuaBen: 0 });
+    expect(runEnd().sort()).toEqual([khoaRunEnd(a.runId, buocKhoa(a.runId)), khoaRunEnd(b.runId, buocKhoa(b.runId))].sort());
+    expect(lenh() - l0, "the sweep sends nothing").toBe(0);
+    expect(runRow(a.runId).status, "nor writes a status").toBe("held");
+    expect(runRow(b.runId).status).toBe("aborted");
+  });
+  it("G13-KHONG-BEN the sweep while the URGENT still fails: not durable, no DA_BAO, raised again at the next sweep under the one key; once stored, never again", async () => {
+    h.alertDurable = false;
+    const e = await denKhoa("t8g13kb");
+    const c = e.runId;
+    const k = khoaRunEnd(c, buocKhoa(c));
+    h.alerts.length = 0;
+    expect(await quetUrgentChuaBen({ bayGio: SAU() })).toMatchObject({ quet: 1, ben: 0, chuaBen: 1 });
+    expect(daBao(c)).toBeUndefined();
+    expect(await quetUrgentChuaBen({ bayGio: SAU() })).toMatchObject({ chuaBen: 1 });
+    h.alertDurable = true;
+    expect(await quetUrgentChuaBen({ bayGio: SAU() })).toMatchObject({ ben: 1 });
+    expect(await quetUrgentChuaBen({ bayGio: SAU() })).toMatchObject({ quet: 0 });
+    expect(runEnd()).toEqual([k, k, k]);
+    expect(daBao(c)).toBeTruthy();
+  });
+  it("G12-T8 the sweeper meets another call's raise of a mark (the report path's): it failed, so it is no proof; the sweeper raises it under the same key and counts only its own answer (Q-7)", async () => {
+    const e = await edgeAssignedRun(def("t8g12", [gate(), box("b", [robotStop("s1")])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    const c = e.runId;
+    // the run ended (no latch); then a marked row with no durable URGENT on an aborted run: what the report path's failed raise left
+    runRow(c).status = "aborted";
+    const s1 = stepRows(c).find((r) => r.stepId === "s1")!;
+    s1.resultJson = { ...(s1.resultJson ?? {}), stopKhongXacNhan: "docLoi", edge: { claimSeq: 2 } };
+    h.alertDurable = false;
+    const truoc = baoKhongXacNhan({ runId: c, def: null, stepId: "s1", dang: "docLoi", claimSeq: 2, owner: OWNER.id });
+    expect(await truoc).toBe(false);
+    h.alertDurable = true;
+    h.alerts.length = 0;
+    const r = await quetUrgentChuaBen({ bayGio: SAU() });
+    expect(r, "another call's 'no' is no proof: raised again").toMatchObject({ quet: 1, ben: 1 });
+    expect(h.alerts.map((a) => String(a.dedupKey))).toEqual([`${CANH_BAO_KHONG_RO_KIND.stopKhongXacNhanDoc}:${c}:s1:${KHONG_CO_BU_TRU}:claim2`]);
+    // and its own yes is remembered: a sweep again raises nothing
+    expect(await quetUrgentChuaBen({ bayGio: SAU() })).toMatchObject({ quet: 0 });
+    expect(h.alerts.length).toBe(1);
+    quenBenKhongXacNhan(c);
+  });
+
+  // ── what uyQuyenSong (the prototype's foeUyQuyenSong) would carry: the live authorisation crosses as central's resume state ────
+  it("UQS-T8 a step authorised with no row (its records lost), handed back: central's resume state names it outcome-unknown, the latch falls at the hand-back; the next segment does not send it again, its box's STOP compensation goes", async () => {
+    const e = await edgeAssignedRun(def("t8uqs", [gate(), box("b", [move("r1"), move("r2")], { compensation: robotStop("cs") })]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
+    e.stripEndUnknown = true;
+    await edgeSegment(e, 2);
+    const c = e.runId;
+    const uq = (fake.store.get("edge_step_authorizations") ?? []).find((a) => a.runId === c && a.stepId === "r1")!;
+    expect(uq.supersededAt, "a live authorisation of r1").toBeNull();
+    expect(stepRows(c).find((r) => r.stepId === "r1")?.status ?? null, "its result row lost").not.toBe("completed");
+    e.refuse = undefined;
+    e.stripEndUnknown = false;
+    const r = await continueOutcomeUnknown(e, "checked on site");
+    console.log(`[PROBE T8 UQS] continue ${JSON.stringify({ ok: r.ok, status: r.status, resume: (runRow(c).contextJson as any)?.foeResumeState?.r1 ?? null, chot: (runRow(c).contextJson as any)?.[KET_CUC_KHONG_RO_CHOT_CTX_KEY] ?? null })}`);
+    expect((runRow(c).contextJson as any)?.foeResumeState?.r1?.state).toBe("outcomeUnknown");
+    await edgeSegment(e, 3);
+    await wait(30);
+    const ids = h.sent.map((x) => String(x.stepId));
+    console.log(`[PROBE T8 UQS] sent ${JSON.stringify(ids)} status ${runRow(c).status}`);
+    expect(ids.filter((x) => x === "r1"), "r1 never again").toEqual(["r1"]);
+    expect(ids, "b's STOP compensation is due: r1 may have gone out").toContain("cs");
   });
 });

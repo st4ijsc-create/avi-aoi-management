@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { banSaoHang } from "../../../routers/__otFakeDb"; // A2(n) T7b-1d lượt sửa 1 — one definition of what a database hands back
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import ts from "typescript"; // A2(n) T8 — the sweeper census reads the sources
 
 const { otDispatchMock, robotDispatchMock, ghimMock, alerts, audits, HX } = vi.hoisted(() => ({
   /** T2 — alertBen: what the alert reports through baoBen, null ⇔ it says nothing; alertNem: it throws. I-2 — this step-row write throws (a DB error on the unknown path); I-C — it never answers; m-6 — the audit row is not written; M-5 — the run's context write throws */
@@ -2284,5 +2285,74 @@ describe("A2(n) T7b-3 H37 — the words of a stuck edge report stream", () => {
     expect(b.dedupKey).not.toBe(a.dedupKey);
     const c = n({ loai: "edgeStreamStuck", runId: 9, stepId: "unauthorised_actuation", compId: K, error: "FOE_STOP_NOT_SENT", lan: "run:9:3" } as never);
     expect(c.dedupKey, "another stream, the same code: another row").not.toBe(a.dedupKey);
+  });
+});
+
+// A2(n) T8 (plan point 4, dieu-phoi 11/11) — CENSUS (AST): the URGENT obligation sweeper only raises. Every function it reaches, followed through foeRunStore.ts and foeKetCucKhongRo.ts (the modules of its
+// raises), calls no walk, no engine, no dispatcher, no status write. A call into another module is allowed only from the list below (its read, its raise, its bound)
+describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes no status", () => {
+  const TEP = ["foeRunStore.ts", "foeKetCucKhongRo.ts"];
+  const CAM = new Set(["execStep", "dispatch", "sendCommand", "dispatchRobotJob", "getAdapter", "abortRun", "abortStopSweep", "runAbortStopSweep", "resumeRun", "startRun", "driveRun", "driveRunFromResume", "guiStopSauChot", "resendAbortStops", "setRunStatus", "setRunStatusUnlessAborted", "setRunStatusUnlessAbortedOn", "upsertStep", "upsertStepOn", "recordEdgeStepRows", "applyEdgeSegmentEnd"]);
+  const nguon = new Map(TEP.map((t) => [t, ts.createSourceFile(t, readFileSync(resolve(__dirname, t), "utf8"), ts.ScriptTarget.Latest, true)] as const));
+  /** every top-level function of the two files, by name (a declaration, or a const holding an arrow / function) */
+  const ham = new Map<string, ts.Node>();
+  for (const sf of nguon.values()) {
+    for (const st of sf.statements) {
+      if (ts.isFunctionDeclaration(st) && st.name && st.body) ham.set(st.name.text, st.body);
+      if (ts.isVariableStatement(st)) for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name) && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) ham.set(d.name.text, d.initializer.body);
+    }
+  }
+  /** the names called in a body (a.b(): b), and the object literals of a .set(...) */
+  const goiTrong = (n: ts.Node) => {
+    const goi: string[] = [];
+    const ghiTrangThai: string[] = [];
+    const di = (x: ts.Node) => {
+      if (ts.isCallExpression(x)) {
+        const e = x.expression;
+        const ten = ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : null;
+        if (ten) goi.push(ten);
+        if (ten === "set") for (const a of x.arguments) if (ts.isObjectLiteralExpression(a) && a.properties.some((p) => p.name && ts.isIdentifier(p.name) && p.name.text === "status")) ghiTrangThai.push(a.getText().slice(0, 80));
+      }
+      ts.forEachChild(x, di);
+    };
+    di(n);
+    return { goi, ghiTrangThai };
+  };
+  const tamVoi = () => {
+    const thay = new Set<string>();
+    const cho = ["quetUrgentChuaBen"];
+    const goi = new Set<string>();
+    const ghiTrangThai: string[] = [];
+    while (cho.length) {
+      const t = cho.pop()!;
+      if (thay.has(t)) continue;
+      thay.add(t);
+      const than = ham.get(t);
+      if (!than) continue;
+      const g = goiTrong(than);
+      ghiTrangThai.push(...g.ghiTrangThai);
+      for (const x of g.goi) {
+        goi.add(x);
+        if (ham.has(x)) cho.push(x);
+      }
+    }
+    return { thay, goi, ghiTrangThai };
+  };
+  it("the sweeper is there, and what it reaches: its raises (baoKhongXacNhan, canhBaoKetCucKhongRo), the bound, the reads, the DA_BAO write", () => {
+    const { thay } = tamVoi();
+    for (const t of ["quetUrgentChuaBen", "quetMotRun", "ghiDaBaoQuet", "baoKhongXacNhan", "canhBaoKetCucKhongRo", "motBen"]) expect([...thay], t).toContain(t);
+  });
+  it("no walk, no engine, no dispatcher, no step-row write: none of them is called by anything it reaches", () => {
+    const { goi } = tamVoi();
+    expect([...goi].filter((x) => CAM.has(x))).toEqual([]);
+  });
+  it("no status write: no .set({ status }) in anything it reaches (DA_BAO is a context write)", () => {
+    expect(tamVoi().ghiTrangThai).toEqual([]);
+  });
+  it("no static import of a dispatcher, the equipment adapter or the engine in the two files (a type import is no code)", () => {
+    for (const [t, sf] of nguon) {
+      const imp = sf.statements.filter(ts.isImportDeclaration).filter((d) => !d.importClause?.isTypeOnly).map((d) => (d.moduleSpecifier as ts.StringLiteral).text);
+      expect(imp.filter((m) => /commandDispatcher|robotCommandDispatcher|foeEngine|equipmentAdapter$/.test(m)), t).toEqual([]);
+    }
   });
 });

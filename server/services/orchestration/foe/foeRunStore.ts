@@ -599,8 +599,10 @@ function claimCuaHang(r: HangKetThuc): number | undefined {
  *   • a marked row (stopKhongXacNhan, H18), latched or not: its own URGENT durable, else held;
  *   • the rows unread: held (nothing can say no STOP is owed).
  * A hold or a pause (`chiDoi`) is no end: it waits for what is on its way and raises nothing. Never throws. Confirmation (decision 3, XAC_NHAN) is T9's: until then every latched end needs its URGENT.
+ * A2(n) T8 (N-3) — `tongMs`: ONE bound for every wait of this decision together (each still at most `hanMs`). An edge segment's end decides inside the batch's transaction, holding the run row
+ * FOR UPDATE: without it the waits add up (the latch's two, each mark's two). What is raised is raised all the same; past the bound it is not waited for, so it is no yes (held, H2).
  */
-export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanMs = 5 * STOP_DB_STEP_DEADLINE_MS): Promise<KetQuaKetThuc> {
+export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanMs = 5 * STOP_DB_STEP_DEADLINE_MS, tongMs?: number): Promise<KetQuaKetThuc> {
   const nguoi = lyDo === "abort" || lyDo === "gateRejected";
   const rows = x.rows ?? [];
   const tuCtx = x.ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId?: unknown; ma?: unknown } | null | undefined;
@@ -615,17 +617,22 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
   const doi = x.chiDoi === true || giuNo; // held is no end: nothing new is raised
   const dau = rows.filter((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX) && dauKhongXacNhan(r.resultJson) !== null);
   const label = `FOE run ${x.runId} end-of-run URGENT`;
+  // N-3 — the one bound of every wait together: once it is past, a wait that has no answer yet is no yes; an answer already there still counts (it settles first)
+  const hetTong: Promise<false> | null = tongMs === undefined ? null : withDeadline(new Promise<never>(() => undefined), tongMs, `${label} (all waits)`, { unref: true }).catch(() => false as const);
+  const choi = (p: Promise<boolean>): Promise<boolean> => (hetTong ? Promise.race([p, hetTong]) : p);
   let benChot = true;
   let moi = false;
   let nguoiNhan: number | undefined;
   if (chot && x.ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null) {
-    benChot = await motBen([...(x.daCo ?? []), ...(x.boNho?.baoCho ?? [])], hanMs, label);
+    benChot = await choi(motBen([...(x.daCo ?? []), ...(x.boNho?.baoCho ?? [])], hanMs, label));
     if (!benChot && !doi) {
-      benChot = await withDeadline(
-        canhBaoKetCucKhongRo({ loai: "runEnd", runId: x.runId, stepId: chot.stepId, compId: KHONG_CO_BU_TRU, error: chot.ma, lan: "chot", owner: x.owner, soNguoiNhan: (n) => (nguoiNhan = n) }),
-        hanMs,
-        label,
-      ).catch(() => false);
+      benChot = await choi(
+        withDeadline(
+          canhBaoKetCucKhongRo({ loai: "runEnd", runId: x.runId, stepId: chot.stepId, compId: KHONG_CO_BU_TRU, error: chot.ma, lan: "chot", owner: x.owner, soNguoiNhan: (n) => (nguoiNhan = n) }),
+          hanMs,
+          label,
+        ).catch(() => false),
+      );
     }
     moi = benChot;
   }
@@ -634,8 +641,8 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
     const dang = dauKhongXacNhan(r.resultJson) as DangKhongXacNhan;
     const claimSeq = claimCuaHang(r) ?? x.claimSeq;
     const cho = benKhongXacNhanCho.get(khoaKhongXacNhan(x.runId, r.stepId, dang, claimSeq));
-    let ben = cho ? await motBen([cho], hanMs, label) : false;
-    if (!ben && !doi) ben = await motBen([baoKhongXacNhan({ runId: x.runId, def: x.def, stepId: r.stepId, dang, claimSeq, owner: x.owner })], hanMs, label);
+    let ben = cho ? await choi(motBen([cho], hanMs, label)) : false;
+    if (!ben && !doi) ben = await choi(motBen([baoKhongXacNhan({ runId: x.runId, def: x.def, stepId: r.stepId, dang, claimSeq, owner: x.owner })], hanMs, label));
     if (!ben) khongXacNhan.push(r.stepId);
   }
   const ben = benChot && khongXacNhan.length === 0;
@@ -644,6 +651,129 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
   if (giuNo) return { ...out, vi: "no", loi: loiGiuChuaRa(no[0] as string, viChuaRaCuaLoi(rows.find((r) => r.stepId === no[0])?.error) ?? x.boNho?.viCua?.(no[0] as string)) };
   if (!ben) return { ...out, vi: "khongBen", loi: loiGiuKhongBen(x.runId, { ma: benChot ? null : (chot?.ma ?? null), khongXacNhan }) };
   return out;
+}
+
+/** A2(n) T8 (N-3) — the end gate of an edge segment waits at most this long in all, inside the transaction holding the run row (the same 5·D a single wait had). */
+export const KET_DOAN_EDGE_TONG_MS = 5 * STOP_DB_STEP_DEADLINE_MS;
+
+/** A2(n) T8 — a live run (a walker may still reach its own end and raise its own URGENT) is swept only once nothing of it has changed for this long. T12 sets the period. */
+export const QUET_URGENT_TUOI_TOI_THIEU_MS = 5 * 60_000;
+const QUET_URGENT_STATUS = ["held", "awaiting_confirm", "aborted", "running", "compensating", "queued"] as const;
+const QUET_URGENT_SONG: ReadonlySet<string> = new Set(["running", "compensating", "queued"]);
+
+/** the latest moment the run or one of its rows changed; NaN ⇔ nothing says (then the run is old enough: the side that raises) */
+function mocMoiNhat(run: { updatedAt?: unknown; startedAt?: unknown }, rows: ReadonlyArray<{ startedAt?: unknown; finishedAt?: unknown; createdAt?: unknown }>): number {
+  const t = (v: unknown) => (v instanceof Date || typeof v === "string" || typeof v === "number" ? new Date(v as string).getTime() : NaN);
+  const ts = [t(run.updatedAt), t(run.startedAt), ...rows.flatMap((r) => [t(r.startedAt), t(r.finishedAt), t(r.createdAt)])].filter((n) => Number.isFinite(n));
+  return ts.length ? Math.max(...ts) : NaN;
+}
+
+/** DA_BAO written by the sweep: under the row lock, merged into the context as it is now (one key, nothing else of it rewritten), never over one already there. Bounded by D, best-effort. */
+async function ghiDaBaoQuet(d: RunDb, runId: number, stepId: string): Promise<void> {
+  await withDeadline(
+    d.transaction(async (tx) => {
+      const [run] = await tx.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).for("update").limit(1);
+      if (!run) return;
+      const ctx = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+      if (ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] != null) return;
+      await tx.update(orchestrationRuns).set({ contextJson: { ...ctx, [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId, at: new Date().toISOString() } } }).where(eq(orchestrationRuns.id, runId));
+    }),
+    STOP_DB_STEP_DEADLINE_MS,
+    `FOE run ${runId} DA_BAO (sweep)`,
+  ).catch((err: unknown) => console.error(`[FOE] run ${runId}: DA_BAO not written by the sweep: ${(err as Error)?.message ?? err}`));
+}
+
+/**
+ * A2(n) T8 (plan point 4, C-4, B) — THE sweep of the durable-URGENT obligation. A run whose URGENT never became durable and that no end will ever reach (an edge node dead for good: no record again, no
+ * segment end; a held run whose URGENT failed) is told again, until it is stored:
+ *   • chosen by its ROWS and its context: the latch (the context's key, else chotTuHang of the rows and of central's resume state) without DA_BAO; each marked row (stopKhongXacNhan) whose URGENT
+ *     has no durable answer in this process. Status held / awaiting_confirm / aborted, and running / compensating / queued once nothing of the run changed for `tuoiMs` (a live walker raises its own);
+ *   • the SAME URGENTs, under the SAME keys, as the end gate: run_end `…:<run>:<latch step>:-:chot` (canhBaoKetCucKhongRo), the mark's of the report path (baoKhongXacNhan). One key each: a sweep
+ *     again raises nothing once it is durable (DA_BAO for the latch; the marks' answers in this process, as the end gate reads them: a restart raises a mark once more, the durable dedup answers);
+ *   • it ONLY raises: no walk, no engine, no command, no status. DA_BAO is written merged, under the row lock, when the latch's URGENT is stored.
+ * Another call's raise counts only when it said stored (Q-7): an answer of false, or none in time, is raised again. Confirmation (XAC_NHAN, decision 3) is T9's: every latched run is told until then.
+ * Placement: plan point 4 puts it in foeKetCucKhongRo.ts. It lives here (dieu-phoi 11/11): it raises through baoKhongXacNhan and reads benKhongXacNhanCho, both of this module, which imports
+ * foeKetCucKhongRo already (a cycle otherwise). Nothing calls it at boot or on a period yet: T12 does, once the SELECT is measured on DEV (no-cho-T12.md). Never throws.
+ */
+export async function quetUrgentChuaBen(o: { gioiHan?: number; bayGio?: number; tuoiMs?: number } = {}): Promise<{ quet: number; ben: number; chuaBen: number }> {
+  const out = { quet: 0, ben: 0, chuaBen: 0 };
+  let d: RunDb | null = null;
+  try {
+    d = await getDb();
+  } catch {
+    return out;
+  }
+  if (!d) return out;
+  const bayGio = o.bayGio ?? Date.now();
+  const tuoi = o.tuoiMs ?? QUET_URGENT_TUOI_TOI_THIEU_MS;
+  const gioiHan = o.gioiHan ?? 100;
+  let runs: OrchestrationRun[];
+  try {
+    runs = (await d.select().from(orchestrationRuns).where(inArray(orchestrationRuns.status, [...QUET_URGENT_STATUS] as never))) as OrchestrationRun[];
+  } catch (err) {
+    console.error(`[FOE] URGENT obligation sweep: the runs could not be read: ${(err as Error)?.message ?? err}`);
+    return out;
+  }
+  for (const run of [...runs].sort((a, b) => a.id - b.id)) {
+    if (out.quet >= gioiHan) break;
+    let ben: boolean | null;
+    try {
+      ben = await quetMotRun(d, run, bayGio, tuoi);
+    } catch (err) {
+      console.error(`[FOE] run ${run.id}: URGENT obligation sweep failed: ${(err as Error)?.message ?? err}`);
+      ben = false;
+    }
+    if (ben === null) continue;
+    out.quet += 1;
+    if (ben) out.ben += 1;
+    else out.chuaBen += 1;
+  }
+  return out;
+}
+
+/** One run of the sweep: null ⇔ nothing owed (or too young); else whether everything owed is durable now. */
+async function quetMotRun(d: RunDb, run: OrchestrationRun, bayGio: number, tuoi: number): Promise<boolean | null> {
+  const ctx = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+  const hang = ((await d.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, run.id))) as Array<HangKetThuc & { startedAt?: unknown; finishedAt?: unknown; createdAt?: unknown }>).filter((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX));
+  const tuCtx = ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId?: unknown; ma?: unknown } | null | undefined;
+  const tuHang = chotTuHang(hang, ctx[RESUME_STATE_CTX_KEY] as Parameters<typeof chotTuHang>[1]);
+  const chot = tuCtx?.stepId != null ? { stepId: String(tuCtx.stepId), ma: maKetCucKhongRoCua(typeof tuCtx.ma === "string" ? tuCtx.ma : null) } : tuHang ? { stepId: tuHang.stepId, ma: tuHang.ma } : null;
+  const noChot = chot !== null && ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null;
+  const dau = hang.filter((r) => dauKhongXacNhan(r.resultJson) !== null);
+  if (!noChot && dau.length === 0) return null;
+  if (QUET_URGENT_SONG.has(run.status)) {
+    const moc = mocMoiNhat(run, hang);
+    if (Number.isFinite(moc) && bayGio - moc < tuoi) return null;
+  }
+  const han = 5 * STOP_DB_STEP_DEADLINE_MS;
+  const label = `FOE run ${run.id} URGENT obligation sweep`;
+  const owner = run.startedBy ?? null;
+  // the definition names the owner of a marked compensation in its key, as the report path does; unread: the step itself
+  let def: Pick<WorkflowDefinition, "steps"> | null = null;
+  try {
+    const [wf] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
+    def = (wf?.definitionJson as Pick<WorkflowDefinition, "steps"> | null | undefined) ?? null;
+  } catch {
+    def = null;
+  }
+  let phat = false;
+  let ben = true;
+  if (noChot && chot) {
+    phat = true;
+    const b = await withDeadline(canhBaoKetCucKhongRo({ loai: "runEnd", runId: run.id, stepId: chot.stepId, compId: KHONG_CO_BU_TRU, error: chot.ma, lan: "chot", owner }), han, label).catch(() => false);
+    if (b) await ghiDaBaoQuet(d, run.id, chot.stepId);
+    else ben = false;
+  }
+  for (const r of dau) {
+    const dang = dauKhongXacNhan(r.resultJson) as DangKhongXacNhan;
+    const claimSeq = claimCuaHang(r);
+    // Q-7 — another call's raise is proof only when it said stored
+    const cho = benKhongXacNhanCho.get(khoaKhongXacNhan(run.id, r.stepId, dang, claimSeq));
+    if (cho && (await motBen([cho], han, label))) continue;
+    phat = true;
+    if (!(await motBen([baoKhongXacNhan({ runId: run.id, def, stepId: r.stepId, dang, claimSeq, owner })], han, label))) ben = false;
+  }
+  return phat ? ben : null;
 }
 
 /** doc 81 Đợt 4 fix round 1 (finding 7) — the step error per reason; the Studio keys its text on `FOE_GATE_REQUIRED(<reason>)`. */
@@ -1693,12 +1823,12 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
   /**
    * A2(n) T7 — THE end gate (quyetDinhKetThucAnh) for an end of this segment, central's, with what rode on it (C1: the same gate as central's own walk). A STOP owed on the rows, or no durable URGENT
    * for a latched run or a marked row: central holds the run itself (not an edge's hold: no EDGE_HELD mark), a Continue walks to the gate again, an Abort ends it. Else the terminal write, with
-   * DA_BAO when this end made the URGENT durable. N-3 (T8): the wait is bounded, inside the batch's transaction.
+   * DA_BAO when this end made the URGENT durable. N-3 (T8): inside the batch's transaction, every wait of the gate together is bounded by 5·D (KET_DOAN_EDGE_TONG_MS), not 5·D each.
    */
   const congCuoi = async (): Promise<{ giu: EdgeSegmentEndResult } | { patch: Partial<OrchestrationRun> }> => {
     const hang = await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
     const tuBao = chotTuBao[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId: string; ma: MaKetCucKhongRo } | undefined;
-    const q = await quyetDinhKetThucAnh({ runId, ctx, owner: run.startedBy ?? null, rows: hang, def: end.def, daCo, chotTuBao: tuBao ? { stepId: tuBao.stepId, ma: tuBao.ma } : null, claimSeq: end.claimSeq }, "edgeSegment");
+    const q = await quyetDinhKetThucAnh({ runId, ctx, owner: run.startedBy ?? null, rows: hang, def: end.def, daCo, chotTuBao: tuBao ? { stepId: tuBao.stepId, ma: tuBao.ma } : null, claimSeq: end.claimSeq }, "edgeSegment", undefined, KET_DOAN_EDGE_TONG_MS);
     const daBao = q.moi && q.chot ? { [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: q.chot.stepId, at: new Date().toISOString() } } : {};
     if (q.ghi === "terminal") return { patch: Object.keys(daBao).length ? { contextJson: { ...ctx, ...chotTuBao, ...daBao } } : {} };
     const at = new Date().toISOString();
