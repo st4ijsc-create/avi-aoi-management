@@ -322,3 +322,54 @@ describe("bienDichMa — khe đồng thời", () => {
     expect(Date.now() - t0).toBeGreaterThanOrEqual(45);
   }, 70_000);
 });
+
+describe("bienDichMa — thời gian chờ khe bị TRỪ khỏi trần biên dịch (b12)", () => {
+  afterEach(() => vi.useRealTimers());
+  const khoi = { ngonNgu: "py", ma: "x = 1\n" } as const;
+  const dung = () => {
+    const nhan: number[] = [];
+    const chayTrongKhe = (async (_k: unknown, tranMs: number) => (nhan.push(tranMs), { trangThai: "ok", chanDoan: [] })) as never;
+    return { nhan, chayTrongKhe };
+  };
+  it("★★★ chờ khe 400 ms trong trần 1000 ms ⇒ lượt biên dịch chỉ còn đúng 600 ms", async () => {
+    vi.useFakeTimers();
+    const g = new GioiHanDongThoi();
+    const giu = await g.layKhe(1, 10_000);
+    const { nhan, chayTrongKhe } = dung();
+    const p = bienDichMa(khoi, 1000, undefined, { gioiHan: g, toiDaDongThoi: 1, chayTrongKhe });
+    await vi.advanceTimersByTimeAsync(400);
+    giu!();
+    expect(await p).toEqual({ trangThai: "ok", chanDoan: [] });
+    expect(nhan).toEqual([600]);
+  });
+  it("★★★ không phải chờ ⇒ nhận đủ trần (không trừ oan)", async () => {
+    vi.useFakeTimers();
+    const { nhan, chayTrongKhe } = dung();
+    await bienDichMa(khoi, 1000, undefined, { gioiHan: new GioiHanDongThoi(), toiDaDongThoi: 1, chayTrongKhe });
+    expect(nhan).toEqual([1000]);
+  });
+  it("★★ chờ sát trần (999/1000 ms) ⇒ vẫn còn đúng 1 ms, không âm", async () => {
+    vi.useFakeTimers();
+    const g = new GioiHanDongThoi();
+    const giu = await g.layKhe(1, 10_000);
+    const { nhan, chayTrongKhe } = dung();
+    const p = bienDichMa(khoi, 1000, undefined, { gioiHan: g, toiDaDongThoi: 1, chayTrongKhe });
+    await vi.advanceTimersByTimeAsync(999);
+    giu!();
+    await p;
+    expect(nhan).toEqual([1]);
+  });
+  it("★★★ hai lần chờ nối tiếp: mỗi lượt tự trừ phần chờ của CHÍNH nó (không dồn)", async () => {
+    vi.useFakeTimers();
+    const g = new GioiHanDongThoi();
+    const giu = await g.layKhe(1, 10_000);
+    const { nhan, chayTrongKhe } = dung();
+    const a = bienDichMa(khoi, 1000, undefined, { gioiHan: g, toiDaDongThoi: 1, chayTrongKhe });
+    await vi.advanceTimersByTimeAsync(200);
+    giu!();
+    await a;
+    const b = bienDichMa(khoi, 1000, undefined, { gioiHan: g, toiDaDongThoi: 1, chayTrongKhe });
+    await b;
+    expect(nhan).toEqual([800, 1000]);
+  });
+});
