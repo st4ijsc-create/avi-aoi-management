@@ -163,6 +163,36 @@ export function thamSoDbTuDongLenh(a: Record<string, string>, docTep: (duong: st
   }
 }
 
+/**
+ * Các gốc sandbox của lượt (AI_REPO_SANDBOX_ROOTS: `ten=duong|duong;ten2=duong2`) — công cụ đọc của model chỉ thấy tệp nằm TRONG các gốc này.
+ * Lấy phần đường cuối của mỗi mục (cùng cách `kiemMoiTruong` ở driverHost đọc). Thuần.
+ */
+export function gocSandboxTuEnv(env: NodeJS.ProcessEnv): string[] {
+  return (env.AI_REPO_SANDBOX_ROOTS ?? "")
+    .split(";")
+    .map((m) => {
+      const i = m.indexOf("=");
+      return i < 0 ? "" : (m.slice(i + 1).split("|").pop() ?? "").trim();
+    })
+    .filter((x) => x !== "")
+    .map((x) => path.resolve(x));
+}
+
+const CHUOI_RA_TRONG_SANDBOX = "--cho-phep-db: thư mục kết quả (--ra) nằm trong gốc sandbox / worktree — đặt ngoài để model không đọc được đầu ra đầy đủ của lệnh kiểm";
+/**
+ * `--cho-phep-db`: tệp `<ra>/<mã>.kiem-*.txt` chứa đầu ra ĐẦY ĐỦ nên `<ra>` KHÔNG được nằm trong bất kỳ gốc sandbox nào của lượt hay trong worktree
+ * (công cụ read_file / list_dir / grep của model sẽ đọc được). Trả chuỗi cố định nếu vi phạm, ngược lại null. Thuần.
+ */
+export function raTrongGocSandbox(ra: string, wt: string, env: NodeJS.ProcessEnv): string | null {
+  const chuan = (x: string) => path.resolve(x).toLowerCase();
+  const raC = chuan(ra);
+  for (const goc of [...gocSandboxTuEnv(env), path.resolve(wt)]) {
+    const rel = path.relative(chuan(goc), raC);
+    if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) return CHUOI_RA_TRONG_SANDBOX;
+  }
+  return null;
+}
+
 /** `aoi_management_test` phải là MỘT token nguyên trong dòng CSDL (ranh giới từ: chữ, số, gạch dưới) — `aoi_management_test_x` không tính. */
 const RE_TEN_DB_TEST = /(^|[^A-Za-z0-9_])aoi_management_test($|[^A-Za-z0-9_])/;
 /** Máy chủ và cổng CSDL được phép cho `--cho-phep-db`; vai CHỈ `tho_ca_test` (vai riêng chỉ CONNECT aoi_management_test; KHÔNG avi_app vì chung mật khẩu với DEV). */
@@ -354,6 +384,8 @@ export interface ThamSoViec {
    * Có cờ ⇒ tiến trình con chạy lệnh kiểm nhận TEST_DATABASE_URL = testDbUrl (DATABASE_URL vẫn là cổng chết).
    */
   choPhepDb?: boolean;
+  /** chỉ cho ca kiểm: thay `process.env` khi đọc AI_REPO_SANDBOX_ROOTS để kiểm `--ra` nằm ngoài gốc sandbox */
+  envSandbox?: NodeJS.ProcessEnv;
   /** URL CSDL của tiến trình pilot (dòng lệnh truyền process.env.DATABASE_URL); chỉ dùng khi choPhepDb */
   testDbUrl?: string;
   /** chỉ cho ca kiểm: thay nhà máy dựng hàm chạy lệnh kiểm để quan sát tham số (mặc định taoChayLenhKiem) */
@@ -392,6 +424,10 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const wt = path.resolve(p.wt);
   if (!/^_tho_ca/i.test(path.basename(wt)) && !p.choPhepKhoRieng) return tuChoi(`worktree "${wt}" không phải thư mục _tho_ca* — từ chối để không sửa nhầm nơi khác`, the.ma);
   if (!fs.existsSync(wt)) return tuChoi(`worktree không tồn tại: ${wt}`, the.ma);
+  if (dbCho) {
+    const lyDoRa = raTrongGocSandbox(p.ra, wt, p.envSandbox ?? process.env);
+    if (lyDoRa) return tuChoi(lyDoRa, the.ma);
+  }
   const top = git(["rev-parse", "--show-toplevel"], wt);
   if (!top.ok || path.resolve(top.out.trim()) !== wt) return tuChoi("đường không phải gốc một worktree git", the.ma);
   const gitDir = git(["rev-parse", "--git-dir"], wt).out.trim();
@@ -609,6 +645,13 @@ async function main(): Promise<number> {
   if (thamDb.loi) {
     process.stderr.write(`${thamDb.loi}\n`);
     return 2;
+  }
+  if (thamDb.choPhepDb) {
+    const lyDoRa = raTrongGocSandbox(a.ra ?? path.join(os.tmpdir(), "tho-ca-pilot"), a.wt ?? "D:\\SOURCES\\_tho_ca_wt", process.env);
+    if (lyDoRa) {
+      process.stderr.write(`${lyDoRa}\n`);
+      return 2;
+    }
   }
   const drv = (a.driver ?? "cli") as TenDriver;
   if (drv !== "kho" && drv !== "cli" && drv !== "host") {

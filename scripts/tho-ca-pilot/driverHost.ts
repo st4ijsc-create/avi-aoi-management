@@ -276,6 +276,10 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
           return;
         }
         const k = await (v.chayKiem ?? dep.chayKiem ?? chayLenhKiem)(loc.lenh, v.wt, 300);
+        ghiChu.push(`tự chạy lệnh kiểm lần ${soTuChay}: exit ${k.exit}${k.vitest.ca ? `, Tests ${k.vitest.ca.dat} passed / ${k.vitest.ca.tong}` : ""}`);
+        // tóm tắt cho model được TÍNH và GỬI trước; tệp đầy đủ chỉ được ghi SAU đó (không có đường nào từ nội dung tệp vào lời nhắc)
+        const loiNhac = v.cheDoKiem === "chi-so" ? tomTatChiSoChoModel(k, soTuChay, v.giaTriBiMat ?? []) : tomTatKiemChoModel(k, soTuChay);
+        await dep.bac(actionId, loiNhac);
         if (v.cheDoKiem === "chi-so") {
           // đầu ra ĐẦY ĐỦ (đã lọc URL + bí mật) chỉ cho NGƯỜI duyệt đọc — tệp kết quả, không bao giờ đi vào lời nhắc của model
           try {
@@ -285,8 +289,6 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
             /* ghi tệp phụ không được làm hỏng lượt */
           }
         }
-        ghiChu.push(`tự chạy lệnh kiểm lần ${soTuChay}: exit ${k.exit}${k.vitest.ca ? `, Tests ${k.vitest.ca.dat} passed / ${k.vitest.ca.tong}` : ""}`);
-        await dep.bac(actionId, v.cheDoKiem === "chi-so" ? tomTatChiSoChoModel(k, soTuChay, v.giaTriBiMat ?? []) : tomTatKiemChoModel(k, soTuChay));
         return;
       }
       th.soLanCho++;

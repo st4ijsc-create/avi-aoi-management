@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { chayMotViec, docUrlTuTep, ghepLenh, kiemChoPhepDb, thamSoDbTuDongLenh, type Driver } from "./chayMotViec";
+import { chayMotViec, docUrlTuTep, ghepLenh, gocSandboxTuEnv, kiemChoPhepDb, raTrongGocSandbox, thamSoDbTuDongLenh, type Driver } from "./chayMotViec";
 import { docTheViec } from "./theViec";
 import { ENV_DB_CHET, envSachChoTienTrinhCon, taoChayLenhKiem, type ChayKiem } from "./kiemChung";
 
@@ -533,4 +533,85 @@ describe("--cho-phep-db — đầu ra đầy đủ của lệnh kiểm cuối ra
     expect(fs.existsSync(path.join(ra, "TC-97.kiem-cuoi.txt"))).toBe(false);
     expect(r.kiem && "dauRaDayDu" in r.kiem).toBe(false);
   });
+});
+
+describe("--cho-phep-db — thư mục kết quả (--ra) phải NẰM NGOÀI gốc sandbox và worktree", () => {
+  const CHUOI = "--cho-phep-db: thư mục kết quả (--ra) nằm trong gốc sandbox / worktree — đặt ngoài để model không đọc được đầu ra đầy đủ của lệnh kiểm";
+  const J = (...x: string[]) => path.join(...x);
+  const goc2 = path.join(os.tmpdir(), "tcra-goc");
+  const wt2 = J(goc2, "_tho_ca_wt");
+  const env = (roots: string) => ({ AI_REPO_SANDBOX_ROOTS: roots }) as NodeJS.ProcessEnv;
+
+  it("★★★ gocSandboxTuEnv: đọc `ten=duong|duong;ten=duong`, lấy đường CUỐI mỗi mục, bỏ mục hỏng", () => {
+    expect(gocSandboxTuEnv(env(`a=${J(goc2, "x")};b=${J(goc2, "y1")}|${J(goc2, "y2")};hong;;c= `))).toEqual([path.resolve(J(goc2, "x")), path.resolve(J(goc2, "y2"))]);
+    expect(gocSandboxTuEnv({} as NodeJS.ProcessEnv)).toEqual([]);
+  });
+  it.each([
+    ["trong worktree", J(wt2, "ra"), env("")],
+    ["đúng bằng worktree", wt2, env("")],
+    ["sâu trong worktree", J(wt2, "a", "b", "ra"), env("")],
+    ["trong một gốc sandbox khác worktree", J(goc2, "sandbox-khac", "ra"), env(`k=${J(goc2, "sandbox-khac")}`)],
+    ["đúng bằng gốc sandbox", J(goc2, "sandbox-khac"), env(`k=${J(goc2, "sandbox-khac")}`)],
+    ["gốc có nhiều đường, trong đường cuối", J(goc2, "s2", "ra"), env(`k=${J(goc2, "s1")}|${J(goc2, "s2")}`)],
+    ["viết hoa/thường khác nhau (Windows không phân biệt)", J(wt2, "RA").toUpperCase(), env("")],
+    ["đường có đoạn .. nhưng vẫn kết thúc trong worktree", J(wt2, "a", "..", "ra"), env("")],
+  ])("★★★ %s ⇒ từ chối bằng chuỗi cố định", (_t, ra, e) => {
+    expect(raTrongGocSandbox(ra, wt2, e)).toBe(CHUOI);
+  });
+  it.each([
+    ["thư mục anh em ngoài", J(goc2, "ket-qua", "ra"), env("")],
+    ["anh em CÙNG TIỀN TỐ với worktree", `${wt2}-2`, env("")],
+    ["tiền tố của gốc sandbox nhưng khác tên", `${J(goc2, "sandbox-khac")}-ra`, env(`k=${J(goc2, "sandbox-khac")}`)],
+    ["thư mục cha của worktree (tệp trực tiếp trong cha không nằm trong gốc nào)", goc2, env("")],
+  ])("★★ %s ⇒ được", (_t, ra, e) => {
+    expect(raTrongGocSandbox(ra, wt2, e)).toBeNull();
+  });
+  it("★★ biến môi trường thiếu / gốc rỗng ⇒ chỉ còn so với worktree", () => {
+    expect(raTrongGocSandbox(J(goc2, "ra"), wt2, env(""))).toBeNull();
+    expect(raTrongGocSandbox(J(wt2, "ra"), wt2, env(""))).toBe(CHUOI);
+  });
+
+  it("★★★ chayMotViec: có cờ mà `ra` trong worktree ⇒ tu-choi chuỗi cố định, KHÔNG tạo thư mục ra, không chạm gì", async () => {
+    const raTrong = path.join(wt, "ket-qua-ra");
+    const r = await chay({ ra: raTrong, choPhepDb: true, testDbUrl: URL_TEST, envSandbox: { AI_REPO_SANDBOX_ROOTS: "" } as NodeJS.ProcessEnv });
+    expect(r.ketCuc).toBe("tu-choi");
+    expect(r.loi).toBe(CHUOI);
+    expect(fs.existsSync(raTrong)).toBe(false);
+  });
+  it("★★★ chayMotViec: có cờ, `ra` nằm trong gốc sandbox của lượt (khai bằng biến môi trường) ⇒ tu-choi", async () => {
+    const r = await chay({ ra: path.join(goc, "sandbox-lac", "ra"), choPhepDb: true, testDbUrl: URL_TEST, envSandbox: { AI_REPO_SANDBOX_ROOTS: `k=${path.join(goc, "sandbox-lac")}` } as NodeJS.ProcessEnv });
+    expect(r.ketCuc).toBe("tu-choi");
+    expect(r.loi).toBe(CHUOI);
+  });
+  it("★★★ chayMotViec: có cờ và `ra` ngoài ⇒ chạy bình thường", async () => {
+    const r = await chay({ choPhepDb: true, testDbUrl: URL_TEST, envSandbox: { AI_REPO_SANDBOX_ROOTS: "" } as NodeJS.ProcessEnv, khoGhi: { [TEP_DB]: TEST_MOI } });
+    expect(r.ketCuc).toBe("xong");
+  });
+  it("★★★ KHÔNG cờ ⇒ kiểm này KHÔNG áp: `ra` trong worktree vẫn chạy được (hành vi cũ)", async () => {
+    const van = the(null).split(TEP_DB).join("client/src/lib/a.test.ts");
+    const r = await chay({ van, ra: path.join(wt, "ra-trong-wt"), khoGhi: { "client/src/lib/a.test.ts": TEST_MOI } });
+    expect(r.ketCuc).not.toBe("tu-choi");
+  });
+  it("★★★ dòng lệnh thật: có cờ + `--ra` trong worktree ⇒ thoát mã 2, chuỗi cố định, chưa đọc thẻ", () => {
+    const thuWt = fs.mkdtempSync(path.join(os.tmpdir(), "tcra-wt-"));
+    const thuUrl = fs.mkdtempSync(path.join(os.tmpdir(), "tcra-url-"));
+    try {
+      const tepUrl = path.join(thuUrl, "tho_ca_test.url");
+      fs.writeFileSync(tepUrl, URL_TEST);
+      const chayCli = (ra: string) =>
+        spawnSync("npx", ["tsx", "scripts/tho-ca-pilot/chayMotViec.ts", "--the", path.join(thuUrl, "khong-co-the.txt"), "--cho-phep-db", "--tep-url-csdl", tepUrl, "--wt", thuWt, "--ra", ra], {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          shell: true,
+          timeout: 120_000,
+          env: { ...process.env, AI_REPO_SANDBOX_ROOTS: `${path.basename(thuWt)}=${thuWt}` },
+        });
+      const trong = chayCli(path.join(thuWt, "ra"));
+      expect(trong.status).toBe(2);
+      expect(String(trong.stderr)).toContain(CHUOI);
+    } finally {
+      fs.rmSync(thuWt, { recursive: true, force: true });
+      fs.rmSync(thuUrl, { recursive: true, force: true });
+    }
+  }, 300_000);
 });

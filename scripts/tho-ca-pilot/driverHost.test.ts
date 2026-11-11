@@ -525,6 +525,30 @@ describe("driverHost — TỰ CHẠY lệnh kiểm thay thẻ run_command chờ 
         fs.rmSync(ra2, { recursive: true, force: true });
       }
     });
+    it("★★★ THỨ TỰ: lời nhắc cho model được GỬI TRƯỚC; tệp đầy đủ chỉ được ghi SAU đó, và nội dung tệp không có đường nào vào lời nhắc", async () => {
+      const tep = path.join(ra, `${THE.ma}.kiem-trong-luot-lan1.txt`);
+      const tonTaiLucBac: boolean[] = [];
+      const loiNhac: string[] = [];
+      const { dep } = taoDep(
+        async (phat) => {
+          phat(canDuyet("run_command", { command: THE.lenhKiem }));
+          await new Promise((r) => setTimeout(r, 120));
+          phat({ loai: "xong", lyDo: "hoan-thanh" });
+        },
+        async () => ({ quyet: "chap-nhan" }),
+        {
+          chayKiem: async (l) => kiemDo({ lenh: l, dauRaDayDu: "NOI_DUNG_TEP_KHONG_DUOC_VAO_LOI_NHAC" }),
+          bac: async (_id, ly) => {
+            tonTaiLucBac.push(fs.existsSync(tep));
+            loiNhac.push(ly);
+          },
+        },
+      );
+      await driverHost(dep)({ ...dauVao(ra), cheDoKiem: "chi-so", giaTriBiMat: [MK] });
+      expect(tonTaiLucBac).toEqual([false]); // lúc gửi lời nhắc, tệp CHƯA tồn tại
+      expect(fs.readFileSync(tep, "utf8")).toBe("NOI_DUNG_TEP_KHONG_DUOC_VAO_LOI_NHAC"); // sau đó mới có
+      expect(loiNhac.join("\n")).not.toContain("NOI_DUNG_TEP_KHONG_DUOC_VAO_LOI_NHAC");
+    });
     it("★★ chi-so mà chayKiem không có dauRaDayDu ⇒ tệp ghi `duoi` (không rỗng, không ném)", async () => {
       const { dep } = taoDep(
         async (phat) => {
