@@ -52,16 +52,24 @@ describe("tinhTranLuot — kẹp", () => {
   it("★★★ thẻ 60, env 45 ⇒ kẹp 45, lý do nêu ĐÚNG biến và giá trị", () => {
     expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: "45" })).toMatchObject({ thucDung: 45, biKep: true, lyDoKep: "AI_AGENT_SO_LUOT_TOI_DA=45" });
   });
-  it("★★★ biến ĐÃ đặt nhưng KHÔNG hợp lệ ('abc', '0', '-5', '3.5') ⇒ lý do nêu 'không hợp lệ: \"<giá trị>\"', khác với 'chưa đặt'", () => {
-    for (const v of ["abc", "0", "-5", "3.5"]) {
-      expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: v })).toMatchObject({ biKep: true, thucDung: 30, lyDoKep: `mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA không hợp lệ: "${v}")` });
+  it("★★★ biến ĐÃ đặt nhưng KHÔNG hợp lệ và trông như SỐ ('0', '-5', '3.5', '+7') ⇒ lý do nêu nguyên văn giá trị, khác với 'chưa đặt'", () => {
+    for (const v of ["0", "-5", "3.5", "+7", "..", "-", "123456789012"]) {
+      const ly = tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: v }).lyDoKep;
+      expect(ly, v).toBe(`mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA không hợp lệ: "${v}")`);
     }
   });
-  it("★★ biến rỗng / toàn khoảng trắng ⇒ coi là CHƯA đặt; giá trị dài bị cắt 24 ký tự; ký tự điều khiển đổi thành '?'", () => {
+  it("★★★ KHÔNG LỘ: giá trị KHÔNG phải số (chữ, bí mật đặt nhầm, ký tự điều khiển/DEL) KHÔNG bao giờ xuất hiện trong lý do — chỉ ghi độ dài", () => {
+    for (const v of ["abc", "1e", "matkhau-bi-mat-123", "12", "ab", "x".repeat(40), "1234567890123"]) {
+      const ly = tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: v }).lyDoKep!;
+      expect(ly, v).toBe(`mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA không hợp lệ: độ dài ${v.length}, không phải số)`);
+      expect(ly).not.toContain(v);
+    }
+    expect(dongCanhBaoKep(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: "matkhau-bi-mat-123" }))).not.toContain("matkhau");
+  });
+  it("★★ biến rỗng / toàn khoảng trắng ⇒ coi là CHƯA đặt (trim trước khi đo độ dài)", () => {
     expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: "   " }).lyDoKep).toBe("mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA chưa đặt)");
     expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: "" }).lyDoKep).toBe("mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA chưa đặt)");
-    expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: "x".repeat(40) }).lyDoKep).toBe(`mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA không hợp lệ: "${"x".repeat(24)}")`);
-    expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: "ab" }).lyDoKep).toBe('mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA không hợp lệ: "a?b")');
+    expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: "  abc  " }).lyDoKep).toBe("mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA không hợp lệ: độ dài 3, không phải số)");
   });
   it("★★ biến không hợp lệ nhưng thẻ KHÔNG bị kẹp (thẻ ≤ 30) ⇒ không có lý do kẹp", () => {
     expect(tinhTranLuot({ luotModel: 20 }, { AI_AGENT_SO_LUOT_TOI_DA: "abc" })).toMatchObject({ biKep: false, lyDoKep: null });

@@ -63,8 +63,9 @@ export function tinhTranLuot(tran: TranTheoThe, env: Record<string, string | und
   const biKep = k !== null && k > luotThucDung;
   // tranEnv ≤ trần cứng (soLuotToiDaTuEnv đã kẹp) nên kẹp luôn do env / mặc định — trần cứng chỉ "thắng" qua chính tranEnv khi env = 120
   const thoEnv = (env.AI_AGENT_SO_LUOT_TOI_DA ?? "").trim();
-  // biến ĐÃ đặt nhưng không hợp lệ (vd "abc", "0") khác với CHƯA đặt: nêu giá trị (cắt 24 ký tự, bỏ ký tự điều khiển) để người đọc sửa đúng chỗ
-  const dangEnvKhongHopLe = thoEnv !== "" ? `"${thoEnv.replace(/[\u0000-\u001f\u007f]/g, "?").slice(0, 24)}"` : "";
+  // biến ĐÃ đặt nhưng không hợp lệ (vd "abc", "0") khác với CHƯA đặt. KHÔNG BAO GIỜ chép giá trị lạ vào JSON/stderr (ai đó đặt nhầm một bí mật vào biến này sẽ lộ):
+  // chỉ ghi nguyên văn khi trông như một SỐ (^[0-9.+-]{1,12}$ — không thể là bí mật), còn lại chỉ ghi độ dài.
+  const dangEnvKhongHopLe = /^[0-9.+-]{1,12}$/.test(thoEnv) ? `"${thoEnv}"` : `độ dài ${thoEnv.length}, không phải số`;
   const lyDoKep = !biKep
     ? null
     : luotEnv !== null
