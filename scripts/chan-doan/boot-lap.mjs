@@ -7,85 +7,119 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import postgres from "postgres";
+import path from "node:path";
+import crypto from "node:crypto";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const LAN = Number(process.argv[2] ?? 20);
-const GHI_DE = Object.fromEntries(process.argv.slice(3).map((a) => a.split(/=(.*)/s).slice(0, 2)));
-const THU_MUC_LOG = process.env.BOOT_DIR ?? ".boot20";
-const GIU_MS = Number(process.env.BOOT_GIU_MS ?? 25_000); // giữ sau khi cổng nghe
-const TRAN_LEN_MS = Number(process.env.BOOT_TRAN_MS ?? 180_000); // cổng không nghe sau 180 s ⇒ coi là treo
-const PORT = 3016;
+// ── Env CÁCH LY của tiến trình server (luật vận hành tạm 14/11: server trỏ _test KHÔNG được kế thừa env cha, KHÔNG nạp .env) ──
+// Mẫu: e2e/flow-studio/instance.ts. Không rải toàn bộ env cha: biến lạ ở cha không lọt vào con.
+export const BIEN_HE_DIEU_HANH = ["PATH", "Path", "SYSTEMROOT", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH", "COMSPEC", "PATHEXT", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS", "HOME"];
+/** Năm cờ chặn mọi đường gửi lệnh ra thiết bị (sweep STOP lúc boot) — LUÔN "false", đặt SAU ALWAYS_OFF. */
+export const NAM_CO_TAT = ["ROBOT_CONTROL_ENABLED", "OT_CONTROL_ENABLED", "FOE_ENABLED", "FOE_DURABLE", "OT_GATEWAY_ENABLED"];
+const NGUON_ALWAYS_OFF = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "e2e", "dot5-h6", "instance.ts");
 
-const envFile = fs.readFileSync(".env", "utf8").split(/\r?\n/);
-const dbLine = envFile.filter((l) => /^DATABASE_URL=/.test(l)).pop();
-const dbUrl = dbLine.replace(/^DATABASE_URL=/, "").trim().replace(/\s+#.*$/, "").replace(/\/aoi_management(\?|$)/, "/aoi_management_test$1");
-if (!/aoi_management_test/.test(dbUrl)) throw new Error("không dựng được URL DB _test");
-
-const env = {
-  ...process.env,
-  PORT: String(PORT),
-  DATABASE_URL: dbUrl,
-  GGUF_WARM_DEEP_MODEL_ON_BOOT: "false",
-  LLAMA_SERVER_ENABLED: "false",
-  LLAMA_WATCHDOG_ENABLED: "false",
-  // Không-GPU mặc định (census VRAM): aiWatcher tắt + KHÔNG làm ấm KB lúc boot (cờ THẬT AI_KB_WARM_ON_BOOT, không cần bản vá chẩn đoán).
-  AI_ORCHESTRATION_ENABLED: "false",
-  AI_KB_WARM_ON_BOOT: "false",
-  VITEST: "", // không phải môi trường test
-  ...GHI_DE,
-};
-
-const nghe = () =>
-  new Promise((ok) => {
-    const s = net.connect({ port: PORT, host: "127.0.0.1" }, () => { s.destroy(); ok(true); });
-    s.on("error", () => ok(false));
-    s.setTimeout(800, () => { s.destroy(); ok(false); });
-  });
-const ngu = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function giet(pid) {
-  spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+/** Đọc ALWAYS_OFF từ NGUỒN e2e/dot5-h6/instance.ts (một nguồn sự thật; .mjs không import được .ts). Thiếu/rỗng ⇒ ném lỗi (fail-closed). */
+export function docAlwaysOff(nguon = fs.readFileSync(NGUON_ALWAYS_OFF, "utf8")) {
+  const m = /export const ALWAYS_OFF[^=]*=\s*\{([\s\S]*?)\n\};/.exec(nguon);
+  if (!m) throw new Error("không tìm thấy ALWAYS_OFF trong e2e/dot5-h6/instance.ts");
+  const kq = {};
+  for (const p of m[1].matchAll(/\b([A-Z][A-Z0-9_]*):\s*"([^"]*)"/g)) kq[p[1]] = p[2];
+  if (kq.ROBOT_CONTROL_ENABLED !== "false" || Object.keys(kq).length < 10) throw new Error("ALWAYS_OFF đọc ra không hợp lệ — dừng, không khởi server");
+  return kq;
 }
 
-const ketQua = [];
-// Mỗi lần khởi động sinh ~6.000 thông báo ALERT (quét STOP/factory-drift trên dữ liệu test) — dọn định kỳ để DB _test không phình và gây treo giả.
-const DON_MOI = Number(process.env.BOOT_CLEAN_EVERY ?? 0);
-async function donThongBao() {
-  const sql = postgres(dbUrl, { max: 1, onnotice: () => {} });
-  try {
-    await sql`delete from notifications where type = 'ALERT' and "createdAt" >= now() - interval '2 hours' and (title ~ 'factory changed while edge' or title ~ '^STOP owed after transfer' or title ~ '^OT STOP sync between central' or title ~ '^STOP not confirmed')`;
-  } finally { await sql.end(); }
+/** Dựng env con: chỉ biến hệ điều hành cần thiết + cấu hình đo + ALWAYS_OFF + năm cờ "false"; `ghiDe` (KEY=VAL từ dòng lệnh) áp CUỐI. */
+export function dungEnvCoLap(envCha, { port, dbUrl, logDir, ghiDe = {}, alwaysOff = docAlwaysOff() }) {
+  const env = {};
+  for (const k of BIEN_HE_DIEU_HANH) if (envCha[k] != null) env[k] = envCha[k];
+  Object.assign(env, {
+    DOTENV_CONFIG_PATH: path.join(logDir, "khong-ton-tai.env"),
+    DATABASE_URL: dbUrl,
+    PORT: String(port), ROLE: "api",
+    JWT_SECRET: "bl-" + crypto.randomBytes(32).toString("hex"),
+    LICENSE_BYPASS: "true", AUTH_2FA_BAT_BUOC: "0", VITE_APP_ID: "ui-metrics",
+    GGUF_WARM_DEEP_MODEL_ON_BOOT: "false",
+    LLAMA_SERVER_ENABLED: "false",
+    LLAMA_WATCHDOG_ENABLED: "false",
+    // Không-GPU mặc định (census VRAM): aiWatcher tắt + KHÔNG làm ấm KB lúc boot (cờ THẬT AI_KB_WARM_ON_BOOT, không cần bản vá chẩn đoán).
+    AI_ORCHESTRATION_ENABLED: "false",
+    AI_KB_WARM_ON_BOOT: "false",
+    VITEST: "", // không phải môi trường test
+  }, alwaysOff);
+  for (const k of NAM_CO_TAT) env[k] = "false";
+  return Object.assign(env, ghiDe);
 }
-fs.mkdirSync(THU_MUC_LOG, { recursive: true });
-for (let i = 1; i <= LAN; i++) {
-  if (await nghe()) { console.log(`#${i} cổng ${PORT} ĐANG có người nghe trước khi chạy — dừng`); break; }
-  const t0 = Date.now();
-  const log = [];
-  const child = spawn(process.env.BOOT_NODE ?? process.execPath, ["node_modules/tsx/dist/cli.mjs", "server/_core/index.ts"], { env, cwd: process.cwd(), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
-  let thoat = null;
-  child.on("exit", (code, signal) => { thoat = { code, signal, ms: Date.now() - t0 }; });
-  const nap = (b) => { for (const dong of b.toString("utf8").split(/\r?\n/)) if (dong && !dong.startsWith("[SLOW QUERY]")) { log.push(dong); if (log.length > 20000) log.shift(); } };
-  child.stdout.on("data", nap);
-  child.stderr.on("data", nap);
 
-  let tgNghe = null;
-  let ketCuc = null;
-  while (ketCuc === null) {
-    await ngu(500);
-    if (thoat) { ketCuc = tgNghe ? "chet-sau-khi-nghe" : "chet-truoc-khi-nghe"; break; }
-    if (tgNghe === null && (await nghe())) tgNghe = Date.now() - t0;
-    if (tgNghe !== null && Date.now() - t0 - tgNghe >= GIU_MS) { ketCuc = "song-het-giu"; break; }
-    if (tgNghe === null && Date.now() - t0 > TRAN_LEN_MS) { ketCuc = "treo-khong-nghe"; break; }
+async function chinh() {
+  const LAN = Number(process.argv[2] ?? 20);
+  const GHI_DE = Object.fromEntries(process.argv.slice(3).map((a) => a.split(/=(.*)/s).slice(0, 2)));
+  const THU_MUC_LOG = process.env.BOOT_DIR ?? ".boot20";
+  const GIU_MS = Number(process.env.BOOT_GIU_MS ?? 25_000); // giữ sau khi cổng nghe
+  const TRAN_LEN_MS = Number(process.env.BOOT_TRAN_MS ?? 180_000); // cổng không nghe sau 180 s ⇒ coi là treo
+  const PORT = 3016;
+
+  const envFile = fs.readFileSync(".env", "utf8").split(/\r?\n/);
+  const dbLine = envFile.filter((l) => /^DATABASE_URL=/.test(l)).pop();
+  const dbUrl = dbLine.replace(/^DATABASE_URL=/, "").trim().replace(/\s+#.*$/, "").replace(/\/aoi_management(\?|$)/, "/aoi_management_test$1");
+  if (!/aoi_management_test/.test(dbUrl)) throw new Error("không dựng được URL DB _test");
+
+  const env = dungEnvCoLap(process.env, { port: PORT, dbUrl, logDir: THU_MUC_LOG, ghiDe: GHI_DE });
+
+  const nghe = () =>
+    new Promise((ok) => {
+      const s = net.connect({ port: PORT, host: "127.0.0.1" }, () => { s.destroy(); ok(true); });
+      s.on("error", () => ok(false));
+      s.setTimeout(800, () => { s.destroy(); ok(false); });
+    });
+  const ngu = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function giet(pid) {
+    spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
   }
-  const pid = child.pid;
-  if (!thoat) { giet(pid); await ngu(1500); }
-  const r = { lan: i, ketCuc, tgNgheMs: tgNghe, thoat, tongMs: Date.now() - t0 };
-  ketQua.push(r);
-  const hex = thoat?.code != null ? "0x" + (thoat.code >>> 0).toString(16) : "-";
-  console.log(`#${i} ${ketCuc} nghe=${tgNghe}ms exit=${thoat ? `${thoat.code}(${hex})/${thoat.signal}` : "bị-ta-giết"} tong=${r.tongMs}ms`);
-  if (ketCuc.startsWith("chet") || ketCuc.startsWith("treo") || process.env.BOOT_SAVE_LOG === "1") fs.writeFileSync(`${THU_MUC_LOG}/lan${i}.log`, log.slice(-20000).join("\n"));
-  if (DON_MOI > 0 && i % DON_MOI === 0) await donThongBao().catch((e) => console.log("dọn thông báo lỗi:", e.message));
-  await ngu(2000);
+
+  const ketQua = [];
+  // Mỗi lần khởi động sinh ~6.000 thông báo ALERT (quét STOP/factory-drift trên dữ liệu test) — dọn định kỳ để DB _test không phình và gây treo giả.
+  const DON_MOI = Number(process.env.BOOT_CLEAN_EVERY ?? 0);
+  async function donThongBao() {
+    const sql = postgres(dbUrl, { max: 1, onnotice: () => {} });
+    try {
+      await sql`delete from notifications where type = 'ALERT' and "createdAt" >= now() - interval '2 hours' and (title ~ 'factory changed while edge' or title ~ '^STOP owed after transfer' or title ~ '^OT STOP sync between central' or title ~ '^STOP not confirmed')`;
+    } finally { await sql.end(); }
+  }
+  fs.mkdirSync(THU_MUC_LOG, { recursive: true });
+  for (let i = 1; i <= LAN; i++) {
+    if (await nghe()) { console.log(`#${i} cổng ${PORT} ĐANG có người nghe trước khi chạy — dừng`); break; }
+    const t0 = Date.now();
+    const log = [];
+    const child = spawn(process.env.BOOT_NODE ?? process.execPath, ["node_modules/tsx/dist/cli.mjs", "server/_core/index.ts"], { env, cwd: process.cwd(), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    let thoat = null;
+    child.on("exit", (code, signal) => { thoat = { code, signal, ms: Date.now() - t0 }; });
+    const nap = (b) => { for (const dong of b.toString("utf8").split(/\r?\n/)) if (dong && !dong.startsWith("[SLOW QUERY]")) { log.push(dong); if (log.length > 20000) log.shift(); } };
+    child.stdout.on("data", nap);
+    child.stderr.on("data", nap);
+
+    let tgNghe = null;
+    let ketCuc = null;
+    while (ketCuc === null) {
+      await ngu(500);
+      if (thoat) { ketCuc = tgNghe ? "chet-sau-khi-nghe" : "chet-truoc-khi-nghe"; break; }
+      if (tgNghe === null && (await nghe())) tgNghe = Date.now() - t0;
+      if (tgNghe !== null && Date.now() - t0 - tgNghe >= GIU_MS) { ketCuc = "song-het-giu"; break; }
+      if (tgNghe === null && Date.now() - t0 > TRAN_LEN_MS) { ketCuc = "treo-khong-nghe"; break; }
+    }
+    const pid = child.pid;
+    if (!thoat) { giet(pid); await ngu(1500); }
+    const r = { lan: i, ketCuc, tgNgheMs: tgNghe, thoat, tongMs: Date.now() - t0 };
+    ketQua.push(r);
+    const hex = thoat?.code != null ? "0x" + (thoat.code >>> 0).toString(16) : "-";
+    console.log(`#${i} ${ketCuc} nghe=${tgNghe}ms exit=${thoat ? `${thoat.code}(${hex})/${thoat.signal}` : "bị-ta-giết"} tong=${r.tongMs}ms`);
+    if (ketCuc.startsWith("chet") || ketCuc.startsWith("treo") || process.env.BOOT_SAVE_LOG === "1") fs.writeFileSync(`${THU_MUC_LOG}/lan${i}.log`, log.slice(-20000).join("\n"));
+    if (DON_MOI > 0 && i % DON_MOI === 0) await donThongBao().catch((e) => console.log("dọn thông báo lỗi:", e.message));
+    await ngu(2000);
+  }
+  fs.writeFileSync(`${THU_MUC_LOG}/tom-tat.json`, JSON.stringify(ketQua, null, 1));
+  const chet = ketQua.filter((r) => r.ketCuc.startsWith("chet") || r.ketCuc.startsWith("treo"));
+  console.log(`TONG ${ketQua.length} lần: sống ${ketQua.length - chet.length}, chết/treo ${chet.length}`);
 }
-fs.writeFileSync(`${THU_MUC_LOG}/tom-tat.json`, JSON.stringify(ketQua, null, 1));
-const chet = ketQua.filter((r) => r.ketCuc.startsWith("chet") || r.ketCuc.startsWith("treo"));
-console.log(`TONG ${ketQua.length} lần: sống ${ketQua.length - chet.length}, chết/treo ${chet.length}`);
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await chinh();
