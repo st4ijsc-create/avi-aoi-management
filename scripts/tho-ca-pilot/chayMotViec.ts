@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import { chuanDuong, docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
 import { demTatCa, tinhHauQua, type KetQuaDem, type KetQuaHauQua, type MayDem } from "./hauQua";
 import { moMayDemTuUrl } from "./mayDemPg";
+import { chayKiemThat, type KetQuaKiemThat } from "./kiemThat";
 import { CAU_LUAT_PHU, docDongDaDuyet, docVitestJson, tenMoiCa, tinhPhu, type DongDuyet, type KetQuaPhu } from "./kiemPhu";
 import { dongBaoTran, dongCanhBaoKep, gioiHanChoLuot, tinhTranLuot, type GioiHanLuotChoDriver, type TranLuotKetQua } from "./tranLuot";
 import { apDungDotBien, kiemDotBienTrenBase, quetGhimNghiNgo, quetKhangDinhCam, tepTestDoi, type KetQuaDotBien } from "./dotBien";
@@ -190,6 +191,8 @@ export interface KetQuaViec {
   phu?: PhuJson;
   /** HA-6b: kiểm hậu quả (đếm hàng CSDL trước/sau; chỉ khi thẻ có BẢNG ĐẾM) */
   hauQua?: KetQuaHauQua;
+  /** HA-6b phần 2: kết quả LỆNH KIỂM THẬT (KHÔNG có lệnh / đường / đầu ra) */
+  kiemThat?: KetQuaKiemThat;
   /** HA-3: trần lượt đã áp (chỉ khi thẻ có khoá TRẦN …): khoá thẻ, biến env, trần cứng, số thực dùng. "vòng" = một lần gọi model */
   tran?: TranLuotKetQua;
   /** `--cho-phep-db` đã bật cho lượt này (mặc định vắng = TẮT) */
@@ -681,7 +684,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const canhBaoKep = tran ? dongCanhBaoKep(tran) : null;
   if (canhBaoKep) nhatKy(canhBaoKep);
   // L3b: model/driver KHÔNG được thấy đột biến hay chuỗi cấm — gỡ khỏi `the` đưa cho driver (ghepLenh cũng không in chúng)
-  const { dotBien: _dotBien, khangDinhCam: _khangDinhCam, csdl: _csdl, bangDem: _bangDem, ...theChoDriver } = the;
+  const { dotBien: _dotBien, khangDinhCam: _khangDinhCam, csdl: _csdl, bangDem: _bangDem, lenhKiemThat: _lenhKiemThat, cayGia: _cayGia, ...theChoDriver } = the;
   // HA-6b: đếm hàng CSDL TRƯỚC lượt (chỉ khi có cờ DB + thẻ có BẢNG ĐẾM). Lỗi ⇒ ghi lại, phán quyết fail-closed ở cuối.
   const mucDem = the.bangDem ?? [];
   const demLan = async (): Promise<KetQuaDem> => {
@@ -765,6 +768,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   let dotBien: KetQuaDotBien | null = null;
   let phu: PhuJson | null = null;
   let hauQua: KetQuaHauQua | null = null;
+  let kiemThat: KetQuaKiemThat | null = null;
   let lyDoKiem: string | null = null;
   const khongTepRong = !tepTest.some((t) => t.soCa === 0);
   if (ketCuc === "xong") {
@@ -791,12 +795,18 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
       dotBien = await apDungDotBien(wt, the.dotBien, tepDoi, the.lenhKiem, chayKiemDung, p.hanKiemGiay ?? 300);
       qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc, phu, dotBien });
     }
+    // HA-6b phần 2: LỆNH KIỂM THẬT trên cây giả (host chép fixture vào thư mục tạm; model không thấy lệnh / đường / đầu ra)
+    if (qd.ketCuc === "xong" && the.lenhKiemThat && the.cayGia) {
+      nhatKy("chạy LỆNH KIỂM THẬT trên cây giả (HA-6b)");
+      kiemThat = await chayKiemThat({ lenh: the.lenhKiemThat, cay: the.cayGia }, wt, chayKiemDung, p.hanKiemGiay ?? 300);
+      qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc, phu, dotBien, kiemThat });
+    }
     // HA-6b: SAU lệnh kiểm cuối + đột biến — đếm lại hàng CSDL; chênh ở mục chấm / không đếm được (có cờ DB) ⇒ hau-qua-xau
     if (qd.ketCuc === "xong" && mucDem.length > 0) {
       nhatKy("kiểm hậu quả: đếm hàng CSDL (HA-6b)");
       const sau = dbCho ? await demLan() : null;
       hauQua = tinhHauQua({ muc: mucDem, coDb: dbCho, truoc: demTruoc, sau });
-      qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc, phu, dotBien, hauQua });
+      qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc, phu, dotBien, kiemThat, hauQua });
     }
     ketCuc = qd.ketCuc as KetQuaViec["ketCuc"];
     lyDoKiem = qd.lyDo;
@@ -847,6 +857,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     ...(tran ? { tran } : {}),
     ...(phu ? { phu } : {}),
     ...(hauQua ? { hauQua } : {}),
+    ...(kiemThat ? { kiemThat } : {}),
     ...(dbCho ? { choPhepDb: true as const, vaiCsdl: VAI_DUOC_PHEP } : {}),
     luat: { sha256: sha256Hex(luat), nguon: luatNguon, byte: Buffer.byteLength(luat, "utf8") },
     luatCach: cach,
