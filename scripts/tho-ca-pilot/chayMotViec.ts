@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 import { chuanDuong, docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
 import { demTatCa, tinhHauQua, type KetQuaDem, type KetQuaHauQua, type MayDem } from "./hauQua";
 import { moMayDemTuUrl } from "./mayDemPg";
-import { chayKiemThat, type KetQuaKiemThat } from "./kiemThat";
+import { chayKiemThat, chupWt, type KetQuaKiemThat } from "./kiemThat";
 import { CAU_LUAT_PHU, docDongDaDuyet, docVitestJson, tenMoiCa, tinhPhu, type DongDuyet, type KetQuaPhu } from "./kiemPhu";
 import { dongBaoTran, dongCanhBaoKep, gioiHanChoLuot, tinhTranLuot, type GioiHanLuotChoDriver, type TranLuotKetQua } from "./tranLuot";
 import { apDungDotBien, kiemDotBienTrenBase, quetGhimNghiNgo, quetKhangDinhCam, tepTestDoi, type KetQuaDotBien } from "./dotBien";
@@ -798,7 +798,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     // HA-6b phần 2: LỆNH KIỂM THẬT trên cây giả (host chép fixture vào thư mục tạm; model không thấy lệnh / đường / đầu ra)
     if (qd.ketCuc === "xong" && the.lenhKiemThat && the.cayGia) {
       nhatKy("chạy LỆNH KIỂM THẬT trên cây giả (HA-6b)");
-      kiemThat = await chayKiemThat({ lenh: the.lenhKiemThat, cay: the.cayGia }, wt, chayKiemDung, p.hanKiemGiay ?? 300);
+      kiemThat = await chayKiemThat({ lenh: the.lenhKiemThat, cay: the.cayGia }, wt, chayKiemDung, p.hanKiemGiay ?? 300, (w) => chupWt(w, (d, a) => { const r = git(a, d); return r.ok ? r.out : null; }));
       qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc, phu, dotBien, kiemThat });
     }
     // HA-6b: SAU lệnh kiểm cuối + đột biến — đếm lại hàng CSDL; chênh ở mục chấm / không đếm được (có cờ DB) ⇒ hau-qua-xau

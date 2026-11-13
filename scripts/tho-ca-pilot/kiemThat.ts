@@ -10,7 +10,6 @@
  *     khác nhau ở bất kỳ chỗ nào (sửa / tạo / xoá, kể cả tệp .gitignore) ⇒ không đạt, lyDo `lenh-that-ghi-vao-wt`. Không chụp được ⇒ không đạt (fail-closed).
  *   · Bất biến: chỉ chạy mã đã được người duyệt (cùng điều kiện như lệnh kiểm — chạy SAU khi các bước kiểm trước xanh).
  */
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -93,16 +92,14 @@ export function chepCayGia(cay: string, wt: string, thuMucTam: string = os.tmpdi
   return { ok: true, dir: path.join(goc, "cay"), don: () => fs.rmSync(goc, { recursive: true, force: true }) };
 }
 
-function git(wt: string, args: string[]): string | null {
-  const r = spawnSync("git", args, { cwd: wt, encoding: "utf8", timeout: 60_000, maxBuffer: 64 * 1024 * 1024 });
-  return r.status === 0 && typeof r.stdout === "string" ? r.stdout : null;
-}
+/** Hàm chạy `git <args>` trong `wt`, trả stdout; lỗi ⇒ null. Do bộ chạy TIÊM vào (module này không tự sinh tiến trình — giữ bản liệt kê điểm cấp phát nguyên). */
+export type ChayGit = (wt: string, args: string[]) => string | null;
 
 /**
  * Ảnh chụp worktree: status đầy đủ (không ignored, -z, mọi tệp chưa theo dõi) + status có ignored + băm nội dung từng tệp đang lệch. null = không chụp được.
  * Băm nội dung để bắt việc lệnh ghi THÊM vào tệp mà model đã sửa (status vẫn là " M" trước lẫn sau).
  */
-export function chupWt(wt: string): string | null {
+export function chupWt(wt: string, git: ChayGit): string | null {
   const a = git(wt, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
   const b = git(wt, ["status", "--porcelain=v1", "-z", "--ignored"]);
   if (a === null || b === null) return null;
@@ -130,7 +127,7 @@ export interface KetQuaKiemThat {
 }
 
 /** Chạy LỆNH KIỂM THẬT (fail-closed: mọi lỗi ⇒ dat:false). `chay` là hàm chạy lệnh kiểm của bộ chạy (cùng cách ly / env sạch). */
-export async function chayKiemThat(kt: KiemThat, wt: string, chay: ChayKiem, hanGiay: number, thuMucTam?: string, chup: (wt: string) => string | null = chupWt): Promise<KetQuaKiemThat> {
+export async function chayKiemThat(kt: KiemThat, wt: string, chay: ChayKiem, hanGiay: number, chup: (wt: string) => string | null, thuMucTam?: string): Promise<KetQuaKiemThat> {
   const chep = chepCayGia(kt.cay, wt, thuMucTam);
   if (!chep.ok) return { dat: false, exit: null, hetGio: false, giay: 0, lyDo: chep.lyDo };
   try {

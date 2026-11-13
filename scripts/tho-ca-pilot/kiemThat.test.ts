@@ -12,6 +12,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { KetQuaKiem } from "./kiemChung";
 import { chayKiemThat, chepCayGia, chupWt, docKiemThat, TRAN_TEP_CAY } from "./kiemThat";
 
+const gitThat = (cwd: string, a: string[]): string | null => {
+  const r = spawnSync("git", a, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return r.status === 0 ? r.stdout : null;
+};
+const chupGit = (w: string) => chupWt(w, gitThat);
 const git = (cwd: string, ...a: string[]) => spawnSync("git", a, { cwd, encoding: "utf8" }).stdout.trim();
 
 let goc: string;
@@ -120,7 +125,7 @@ describe("chayKiemThat", () => {
       thayLucChay = fs.existsSync(path.join(m[1]!, "assets", "app-abc123.js"));
       fs.writeFileSync(path.join(m[1]!, "index.html"), "SAI");
       return kq();
-    }, 30, t);
+    }, 30, chupGit, t);
     expect(r).toEqual({ dat: true, exit: 0, hetGio: false, giay: 2, lyDo: null });
     expect(cwd).toBe(wt);
     expect(thayLucChay).toBe(true);
@@ -131,7 +136,7 @@ describe("chayKiemThat", () => {
   });
   it("★★★ exit ≠ 0 / hết giờ / lỗi khởi chạy / hàm ném ⇒ KHÔNG đạt, lý do ngắn, đã dọn bản chép", async () => {
     const t = tmpRieng();
-    const chay = (k: Partial<KetQuaKiem> | "nem") => chayKiemThat({ lenh: "x {CAY}", cay }, wt, async () => (k === "nem" ? Promise.reject(new Error("BI_MAT_LOI")) : kq(k)), 30, t);
+    const chay = (k: Partial<KetQuaKiem> | "nem") => chayKiemThat({ lenh: "x {CAY}", cay }, wt, async () => (k === "nem" ? Promise.reject(new Error("BI_MAT_LOI")) : kq(k)), 30, chupGit, t);
     expect(await chay({ exit: 3 })).toMatchObject({ dat: false, exit: 3, lyDo: "thoat-ma-3" });
     expect(await chay({ exit: null, hetGio: true, giay: 30 })).toMatchObject({ dat: false, hetGio: true, lyDo: "het-gio-30s" });
     expect(await chay({ exit: null, loi: "spawn ENOENT BI_MAT_LOI" })).toMatchObject({ dat: false, lyDo: "khong-khoi-chay-duoc" });
@@ -141,7 +146,7 @@ describe("chayKiemThat", () => {
     expect(fs.readdirSync(t)).toEqual([]);
   });
   it("★★★ kết quả KHÔNG chứa lệnh, đường fixture, đường bản chép hay đầu ra", async () => {
-    const kd = await chayKiemThat({ lenh: "node BI_MAT_CMD.mjs {CAY}", cay }, wt, async () => kq({ exit: 1, duoi: "DAU_RA_BI_MAT" }), 30, tmpRieng());
+    const kd = await chayKiemThat({ lenh: "node BI_MAT_CMD.mjs {CAY}", cay }, wt, async () => kq({ exit: 1, duoi: "DAU_RA_BI_MAT" }), 30, chupGit, tmpRieng());
     const s = JSON.stringify(kd);
     for (const x of ["BI_MAT_CMD", "DAU_RA_BI_MAT", cay, "tcp-cay-", "fixture"]) expect(s).not.toContain(x);
     expect(Object.keys(kd).sort()).toEqual(["dat", "exit", "giay", "hetGio", "lyDo"]);
@@ -159,7 +164,7 @@ describe("chayKiemThat", () => {
       ["xoá tệp theo dõi", () => fs.rmSync(path.join(wt, ".gitignore"))],
     ];
     for (const [ten, lam] of ghi) {
-      const r = await chayKiemThat({ lenh: "x {CAY}", cay }, wt, async () => (lam(), kq()), 30, t);
+      const r = await chayKiemThat({ lenh: "x {CAY}", cay }, wt, async () => (lam(), kq()), 30, chupGit, t);
       expect(r, ten).toMatchObject({ dat: false, exit: 0, lyDo: "lenh-that-ghi-vao-wt" });
     }
   });
@@ -171,21 +176,21 @@ describe("chayKiemThat", () => {
       fs.writeFileSync(path.join(m[1]!, "ra.txt"), "x");
       fs.writeFileSync(path.join(t, "tam.txt"), "x");
       return kq();
-    }, 30, t);
+    }, 30, chupGit, t);
     expect(r).toMatchObject({ dat: true, lyDo: null });
   });
   it("★★ không chụp được worktree (không phải kho git) ⇒ không đạt, KHÔNG chạy lệnh (fail-closed)", async () => {
     const khongGit = path.join(goc, "khong-git");
     fs.mkdirSync(khongGit);
     let goi = 0;
-    const r = await chayKiemThat({ lenh: "x {CAY}", cay }, khongGit, async () => (goi++, kq()), 30, tmpRieng());
+    const r = await chayKiemThat({ lenh: "x {CAY}", cay }, khongGit, async () => (goi++, kq()), 30, chupGit, tmpRieng());
     expect(r).toMatchObject({ dat: false, lyDo: "khong-chup-duoc-wt" });
     expect(goi).toBe(0);
-    expect(chupWt(khongGit)).toBeNull();
+    expect(chupWt(khongGit, gitThat)).toBeNull();
   });
   it("★★ cây giả hỏng (ngoài thư mục / trong worktree) ⇒ không đạt, KHÔNG chạy lệnh", async () => {
     let goi = 0;
-    const r = await chayKiemThat({ lenh: "x {CAY}", cay: path.join(wt) }, wt, async () => (goi++, kq()), 30, tmpRieng());
+    const r = await chayKiemThat({ lenh: "x {CAY}", cay: path.join(wt) }, wt, async () => (goi++, kq()), 30, chupGit, tmpRieng());
     expect(r).toMatchObject({ dat: false, lyDo: "cay-gia-long-voi-worktree" });
     expect(goi).toBe(0);
   });
