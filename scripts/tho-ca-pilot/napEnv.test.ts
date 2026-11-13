@@ -91,7 +91,8 @@ LLAMA_SERVER_URL=http://127.0.0.1:8091
     const env: NodeJS.ProcessEnv = { AI_AGENT_NEN_MOC: "0.3", AI_AGENT_B: "1", AI_AGENT_PASSWORD_X: "p", LLAMA_SERVER_URL: "u" };
     expect(datCoTuongMinh({ AI_AGENT_NEN_MOC: "0.5", AI_AGENT_A: "1" }, env)).toEqual(["AI_AGENT_A", "AI_AGENT_NEN_MOC"]);
     expect(env.AI_AGENT_NEN_MOC).toBe("0.5");
-    expect(coAiAgentHieuLuc(env)).toEqual({ AI_AGENT_A: "1", AI_AGENT_B: "1", AI_AGENT_NEN_MOC: "0.5" });
+    // A/B không có trong bảng cờ đã biết ⇒ chỉ ghi TÊN (giá trị che); NEN_MOC là số hợp lệ ⇒ nguyên văn
+    expect(coAiAgentHieuLuc(env)).toEqual({ AI_AGENT_A: "<tên lạ, không ghi giá trị>", AI_AGENT_B: "<tên lạ, không ghi giá trị>", AI_AGENT_NEN_MOC: "0.5" });
     expect(Object.keys(coAiAgentHieuLuc(env))).toEqual(["AI_AGENT_A", "AI_AGENT_B", "AI_AGENT_NEN_MOC"]);
   });
 });

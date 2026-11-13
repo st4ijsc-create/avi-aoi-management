@@ -34,6 +34,8 @@ const nhapLyDo = (dlg: HTMLElement, lyDo: string) => {
   nhapMa(dlg);
 };
 
+// Vùng URGENT bền có test riêng (VungUrgentBen.dom.test.tsx + .noiDay.unit.test.ts); ở đây chặn để mock trpc của trang không phải khai notification.*.
+vi.mock("@/components/scada/VungUrgentBen", () => ({ VungUrgentBen: () => null }));
 vi.mock("@/components/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
