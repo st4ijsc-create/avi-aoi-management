@@ -77,6 +77,31 @@ describe("chín mẫu — ÂM (mã vô hại gần giống)", () => {
     expect(maus(`const w = "${WT.replace(/\\/g, "/")}-evil/x";`)).toContain("duong-tuyet-doi");
     expect(maus(`const t = "${TMP.replace(/\\/g, "/")}2/x";`)).toContain("duong-tuyet-doi");
   });
+  it("★★★ chuỗi JS gạch ngược KÉP trong worktree (`\"D:\\\\SOURCES\\\\_tho_ca_wt\\\\a\"`) ⇒ KHÔNG cảnh báo oan; đối chứng: đường ngoài worktree cũng dạng `\\\\` ⇒ VẪN cảnh báo", () => {
+    expect(quet('const w = "D:\\\\SOURCES\\\\_tho_ca_wt\\\\a\\\\b.ts";')).toEqual([]);
+    expect(maus('const w = "D:\\\\SOURCES\\\\khac\\\\a.ts";')).toContain("duong-tuyet-doi");
+    expect(maus('const w = "D:\\\\SOURCES\\\\_tho_ca_wt-evil\\\\a.ts";')).toContain("duong-tuyet-doi");
+  });
+  it("★★★ hoa/thường (q18): `d:\\sources\\_tho_ca_wt\\x` và `D:\\SOURCES\\_tho_ca_wt\\x` cùng kết quả (được); anh em `wt-evil` khác hoa/thường vẫn cảnh báo", () => {
+    expect(quet('const a = "d:\\sources\\_tho_ca_wt\\x.ts";')).toEqual([]);
+    expect(quet('const a = "D:\\SOURCES\\_tho_ca_wt\\x.ts";')).toEqual([]);
+    expect(maus('const a = "d:\\sources\\_THO_CA_WT-evil\\x.ts";')).toContain("duong-tuyet-doi");
+    expect(maus('const a = "D:\\SOURCES\\_tho_ca_wt-evil\\x.ts";')).toContain("duong-tuyet-doi");
+  });
+  it("★★★ dòng > 4000 ký tự không chạy regex: dòng 550 KB lặp `require   ` xong < 200 ms VÀ có đúng một cảnh báo `dong-qua-dai`", () => {
+    const dai = "require   ".repeat(55_000);
+    const t0 = performance.now();
+    const ra = quet(`a\n${dai}`);
+    expect(performance.now() - t0).toBeLessThan(200);
+    expect(ra.map((c) => [c.mau, c.dong])).toEqual([["dong-qua-dai", 2]]);
+    expect(ra[0]!.trich.length).toBeLessThanOrEqual(200);
+  });
+  it("★★ biên: dòng đúng 4000 ký tự vẫn được quét; 4001 ký tự ⇒ chỉ `dong-qua-dai`; dòng chú thích dài không cảnh báo", () => {
+    const them = (n: number, dau: string) => dau + "x".repeat(n - dau.length);
+    expect(maus(them(4000, "const a = process.env.X; "))).toContain("process-env");
+    expect(maus(them(4001, "const a = process.env.X; "))).toEqual(["dong-qua-dai"]);
+    expect(quet(them(5000, "// "))).toEqual([]);
+  });
   it("★ DƯƠNG đối chứng của ca 'mạng tới 127.0.0.1:5434': cùng lệnh nhưng KHÔNG nêu :5434 ⇒ cảnh báo", () => {
     expect(maus('const c = net.connect(5434, "127.0.0.1");')).toContain("mang-ngoai");
   });

@@ -11,6 +11,12 @@
  *   ghi-tep          ghi / xoá / đổi tên tệp mà dòng KHÔNG nhắc thư mục tạm (tmpdir / mkdtemp / tmp / temp) — heuristic theo dòng
  *   mang-ngoai       API mạng (fetch, http/net/tls, WebSocket…) hoặc URL tới máy khác `127.0.0.1` / `localhost` (dòng nêu `127.0.0.1:5434` được bỏ qua)
  *   eval-dong        `eval(`, `Function(`, `import(<không phải chuỗi thuần>)`, `require(<không phải chuỗi thuần>)`, `vm.run…`
+ *   dong-qua-dai     (mẫu meta) dòng dài hơn TRAN_DO_DAI_DONG (4000 ký tự) KHÔNG chạy regex nào, chỉ gắn cảnh báo này — người duyệt đọc dòng đó
+ *
+ * Hạn chế đã biết — người duyệt vẫn là cổng. Bộ quét là regex theo dòng, KHÔNG phải trình phân tích; các dạng sau KHÔNG bị bắt (kiem-dinh đã đo), và KHÔNG cố vá hết bằng regex:
+ *   process["env"], `const { env } = process`, `(0, eval)(…)`, `globalThis["ev" + "al"]`, giải mã Buffer / base64 rồi chạy,
+ *   đường UNC `\\server\share` và `//server/share`, đường leo thư mục `../../..`, gọi tiến trình con qua `cp["spawn"](…)`.
+ * Cảnh báo là GỢI Ý cho người duyệt, không phải bằng chứng sạch: không có cảnh báo ≠ an toàn.
  *
  * Khoá thẻ `CHO PHÉP TRONG TEST: a; b` (hoặc phân cách bằng dấu phẩy ngoài ngoặc) tắt cảnh báo oan: một cảnh báo bị bỏ CHỈ KHI đoạn khớp NẰM TRONG một lần xuất hiện của mục cho phép
  * ngay trên dòng đó (ghi mục cho phép vào chú thích để lách KHÔNG có tác dụng, vì đoạn nguy hiểm phải nằm bên trong chính nó). Đoạn trích ĐÃ che mật khẩu trong URL.
@@ -18,7 +24,8 @@
  */
 import path from "node:path";
 
-export type MauQuet = "duong-tuyet-doi" | "env-tep" | "bi-mat" | "database-url" | "process-env" | "child-process" | "ghi-tep" | "mang-ngoai" | "eval-dong";
+export type MauQuet = "duong-tuyet-doi" | "env-tep" | "bi-mat" | "database-url" | "process-env" | "child-process" | "ghi-tep" | "mang-ngoai" | "eval-dong" | "dong-qua-dai";
+/** Chín mẫu REGEX (không gồm `dong-qua-dai` — mẫu meta, xem `TRAN_DO_DAI_DONG`). */
 export const TAT_CA_MAU: readonly MauQuet[] = ["duong-tuyet-doi", "env-tep", "bi-mat", "database-url", "process-env", "child-process", "ghi-tep", "mang-ngoai", "eval-dong"];
 
 export interface CanhBao {
@@ -44,6 +51,11 @@ export interface TuyChonQuet {
 }
 
 const TRAN_CANH_BAO = 100;
+/**
+ * Dòng DÀI hơn ngưỡng này KHÔNG chạy các regex (một số có `[^\n]*` ⇒ dòng 550 KB lặp `require   ` làm bộ quét chạy rất lâu).
+ * Thay bằng MỘT cảnh báo `dong-qua-dai` (chỉ cảnh báo, không chặn): người duyệt tự đọc dòng đó.
+ */
+export const TRAN_DO_DAI_DONG = 4000;
 
 // ── dòng mới ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -131,7 +143,8 @@ export function cheMatKhauUrl(s: string): string {
 }
 
 const laChuThich = (d: string) => /^\s*(?:\/\/|\/\*|\*)/.test(d);
-const chuanDuongSo = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+// gộp MỌI chuỗi gạch ngược/xuôi liền nhau thành một `/`: chuỗi JS "D:\\SOURCES\\x" (gạch ngược KÉP trong nguồn) so được với đường thật
+const chuanDuongSo = (p: string) => p.replace(/[\\/]+/g, "/").replace(/\/+$/, "").toLowerCase();
 
 function khopTrong(ds: string, re: RegExp): Array<{ manh: string; vt: number }> {
   const ra: Array<{ manh: string; vt: number }> = [];
@@ -169,6 +182,11 @@ export function quetTinh(dongMoi: readonly DongMoi[], tuyChon: TuyChonQuet): Can
   const ra: CanhBao[] = [];
   const thay = new Set<string>();
   for (const { so, dong } of dongMoi) {
+    if (dong.length > TRAN_DO_DAI_DONG && !laChuThich(dong)) {
+      ra.push({ mau: "dong-qua-dai", dong: so, manh: `dài ${dong.length} ký tự (> ${TRAN_DO_DAI_DONG}), không quét`, trich: cheMatKhauUrl(dong.slice(0, 400)).trim().slice(0, 200) });
+      if (ra.length >= TRAN_CANH_BAO) return ra.slice(0, TRAN_CANH_BAO);
+      continue;
+    }
     if (laChuThich(dong)) continue;
     const themVao = (mau: MauQuet, manh: string, vt: number) => {
       if (duocPhep(dong, vt, manh.length, choPhep)) return;

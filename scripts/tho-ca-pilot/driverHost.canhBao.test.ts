@@ -108,6 +108,33 @@ CHO PHÉP TRONG TEST: process.env.DATABASE_URL, vi.mock("./connection")`);
     expect(thay).toHaveLength(1);
     expect(kq.duyet).toMatchObject({ soChapNhan: 1 });
   });
+  it("★★★ bộ quét NÉM LỖI (getter ném khi đọc args.modified) ⇒ lượt KHÔNG hỏng, ghiChu có 'bộ quét tĩnh lỗi (bỏ qua)', thẻ vẫn tới người duyệt và không có canhBao", async () => {
+    const thay: HoSoCho[] = [];
+    const args = {
+      path: "server/db/a.test.ts",
+      original: "a",
+      get modified(): string {
+        throw new Error("getter-no-bom");
+      },
+    };
+    const { dep, duyet } = taoDep(async (phat) => {
+      phat({ loai: "can-duyet", id: "tc1", deXuat: { ten: "write_file", thamSo: { path: "server/db/a.test.ts" }, moTa: "m", pendingActionId: "act-q24", xemTruoc: { args } } });
+      await KET(phat);
+    }, async (h) => (thay.push(h), { quyet: "chap-nhan" })); // KHÔNG ghi JSON ở đây: getter ném sẽ làm JSON.stringify hỏng
+    const kq = await driverHost(dep)(dauVao(ra));
+    expect(thay).toHaveLength(1);
+    expect("canhBao" in thay[0]!).toBe(false);
+    expect(duyet).toEqual(["act-q24"]);
+    expect(kq.duyet).toMatchObject({ soLanCho: 1, soChapNhan: 1 });
+    expect(kq.ghiChu.join(" ")).toContain("bộ quét tĩnh lỗi (bỏ qua): getter-no-bom");
+  });
+  it("★★ dòng 550 KB lặp `require   ` ⇒ xong nhanh, hồ sơ mang cảnh báo `dong-qua-dai`", async () => {
+    const dai = "require   ".repeat(55_000);
+    const t0 = Date.now();
+    const { h } = await chayVoiNoiDung("a", `a\n${dai}`);
+    expect(Date.now() - t0).toBeLessThan(3000);
+    expect(h.canhBao?.map((c) => [c.mau, c.dong])).toEqual([["dong-qua-dai", 2]]);
+  });
 });
 
 describe("dang-cho.txt + duyet.ts (HA-9)", () => {
