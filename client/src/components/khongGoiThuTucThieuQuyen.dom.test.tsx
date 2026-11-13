@@ -19,6 +19,8 @@ const H = vi.hoisted(() => ({
   posture: { data: undefined as unknown, isLoading: false, isError: false },
   /** Giả lập dữ liệu CÒN TRONG CACHE từ lúc người dùng còn quyền (query đã tắt nhưng vẫn có data). */
   cayCache: false,
+  /** Tương tự cho andon.active: danh sách andon còn trong cache từ lúc còn quyền. */
+  andonCache: false,
 }));
 
 function taoProxy(duongDan: string[]): unknown {
@@ -29,6 +31,9 @@ function taoProxy(duongDan: string[]): unknown {
           const dd = duongDan.join(".");
           H.hoi.push({ duongDan: dd, opts });
           if (dd === "oversight.posture") return { ...H.posture };
+          if (dd === "andon.active" && H.andonCache) {
+            return { data: [{ id: 1, state: "red", raisedAt: new Date().toISOString(), workUnitId: 3, reason: "kẹt" }], isSuccess: true, isError: false, isLoading: false };
+          }
           if (dd === "commandCenter.hierarchy" && H.cayCache) {
             return { data: { sites: [{ id: "f1", refId: 1, name: "Xưởng A", kind: "factory", children: [] }] }, isSuccess: true, isError: false, isLoading: false };
           }
@@ -76,6 +81,7 @@ beforeEach(() => {
   H.user = { id: 1, role: "engineer" };
   H.taiXong = true;
   H.cayCache = false;
+  H.andonCache = false;
   H.posture = { data: undefined, isLoading: false, isError: false };
 });
 afterEach(() => cleanup());
@@ -89,6 +95,16 @@ describe("thiếu quyền ⇒ enabled:false (không phát thủ tục)", () => {
     H.quyen.add("andon:canView");
     render(<ShellAlertChip />);
     expect(lanGoi("andon.active").map(h => h.opts?.enabled)).toEqual([true]);
+  });
+
+  it("s2 — ShellAlertChip: mất quyền mà cache còn danh sách andon ⇒ vẫn KHÔNG vẽ chip (có quyền thì vẽ)", () => {
+    H.andonCache = true;
+    const khong = render(<ShellAlertChip />);
+    expect(khong.container).toBeEmptyDOMElement();
+    cleanup();
+    H.quyen.add("andon:canView");
+    const co = render(<ShellAlertChip />);
+    expect(co.container).not.toBeEmptyDOMElement();
   });
 
   it("ShellAlertChip: quyền khác (machine_monitoring) không đủ cho andon", () => {
