@@ -20,6 +20,17 @@ const NHANH: Array<[string, (thongDiep: string) => unknown]> = [
   ["LoiNgoai NHA_CUNG_CAP_LOI", (t) => new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", t, { phanLoai: "QUOTA" })],
 ];
 
+// Từ điển mà việc duyệt tập ném ⇒ mọi lần che (kể cả che thông điệp lỗi) ném.
+const tuDienHong = (): TuDienNhay => ({
+  tenNguoiDung: {
+    [Symbol.iterator]() {
+      throw new RangeError("goc-khong-duoc-lo");
+    },
+  } as unknown as ReadonlySet<string>,
+  tenKhach: new Set(),
+  tenNhaMay: new Set(),
+});
+
 const yeuCau = (noiDung: string): YeuCauNhaCungCap => ({ model: "m", tinNhan: [{ vaiTro: "user", noiDung }], maxTokens: 10, nhietDo: 0.2 });
 
 describe("cheYeuCauHoacHong — bộ che ném ⇒ NGOAI_CHE_HONG", () => {
@@ -87,6 +98,24 @@ describe("cheLoiNgoai — chi tiết lỗi đã che, ≤ 500 ký tự, thông đ
     expect(k.chiTiet!.length).toBe(500);
     expect(k.chiTiet!.startsWith(truoc)).toBe(true);
     khongMangManh(k.chiTiet!);
+  });
+
+  it.each(NHANH)("%s: bộ che ném (từ điển hỏng) với thông điệp ngắn chứa bí mật ⇒ đúng 'thong-diep-loi-che-hong', 0 mảnh", (_ten, tao) => {
+    const k = cheLoiNgoai(tao(`401 invalid x-api-key ${BI_MAT}`), tuDienHong());
+    khongMangManh(k.chiTiet!);
+    expect(k.ma).toBe("NGOAI_NHA_CUNG_CAP_LOI");
+    expect(k.chiTiet).toBe("thong-diep-loi-che-hong");
+  });
+
+  it("lỗi lạ có toString/getter message NÉM ⇒ cheLoiNgoai KHÔNG ném, trả 'thong-diep-loi-che-hong'", () => {
+    const toStringNem = { message: undefined, toString: () => { throw new Error(`lo ${BI_MAT}`); } };
+    const getterNem = Object.defineProperty({}, "message", { get: () => { throw new Error(`lo ${BI_MAT}`); } });
+    for (const e of [toStringNem, getterNem]) {
+      // Ném ở đây ⇒ ca đỏ (đó chính là lỗi cần bắt).
+      const k = cheLoiNgoai(e, TU_DIEN_RONG);
+      expect(k.ma).toBe("NGOAI_NHA_CUNG_CAP_LOI");
+      expect(k.chiTiet).toBe("thong-diep-loi-che-hong");
+    }
   });
 
   it("giữ phanLoai của lỗi nhà cung cấp, không mang requestId; lỗi cổng khác giữ nguyên", () => {

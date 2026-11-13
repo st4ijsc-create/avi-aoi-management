@@ -274,10 +274,13 @@ const TRAN_CHI_TIET_LOI = 500;
  * ★ 2026-11-14 (do-model) — chi tiết lỗi ra người gọi: ≤ `TRAN_THONG_DIEP_LOI_CHE` ký tự ⇒ che CẢ chuỗi rồi cắt 500 (như cũ).
  * Dài hơn ⇒ chỉ báo độ dài, không nội dung. KHÔNG cắt trước khi che: cắt có thể chẻ một bí mật (PEM không nhãn còn < 12 dòng, token
  * ngắn hơn mẫu) để nó lọt luật che, và phần che phía trước co lại kéo mảnh đó vào 500 ký tự đầu. Che hỏng ⇒ cũng không nội dung.
+ * (rà kiem-dinh 14/11) Lấy chuỗi (`String(e.message ?? e)` — `toString`/getter của đối tượng lạ có thể ném) cũng nằm trong `try`:
+ * hàm này KHÔNG BAO GIỜ ném, nên nơi gọi luôn tới được bước ghi hàng kết quả sổ.
  */
-function cheThongDiepLoi(s: string, tu: TuDienNhay): string {
-  if (s.length > TRAN_THONG_DIEP_LOI_CHE) return `thong-diep-loi-qua-dai (${s.length} ky tu)`;
+function cheThongDiepLoi(layChuoi: () => string, tu: TuDienNhay): string {
   try {
+    const s = layChuoi();
+    if (s.length > TRAN_THONG_DIEP_LOI_CHE) return `thong-diep-loi-qua-dai (${s.length} ky tu)`;
     return cheChuoi(s, tu).giaTri.slice(0, TRAN_CHI_TIET_LOI);
   } catch {
     return "thong-diep-loi-che-hong";
@@ -291,10 +294,10 @@ function cheThongDiepLoi(s: string, tu: TuDienNhay): string {
 export function cheLoiNgoai(e: unknown, tu: TuDienNhay): LoiNgoai {
   if (e instanceof LoiNgoai) {
     return e.ma === "NGOAI_NHA_CUNG_CAP_LOI"
-      ? new LoiNgoai(e.ma, cheThongDiepLoi(e.chiTiet ?? "", tu), { ...(e.phanLoai ? { phanLoai: e.phanLoai } : {}) })
+      ? new LoiNgoai(e.ma, cheThongDiepLoi(() => e.chiTiet ?? "", tu), { ...(e.phanLoai ? { phanLoai: e.phanLoai } : {}) })
       : e;
   }
-  return new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", cheThongDiepLoi(String((e as Error)?.message ?? e), tu));
+  return new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", cheThongDiepLoi(() => String((e as Error)?.message ?? e), tu));
 }
 
 async function kiemDuyetLuong(db: DbCong, flowId: string | null, phienBan: number | undefined, nhaMay: number): Promise<void> {
