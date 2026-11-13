@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { main } from "./chayMotViec";
+import { main, wtMacDinh } from "./chayMotViec";
 
 // META (chọn tham gia: THO_CA_KIEM_WT_THAT=1 — CHỈ khi KHÔNG có lượt pilot nào đang chạy, vì lượt thật đổi HEAD/status hợp lệ): toàn bộ tệp này KHÔNG được làm đổi worktree pilot THẬT.
 // Chỉ ĐỌC (rev-parse + status --no-optional-locks), bỏ qua nếu thư mục không tồn tại. Sự cố 13/11 17:59: một ca/đột biến rơi vào worktree mặc định thật và "cất" giữa lượt pilot.
@@ -172,6 +172,16 @@ describe("main() — KHÔNG --wt (dưới vitest)", () => {
     expect(r.json!.ketCuc).toBe("tu-choi");
     expect(r.json!.loi).toContain("_tho_ca_wt_vitest_mac_dinh");
     expect(r.json!.loi).not.toContain("D:\\SOURCES\\_tho_ca_wt");
+  });
+});
+
+describe("main() — --cho-phep-db: --ra không được nằm trong worktree MẶC ĐỊNH (dưới vitest = thư mục tạm)", () => {
+  it("★★★ --ra nằm TRONG wtMacDinh() mà không truyền --wt ⇒ mã 2 + chuỗi 'nằm trong gốc sandbox / worktree' (đường mặc định phải là chính wtMacDinh)", async () => {
+    const tepUrl = path.join(goc, "tho_ca_test.url");
+    fs.writeFileSync(tepUrl, URL_TEST);
+    const r = await chayCli(["--the", tepThe, "--base", baseSha, "--driver", "kho", "--ra", path.join(wtMacDinh(), "ra"), "--cho-phep-db", "--tep-url-csdl", tepUrl]);
+    expect(r.ma).toBe(2);
+    expect(r.err).toContain("nằm trong gốc sandbox / worktree");
   });
 });
 

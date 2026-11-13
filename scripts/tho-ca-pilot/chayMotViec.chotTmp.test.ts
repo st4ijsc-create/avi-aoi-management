@@ -66,6 +66,15 @@ describe("wtNgoaiTmpDuoiVitest (thuần)", () => {
   it("★★★ anh em CÙNG TIỀN TỐ với thư mục tạm (`<tmp>-evil`) ⇒ từ chối (biên là dấu phân cách)", () => {
     expect(wtNgoaiTmpDuoiVitest(`${os.tmpdir()}-evil\\x`, CO_VITEST)).toBe(CHUOI);
   });
+  it("★★★ THƯ MỤC TẠM chính nó là junction (hoặc tên 8.3): worktree nằm dưới ĐÍCH THẬT của thư mục tạm vẫn được; ngoài cả hai dạng ⇒ từ chối", () => {
+    const that = path.join(goc, "tam-that");
+    fs.mkdirSync(path.join(that, "x"), { recursive: true });
+    const lk = path.join(goc, "tam-lk");
+    fs.symlinkSync(that, lk, "junction");
+    expect(wtNgoaiTmpDuoiVitest(path.join(that, "x"), CO_VITEST, lk)).toBeNull(); // dạng thật của tmp = that
+    expect(wtNgoaiTmpDuoiVitest(path.join(lk, "x"), CO_VITEST, lk)).toBeNull(); // dạng resolve của tmp = lk
+    expect(wtNgoaiTmpDuoiVitest(path.join(goc, "ngoai"), CO_VITEST, lk)).toBe(CHUOI);
+  });
   it("★★★ JUNCTION nằm trong tạm nhưng trỏ ra ngoài ⇒ từ chối (so cả dạng thật)", () => {
     const lk = path.join(goc, "_tho_ca_junction");
     fs.symlinkSync("C:\\Windows", lk, "junction");

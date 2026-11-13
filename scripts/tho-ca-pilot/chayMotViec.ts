@@ -229,9 +229,9 @@ export function wtMacDinh(env: NodeJS.ProcessEnv = process.env): string {
   return env.VITEST !== undefined ? path.join(os.tmpdir(), "_tho_ca_wt_vitest_mac_dinh") : "D:\\SOURCES\\_tho_ca_wt";
 }
 /** Dưới vitest (env.VITEST đặt) mà worktree — dạng resolve LẪN dạng thật (junction/symlink) — KHÔNG nằm trong os.tmpdir() ⇒ chuỗi từ chối; ngược lại null. Thuần. */
-export function wtNgoaiTmpDuoiVitest(wt: string, env: NodeJS.ProcessEnv = process.env): string | null {
+export function wtNgoaiTmpDuoiVitest(wt: string, env: NodeJS.ProcessEnv = process.env, thuMucTam: string = os.tmpdir()): string | null {
   if (env.VITEST === undefined) return null;
-  const tmp = [path.resolve(os.tmpdir()), duongThat(os.tmpdir())];
+  const tmp = [path.resolve(thuMucTam), duongThat(thuMucTam)];
   for (const d of [path.resolve(wt), duongThat(wt)]) if (!tmp.some((t) => namTrong(d, t))) return CHUOI_VITEST_NGOAI_TMP;
   return null;
 }
