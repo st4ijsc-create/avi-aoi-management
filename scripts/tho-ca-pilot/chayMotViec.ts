@@ -708,8 +708,8 @@ function docThamSo(argv: string[]): Record<string, string> {
   return o;
 }
 
-async function main(): Promise<number> {
-  const a = docThamSo(process.argv.slice(2));
+export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
+  const a = docThamSo(argv);
   if (!a.the) {
     process.stderr.write("dùng: chayMotViec.ts --the <tep-the> [--wt D:\\SOURCES\\_tho_ca_wt] [--base main] [--luat <tep-luat>] [--luat-cach ghi-de|ghep] [--cho-phep-db --tep-url-csdl <tep>] [--driver kho|cli] [--ra <thu-muc>] [--ghi-luot <thu-muc>] [--kho-ghi '<json>']\n");
     return 2;
