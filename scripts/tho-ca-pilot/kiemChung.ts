@@ -65,6 +65,8 @@ export interface KetQuaKiem {
   loi?: string;
   /** tên các ca ĐỎ trích từ TOÀN BỘ đầu ra (không chỉ đuôi), đã lọc URL/giá trị bí mật; tối đa 40 tên, mỗi tên ≤ 200 ký tự */
   tenCaDo?: string[];
+  /** HA-3: khi đầu ra > 3000 ký tự — ĐẦU (1000) + các dòng LỖI (FAIL / AssertionError / Error: …, tối đa 40) + ĐUÔI (1500); `duoi` vẫn là đuôi 3000 như cũ */
+  tomLuoc?: string;
   /** (chỉ khi `--cho-phep-db`) TOÀN BỘ đầu ra đã lọc URL + giá trị bí mật, cho NGƯỜI duyệt đọc qua tệp kết quả — KHÔNG bao giờ đưa cho model; tối đa ~400 KB (cắt giữa) */
   dauRaDayDu?: string;
 }
@@ -138,6 +140,27 @@ export function trichTenCaDo(sach: string): string[] {
     if (m2) them(m2[1]);
   }
   return ra.slice(0, 40);
+}
+
+/**
+ * HA-3 — tóm lược đầu ra lệnh kiểm dài: giữ ĐẦU + các dòng LỖI + ĐUÔI để không mất phần đầu của lỗi (37 ca vitest: đuôi 3000 ký tự chỉ còn tổng kết). Thuần.
+
+ * Đầu ra ≤ 3000 ký tự ⇒ undefined (`duoi` đã đủ).
+ */
+const RE_DONG_LOI = /(FAIL|AssertionError|Error:|TypeError|ReferenceError|SyntaxError|Unhandled|✗|×)/;
+export function tomLuocDauRa(sach: string): string | undefined {
+  if (sach.length <= 3000) return undefined;
+  const dau = sach.slice(0, 1000);
+  const duoi = sach.slice(-1500);
+  const loi: string[] = [];
+  for (const dong of sach.split(/\r?\n/)) {
+    const t = dong.trim().slice(0, 300);
+    if (t === "" || !RE_DONG_LOI.test(t) || loi.includes(t)) continue;
+    if (dau.includes(t) || duoi.includes(t)) continue;
+    loi.push(t);
+    if (loi.length >= 40) break;
+  }
+  return [dau, "--- dòng lỗi (ngoài đầu và đuôi) ---", ...(loi.length > 0 ? loi : ["(không có)"]), "--- đuôi ---", duoi].join("\n");
 }
 
 export function loaiUrlCsdl(s: string): string {
@@ -377,6 +400,7 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
         hetGio,
         giay: Math.round(((Date.now() - t0) / 1000) * 10) / 10,
         duoi: sach.length > 3000 ? sach.slice(-3000) : sach,
+        ...(sach.length > 3000 ? { tomLuoc: tomLuocDauRa(sach) } : {}),
         vitest: phanTichVitest(sach),
         ...(coDb ? { tenCaDo: trichTenCaDo(sach), dauRaDayDu: sach.length > 400_000 ? `${sach.slice(0, 100_000)}
 …(cắt giữa)…

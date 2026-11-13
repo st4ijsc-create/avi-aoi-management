@@ -758,3 +758,26 @@ describe("phuThuocHostThat — nối THẬT của cổng kế hoạch (đọc ng
     expect(nguon).toContain('const tk = await import("../../server/services/ai/agent/thuTucKeHoach");');
   });
 });
+
+describe("driverHost — trần lượt do thẻ (HA-3): chuyển gioiHan tới taoLuot", () => {
+  it("★★★ DauVaoDriver.gioiHanLuot ⇒ taoLuot nhận đúng gioiHan; vắng ⇒ taoLuot KHÔNG có khoá gioiHan (không đổi byte)", async () => {
+    const gom: Array<Record<string, unknown>> = [];
+    const mk = () =>
+      taoDep(
+        async (phat) => {
+          phat({ loai: "xong", lyDo: "hoan-thanh" });
+        },
+        async () => ({ quyet: "chap-nhan" }),
+        {
+          taoLuot: async (y) => {
+            gom.push(y as Record<string, unknown>);
+            return { ok: false, loi: "dừng ngay" };
+          },
+        },
+      ).dep;
+    await driverHost(mk())({ ...dauVao(ra), gioiHanLuot: { soLuotToiDa: 20, msToiDa: 600_000 } });
+    await driverHost(mk())(dauVao(ra));
+    expect(gom[0]).toMatchObject({ gioiHan: { soLuotToiDa: 20, msToiDa: 600_000 } });
+    expect("gioiHan" in gom[1]).toBe(false);
+  });
+});
