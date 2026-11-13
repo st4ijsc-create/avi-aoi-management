@@ -24901,7 +24901,7 @@
       "daDoc": "Read ({{n}})",
       "moTa": "Durable URGENT alerts of a run: a card never disappears by itself; \"I have read this\" only collapses the card and does not mean it was handled."
     },
-    "moRun": "Open run",
+    "moRun": "Open the orchestration page",
     "toiDaDoc": "I have read this",
     "ghiNguoiGio": "records that you read it, with the time",
     "banDaDoc": "you read this at {{gio}}",

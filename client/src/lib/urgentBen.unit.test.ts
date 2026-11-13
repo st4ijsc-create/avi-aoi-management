@@ -135,3 +135,13 @@ describe("lưới 23 kind", () => {
     expect([...KIND_URGENT_A2N].sort()).toEqual([...new Set(kindServer)].sort());
   });
 });
+
+describe("nhãn nút tới run nói đúng sự thật", () => {
+  it("★ khi trang Orchestration CHƯA đọc ?run=, nhãn KHÔNG hứa 'mở run' (chu-du-an-HST 13/11): 'Mở trang điều phối' / 'Open the orchestration page' / 打开编排页面", () => {
+    const u = (l: unknown) => (l as { urgent: { moRun: string } }).urgent.moRun;
+    expect(u(vi)).toBe("Mở trang điều phối");
+    expect(u(en)).toBe("Open the orchestration page");
+    expect(u(zh)).toBe("打开编排页面");
+    for (const x of [u(vi), u(en), u(zh)]) expect(x).not.toMatch(/Mở run|Open run|打开运行/);
+  });
+});
