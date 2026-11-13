@@ -42,7 +42,9 @@
  * Cửa sổ dữ liệu là một lát 2 GIÂY sinh từ `Date.now()` nên KHÔNG đụng dữ liệu của file kiểm
  * khác (vitest chạy song song theo file) và cũng không cộng dồn qua các lần chạy.
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { readFileSync } from "node:fs";
@@ -53,6 +55,53 @@ import { getDb } from "./connection";
 import { clearAssignmentCache } from "../_core/accessControl";
 import { users, measurementPointDefs, type InsertUser } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// GIAO DỊCH HOÀN TÁC — toàn bộ fixture nằm trong MỘT giao dịch drizzle mở suốt tệp, kết thúc bằng ROLLBACK
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// `getDb` (mock) trả về `tx` của giao dịch ấy. `createProductInspection` tự mở `db.transaction(...)`: trên `tx` việc đó thành SAVEPOINT
+// (không COMMIT giao dịch ngoài) nên ROLLBACK cuối cùng hoàn tác được cả nhà máy / xưởng / dây chuyền / trạm / máy / trạm công đoạn / model sản phẩm / người dùng.
+// Không DELETE, không TRUNCATE, không dùng owner `aoi`.
+class HoanTacCuoiTep extends Error {}
+const holder: { db: unknown } = { db: null };
+vi.mock("./connection", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getDb: async () => holder.db,
+}));
+let phienGiaoDich: ReturnType<typeof postgres> | null = null;
+let moKhoaHoanTac: () => void = () => undefined;
+let giaoDichXong: Promise<void> = Promise.resolve();
+
+async function moGiaoDichHoanTac(): Promise<void> {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("statisticsScope.test: thiếu DATABASE_URL (CSDL _test)");
+  phienGiaoDich = postgres(url, { max: 1, onnotice: () => undefined });
+  const choHoanTac = new Promise<void>((xong) => {
+    moKhoaHoanTac = xong;
+  });
+  await new Promise<void>((sanSang, thatBai) => {
+    giaoDichXong = drizzle(phienGiaoDich!)
+      .transaction(async (tx) => {
+        holder.db = tx;
+        sanSang();
+        await choHoanTac;
+        throw new HoanTacCuoiTep();
+      })
+      .then(
+        () => undefined,
+        (e: unknown) => {
+          if (!(e instanceof HoanTacCuoiTep)) thatBai(e);
+        },
+      );
+  });
+}
+
+afterAll(async () => {
+  holder.db = null;
+  moKhoaHoanTac();
+  await giaoDichXong;
+  if (phienGiaoDich) await phienGiaoDich.end({ timeout: 5 });
+}, 60_000);
 
 // ══════════════════════════════════════════════════════════════════════════════════════════
 // PHẦN A — LIỆT KÊ: đọc chính mã nguồn `statistics.ts`
@@ -176,6 +225,7 @@ async function mkInspection(
 }
 
 beforeAll(async () => {
+  await moGiaoDichHoanTac();
   // Mã nhà máy = FAC_A để `factoryId` (resolveFactoryCode) và `factoryCode` trên bản ghi kiểm
   // trỏ về cùng một thứ.
   factoryId = await db.createFactory({ code: FAC_A, name: "Stats scope fac" });
