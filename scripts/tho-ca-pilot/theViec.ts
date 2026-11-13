@@ -12,6 +12,7 @@
  */
 import { docDotBien, docKhangDinhCam, type DotBienThe } from "./dotBienThuan";
 import { TRAN_CUNG_SO_LUOT } from "../../server/services/ai/agent/gioiHanLuot";
+import { tachChoPhep } from "./quetTinh";
 import { docSoTran, GIOI_PHUT, GIOI_TOKEN_RA, type TranTheoThe } from "./tranLuot";
 
 export interface TheViec {
@@ -38,6 +39,8 @@ export interface TheViec {
   tran?: TranTheoThe;
   /** HA-10 — `KIỂM PHỦ: CÓ`: trước khi nhận "xong", mọi dòng ĐÃ DUYỆT (trừ GIỮ:) phải có ca MỚI tên `[Dk] ` (xem kiemPhu.ts). Host-only; mặc định TẮT. */
   kiemPhu?: boolean;
+  /** HA-9 — mục cho phép của bộ quét tĩnh (khoá `CHO PHÉP TRONG TEST`): tắt cảnh báo oan, CHỈ khi đoạn khớp nằm trong chính mục. Không phải quyền — chỉ bộ chạy đọc. */
+  choPhepTrongTest?: string[];
   gioiHan: { giay: number; vong: number };
 }
 
@@ -58,6 +61,7 @@ const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
   "TRAN PHUT": "tranPhut",
   "TRAN TOKEN RA": "tranTokenRa",
   "KIEM PHU": "kiemPhu",
+  "CHO PHEP TRONG TEST": "choPhepTrongTest",
 };
 
 /** Bỏ dấu + in hoa để so khoá (thẻ do người gõ, dấu có thể thiếu). */
@@ -150,6 +154,7 @@ export function docTheViec(van: string): KetQuaThe {
   const csdl = (truong.get("csdl") ?? "").trim();
   const kiemPhuTho = chuanKhoa((truong.get("kiemPhu") ?? "").trim());
   if (kiemPhuTho !== "" && kiemPhuTho !== "CO" && kiemPhuTho !== "KHONG") return { ok: false, loi: `KIỂM PHỦ phải là CÓ hoặc KHÔNG (nhận "${(truong.get("kiemPhu") ?? "").trim().slice(0, 20)}")` };
+  const choPhepTrongTest = tachChoPhep((truong.get("choPhepTrongTest") ?? "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean).join(";"));
   const tran: TranTheoThe = {};
   for (const [khoa, ten, gioi, truongTran] of [
     ["tranLuotModel", "TRẦN LƯỢT MODEL", { min: 1, max: TRAN_CUNG_SO_LUOT }, "luotModel"],
@@ -176,6 +181,7 @@ export function docTheViec(van: string): KetQuaThe {
       ...(khangDinhCam.length ? { khangDinhCam } : {}),
       ...(csdl ? { csdl } : {}),
       ...(kiemPhuTho === "CO" ? { kiemPhu: true } : {}),
+      ...(choPhepTrongTest.length ? { choPhepTrongTest } : {}),
       ...(Object.keys(tran).length > 0 ? { tran } : {}),
       gioiHan: docGioiHan(truong.get("gioiHan")),
     },

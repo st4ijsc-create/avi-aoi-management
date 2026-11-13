@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ghiNguyenTu, tepChoDuyet, tepQuyet } from "./driverHost";
+import type { CanhBao } from "./quetTinh";
 
 export interface ThamSoDuyet {
   ma: string;
@@ -18,20 +19,22 @@ export interface ThamSoDuyet {
   lyDo?: string;
   ra: string;
 }
-export type KetQuaDuyet = { ok: true; tep: string } | { ok: false; loi: string };
+/** `canhBao` (HA-9): các cảnh báo của bộ quét tĩnh trong hồ sơ ĐÃ DUYỆT — chỉ để người duyệt thấy; không ảnh hưởng quyết định. Vắng khi sạch. */
+export type KetQuaDuyet = { ok: true; tep: string; canhBao?: CanhBao[] } | { ok: false; loi: string };
 
 export function ghiQuyet(p: ThamSoDuyet): KetQuaDuyet {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,30}$/.test(p.ma)) return { ok: false, loi: "mã không hợp lệ" };
-  let cho: { id?: unknown };
+  let cho: { id?: unknown; canhBao?: unknown };
   try {
-    cho = JSON.parse(fs.readFileSync(tepChoDuyet(p.ra, p.ma), "utf8")) as { id?: unknown };
+    cho = JSON.parse(fs.readFileSync(tepChoDuyet(p.ra, p.ma), "utf8")) as { id?: unknown; canhBao?: unknown };
   } catch {
     return { ok: false, loi: `không có hồ sơ chờ duyệt cho ${p.ma} trong ${p.ra}` };
   }
   if (cho.id !== p.id) return { ok: false, loi: `id không khớp hồ sơ đang chờ (đang chờ: ${String(cho.id)})` };
   const tep = tepQuyet(p.ra, p.ma);
   ghiNguyenTu(tep, JSON.stringify({ id: p.id, quyet: p.quyet, ...(p.lyDo ? { lyDo: p.lyDo } : {}), luc: new Date().toISOString() }));
-  return { ok: true, tep };
+  const canhBao = Array.isArray(cho.canhBao) && cho.canhBao.length > 0 ? (cho.canhBao as CanhBao[]) : undefined;
+  return { ok: true, tep, ...(canhBao ? { canhBao } : {}) };
 }
 
 function main(): number {
