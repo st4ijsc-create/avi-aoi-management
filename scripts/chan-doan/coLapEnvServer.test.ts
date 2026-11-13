@@ -64,10 +64,10 @@ describe("boot-lap.mjs — dungEnvCoLap", () => {
     expect(dung().ROLE).toBe("api");
   });
 
-  it("KEY=VAL hợp lệ (PORT, BIEN_MOI) vẫn ghi đè được", () => {
-    const env = dung({ PORT: "4000", BIEN_MOI: "co" });
+  it("KEY=VAL hợp lệ (PORT, DIAG_BIEN_MOI) vẫn ghi đè được", () => {
+    const env = dung({ PORT: "4000", DIAG_BIEN_MOI: "co" });
     expect(env.PORT).toBe("4000");
-    expect(env.BIEN_MOI).toBe("co");
+    expect(env.DIAG_BIEN_MOI).toBe("co");
     for (const k of NAM_CO) expect(env[k], k).toBe("false");
   });
 
@@ -91,13 +91,47 @@ describe("boot-lap.mjs — dungEnvCoLap", () => {
     for (const [k, v] of Object.entries(docAlwaysOff() as Record<string, string>)) expect(() => dung({ [k]: v + "-khac" }), k).toThrow(new RegExp(k));
   });
 
-  it("NODE_OPTIONS (mọi giá trị) ⇒ ném; PORT / BIEN_MOI vẫn được", () => {
+  it("NODE_OPTIONS (mọi giá trị, kể cả \"0\") ⇒ ném; PORT / DIAG_BIEN_MOI vẫn được", () => {
+    expect(() => dung({ NODE_OPTIONS: "0" })).toThrow(/NODE_OPTIONS/);
     expect(() => dung({ NODE_OPTIONS: "--x" })).toThrow(/NODE_OPTIONS/);
     expect(() => dung({ node_options: "" })).toThrow(/node_options/);
     expect(KHOA_CAM_MOI_GIA_TRI).toEqual(["NODE_OPTIONS"]);
-    const env = dung({ PORT: "3017", BIEN_MOI: "co" });
+    const env = dung({ PORT: "3017", DIAG_BIEN_MOI: "co" });
     expect(env.PORT).toBe("3017");
-    expect(env.BIEN_MOI).toBe("co");
+    expect(env.DIAG_BIEN_MOI).toBe("co");
+  });
+
+  it("khoá cấm đứng SAU một khoá hợp lệ vẫn bị bắt", () => {
+    expect(() => dung({ PORT: "1", MQTT_ENABLED: "true" })).toThrow(/MQTT_ENABLED/);
+    expect(() => dung({ PORT: "1", ROBOT_CONTROL_ENABLED: "false" })).toThrow(/ROBOT_CONTROL_ENABLED/);
+  });
+
+  it("danh sách cho phép: chỉ PORT / LOG_ / DIAG_ / BOOT_ hoặc giá trị tắt; còn lại ⇒ ném nêu khoá", () => {
+    expect(() => dung({ SAFETY_PLC_POLLER_ENABLED: "true" })).toThrow(/SAFETY_PLC_POLLER_ENABLED/);
+    expect(() => dung({ SMTP_HOST: "x" })).toThrow(/SMTP_HOST/);
+    expect(() => dung({ PORT: "1", SMTP_HOST: "x" })).toThrow(/SMTP_HOST/);
+    expect(dung({ FOO: "off" }).FOO).toBe("off");
+    expect(dung({ FOO: "FALSE" }).FOO).toBe("FALSE");
+    expect(dung({ FOO: "0" }).FOO).toBe("0");
+    expect(dung({ PORT: "3016" }).PORT).toBe("3016");
+    expect(dung({ LOG_JSON: "1", DIAG_X: "yes", BOOT_Y: "z" }).LOG_JSON).toBe("1");
+    expect(() => dung({ FOO: "on" })).toThrow(/FOO/);
+    expect(() => dung({ XLOG_JSON: "1" })).toThrow(/XLOG_JSON/);
+  });
+
+  it("lệnh chẩn đoán 23/10 chạy được nguyên văn", () => {
+    const env = dung({ DIAG_NO_KB_WARM: "1", AI_ORCHESTRATION_ENABLED: "false", EDGE_FACTORY_DRIFT_ALERT: "off", LOG_JSON: "1" });
+    expect(env.DIAG_NO_KB_WARM).toBe("1");
+    expect(env.AI_ORCHESTRATION_ENABLED).toBe("false");
+    expect(env.EDGE_FACTORY_DRIFT_ALERT).toBe("off");
+    expect(env.LOG_JSON).toBe("1");
+    for (const k of NAM_CO) expect(env[k], k).toBe("false");
+  });
+
+  it("nguồn boot-lap.mjs: regex đọc ALWAYS_OFF không có dấu nháy trần (scrub của bộ quét VRAM không hiểu regex)", () => {
+    const dong = doc("scripts/chan-doan/boot-lap.mjs").split("\n").find((l) => l.includes("matchAll(")) ?? "";
+    expect(dong).toContain("matchAll(");
+    expect(dong).not.toContain('"');
   });
 
   it("danh sách biến hệ điều hành được giữ = danh sách VIẾT CỨNG (không thêm NODE_OPTIONS hay biến cấu hình nào)", () => {

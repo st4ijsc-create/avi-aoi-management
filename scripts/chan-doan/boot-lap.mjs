@@ -1,6 +1,7 @@
 // Chẩn đoán 2026-10-23 — khởi động server app lặp lại N lần (spawn node TRỰC TIẾP để bắt đúng exit code, vd 3221226356 = 0xC0000374).
-// usage: node scripts/chan-doan/boot-lap.mjs <N> [KEY=VAL…]   (KEY=VAL CHỈ dành cho biến chẩn đoán: PORT, LOG_*, DIAG_*…; KHÔNG mở đường ra thiết bị:
-//   5 cờ an toàn, DATABASE_URL, DOTENV_CONFIG_PATH, ROLE, NODE_OPTIONS bị từ chối; khoá thuộc ALWAYS_OFF chỉ nhận giá trị trùng — vi phạm ⇒ ném lỗi, không khởi server)
+// usage: node scripts/chan-doan/boot-lap.mjs <N> [KEY=VAL…]   (KEY=VAL CHỈ nhận: PORT, LOG_*, DIAG_*, BOOT_*, hoặc giá trị TẮT false/off/0 — không mở đường ra thiết bị:
+//   5 cờ an toàn, DATABASE_URL, DOTENV_CONFIG_PATH, ROLE, NODE_OPTIONS bị từ chối mọi giá trị; khoá thuộc ALWAYS_OFF chỉ nhận giá trị trùng; còn lại ⇒ ném lỗi, không khởi server.
+//   Ví dụ lệnh chẩn đoán 23/10: DIAG_NO_KB_WARM=1 AI_ORCHESTRATION_ENABLED=false EDGE_FACTORY_DRIFT_ALERT=off LOG_JSON=1)
 // Biến điều khiển: BOOT_DIR(.boot20) BOOT_GIU_MS(25000) BOOT_TRAN_MS(180000) BOOT_NODE(node hệ thống) BOOT_SAVE_LOG=1 BOOT_CLEAN_EVERY=N.
 // Mặc định: PORT 3016, DATABASE_URL → DB _test, tắt warm model + llama-server + watchdog. Xem README.md.
 // Khởi động lặp server app trên :3016 (DB _test, không warm model, không llama-server/watchdog). Ghi mã thoát từng lần.
@@ -24,13 +25,18 @@ export function docAlwaysOff(nguon = fs.readFileSync(NGUON_ALWAYS_OFF, "utf8")) 
   const m = /export const ALWAYS_OFF[^=]*=\s*\{([\s\S]*?)\n\};/.exec(nguon);
   if (!m) throw new Error("không tìm thấy ALWAYS_OFF trong e2e/dot5-h6/instance.ts");
   const kq = {};
-  for (const p of m[1].matchAll(/\b([A-Z][A-Z0-9_]*):\s*"([^"]*)"/g)) kq[p[1]] = p[2];
+  // Đừng đặt dấu nháy trần trong regex literal — scrub() của vramAllocationSites không hiểu regex nên coi phần sau là chuỗi (spawn "biến mất" khỏi bộ quét).
+  for (const p of m[1].matchAll(/\b([A-Z][A-Z0-9_]*):\s*\x22([^\x22]*)\x22/g)) kq[p[1]] = p[2];
   if (kq.ROBOT_CONTROL_ENABLED !== "false" || Object.keys(kq).length < 10) throw new Error("ALWAYS_OFF đọc ra không hợp lệ — dừng, không khởi server");
   return kq;
 }
 
 /** Khoá KEY=VAL bị TỪ CHỐI (không phân biệt hoa thường): năm cờ an toàn + nơi trỏ DB/.env/vai trò — lệnh của người chạy bị chặn chứ không bị âm thầm sửa. */
 export const KHOA_CAM_GHI_DE = [...NAM_CO_TAT, "DATABASE_URL", "DOTENV_CONFIG_PATH", "ROLE"];
+/** KEY=VAL chỉ được nhận khi: khoá là PORT hoặc bắt đầu bằng LOG_/DIAG_/BOOT_ (biến chẩn đoán), HOẶC giá trị là "tắt" (false/off/0 — tắt thêm một thứ luôn an toàn). */
+export const KHOA_CHAN_DOAN = ["PORT"];
+export const TIEN_TO_CHAN_DOAN = ["LOG_", "DIAG_", "BOOT_"];
+export const GIA_TRI_TAT = ["false", "off", "0"];
 /** Cấm MỌI giá trị (mở đường nạp mã/đổi hành vi tiến trình con). Ngoài ra: khoá thuộc ALWAYS_OFF chỉ nhận giá trị TRÙNG ALWAYS_OFF (no-op). */
 export const KHOA_CAM_MOI_GIA_TRI = ["NODE_OPTIONS"];
 
@@ -42,6 +48,9 @@ export function dungEnvCoLap(envCha, { port, dbUrl, logDir, ghiDe = {}, alwaysOf
     const K = k.toUpperCase();
     if (cam.includes(K)) throw new Error(`KEY=VAL "${k}" bị từ chối: khoá này do boot-lap tự đặt (cờ an toàn / DB / .env / ROLE / NODE_OPTIONS), không ghi đè được`);
     if (K in tatCa && tatCa[K] !== v) throw new Error(`KEY=VAL "${k}=${v}" bị từ chối: khoá thuộc ALWAYS_OFF (chỉ nhận giá trị trùng "${tatCa[K]}")`);
+    const laChanDoan = KHOA_CHAN_DOAN.includes(K) || TIEN_TO_CHAN_DOAN.some((t) => K.startsWith(t));
+    const laTat = GIA_TRI_TAT.includes(String(v).trim().toLowerCase());
+    if (!laChanDoan && !laTat) throw new Error(`KEY=VAL "${k}=${v}" bị từ chối: chỉ nhận PORT, LOG_*, DIAG_*, BOOT_* hoặc giá trị tắt (false/off/0)`);
   }
   const env = {};
   for (const k of BIEN_HE_DIEU_HANH) if (envCha[k] != null) env[k] = envCha[k];
