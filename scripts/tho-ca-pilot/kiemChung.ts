@@ -217,10 +217,10 @@ export function demCaTest(nguon: string): number {
 
 export const RE_TEP_TEST = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 
-export type KetCucKiem = "xong" | "kiem-do" | "test-rong" | "bao-sai" | "dot-bien-song" | "vi-pham" | "het-gio" | "loi-driver" | "khong-lam" | "tu-choi";
+export type KetCucKiem = "xong" | "kiem-do" | "test-rong" | "bao-sai" | "dot-bien-song" | "vi-pham" | "het-gio" | "loi-driver" | "khong-lam" | "tu-choi" | "thieu-phu";
 
 /** Ketcuc nào là "đã chốt xấu" ⇒ L3 không được nâng lên (sticky). */
-const KET_CUC_XAU = new Set<KetCucKiem>(["vi-pham", "het-gio", "loi-driver", "khong-lam", "tu-choi", "kiem-do", "test-rong", "bao-sai", "dot-bien-song"]);
+const KET_CUC_XAU = new Set<KetCucKiem>(["vi-pham", "het-gio", "loi-driver", "khong-lam", "tu-choi", "kiem-do", "test-rong", "bao-sai", "dot-bien-song", "thieu-phu"]);
 
 export interface DauVaoQuyet {
   /** ketCuc do phần diff/driver đã quyết trước khi kiểm chứng */
@@ -235,6 +235,8 @@ export interface DauVaoQuyet {
   tsc?: KetQuaTsc | null;
   /** L3b: kết quả áp đột biến của thẻ (chỉ khi thẻ có ĐỘT BIẾN và các bước trước đều xanh); vắng/null = không áp */
   dotBien?: KetQuaDotBien | null;
+  /** HA-10: độ phủ danh sách ĐÃ DUYỆT (chỉ khi thẻ bật KIỂM PHỦ và các bước trước xanh); `dongThieu` khác rỗng ⇒ thieu-phu */
+  phu?: { dongThieu: readonly number[] } | null;
 }
 
 export interface QuyetKetCuc {
@@ -255,6 +257,9 @@ export function quyetKetCuc(v: DauVaoQuyet): QuyetKetCuc {
       return { ketCuc: "kiem-do", lyDo: `tsc: ${t.loiTrongTep.length} lỗi kiểu trong tệp model đổi — ${t.loiTrongTep.slice(0, 3).join(" | ")}` };
     }
   }
+  // HA-10: xanh mà KHÔNG thêm ca cho dòng đã duyệt ⇒ KHÔNG ĐẠT (đứng trước đột biến: đột biến trên bài làm thiếu phủ là vô nghĩa)
+  const ph = v.phu;
+  if (ph && ph.dongThieu.length > 0) return { ketCuc: "thieu-phu", lyDo: `HA-10: dòng ĐÃ DUYỆT ${ph.dongThieu.join(", ")} chưa có ca [Dk] hợp lệ (mới, có expect thật, PASSED) dù lệnh kiểm xanh` };
   const d = v.dotBien;
   if (d) {
     // lỗi CỦA BỘ CHẠY (không khôi phục sạch / tệp lạ sau revert) đi trước: kết quả đột biến không còn tin được

@@ -36,6 +36,8 @@ export interface TheViec {
   csdl?: string;
   /** HA-3 — trần lượt agent do khoá thẻ TƯỜNG MINH (TRẦN LƯỢT MODEL / TRẦN PHÚT / TRẦN TOKEN RA); vắng ⇒ không áp gì. Chữ tự do trong GIỚI HẠN không được phân tích để áp trần. */
   tran?: TranTheoThe;
+  /** HA-10 — `KIỂM PHỦ: CÓ`: trước khi nhận "xong", mọi dòng ĐÃ DUYỆT (trừ GIỮ:) phải có ca MỚI tên `[Dk] ` (xem kiemPhu.ts). Host-only; mặc định TẮT. */
+  kiemPhu?: boolean;
   gioiHan: { giay: number; vong: number };
 }
 
@@ -55,6 +57,7 @@ const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
   "TRAN LUOT MODEL": "tranLuotModel",
   "TRAN PHUT": "tranPhut",
   "TRAN TOKEN RA": "tranTokenRa",
+  "KIEM PHU": "kiemPhu",
 };
 
 /** Bỏ dấu + in hoa để so khoá (thẻ do người gõ, dấu có thể thiếu). */
@@ -145,6 +148,8 @@ export function docTheViec(van: string): KetQuaThe {
   }
   const khangDinhCam = docKhangDinhCam((truong.get("khangDinhCam") as string) ?? "");
   const csdl = (truong.get("csdl") ?? "").trim();
+  const kiemPhuTho = chuanKhoa((truong.get("kiemPhu") ?? "").trim());
+  if (kiemPhuTho !== "" && kiemPhuTho !== "CO" && kiemPhuTho !== "KHONG") return { ok: false, loi: `KIỂM PHỦ phải là CÓ hoặc KHÔNG (nhận "${(truong.get("kiemPhu") ?? "").trim().slice(0, 20)}")` };
   const tran: TranTheoThe = {};
   for (const [khoa, ten, gioi, truongTran] of [
     ["tranLuotModel", "TRẦN LƯỢT MODEL", { min: 1, max: TRAN_CUNG_SO_LUOT }, "luotModel"],
@@ -170,6 +175,7 @@ export function docTheViec(van: string): KetQuaThe {
       ...(db.ds.length ? { dotBien: db.ds } : {}),
       ...(khangDinhCam.length ? { khangDinhCam } : {}),
       ...(csdl ? { csdl } : {}),
+      ...(kiemPhuTho === "CO" ? { kiemPhu: true } : {}),
       ...(Object.keys(tran).length > 0 ? { tran } : {}),
       gioiHan: docGioiHan(truong.get("gioiHan")),
     },
