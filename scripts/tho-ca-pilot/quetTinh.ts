@@ -54,7 +54,7 @@ const TRAN_CANH_BAO = 100;
 /**
  * Dòng DÀI hơn ngưỡng này KHÔNG chạy các regex (một số có `[^\n]*` ⇒ dòng 550 KB lặp `require   ` làm bộ quét chạy rất lâu).
  * Thay bằng MỘT cảnh báo `dong-qua-dai` (chỉ cảnh báo, không chặn): người duyệt tự đọc dòng đó. Dòng ấy KHÔNG được quét ⇒ nhét dòng dài để né quét chỉ đổi cảnh báo mẫu thành cảnh báo này.
- * "Chú thích dài bị bỏ qua" = dòng BẮT ĐẦU (sau khoảng trắng) bằng `//`, `/*` hoặc `*` (cùng định nghĩa `laChuThich` với dòng ngắn); mã đứng sau dấu đóng chú thích khối trên cùng dòng là hạn chế đã biết.
+ * Chú thích bị bỏ qua (cả dòng ngắn lẫn dài) theo `phanMa`: dòng bắt đầu bằng `//`; hoặc phần chú thích khối mở đầu dòng — MÃ đứng sau dấu đóng khối vẫn được quét (và đo độ dài) như dòng thường.
  */
 export const TRAN_DO_DAI_DONG = 4000;
 
@@ -143,7 +143,36 @@ export function cheMatKhauUrl(s: string): string {
   return s.replace(/(:\/\/)[^\s/@"'`]*@/g, "$1***@");
 }
 
-const laChuThich = (d: string) => /^\s*(?:\/\/|\/\*|\*)/.test(d);
+/**
+ * Phần MÃ của một dòng, GIỮ NGUYÊN vị trí cột (phần chú thích đổi thành khoảng trắng — duocPhep so theo cột).
+ * Dòng không bắt đầu bằng `//`, `/*` hay `*` ⇒ nguyên dòng. `//` đầu dòng ⇒ rỗng. Dòng bắt đầu bằng `*` (giữa khối JSDoc) ⇒ chú thích tới dấu đóng khối đầu tiên (không có ⇒ cả dòng là chú thích).
+ * Rồi cứ còn dấu mở khối ở ĐẦU phần còn lại thì bỏ tới dấu đóng khối kế (không có ⇒ tới hết dòng). Mã nằm SAU chú thích khối vẫn được quét.
+ */
+export function phanMa(dong: string): string {
+  const t = dong.trimStart();
+  if (!/^(?:\/\/|\/\*|\*)/.test(t)) return dong;
+  let s = dong;
+  const xoa = (tu: number, den: number) => {
+    s = s.slice(0, tu) + " ".repeat(den - tu) + s.slice(den);
+  };
+  let i = 0;
+  if (t.startsWith("*")) {
+    const e = s.indexOf("*/");
+    if (e < 0) return "";
+    xoa(0, e + 2);
+    i = e + 2;
+  }
+  for (;;) {
+    while (i < s.length && /\s/.test(s[i]!)) i++;
+    if (s.startsWith("//", i)) return "";
+    if (!s.startsWith("/*", i)) break;
+    const e = s.indexOf("*/", i + 2);
+    if (e < 0) return "";
+    xoa(i, e + 2);
+    i = e + 2;
+  }
+  return s;
+}
 // gộp MỌI chuỗi gạch ngược/xuôi liền nhau thành một `/`: chuỗi JS "D:\\SOURCES\\x" (gạch ngược KÉP trong nguồn) so được với đường thật
 const chuanDuongSo = (p: string) => p.replace(/[\\/]+/g, "/").replace(/\/+$/, "").toLowerCase();
 
@@ -183,31 +212,32 @@ export function quetTinh(dongMoi: readonly DongMoi[], tuyChon: TuyChonQuet): Can
   const ra: CanhBao[] = [];
   const thay = new Set<string>();
   for (const { so, dong } of dongMoi) {
-    if (dong.length > TRAN_DO_DAI_DONG && !laChuThich(dong)) {
-      ra.push({ mau: "dong-qua-dai", dong: so, manh: `dòng dài ${dong.length} ký tự (> ${TRAN_DO_DAI_DONG}) — KHÔNG ĐƯỢC QUÉT, người duyệt tự đọc`, trich: cheMatKhauUrl(dong.slice(0, 400)).trim().slice(0, 200) });
+    const ma = phanMa(dong);
+    if (ma.trim() === "") continue;
+    if (ma.trim().length > TRAN_DO_DAI_DONG) {
+      ra.push({ mau: "dong-qua-dai", dong: so, manh: `dòng dài ${ma.trim().length} ký tự (> ${TRAN_DO_DAI_DONG}) — KHÔNG ĐƯỢC QUÉT, người duyệt tự đọc`, trich: cheMatKhauUrl(ma.trim().slice(0, 400)).slice(0, 200) });
       if (ra.length >= TRAN_CANH_BAO) return ra.slice(0, TRAN_CANH_BAO);
       continue;
     }
-    if (laChuThich(dong)) continue;
     const themVao = (mau: MauQuet, manh: string, vt: number) => {
-      if (duocPhep(dong, vt, manh.length, choPhep)) return;
+      if (duocPhep(ma, vt, manh.length, choPhep)) return;
       const khoa = `${mau}|${so}|${manh}|${vt}`;
       if (thay.has(khoa)) return;
       thay.add(khoa);
       ra.push({ mau, dong: so, manh: cheMatKhauUrl(manh).slice(0, 120), trich: cheMatKhauUrl(dong.trim()).slice(0, 200) });
     };
-    for (const k of khopTrong(dong, RE.winAbs)) if (!trongGocOk(k.manh)) themVao("duong-tuyet-doi", k.manh, k.vt);
-    for (const k of khopTrong(dong, RE.posixAbs)) if (!trongGocOk(k.manh)) themVao("duong-tuyet-doi", k.manh, k.vt);
-    for (const k of khopTrong(dong, RE.env)) themVao("env-tep", k.manh, k.vt);
-    for (const k of khopTrong(dong, RE.biMat)) themVao("bi-mat", k.manh, k.vt);
-    for (const k of khopTrong(dong, RE.dbUrl)) themVao("database-url", k.manh, k.vt);
-    for (const k of khopTrong(dong, RE.procEnv)) themVao("process-env", k.manh, k.vt);
-    for (const k of [...khopTrong(dong, RE.childMod), ...khopTrong(dong, RE.childCall)]) themVao("child-process", k.manh, k.vt);
-    if (!RE.tamNhac.test(dong)) for (const k of [...khopTrong(dong, RE.ghiRo), ...khopTrong(dong, RE.ghiMo)]) themVao("ghi-tep", k.manh, k.vt);
+    for (const k of khopTrong(ma, RE.winAbs)) if (!trongGocOk(k.manh)) themVao("duong-tuyet-doi", k.manh, k.vt);
+    for (const k of khopTrong(ma, RE.posixAbs)) if (!trongGocOk(k.manh)) themVao("duong-tuyet-doi", k.manh, k.vt);
+    for (const k of khopTrong(ma, RE.env)) themVao("env-tep", k.manh, k.vt);
+    for (const k of khopTrong(ma, RE.biMat)) themVao("bi-mat", k.manh, k.vt);
+    for (const k of khopTrong(ma, RE.dbUrl)) themVao("database-url", k.manh, k.vt);
+    for (const k of khopTrong(ma, RE.procEnv)) themVao("process-env", k.manh, k.vt);
+    for (const k of [...khopTrong(ma, RE.childMod), ...khopTrong(ma, RE.childCall)]) themVao("child-process", k.manh, k.vt);
+    if (!RE.tamNhac.test(ma)) for (const k of [...khopTrong(ma, RE.ghiRo), ...khopTrong(ma, RE.ghiMo)]) themVao("ghi-tep", k.manh, k.vt);
     // dòng nêu 127.0.0.1:5434 thì API mạng được bỏ qua — nhưng mẩu nằm trong chú thích cuối dòng KHÔNG tính (lách bằng `// 127.0.0.1:5434`)
-    if (!/(?:127\.0\.0\.1|localhost|\[::1\]):5434/.test(dong.replace(/\s\/\/.*$/, ""))) for (const k of khopTrong(dong, RE.mangApi)) themVao("mang-ngoai", k.manh, k.vt);
-    for (const k of khopTrong(dong, RE.mangUrl)) themVao("mang-ngoai", k.manh, k.vt);
-    for (const k of khopTrong(dong, RE.evalDong)) themVao("eval-dong", k.manh, k.vt);
+    if (!/(?:127\.0\.0\.1|localhost|\[::1\]):5434/.test(ma.replace(/\s\/\/.*$/, ""))) for (const k of khopTrong(ma, RE.mangApi)) themVao("mang-ngoai", k.manh, k.vt);
+    for (const k of khopTrong(ma, RE.mangUrl)) themVao("mang-ngoai", k.manh, k.vt);
+    for (const k of khopTrong(ma, RE.evalDong)) themVao("eval-dong", k.manh, k.vt);
     if (ra.length >= TRAN_CANH_BAO) return ra.slice(0, TRAN_CANH_BAO);
   }
   return ra;

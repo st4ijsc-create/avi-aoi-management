@@ -136,6 +136,26 @@ describe("dòng mới / chú thích / che mật khẩu / số dòng", () => {
     expect(quet(' * spawn(1) process.env')).toEqual([]);
     expect(maus('spawn("ls"); // ok')).toContain("child-process");
   });
+  it("★★★ mã đứng SAU chú thích khối đầu dòng vẫn bị quét (lỗ né im lặng): đúng mẫu cho từng dạng né; đối chứng chú thích thật vẫn 0 cảnh báo", () => {
+    const sauKhoi = (x: string) => "/* x " + "*" + "/ " + x;
+    expect(maus(sauKhoi('require("node:child' + '_process").exec("ls")'))).toContain("child-process");
+    expect(maus("/**" + "/ " + 'fs.writeFileSync("C:/x", s)')).toEqual(expect.arrayContaining(["ghi-tep", "duong-tuyet-doi"]));
+    expect(maus("*" + "/ process.env.DATABASE_URL")).toEqual(expect.arrayContaining(["process-env", "database-url"]));
+    expect(maus(sauKhoi("/* y " + "*" + "/ spawn(1)"))).toContain("child-process"); // hai khối liên tiếp
+    expect(maus(sauKhoi("spawn(1) /* z"))).toContain("child-process");
+    expect(quet("/* process.env.X " + "*" + "/")).toEqual([]);
+    expect(quet(" * dùng process.env.X")).toEqual([]);
+    expect(quet("/* a " + "*" + "/ // spawn(1)")).toEqual([]);
+    expect(quet("/* mở process.env.X")).toEqual([]);
+    expect(quet(sauKhoi("/* y spawn(1) " + "*" + "/ ok()"))).toEqual([]); // khối thứ hai cũng là chú thích
+  });
+  it("★★ vị trí cột được giữ: CHO PHÉP TRONG TEST vẫn tắt đúng đoạn mã sau chú thích khối; dòng dài sau khối ⇒ dong-qua-dai", () => {
+    const d = "/* c " + "*" + "/ process.env.DATABASE_URL";
+    expect(maus(d, ["process.env.DATABASE_URL"])).toEqual([]);
+    expect(maus(d, ["process.env"])).toContain("database-url");
+    expect(maus("/* c " + "*" + "/ " + "x".repeat(4100))).toEqual(["dong-qua-dai"]);
+    expect(quet("/* " + "c".repeat(5000) + " " + "*" + "/ ok()")).toEqual([]);
+  });
   it("★ che mật khẩu URL trong manh và trich", () => {
     const cb = quet('const c = "postgres://tho_ca_test:MatKhauRat123@127.0.0.1:5434/aoi_management_test";');
     expect(cb.length).toBeGreaterThan(0);
