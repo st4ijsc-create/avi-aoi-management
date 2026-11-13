@@ -24891,5 +24891,56 @@
     "moTaNgan": "仅查看 — 人机协作暂停，待机器人/AGV 模块开发后恢复。",
     "dangKiemTra": "正在检查模块状态…",
     "veTrangChu": "返回首页"
+  },
+  "urgent": {
+    "vung": {
+      "tieuDe": "未读紧急事项",
+      "daDoc": "已读（{{n}}）",
+      "moTa": "运行的持久紧急告警：卡片不会自行消失；“我已阅读”只会折叠卡片，不代表已处理。"
+    },
+    "moRun": "打开运行",
+    "toiDaDoc": "我已阅读",
+    "ghiNguoiGio": "记录您已阅读及时间",
+    "banDaDoc": "您已于 {{gio}} 阅读",
+    "run": "运行 {{runId}}",
+    "ghiNhan": "{{tuoi}}前记录 · 尚无处理确认",
+    "tuoi": {
+      "giay": "{{n}} 秒",
+      "phut": "{{m}} 分 {{s}} 秒",
+      "gio": "{{h}} 小时 {{m}} 分",
+      "ngay": "{{d}} 天 {{h}} 小时"
+    },
+    "nhieu": "另有 {{n}} 条紧急",
+    "xemTatCa": "查看全部紧急",
+    "thuGon": "收起",
+    "cu": "无法刷新紧急列表——可能有更新的紧急事项尚未到达。",
+    "chiTiet": "服务器原文（英文）",
+    "loiDanhDau": "无法记录您已阅读——请重试。",
+    "chuGiaiGhim": "锁定标记 = 停止步骤的版本锁定标记，用于确认所发送的内容就是已批准的停止步骤。",
+    "kind": {
+      "foe_outcome_unknown_compensation_held": "无法确认补偿为停止步骤，且未发送；运行已暂停等待人工处理",
+      "foe_outcome_unknown_stop_compensation_sent": "补偿停止步骤已交给调度器并被接收——设备尚未确认；请检查设备",
+      "foe_outcome_unknown_stop_compensation_simulated": "补偿停止步骤仅为模拟——未到达任何设备",
+      "foe_outcome_unknown_stop_compensation_unconfirmed": "补偿停止步骤已交出但无法确认——请到现场检查设备",
+      "foe_outcome_unknown_stop_compensation_not_handed": "补偿停止步骤尚未交给调度器",
+      "foe_outcome_unknown_no_compensation": "一条结果未知的指令没有对应的补偿",
+      "foe_outcome_unknown_approved_compensation_unconfirmed": "已批准的补偿（继续）出错或无应答——可能已或未到达设备——请到现场检查设备",
+      "foe_outcome_unknown_approved_compensation_not_sent": "已批准的补偿尚未发送",
+      "foe_outcome_unknown_compensation_not_sent_run_failed": "边缘节点在补偿期间中断；运行失败；补偿尚未发送",
+      "foe_outcome_unknown_compensation_outcome_unknown": "补偿本身的结果未知——请到现场检查设备",
+      "foe_outcome_unknown_write_in_flight_at_latch": "运行锁定前已有指令交出，且无法撤回——请到现场检查设备",
+      "foe_outcome_unknown_forward_not_sent": "前进指令尚未发送；该前进步骤被放弃",
+      "foe_outcome_unknown_run_end": "运行无法继续——请到现场检查设备",
+      "foe_outcome_unknown_stop_untaken_branch": "运行从未到达的分支中的停止步骤尚未发送",
+      "foe_outcome_unknown_stop_not_sent": "停止步骤尚未发出——仍需发送",
+      "foe_outcome_unknown_stop_unconfirmed_read": "边缘报告已交付停止步骤；中心无法读取锁定标记以确认——请到现场检查设备",
+      "foe_outcome_unknown_stop_pin_mismatch": "边缘报告已交付但锁定标记不一致——发出的内容可能不是停止步骤；请到现场检查设备",
+      "foe_outcome_unknown_stop_pin_mismatch_not_sent": "边缘的锁定标记快照显示没有锁定标记——停止步骤尚未发送",
+      "foe_outcome_unknown_abort_stop_not_sent": "中止运行：停止步骤尚未发出",
+      "foe_outcome_unknown_abort_definition_unread": "中止运行：无法读取运行定义——可能仍有停止步骤未发出",
+      "foe_outcome_unknown_abort_sweep_unfinished": "中止运行：停止步骤扫描尚未完成",
+      "foe_outcome_unknown_stop_ended_unswept": "运行结束时未执行停止步骤扫描——停止步骤尚未发送；请检查设备",
+      "foe_outcome_unknown_edge_stream_stuck": "运行的边缘流程因异常而停滞——可能仍有停止步骤未发出；请检查设备"
+    }
   }
 }

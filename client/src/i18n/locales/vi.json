@@ -24891,5 +24891,56 @@
     "moTaNgan": "Chỉ xem — phối hợp người↔robot tạm dừng cho đến khi mô-đun robot/AGV được phát triển.",
     "dangKiemTra": "Đang kiểm tra trạng thái mô-đun…",
     "veTrangChu": "Về trang chủ"
+  },
+  "urgent": {
+    "vung": {
+      "tieuDe": "Việc khẩn chưa đọc",
+      "daDoc": "Đã đọc ({{n}})",
+      "moTa": "Cảnh báo URGENT bền của lượt chạy: thẻ không tự biến mất; \"Tôi đã đọc\" chỉ thu gọn thẻ, không có nghĩa là đã xử lý."
+    },
+    "moRun": "Mở run",
+    "toiDaDoc": "Tôi đã đọc",
+    "ghiNguoiGio": "ghi lại việc bạn đã đọc, kèm giờ",
+    "banDaDoc": "bạn đã đọc lúc {{gio}}",
+    "run": "run {{runId}}",
+    "ghiNhan": "ghi nhận {{tuoi}} trước · chưa có xác nhận xử lý",
+    "tuoi": {
+      "giay": "{{n}} s",
+      "phut": "{{m}} phút {{s}} s",
+      "gio": "{{h}} giờ {{m}} phút",
+      "ngay": "{{d}} ngày {{h}} giờ"
+    },
+    "nhieu": "+{{n}} URGENT khác",
+    "xemTatCa": "Xem tất cả URGENT",
+    "thuGon": "Thu gọn",
+    "cu": "Không cập nhật được danh sách URGENT — có thể có URGENT mới chưa tới.",
+    "chiTiet": "Bản gốc của máy chủ (tiếng Anh)",
+    "loiDanhDau": "Không ghi được việc đã đọc — thử lại.",
+    "chuGiaiGhim": "Ghim = dấu khoá phiên bản của bước DỪNG, để biết thứ đã gửi đúng là bước DỪNG đã duyệt.",
+    "kind": {
+      "foe_outcome_unknown_compensation_held": "Bù trừ không xác nhận được là bước DỪNG — CHƯA gửi; run bị giữ chờ người xử lý",
+      "foe_outcome_unknown_stop_compensation_sent": "Bước DỪNG bù trừ đã giao cho bộ điều phối và được nhận — máy chưa xác nhận; kiểm máy",
+      "foe_outcome_unknown_stop_compensation_simulated": "Bước DỪNG bù trừ chỉ là MÔ PHỎNG — không tới thiết bị",
+      "foe_outcome_unknown_stop_compensation_unconfirmed": "Bước DỪNG bù trừ đã giao nhưng KHÔNG xác nhận được — kiểm máy tại chỗ",
+      "foe_outcome_unknown_stop_compensation_not_handed": "Bước DỪNG bù trừ CHƯA giao cho bộ điều phối",
+      "foe_outcome_unknown_no_compensation": "Lệnh có kết cục không rõ và không có bù trừ riêng",
+      "foe_outcome_unknown_approved_compensation_unconfirmed": "Bù trừ đã duyệt (Continue) lỗi hoặc không trả lời — có thể đã hoặc chưa tới thiết bị — kiểm máy tại chỗ",
+      "foe_outcome_unknown_approved_compensation_not_sent": "Bù trừ đã duyệt CHƯA gửi",
+      "foe_outcome_unknown_compensation_not_sent_run_failed": "Thiết bị edge ngừng hoạt động giữa lúc bù trừ; run thất bại; bù trừ CHƯA gửi",
+      "foe_outcome_unknown_compensation_outcome_unknown": "Kết cục của chính bước bù trừ không rõ — kiểm máy tại chỗ",
+      "foe_outcome_unknown_write_in_flight_at_latch": "Có lệnh đã giao trước lúc khoá run và không thu hồi được — kiểm máy tại chỗ",
+      "foe_outcome_unknown_forward_not_sent": "Lệnh tiến CHƯA gửi; bước tiến bị bỏ",
+      "foe_outcome_unknown_run_end": "Run không đi tiếp được — kiểm máy tại chỗ",
+      "foe_outcome_unknown_stop_untaken_branch": "Bước DỪNG ở nhánh run chưa từng xét — CHƯA gửi",
+      "foe_outcome_unknown_stop_not_sent": "Bước DỪNG CHƯA ra — vẫn cần được gửi",
+      "foe_outcome_unknown_stop_unconfirmed_read": "Edge báo đã giao bước DỪNG; trung tâm không đọc được ghim để xác nhận — kiểm máy tại chỗ",
+      "foe_outcome_unknown_stop_pin_mismatch": "Edge báo đã giao; ghim lệch — thứ đã ra có thể không phải bước DỪNG — kiểm máy tại chỗ",
+      "foe_outcome_unknown_stop_pin_mismatch_not_sent": "Ảnh chụp ghim của edge nói không có ghim — bước DỪNG CHƯA gửi",
+      "foe_outcome_unknown_abort_stop_not_sent": "Huỷ run: bước DỪNG CHƯA ra",
+      "foe_outcome_unknown_abort_definition_unread": "Huỷ run: không đọc được định nghĩa run — có thể còn bước DỪNG chưa ra",
+      "foe_outcome_unknown_abort_sweep_unfinished": "Huỷ run: lượt quét bước DỪNG chưa xong",
+      "foe_outcome_unknown_stop_ended_unswept": "Run đã kết thúc mà không có lượt quét bước DỪNG — bước DỪNG CHƯA gửi; kiểm máy",
+      "foe_outcome_unknown_edge_stream_stuck": "Luồng edge của run đứng do bất thường — run có thể còn bước DỪNG chưa ra; kiểm máy"
+    }
   }
 }
