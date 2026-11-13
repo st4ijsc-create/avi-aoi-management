@@ -1,5 +1,7 @@
 # Quyết định thị giác — màn 1, 4, 5 + vỏ + token (luong-ui)
 
+> **ĐÃ DUYỆT 2026-11-04** cho 5 màn gốc (chủ dự án, thị giác; main `ac0e63289`) — phần bổ sung Home vai Quản lý + Quản trị bên dưới **ĐÃ DUYỆT 2026-11-13 (chủ dự án, thị giác; qua chu-du-an-HST)**, còn chờ kiem-dinh đo. `token.css` + `shell.css/js` là nguồn của `index.css`/AppFrame ở 90-P3 (pha 2); CHƯA viết mã vỏ cho tới khi pha 0 gộp xong và chủ dự án báo.
+
 Brief: `docs/techdocs/ke-hoach/2026-11-03-mockup-5-man-brief.md`. Màn 2, 3 (scada-ui): nhánh `docs/mockup-man-2-3`. Ảnh: `man-<n>-<trạng-thái>-<1280x800|1920x1080>.png`; HTML bấm đổi trạng thái: `mockup.html` → từng màn. **Chưa viết mã vỏ.**
 
 ## Vỏ (AppFrame) và token
@@ -21,6 +23,11 @@ Brief: `docs/techdocs/ke-hoach/2026-11-03-mockup-5-man-brief.md`. Màn 2, 3 (sca
 4. Giám sát: "5 cảnh báo nặng nhất" là cùng danh sách với tab Đang mở (cùng `AlarmBadge`); Yield ca hiện **khoảng cách tới mục tiêu bằng chữ** ("▼ −0,2 điểm") chứ không tô màu vì còn trong dung sai.
 5. Dữ liệu cũ: pill tím "DỮ LIỆU CŨ · 4 phút" ở vỏ **và** từng ô số tím gạch (không chỉ pill) — nhìn ảnh cắt nhỏ vẫn biết số nào không còn tin được.
 - Đã trả lời: yield dưới mục tiêu nhưng trong dung sai KHÔNG tô màu, chỉ chữ ▼ (ISA-101); manager/admin vẽ SAU khi chủ dự án duyệt 3 vai.
+
+### Bổ sung sau duyệt — **ĐÃ DUYỆT 2026-11-13 (chủ dự án, thị giác; qua chu-du-an-HST) · chờ kiem-dinh đo** (cùng khung/token với 5 màn đã duyệt): Home vai Quản lý + Quản trị
+- **Quản lý** (`manager`: KPI): dải OEE nhà máy · FPY ca · giao đúng hạn (tuần) · sản lượng tuần; 3 tile — *OEE theo line* (thanh ngang xám + số, chỉ line bất thường mới có `AlarmBadge`), *Đơn hàng & tiến độ* (đơn trễ hạn chỉ nổi bằng chữ "▼ trễ 1 ngày" màu `--alarm-p2-ink`, không tô nền), *Cảnh báo ảnh hưởng sản xuất* (3 dòng đầu của danh sách Cảnh báo, cùng `AlarmBadge`).
+- **Quản trị** (`admin`: sức khoẻ): dải người dùng · phiên · job nền lỗi · dung lượng CSDL; 3 tile — *Sức khoẻ hệ thống* (API · CSDL · broker · 2 edge: ký hiệu ▶/■ + chữ; edge mất kết nối ở trạng thái P1 mang `data-p1-unack` nên chip vỏ nhấp nháy đúng luật), *Phiên & tài khoản*, *Sao lưu & giấy phép*.
+- Trạng thái dữ liệu cũ áp cho cả hai vai (ô số/hàng tím gạch, pill vỏ tím); ảnh: `man-1-{binh-thuong,p1-chua-ack}-quan-ly`, `man-1-{binh-thuong,p1-chua-ack,du-lieu-cu}-quan-tri` × 2 cỡ. Đo vùng chạm (`do-cham.mjs`) nay quét cả 5 vai của màn 1.
 
 ## Màn 4 — Cảnh báo (`/canh-bao`)
 1. 6 tab (Đang mở · Andon · Lịch sử · KPI · Định nghĩa · Thông báo) với số đếm; chỉ vẽ tab Đang mở (đủ theo brief §1).

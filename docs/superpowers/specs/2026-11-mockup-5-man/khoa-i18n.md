@@ -76,18 +76,28 @@ Sinh tự động từ các thuộc tính `data-i18n` trong mockup; namespace th
 | `home.andon` | Andon |
 | `home.andon.keo` | Kéo andon |
 | `home.andon.khongCo` | Không có andon đang mở trên máy của bạn. |
+| `home.canhBaoAnhHuong` | Cảnh báo ảnh hưởng sản xuất |
 | `home.dayChuyen` | Dây chuyền |
+| `home.donHang` | Đơn hàng & tiến độ |
 | `home.mayCoLoi` | Máy có lỗi |
 | `home.mayDuocGiao` | Máy được giao |
 | `home.moCanhBao` | Mở Cảnh báo |
+| `home.moDonHang` | Mở Đơn hàng |
+| `home.moHeThong` | Mở Hệ thống |
 | `home.moMay` | Mở máy |
+| `home.moNguoiDung` | Mở Người dùng & quyền |
+| `home.moPhanTich` | Mở Phân tích |
 | `home.moPhongVanHanh` | Mở Phòng vận hành |
 | `home.moThoCa` | Mở ngăn Thợ Cả |
 | `home.nangNhat5` | 5 cảnh báo nặng nhất |
+| `home.oeeTheoLine` | OEE theo line |
+| `home.phienTaiKhoan` | Phiên & tài khoản |
 | `home.phienThoCa` | Phiên Thợ Cả |
+| `home.saoLuuGiayPhep` | Sao lưu & giấy phép |
+| `home.sucKhoeHeThong` | Sức khoẻ hệ thống |
 | `home.tieuDe` | Trang chủ |
 | `home.viecHomNay` | Việc hôm nay |
 | `home.viecKyThuat` | Việc kỹ thuật |
 | `home.yieldCa` | Yield ca |
 
-**85 khoá.**
+**95 khoá.**
