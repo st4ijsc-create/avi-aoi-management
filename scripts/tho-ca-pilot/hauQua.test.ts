@@ -5,7 +5,7 @@
  * nội suy giá trị vào chuỗi SQL · bỏ kiểm information_schema · thông điệp lỗi chép vào lý do.
  */
 import { describe, expect, it } from "vitest";
-import { demTatCa, docBangDem, nhanMuc, tinhHauQua, type MayDem, type MucDem } from "./hauQua";
+import { demTatCa, docBangDem, escapeLike, nhanMuc, tinhHauQua, type MayDem, type MucDem } from "./hauQua";
 import { mayDemPostgres, type SqlDem } from "./mayDemPg";
 
 const doc = (...d: string[]) => docBangDem(d.join("\n"));
@@ -134,8 +134,8 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
     const n = await mayDemPostgres(sql).dem({ bang: "factories", cot: "code", toanTu: "LIKE", giaTri: "SS_FAC_%", ghi: false });
     expect(n).toBe(4);
     expect(goi).toHaveLength(1);
-    expect(goi[0]!.cau).toBe("select count(*)::int as n from <id:factories> where <id:code>::text like $1");
-    expect(goi[0]!.giaTri).toEqual(["SS_FAC_%"]);
+    expect(goi[0]!.cau).toBe("select count(*)::int as n from <id:factories> where <id:code>::text like $1 escape '\\'");
+    expect(goi[0]!.giaTri).toEqual(["SS\\_FAC\\_%"]);
     expect(goi[0]!.cau).not.toContain("SS_FAC_");
   });
   it("★★★ dem: `=` và bảng trần dùng đúng câu; kiemDinhDanh hỏi information_schema bằng bind (bảng, cột)", async () => {
@@ -164,6 +164,26 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
     await expect(dem.dem({ bang: "a; drop", ghi: false })).rejects.toThrow("định danh");
     await expect(dem.kiemDinhDanh({ bang: "a", cot: "B", toanTu: "=", giaTri: "x", ghi: false })).rejects.toThrow("định danh");
     expect(goi).toHaveLength(1); // chỉ lần kiemDinhDanh hợp lệ đầu tiên chạm
+  });
+  it("★★★ `_` trong giá trị LIKE là CHỮ: 'SS_FAC_%' đếm 'SS_FAC_01' mà KHÔNG đếm 'SSxFACy01' (mô phỏng LIKE ... ESCAPE '\\')", () => {
+    // mô phỏng ngữ nghĩa Postgres: `\x` = chữ x, `%` = dãy bất kỳ, `_` trần = một ký tự bất kỳ
+    const likeKhop = (mau: string, chuoi: string) => {
+      let re = "";
+      for (let i = 0; i < mau.length; i++) {
+        const c = mau[i]!;
+        if (c === "\\") re += mau[++i]!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        else if (c === "%") re += ".*";
+        else if (c === "_") re += ".";
+        else re += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }
+      return new RegExp(`^${re}$`, "s").test(chuoi);
+    };
+    const mau = escapeLike("SS_FAC_%");
+    expect(mau).toBe("SS\\_FAC\\_%");
+    expect(likeKhop(mau, "SS_FAC_01")).toBe(true);
+    expect(likeKhop(mau, "SSxFACy01")).toBe(false);
+    expect(likeKhop("SS_FAC_%", "SSxFACy01")).toBe(true); // đối chứng: không escape thì đếm nhầm hàng của tag khác
+    expect(escapeLike("a%b")).toBe("a%b");
   });
   it("nhanMuc: bảng trần = tên bảng", () => {
     expect(nhanMuc({ bang: "machines", ghi: false })).toBe("machines");

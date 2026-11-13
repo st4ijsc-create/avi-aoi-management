@@ -4,7 +4,8 @@
  * Khoá thẻ host-only `BẢNG ĐẾM:` — người viết thẻ khai, mỗi dòng MỘT mục ở DẠNG ĐÓNG (không SQL tự do):
  *     [GHI: ]<bảng>[ WHERE <cột> (LIKE|=) '<giá trị>']
  *   · <bảng>, <cột>: ^[a-z_][a-z0-9_]{0,62}$ (bộ đếm còn kiểm chúng CÓ trong information_schema, schema public, và trích dẫn bằng sql(…));
- *   · <giá trị>: tham số BIND (không nội suy), chỉ gồm [A-Za-z0-9_%.:-␠], không `--`;
+ *   · <giá trị>: tham số BIND (không nội suy), chỉ gồm [A-Za-z0-9_%.: -], không `--`. Với LIKE: CHỈ `%` là ký tự đại diện; `_` là CHỮ `_` (bộ đếm escape `_` thành
+ *     `\_` + `ESCAPE '\'` — trong Postgres `_` trần khớp MỘT ký tự bất kỳ nên `SS_FAC_%` sẽ đếm cả `SSxFACy…` của phiên/tag khác);
  *   · `GHI:` = chỉ đếm và ghi vào JSON, KHÔNG chấm (bảng đi hai chiều do chính hệ thống dọn).
  * Mục có `;`, `--`, `/*`, OR / AND, hai điều kiện, subquery, hoặc sai dạng ⇒ THẺ LỖI.
  *
@@ -26,6 +27,11 @@ const RE_DINH_DANH = "[a-z_][a-z0-9_]{0,62}";
 const RE_MUC = new RegExp(`^(GHI:\\s*)?(${RE_DINH_DANH})(?:\\s+WHERE\\s+(${RE_DINH_DANH})\\s+(LIKE|=)\\s+'([A-Za-z0-9_%.: -]{1,100})')?$`, "i");
 export const RE_DINH_DANH_HOP_LE = new RegExp(`^${RE_DINH_DANH}$`);
 export const TRAN_SO_MUC_DEM = 16;
+
+/** Mẫu LIKE gửi Postgres: `_` thành chữ (`\_`), `%` giữ là đại diện. Đi cùng `ESCAPE '\'`. (Giá trị đã bị khoá thẻ cấm `\`.) */
+export function escapeLike(giaTri: string): string {
+  return giaTri.replace(/_/g, "\\_");
+}
 
 /** Nhãn ổn định của một mục (khoá trong kết quả đếm và JSON). */
 export function nhanMuc(m: MucDem): string {

@@ -3,7 +3,7 @@
  * ^[a-z_][a-z0-9_]{0,62}$ VÀ có trong information_schema.columns / tables của schema public, rồi mới trích dẫn bằng sql(…); GIÁ TRỊ LIKE/= là tham số BIND
  * (không bao giờ nội suy vào chuỗi SQL). Vai kết nối do bộ chạy quyết (tho_ca_test, đã kiểm ở kiemChoPhepDb) — module này không tự chọn URL.
  */
-import { RE_DINH_DANH_HOP_LE, type MayDem, type MucDem } from "./hauQua";
+import { escapeLike, RE_DINH_DANH_HOP_LE, type MayDem, type MucDem } from "./hauQua";
 
 /** Phần của postgres.js mà module dùng: thẻ mẫu → hàng; `sql(định danh)` → mảnh định danh. */
 export interface SqlDem {
@@ -31,7 +31,7 @@ export function mayDemPostgres(sql: SqlDem): MayDem {
       chiDinhDanhHopLe(m.bang, m.cot);
       let hang: Array<Record<string, unknown>>;
       if (!m.cot) hang = await sql`select count(*)::int as n from ${sql(m.bang)}`;
-      else if (m.toanTu === "LIKE") hang = await sql`select count(*)::int as n from ${sql(m.bang)} where ${sql(m.cot)}::text like ${m.giaTri ?? ""}`;
+      else if (m.toanTu === "LIKE") hang = await sql`select count(*)::int as n from ${sql(m.bang)} where ${sql(m.cot)}::text like ${escapeLike(m.giaTri ?? "")} escape '\\'`;
       else hang = await sql`select count(*)::int as n from ${sql(m.bang)} where ${sql(m.cot)}::text = ${m.giaTri ?? ""}`;
       return Number(hang[0]?.n);
     },
