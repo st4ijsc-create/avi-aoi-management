@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { hopGioiHanLuot, soLuotToiDaTuEnv, TRAN_CUNG_SO_LUOT } from "./gioiHanLuot";
+import { GIOI_HAN_MAC_DINH } from "@shared/agentCore/kieu";
+import { hopGioiHanLuot, SO_LUOT_MAC_DINH, soLuotToiDaTuEnv, TRAN_CUNG_SO_LUOT } from "./gioiHanLuot";
 
 describe("soLuotToiDaTuEnv — AI_AGENT_SO_LUOT_TOI_DA", () => {
   it("★★★ chưa đặt / rỗng ⇒ undefined (không đổi gì)", () => {
@@ -72,5 +73,12 @@ describe("nối vào quanLyLuotChay (đọc nguồn: quanLyLuotChay cần DB nê
   });
   it("★★ import có thật", () => {
     expect(nguon).toContain('import { hopGioiHanLuot } from "./gioiHanLuot";');
+  });
+});
+
+describe("SO_LUOT_MAC_DINH — bản sao có chủ đích của mặc định chung", () => {
+  it("★★ bằng GIOI_HAN_MAC_DINH.soLuotToiDa (lệch ⇒ thẻ không khoá và thẻ có khoá tính trần khác nhau)", () => {
+    expect(SO_LUOT_MAC_DINH).toBe(GIOI_HAN_MAC_DINH.soLuotToiDa);
+    expect(SO_LUOT_MAC_DINH).toBe(30);
   });
 });

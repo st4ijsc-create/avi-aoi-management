@@ -187,19 +187,47 @@ export function gocSandboxTuEnv(env: NodeJS.ProcessEnv): string[] {
     .map((x) => path.resolve(x));
 }
 
+const CHUOI_THIEU_RA = "--cho-phep-db: bắt buộc --ra tường minh (thư mục kết quả ngoài gốc sandbox và worktree); không dùng mặc định %TEMP%";
 const CHUOI_RA_TRONG_SANDBOX = "--cho-phep-db: thư mục kết quả (--ra) nằm trong gốc sandbox / worktree — đặt ngoài để model không đọc được đầu ra đầy đủ của lệnh kiểm";
 /**
  * `--cho-phep-db`: tệp `<ra>/<mã>.kiem-*.txt` chứa đầu ra ĐẦY ĐỦ nên `<ra>` KHÔNG được nằm trong bất kỳ gốc sandbox nào của lượt hay trong worktree
  * (công cụ read_file / list_dir / grep của model sẽ đọc được). Trả chuỗi cố định nếu vi phạm, ngược lại null. Thuần.
  */
 export function raTrongGocSandbox(ra: string, wt: string, env: NodeJS.ProcessEnv): string | null {
-  const chuan = (x: string) => path.resolve(x).toLowerCase();
-  const raC = chuan(ra);
+  // so cả dạng đã resolve LẪN dạng thật (junction / symlink) của --ra với cả hai dạng của mỗi gốc
+  const dangRa = [path.resolve(ra), duongThat(ra)];
   for (const goc of [...gocSandboxTuEnv(env), path.resolve(wt)]) {
-    const rel = path.relative(chuan(goc), raC);
-    if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) return CHUOI_RA_TRONG_SANDBOX;
+    for (const g of [goc, duongThat(goc)]) {
+      if (dangRa.some((r) => namTrong(r, g))) return CHUOI_RA_TRONG_SANDBOX;
+    }
   }
   return null;
+}
+
+/**
+ * Đường THẬT của `x`: realpath của tổ tiên gần nhất ĐANG TỒN TẠI (junction / symlink được giải), rồi nối phần đuôi chưa tồn tại. Không tạo gì.
+ */
+export function duongThat(x: string): string {
+  const g = path.resolve(x);
+  const duoi: string[] = [];
+  let cur = g;
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync.native(cur), ...duoi.reverse());
+    } catch {
+      const cha = path.dirname(cur);
+      if (cha === cur) return g;
+      duoi.push(path.basename(cur));
+      cur = cha;
+    }
+  }
+}
+
+/** `con` nằm trong (hoặc bằng) `goc`: so TIỀN TỐ tường minh, không phân biệt hoa/thường, biên bằng dấu phân cách (`/a/b2` không nằm trong `/a/b`). */
+function namTrong(con: string, goc: string): boolean {
+  const c = path.resolve(con).toLowerCase();
+  const g = path.resolve(goc).toLowerCase();
+  return c === g || c.startsWith(g.endsWith(path.sep) ? g : g + path.sep);
 }
 
 /** `aoi_management_test` phải là MỘT token nguyên trong dòng CSDL (ranh giới từ: chữ, số, gạch dưới) — `aoi_management_test_x` không tính. */
@@ -726,7 +754,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return 2;
   }
   if (thamDb.choPhepDb) {
-    const lyDoRa = raTrongGocSandbox(a.ra ?? path.join(os.tmpdir(), "tho-ca-pilot"), a.wt ?? "D:\\SOURCES\\_tho_ca_wt", process.env);
+    const lyDoRa = a.ra ? raTrongGocSandbox(a.ra, a.wt ?? "D:\\SOURCES\\_tho_ca_wt", process.env) : CHUOI_THIEU_RA;
     if (lyDoRa) {
       process.stderr.write(`${lyDoRa}\n`);
       return 2;
