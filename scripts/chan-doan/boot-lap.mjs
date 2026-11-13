@@ -1,5 +1,6 @@
 // Chẩn đoán 2026-10-23 — khởi động server app lặp lại N lần (spawn node TRỰC TIẾP để bắt đúng exit code, vd 3221226356 = 0xC0000374).
-// usage: node scripts/chan-doan/boot-lap.mjs <N> [KEY=VAL…]   (KEY=VAL ghi đè biến môi trường của tiến trình con)
+// usage: node scripts/chan-doan/boot-lap.mjs <N> [KEY=VAL…]   (KEY=VAL CHỈ dành cho biến chẩn đoán: PORT, LOG_*, DIAG_*…; KHÔNG mở đường ra thiết bị:
+//   5 cờ an toàn, DATABASE_URL, DOTENV_CONFIG_PATH, ROLE, NODE_OPTIONS bị từ chối; khoá thuộc ALWAYS_OFF chỉ nhận giá trị trùng — vi phạm ⇒ ném lỗi, không khởi server)
 // Biến điều khiển: BOOT_DIR(.boot20) BOOT_GIU_MS(25000) BOOT_TRAN_MS(180000) BOOT_NODE(node hệ thống) BOOT_SAVE_LOG=1 BOOT_CLEAN_EVERY=N.
 // Mặc định: PORT 3016, DATABASE_URL → DB _test, tắt warm model + llama-server + watchdog. Xem README.md.
 // Khởi động lặp server app trên :3016 (DB _test, không warm model, không llama-server/watchdog). Ghi mã thoát từng lần.
@@ -30,11 +31,18 @@ export function docAlwaysOff(nguon = fs.readFileSync(NGUON_ALWAYS_OFF, "utf8")) 
 
 /** Khoá KEY=VAL bị TỪ CHỐI (không phân biệt hoa thường): năm cờ an toàn + nơi trỏ DB/.env/vai trò — lệnh của người chạy bị chặn chứ không bị âm thầm sửa. */
 export const KHOA_CAM_GHI_DE = [...NAM_CO_TAT, "DATABASE_URL", "DOTENV_CONFIG_PATH", "ROLE"];
+/** Cấm MỌI giá trị (mở đường nạp mã/đổi hành vi tiến trình con). Ngoài ra: khoá thuộc ALWAYS_OFF chỉ nhận giá trị TRÙNG ALWAYS_OFF (no-op). */
+export const KHOA_CAM_MOI_GIA_TRI = ["NODE_OPTIONS"];
 
 /** Dựng env con: chỉ biến hệ điều hành cần thiết + cấu hình đo + ALWAYS_OFF + năm cờ "false"; `ghiDe` (KEY=VAL từ dòng lệnh) áp CUỐI, trừ KHOA_CAM_GHI_DE ⇒ ném lỗi. */
 export function dungEnvCoLap(envCha, { port, dbUrl, logDir, ghiDe = {}, alwaysOff = docAlwaysOff() }) {
-  const cam = KHOA_CAM_GHI_DE.map((k) => k.toUpperCase());
-  for (const k of Object.keys(ghiDe)) if (cam.includes(k.toUpperCase())) throw new Error(`KEY=VAL "${k}" bị từ chối: khoá này do boot-lap tự đặt (cờ an toàn / DB / .env / ROLE), không ghi đè được`);
+  const cam = [...KHOA_CAM_GHI_DE, ...KHOA_CAM_MOI_GIA_TRI].map((k) => k.toUpperCase());
+  const tatCa = Object.fromEntries(Object.entries(alwaysOff).map(([k, v]) => [k.toUpperCase(), v]));
+  for (const [k, v] of Object.entries(ghiDe)) {
+    const K = k.toUpperCase();
+    if (cam.includes(K)) throw new Error(`KEY=VAL "${k}" bị từ chối: khoá này do boot-lap tự đặt (cờ an toàn / DB / .env / ROLE / NODE_OPTIONS), không ghi đè được`);
+    if (K in tatCa && tatCa[K] !== v) throw new Error(`KEY=VAL "${k}=${v}" bị từ chối: khoá thuộc ALWAYS_OFF (chỉ nhận giá trị trùng "${tatCa[K]}")`);
+  }
   const env = {};
   for (const k of BIEN_HE_DIEU_HANH) if (envCha[k] != null) env[k] = envCha[k];
   Object.assign(env, {

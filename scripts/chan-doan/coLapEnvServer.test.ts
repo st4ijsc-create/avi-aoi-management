@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as url from "node:url";
 // @ts-expect-error — mô-đun .mjs không có khai báo kiểu
-import { dungEnvCoLap, docAlwaysOff, NAM_CO_TAT, BIEN_HE_DIEU_HANH, KHOA_CAM_GHI_DE } from "./boot-lap.mjs";
+import { dungEnvCoLap, docAlwaysOff, NAM_CO_TAT, BIEN_HE_DIEU_HANH, KHOA_CAM_GHI_DE, KHOA_CAM_MOI_GIA_TRI } from "./boot-lap.mjs";
 
 const REPO = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), "..", "..");
 const doc = (p: string) => fs.readFileSync(path.join(REPO, p), "utf8");
@@ -78,6 +78,33 @@ describe("boot-lap.mjs — dungEnvCoLap", () => {
     }
     expect(() => dung({ robot_control_enabled: "true" })).toThrow(/robot_control_enabled/);
     expect([...KHOA_CAM_GHI_DE].sort()).toEqual([...NAM_CO, "DATABASE_URL", "DOTENV_CONFIG_PATH", "ROLE"].sort());
+  });
+
+  it("khoá thuộc ALWAYS_OFF: giá trị khác ⇒ ném (kể cả sai hoa thường); giá trị trùng ⇒ được", () => {
+    expect(() => dung({ ROBOT_GATEWAY_ENABLED: "true" })).toThrow(/ROBOT_GATEWAY_ENABLED/);
+    expect(() => dung({ robot_gateway_enabled: "true" })).toThrow(/robot_gateway_enabled/);
+    expect(() => dung({ MQTT_ENABLED: "true" })).toThrow(/MQTT_ENABLED/);
+    expect(() => dung({ UNS_BROKER_URL: "mqtt://10.0.0.1:1883" })).toThrow(/UNS_BROKER_URL/);
+    expect(dung({ MQTT_ENABLED: "false" }).MQTT_ENABLED).toBe("false");
+    expect(dung({ mqtt_enabled: "false" }).MQTT_ENABLED).toBe("false");
+    // MỌI khoá của ALWAYS_OFF thật: đổi giá trị ⇒ ném
+    for (const [k, v] of Object.entries(docAlwaysOff() as Record<string, string>)) expect(() => dung({ [k]: v + "-khac" }), k).toThrow(new RegExp(k));
+  });
+
+  it("NODE_OPTIONS (mọi giá trị) ⇒ ném; PORT / BIEN_MOI vẫn được", () => {
+    expect(() => dung({ NODE_OPTIONS: "--x" })).toThrow(/NODE_OPTIONS/);
+    expect(() => dung({ node_options: "" })).toThrow(/node_options/);
+    expect(KHOA_CAM_MOI_GIA_TRI).toEqual(["NODE_OPTIONS"]);
+    const env = dung({ PORT: "3017", BIEN_MOI: "co" });
+    expect(env.PORT).toBe("3017");
+    expect(env.BIEN_MOI).toBe("co");
+  });
+
+  it("danh sách biến hệ điều hành được giữ = danh sách VIẾT CỨNG (không thêm NODE_OPTIONS hay biến cấu hình nào)", () => {
+    expect([...BIEN_HE_DIEU_HANH]).toEqual(["PATH", "Path", "SYSTEMROOT", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH", "COMSPEC", "PATHEXT", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS", "HOME"]);
+    const env = dungEnvCoLap({ NODE_OPTIONS: "--require x", PATH: "p" }, { port: 1, dbUrl: "postgres://x/aoi_management_test", logDir: ".b", ghiDe: {} });
+    expect(env.NODE_OPTIONS).toBeUndefined();
+    expect(env.PATH).toBe("p");
   });
 
   it("khoá env con ⊆ (keep ∪ cấu hình đo ∪ ALWAYS_OFF ∪ năm cờ) — không biến nào khác rò vào", () => {
