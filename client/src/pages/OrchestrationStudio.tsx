@@ -27,7 +27,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Link, useSearch } from "wouter";
 import { useEngineering } from "@/contexts/EngineeringContext";
-import { keHoachToastAbort, type AbortStopsBaoCao } from "@/lib/abortStopToasts"; // T12b — toast theo báo cáo thật của abortStops
+import { keHoachToastAbort, soGiaoThat, type AbortStopsBaoCao } from "@/lib/abortStopToasts"; // T12b — toast theo báo cáo thật của abortStops
 import { withParams } from "@/lib/engineeringDeepLink";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useShellPageVariant } from "@/lib/shellPage";
@@ -1683,8 +1683,8 @@ export default function OrchestrationStudio() {
     } else if (ke.dau === "chuaBiet") {
       toast.warning(
         t("studio.abortStopsUnknown", "The STOP report is incomplete ({{why}}) — do not assume any STOP step has gone out. STOP steps handed to the dispatcher: {{sent}}. Check the run's steps; to stop that equipment now, use the machine's direct STOP / E-STOP.", {
-          why: ke.lyDo.map((k) => t(`studio.abortWhy.${k}`, k)).join("; "),
-          sent: stops.sent.length,
+          why: ke.lyDo.map((k) => t(`studio.abortWhy.${k}`, k, { count: stops.moPhong?.length ?? 0 })).join("; "),
+          sent: soGiaoThat(stops),
         }),
         r?.message ? { description: r.message } : undefined,
       );
