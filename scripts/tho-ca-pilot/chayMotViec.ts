@@ -223,6 +223,19 @@ export function duongThat(x: string): string {
   }
 }
 
+const CHUOI_VITEST_NGOAI_TMP = "chayMotViec chạy dưới vitest chỉ được dùng worktree trong thư mục tạm (os.tmpdir()) — từ chối để không chạm worktree thật";
+/** `--wt` mặc định: ĐƯỜNG CỐ ĐỊNH THẬT khi chạy thường; dưới vitest là thư mục TẠM (một ca/đột biến bỏ `--wt` không bao giờ rơi vào worktree thật). */
+export function wtMacDinh(env: NodeJS.ProcessEnv = process.env): string {
+  return env.VITEST !== undefined ? path.join(os.tmpdir(), "_tho_ca_wt_vitest_mac_dinh") : "D:\\SOURCES\\_tho_ca_wt";
+}
+/** Dưới vitest (env.VITEST đặt) mà worktree — dạng resolve LẪN dạng thật (junction/symlink) — KHÔNG nằm trong os.tmpdir() ⇒ chuỗi từ chối; ngược lại null. Thuần. */
+export function wtNgoaiTmpDuoiVitest(wt: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  if (env.VITEST === undefined) return null;
+  const tmp = [path.resolve(os.tmpdir()), duongThat(os.tmpdir())];
+  for (const d of [path.resolve(wt), duongThat(wt)]) if (!tmp.some((t) => namTrong(d, t))) return CHUOI_VITEST_NGOAI_TMP;
+  return null;
+}
+
 /** `con` nằm trong (hoặc bằng) `goc`: so TIỀN TỐ tường minh, không phân biệt hoa/thường, biên bằng dấu phân cách (`/a/b2` không nằm trong `/a/b`). */
 function namTrong(con: string, goc: string): boolean {
   const c = path.resolve(con).toLowerCase();
@@ -464,6 +477,8 @@ export interface ThamSoViec {
   envTran?: NodeJS.ProcessEnv;
   /** chỉ cho ca kiểm: thay `process.env` khi đọc AI_REPO_SANDBOX_ROOTS để kiểm `--ra` nằm ngoài gốc sandbox */
   envSandbox?: NodeJS.ProcessEnv;
+  /** chỉ cho ca kiểm: thay `process.env` khi quyết định chốt "dưới vitest chỉ worktree tạm" (để ca kiểm chốt ở trạng thái KHÔNG-vitest) */
+  envVitest?: NodeJS.ProcessEnv;
   /** URL CSDL của tiến trình pilot (dòng lệnh truyền process.env.DATABASE_URL); chỉ dùng khi choPhepDb */
   testDbUrl?: string;
   /** chỉ cho ca kiểm: thay nhà máy dựng hàm chạy lệnh kiểm để quan sát tham số (mặc định taoChayLenhKiem) */
@@ -503,6 +518,9 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const chayKiemDung: ChayKiem = p.chayKiem ?? (p.taoChayKiem ?? taoChayLenhKiem)(dbCho ? { testDbUrl: p.testDbUrl } : {});
 
   const wt = path.resolve(p.wt);
+  // CHỐT (sự cố 13/11 17:59: một ca CLI/đột biến rơi về worktree mặc định THẬT và "cất" giữa lượt pilot): dưới vitest chỉ được dùng worktree trong thư mục tạm — TRƯỚC mọi thao tác git
+  const lyDoVitest = wtNgoaiTmpDuoiVitest(wt, p.envVitest ?? process.env);
+  if (lyDoVitest) return tuChoi(lyDoVitest, the.ma);
   if (!/^_tho_ca/i.test(path.basename(wt)) && !p.choPhepKhoRieng) return tuChoi(`worktree "${wt}" không phải thư mục _tho_ca* — từ chối để không sửa nhầm nơi khác`, the.ma);
   if (!fs.existsSync(wt)) return tuChoi(`worktree không tồn tại: ${wt}`, the.ma);
   if (dbCho) {
@@ -754,7 +772,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return 2;
   }
   if (thamDb.choPhepDb) {
-    const lyDoRa = a.ra ? raTrongGocSandbox(a.ra, a.wt ?? "D:\\SOURCES\\_tho_ca_wt", process.env) : CHUOI_THIEU_RA;
+    const lyDoRa = a.ra ? raTrongGocSandbox(a.ra, a.wt ?? wtMacDinh(), process.env) : CHUOI_THIEU_RA;
     if (lyDoRa) {
       process.stderr.write(`${lyDoRa}\n`);
       return 2;
@@ -804,7 +822,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   const kq = await chayMotViec({
     coAiAgent,
     van: fs.readFileSync(a.the, "utf8"),
-    wt: a.wt ?? "D:\\SOURCES\\_tho_ca_wt",
+    wt: a.wt ?? wtMacDinh(),
     base: a.base ?? "main",
     luatCach,
     ...(a.luat ? (({ luat, nguon }) => ({ luat, luatNguon: nguon }))(docLuatTuTep(a.luat)) : {}),

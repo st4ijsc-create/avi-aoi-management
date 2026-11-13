@@ -9,8 +9,25 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { main } from "./chayMotViec";
+
+// META (chọn tham gia: THO_CA_KIEM_WT_THAT=1 — CHỈ khi KHÔNG có lượt pilot nào đang chạy, vì lượt thật đổi HEAD/status hợp lệ): toàn bộ tệp này KHÔNG được làm đổi worktree pilot THẬT.
+// Chỉ ĐỌC (rev-parse + status --no-optional-locks), bỏ qua nếu thư mục không tồn tại. Sự cố 13/11 17:59: một ca/đột biến rơi vào worktree mặc định thật và "cất" giữa lượt pilot.
+const WT_THAT = "D:\\SOURCES\\_tho_ca_wt";
+const dauVetWtThat = () => {
+  if (process.env.THO_CA_KIEM_WT_THAT !== "1" || !fs.existsSync(WT_THAT)) return null;
+  const g = (...a: string[]) => spawnSync("git", ["--no-optional-locks", ...a], { cwd: WT_THAT, encoding: "utf8" }).stdout;
+  return JSON.stringify({ head: g("rev-parse", "HEAD").trim(), nhanh: g("branch", "--show-current").trim(), status: g("status", "--porcelain=v1", "--untracked-files=all") });
+};
+let dauVetTruoc: string | null = null;
+beforeAll(() => {
+  dauVetTruoc = dauVetWtThat();
+});
+afterAll(() => {
+  const sau = dauVetWtThat();
+  if (dauVetTruoc !== null && sau !== null) expect(sau, "worktree pilot THẬT bị đổi trong lúc chạy tệp CLI").toBe(dauVetTruoc);
+});
 
 const sh = (x: string | Buffer) => createHash("sha256").update(x).digest("hex");
 const git = (cwd: string, ...a: string[]) => spawnSync("git", a, { cwd, encoding: "utf8" }).stdout.trim();
@@ -145,6 +162,16 @@ describe("main() — cờ AI_AGENT_* (--co)", () => {
     const sai = await chayCli(coBan(["--co", "PATH=1"]));
     expect(sai.ma).toBe(2);
     expect(sai.err).toContain("--co không hợp lệ");
+  });
+});
+
+describe("main() — KHÔNG --wt (dưới vitest)", () => {
+  it("★★★ bỏ --wt ⇒ dùng worktree TẠM mặc định (không bao giờ đường thật D:\\SOURCES\\_tho_ca_wt); đường tạm không tồn tại ⇒ tu-choi nêu đúng đường tạm", async () => {
+    const r = await chayCli(["--the", tepThe, "--base", baseSha, "--driver", "kho", "--ra", ra]);
+    expect(r.json, r.err).not.toBeNull();
+    expect(r.json!.ketCuc).toBe("tu-choi");
+    expect(r.json!.loi).toContain("_tho_ca_wt_vitest_mac_dinh");
+    expect(r.json!.loi).not.toContain("D:\\SOURCES\\_tho_ca_wt");
   });
 });
 
