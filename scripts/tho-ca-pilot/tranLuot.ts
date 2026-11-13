@@ -27,6 +27,14 @@ export interface TranLuotKetQua {
   tokenRaThucDung: number | null;
   /** có khoá thẻ ⇒ bộ chạy ÉP trần này vào lượt agent */
   apDungTuThe: boolean;
+  /** số lượt thẻ XIN (khoá TRẦN LƯỢT MODEL) hoặc null nếu thẻ không khoá */
+  theYeuCau: number | null;
+  /** = luotThucDung (tên rõ nghĩa cho người đọc JSON) */
+  thucDung: number;
+  /** thẻ xin NHIỀU hơn số được phép ⇒ trần bị kẹp xuống */
+  biKep: boolean;
+  /** vì sao bị kẹp (nêu biến / mặc định / trần cứng) hoặc null khi không kẹp */
+  lyDoKep: string | null;
 }
 
 /** Phần `gioiHan` bộ chạy ép vào lượt agent (khoá nào thẻ không nêu thì vắng). */
@@ -51,16 +59,40 @@ export function tinhTranLuot(tran: TranTheoThe, env: Record<string, string | und
   const luotEnv = soLuotToiDaTuEnv(env) ?? null;
   const tranEnv = luotEnv ?? SO_LUOT_MAC_DINH;
   const k = tran.luotModel ?? null;
+  const luotThucDung = k === null ? tranEnv : Math.min(k, tranEnv, TRAN_CUNG_SO_LUOT);
+  const biKep = k !== null && k > luotThucDung;
+  // tranEnv ≤ trần cứng (soLuotToiDaTuEnv đã kẹp) nên kẹp luôn do env / mặc định — trần cứng chỉ "thắng" qua chính tranEnv khi env = 120
+  const thoEnv = (env.AI_AGENT_SO_LUOT_TOI_DA ?? "").trim();
+  // biến ĐÃ đặt nhưng không hợp lệ (vd "abc", "0") khác với CHƯA đặt. KHÔNG BAO GIỜ chép giá trị lạ vào JSON/stderr (ai đó đặt nhầm một bí mật vào biến này sẽ lộ):
+  // chỉ ghi nguyên văn khi trông như một SỐ (^[0-9.+-]{1,12}$ — không thể là bí mật), còn lại chỉ ghi độ dài.
+  const dangEnvKhongHopLe = /^[0-9.+-]{1,12}$/.test(thoEnv) ? `"${thoEnv}"` : `độ dài ${thoEnv.length}, không phải số`;
+  const lyDoKep = !biKep
+    ? null
+    : luotEnv !== null
+      ? `AI_AGENT_SO_LUOT_TOI_DA=${luotEnv}`
+      : thoEnv !== ""
+        ? `mặc định ${SO_LUOT_MAC_DINH} (AI_AGENT_SO_LUOT_TOI_DA không hợp lệ: ${dangEnvKhongHopLe})`
+        : `mặc định ${SO_LUOT_MAC_DINH} (AI_AGENT_SO_LUOT_TOI_DA chưa đặt)`;
   return {
     donVi: "luot-goi-model",
     khoaThe: { luotModel: k, phut: tran.phut ?? null, tokenRa: tran.tokenRa ?? null },
     luotEnv,
     tranCung: TRAN_CUNG_SO_LUOT,
-    luotThucDung: k === null ? tranEnv : Math.min(k, tranEnv, TRAN_CUNG_SO_LUOT),
+    luotThucDung,
+    theYeuCau: k,
+    thucDung: luotThucDung,
+    biKep,
+    lyDoKep,
     phutThucDung: tran.phut ?? null,
     tokenRaThucDung: tran.tokenRa ?? null,
     apDungTuThe: k !== null || tran.phut !== undefined || tran.tokenRa !== undefined,
   };
+}
+
+/** MỘT dòng cảnh báo đầu lượt khi trần của thẻ bị kẹp xuống; null khi không kẹp. */
+export function dongCanhBaoKep(t: TranLuotKetQua): string | null {
+  if (!t.biKep) return null;
+  return `CẢNH BÁO: trần thẻ ${t.theYeuCau} bị kẹp còn ${t.thucDung} bởi ${t.lyDoKep}`;
 }
 
 /** Phần `gioiHan` đưa vào quanLyLuotChay; undefined khi thẻ không có khoá (không ép gì). */

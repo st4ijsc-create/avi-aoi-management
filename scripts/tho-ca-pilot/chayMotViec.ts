@@ -26,7 +26,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chuanDuong, docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
-import { dongBaoTran, gioiHanChoLuot, tinhTranLuot, type GioiHanLuotChoDriver, type TranLuotKetQua } from "./tranLuot";
+import { dongBaoTran, dongCanhBaoKep, gioiHanChoLuot, tinhTranLuot, type GioiHanLuotChoDriver, type TranLuotKetQua } from "./tranLuot";
 import { apDungDotBien, kiemDotBienTrenBase, quetGhimNghiNgo, quetKhangDinhCam, tepTestDoi, type KetQuaDotBien } from "./dotBien";
 import { canChayTsc, chayLenhTsc, giaTriBiMatTuUrl, taoChayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
 
@@ -599,6 +599,9 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const driver = typeof p.driver === "string" ? DRIVERS[p.driver] : p.driver;
   const t0 = Date.now();
   nhatKy(`bắt đầu ${the.ma} trên ${nhanh} @ ${baseSha.slice(0, 9)} (driver ${tenDriver}, hạn ${the.gioiHan.giay}s)`);
+  // trần của thẻ bị kẹp xuống (khoá TRẦN LƯỢT MODEL > AI_AGENT_SO_LUOT_TOI_DA hoặc mặc định): MỘT dòng cảnh báo ở đầu lượt (JSON `tran` ghi theYeuCau/thucDung/biKep/lyDoKep)
+  const canhBaoKep = tran ? dongCanhBaoKep(tran) : null;
+  if (canhBaoKep) nhatKy(canhBaoKep);
   // L3b: model/driver KHÔNG được thấy đột biến hay chuỗi cấm — gỡ khỏi `the` đưa cho driver (ghepLenh cũng không in chúng)
   const { dotBien: _dotBien, khangDinhCam: _khangDinhCam, csdl: _csdl, ...theChoDriver } = the;
   const kq = await driver({ the: theChoDriver, wt, lenh: ghepLenh(the, luat, tran), hanGiay: tran?.phutThucDung ? tran.phutThucDung * 60 : the.gioiHan.giay, ...(gioiHanLuot ? { gioiHanLuot } : {}), ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {}, ...(p.chayKiem || dbCho ? { chayKiem: chayKiemDung } : {}), ...(dbCho ? { cheDoKiem: "chi-so" as const, giaTriBiMat: giaTriBiMatTuUrl(p.testDbUrl) } : {}) });
