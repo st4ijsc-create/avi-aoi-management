@@ -102,6 +102,35 @@ describe("chín mẫu — ÂM (mã vô hại gần giống)", () => {
     expect(c!.manh).toContain("KHÔNG ĐƯỢC QUÉT");
     expect(maus(`const a = "${"x".repeat(4100)}"; const d = process.env.DATABASE_URL;`)).toEqual(["dong-qua-dai"]);
   });
+  it("★★★ `..` / `.` được chuẩn hoá TRƯỚC khi so tiền tố worktree: `<wt>/../../x` và `<wt>/..` ⇒ cảnh báo (cả dạng gạch ngược kép); `<wt>/a/../b` và `<wt>/./a` ⇒ không", () => {
+    const w = WT.replace(/\\/g, "/");
+    expect(maus(`const p = "${w}/../../Windows/win.ini";`)).toContain("duong-tuyet-doi");
+    expect(maus(`const p = "${w}/..";`)).toContain("duong-tuyet-doi");
+    expect(maus(`const p = "${WT.replace(/\\/g, "\\\\")}\\\\..\\\\..\\\\Windows\\\\win.ini";`)).toContain("duong-tuyet-doi");
+    expect(quet(`const p = "${w}/a/../b";`)).toEqual([]);
+    expect(quet(`const p = "${w}/./a";`)).toEqual([]);
+  });
+  it("★★★ mã SAU dấu đóng khối đầu dòng (kiem-dinh): `/* c */ spawn(…)`, `/**/ eval(…)`, ` * x */ spawn(…)`, `*/ process.env.DATABASE_URL`; đối chứng chú thích thật = 0", () => {
+    const dong = "*" + "/";
+    expect(maus(`/* c ${dong} spawn("calc.exe");`)).toContain("child-process");
+    expect(maus(`/**${"/"} eval("1");`)).toContain("eval-dong");
+    expect(maus(` * x ${dong} spawn(1)`)).toContain("child-process");
+    expect(maus(`${dong} process.env.DATABASE_URL`)).toEqual(expect.arrayContaining(["process-env", "database-url"]));
+    expect(quet(`/* process.env.X ${dong}`)).toEqual([]);
+    expect(quet(" * dùng process.env.X")).toEqual([]);
+  });
+  it("★★ dong-qua-dai có TRÍCH: đầu dòng (che mật khẩu URL), tối đa 200 ký tự, thông điệp nói KHÔNG ĐƯỢC QUÉT", () => {
+    const [c] = quet(`const u = "https://nguoi:MatKhauZ9@h.example/x"; ${"y".repeat(4100)}`);
+    expect(c!.mau).toBe("dong-qua-dai");
+    expect(c!.trich.startsWith('const u = "https://***@h.example/x";')).toBe(true);
+    expect(c!.trich).not.toContain("MatKhauZ9");
+    expect(c!.trich.length).toBeLessThanOrEqual(200);
+    expect(c!.manh).toContain("KHÔNG ĐƯỢC QUÉT");
+  });
+  it("★ `D:////SOURCES/x` (nhiều gạch) không bị báo oan là URL mạng ngoài; scheme thật vẫn báo", () => {
+    expect(maus('const p = "D:////SOURCES/_tho_ca_wt/x";')).not.toContain("mang-ngoai");
+    expect(maus('const u = "ftp://ben-ngoai.example/x";')).toContain("mang-ngoai");
+  });
   it("★★ biên: dòng đúng 4000 ký tự vẫn được quét; 4001 ký tự ⇒ chỉ `dong-qua-dai`; dòng chú thích dài không cảnh báo", () => {
     const them = (n: number, dau: string) => dau + "x".repeat(n - dau.length);
     expect(maus(them(4000, "const a = process.env.X; "))).toContain("process-env");

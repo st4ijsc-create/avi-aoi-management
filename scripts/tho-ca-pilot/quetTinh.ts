@@ -15,7 +15,8 @@
  *
  * Hạn chế đã biết — người duyệt vẫn là cổng. Bộ quét là regex theo dòng, KHÔNG phải trình phân tích; các dạng sau KHÔNG bị bắt (kiem-dinh đã đo), và KHÔNG cố vá hết bằng regex:
  *   process["env"], `const { env } = process`, `(0, eval)(…)`, `globalThis["ev" + "al"]`, giải mã Buffer / base64 rồi chạy,
- *   đường UNC `\\server\share` và `//server/share`, đường leo thư mục `../../..`, gọi tiến trình con qua `cp["spawn"](…)`.
+ *   đường UNC `\\server\share` và `//server/share`, đường leo thư mục TƯƠNG ĐỐI `../../..` (đường tuyệt đối có `..` thì ĐÃ chuẩn hoá trước khi so với worktree), gọi tiến trình con qua `cp["spawn"](…)`,
+ *   dòng bắt đầu bằng `*` mà KHÔNG có dấu đóng khối (vd `*p = fetch(…)`) bị coi là dòng giữa khối chú thích nhiều dòng — cần trạng thái khối qua nhiều dòng, ngoài phạm vi quét theo dòng.
  * Cảnh báo là GỢI Ý cho người duyệt, không phải bằng chứng sạch: không có cảnh báo ≠ an toàn.
  *
  * Khoá thẻ `CHO PHÉP TRONG TEST: a; b` (hoặc phân cách bằng dấu phẩy ngoài ngoặc) tắt cảnh báo oan: một cảnh báo bị bỏ CHỈ KHI đoạn khớp NẰM TRONG một lần xuất hiện của mục cho phép
@@ -134,7 +135,7 @@ const RE = {
   ghiMo: /\b(?:fs|fsp|promises)\.(?:writeFile|writeFileSync|appendFile|appendFileSync|createWriteStream|copyFile|copyFileSync|unlink|unlinkSync|rm|rmSync|rmdir|rmdirSync|mkdir|mkdirSync|rename|renameSync|truncate|truncateSync|symlink|symlinkSync|cp|cpSync)\s*\(/g,
   tamNhac: /tmpdir|mkdtemp|\btmp\b|\btemp\b|TMPDIR|TEMP\b/i,
   mangApi: /\bfetch\s*\(|\b(?:http|https|http2|net|tls|dgram|dns)\.(?:request|get|connect|createConnection|Socket|lookup|resolve\w*)\s*\(|\bnew\s+(?:WebSocket|XMLHttpRequest|EventSource|net\.Socket)\b|\b(?:import|require)\b[^\n]*["'](?:node:)?(?:http|https|http2|net|tls|dgram|dns|axios|node-fetch|got|undici|ws)["']/g,
-  mangUrl: /\b(?!postgres(?:ql)?:|file:|node:|data:|blob:)[a-z][a-z0-9+.-]*:\/\/(?!127\.0\.0\.1|localhost|\[::1\])[^\s"'`)]+/gi,
+  mangUrl: /\b(?!postgres(?:ql)?:|file:|node:|data:|blob:)[a-z][a-z0-9+.-]+:\/\/(?!127\.0\.0\.1|localhost|\[::1\])[^\s"'`)]+/gi,
   evalDong: new RegExp(`\\beval\\s*\\(|\\bnew\\s+Function\\s*\\(|(?<![.\\w$])Function\\s*\\(|\\bvm\\.(?:runIn\\w+|Script|compileFunction)\\b|\\bimport\\s*\\((?!\\s*${QUOTE_THUAN}\\s*\\))|(?<![.\\w$])require\\s*\\((?!\\s*${QUOTE_THUAN}\\s*\\))`, "g"),
 };
 
@@ -174,7 +175,8 @@ export function phanMa(dong: string): string {
   return s;
 }
 // gộp MỌI chuỗi gạch ngược/xuôi liền nhau thành một `/`: chuỗi JS "D:\\SOURCES\\x" (gạch ngược KÉP trong nguồn) so được với đường thật
-const chuanDuongSo = (p: string) => p.replace(/[\\/]+/g, "/").replace(/\/+$/, "").toLowerCase();
+// rồi CHUẨN HOÁ `.` / `..` (path.posix.normalize) TRƯỚC khi so tiền tố: `<wt>/../../x` không còn lọt vào "trong wt"
+const chuanDuongSo = (p: string) => path.posix.normalize(p.replace(/[\\/]+/g, "/").toLowerCase()).replace(/\/+$/, "");
 
 function khopTrong(ds: string, re: RegExp): Array<{ manh: string; vt: number }> {
   const ra: Array<{ manh: string; vt: number }> = [];
