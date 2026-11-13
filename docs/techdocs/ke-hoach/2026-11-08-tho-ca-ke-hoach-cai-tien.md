@@ -348,6 +348,7 @@ Bất biến thực thi (dieu‑phoi 11/11): lệnh kiểm chạy mã do model v
 | HA‑7 hồi quy | Mỗi thay đổi lô NC/AC/SM/HA: phát lại fixture lô 1 không GPU; lô 2 chạy lại 3 việc lô 1 với B1 để đo L1 trước/sau | 0 việc cũ rớt | do‑model + dieu‑phoi |
 | HA‑8 bảng việc tự động | `buoc-do` thêm: giây chờ duyệt, lỗi công cụ theo mã, token trước/sau nén, số thẻ bị từ chối ⇒ sinh phần số của `danh-gia.md` | phần (a) của đánh giá không còn viết tay | tho‑ca‑agent + do‑model |
 | HA‑9 quét tĩnh diff + cách ly | Bộ quét cảnh báo trên thẻ chờ duyệt: đường tuyệt đối ngoài worktree/thư mục tạm, `.env`, `bi-mat`, `DATABASE_URL`/`process.env` ngoài danh sách của thẻ, `child_process`/`spawn`/`exec`, ghi tệp ngoài thư mục tạm, mạng ngoài `127.0.0.1:5434`, `eval`/`Function`/import động. Người duyệt vẫn quyết. Bước sau: chạy lệnh kiểm dưới tài khoản HĐH cách ly (chủ dự án tạo tài khoản + ACL) | 9 mẫu có ca test + đột biến; sau cách ly: mã test đọc `.env` bị từ chối ở mức HĐH | tho‑ca‑agent; cách ly = chủ dự án + dieu‑phoi |
+| HA‑10 phủ danh sách đã duyệt | Trước khi nhận "xong", host yêu cầu và kiểm bảng "dòng danh sách đã duyệt → tên ca test": dòng không có ca ⇒ không cho kết thúc (hoặc kết cục `thieu-phu`); test xanh chỉ là điều kiện cần. Căn cứ: TC‑11R lô 2 (13/11) — được tự chạy lệnh kiểm, model dừng ngay khi 72/72 xanh, không thêm ca nào, lỗi cài bị bắt 6/12 (lô 1 12/12; lượt bị nhiễm, đang chạy lặp để xác nhận) | TC‑11R phát lại ra `thieu-phu`; việc sửa mã ở lô 2b có ≥ 1 ca cho mỗi dòng đã duyệt | tho‑ca‑agent |
 
 ### 9.6 Thứ tự và chỉ số mới
 
