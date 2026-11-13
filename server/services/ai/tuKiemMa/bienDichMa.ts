@@ -269,7 +269,7 @@ export function namTrongCay(goc: string, dich: string): boolean {
 /** Tham số python: `-I` = chế độ cô lập (bỏ biến PYTHON*, bỏ site người dùng, không thêm cwd vào sys.path). */
 export const ARGS_PYTHON: readonly string[] = ["-I", "-m", "py_compile", "code.py"];
 
-export async function bienDichMa(khoi: KhoiMaKiem, tranMs: number, signal?: AbortSignal, opt: { cwdRepo?: string; gioiHan?: GioiHanDongThoi; toiDaDongThoi?: number } = {}): Promise<KetQuaBienDichMa> {
+export async function bienDichMa(khoi: KhoiMaKiem, tranMs: number, signal?: AbortSignal, opt: { cwdRepo?: string; gioiHan?: GioiHanDongThoi; toiDaDongThoi?: number; chayTrongKhe?: typeof bienDichTrongKhe } = {}): Promise<KetQuaBienDichMa> {
   if (khoi.ngonNgu === "ts") {
     const ngoai = phatHienThamChieuNgoai(khoi.ma);
     if (ngoai) return { trangThai: "khong-kiem-duoc", chanDoan: [], lyDo: ngoai };
@@ -278,7 +278,7 @@ export async function bienDichMa(khoi: KhoiMaKiem, tranMs: number, signal?: Abor
   const nha = await (opt.gioiHan ?? GIOI_HAN).layKhe(opt.toiDaDongThoi ?? soKheDongThoi(), tranMs, signal);
   if (!nha) return { trangThai: "khong-kiem-duoc", chanDoan: [], lyDo: signal?.aborted ? "huy" : "day-khe-bien-dich" };
   try {
-    return await bienDichTrongKhe(khoi, Math.max(1, tranMs - (Date.now() - t0)), signal, opt);
+    return await (opt.chayTrongKhe ?? bienDichTrongKhe)(khoi, Math.max(1, tranMs - (Date.now() - t0)), signal, opt);
   } finally {
     nha();
   }
