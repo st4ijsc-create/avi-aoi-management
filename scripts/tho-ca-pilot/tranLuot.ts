@@ -62,7 +62,16 @@ export function tinhTranLuot(tran: TranTheoThe, env: Record<string, string | und
   const luotThucDung = k === null ? tranEnv : Math.min(k, tranEnv, TRAN_CUNG_SO_LUOT);
   const biKep = k !== null && k > luotThucDung;
   // tranEnv ≤ trần cứng (soLuotToiDaTuEnv đã kẹp) nên kẹp luôn do env / mặc định — trần cứng chỉ "thắng" qua chính tranEnv khi env = 120
-  const lyDoKep = !biKep ? null : luotEnv !== null ? `AI_AGENT_SO_LUOT_TOI_DA=${luotEnv}` : `mặc định ${SO_LUOT_MAC_DINH} (AI_AGENT_SO_LUOT_TOI_DA chưa đặt)`;
+  const thoEnv = (env.AI_AGENT_SO_LUOT_TOI_DA ?? "").trim();
+  // biến ĐÃ đặt nhưng không hợp lệ (vd "abc", "0") khác với CHƯA đặt: nêu giá trị (cắt 24 ký tự, bỏ ký tự điều khiển) để người đọc sửa đúng chỗ
+  const dangEnvKhongHopLe = thoEnv !== "" ? `"${thoEnv.replace(/[\u0000-\u001f\u007f]/g, "?").slice(0, 24)}"` : "";
+  const lyDoKep = !biKep
+    ? null
+    : luotEnv !== null
+      ? `AI_AGENT_SO_LUOT_TOI_DA=${luotEnv}`
+      : thoEnv !== ""
+        ? `mặc định ${SO_LUOT_MAC_DINH} (AI_AGENT_SO_LUOT_TOI_DA không hợp lệ: ${dangEnvKhongHopLe})`
+        : `mặc định ${SO_LUOT_MAC_DINH} (AI_AGENT_SO_LUOT_TOI_DA chưa đặt)`;
   return {
     donVi: "luot-goi-model",
     khoaThe: { luotModel: k, phut: tran.phut ?? null, tokenRa: tran.tokenRa ?? null },

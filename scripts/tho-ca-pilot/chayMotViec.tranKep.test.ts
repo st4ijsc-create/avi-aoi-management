@@ -52,6 +52,20 @@ describe("tinhTranLuot — kẹp", () => {
   it("★★★ thẻ 60, env 45 ⇒ kẹp 45, lý do nêu ĐÚNG biến và giá trị", () => {
     expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: "45" })).toMatchObject({ thucDung: 45, biKep: true, lyDoKep: "AI_AGENT_SO_LUOT_TOI_DA=45" });
   });
+  it("★★★ biến ĐÃ đặt nhưng KHÔNG hợp lệ ('abc', '0', '-5', '3.5') ⇒ lý do nêu 'không hợp lệ: \"<giá trị>\"', khác với 'chưa đặt'", () => {
+    for (const v of ["abc", "0", "-5", "3.5"]) {
+      expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: v })).toMatchObject({ biKep: true, thucDung: 30, lyDoKep: `mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA không hợp lệ: "${v}")` });
+    }
+  });
+  it("★★ biến rỗng / toàn khoảng trắng ⇒ coi là CHƯA đặt; giá trị dài bị cắt 24 ký tự; ký tự điều khiển đổi thành '?'", () => {
+    expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: "   " }).lyDoKep).toBe("mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA chưa đặt)");
+    expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: "" }).lyDoKep).toBe("mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA chưa đặt)");
+    expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: "x".repeat(40) }).lyDoKep).toBe(`mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA không hợp lệ: "${"x".repeat(24)}")`);
+    expect(tinhTranLuot({ luotModel: 60 }, { AI_AGENT_SO_LUOT_TOI_DA: "ab" }).lyDoKep).toBe('mặc định 30 (AI_AGENT_SO_LUOT_TOI_DA không hợp lệ: "a?b")');
+  });
+  it("★★ biến không hợp lệ nhưng thẻ KHÔNG bị kẹp (thẻ ≤ 30) ⇒ không có lý do kẹp", () => {
+    expect(tinhTranLuot({ luotModel: 20 }, { AI_AGENT_SO_LUOT_TOI_DA: "abc" })).toMatchObject({ biKep: false, lyDoKep: null });
+  });
   it("★★★ env 500 (vượt trần cứng) tự kẹp về 120 ở soLuotToiDaTuEnv; thẻ 100 < 120 ⇒ KHÔNG kẹp", () => {
     expect(tinhTranLuot({ luotModel: 100 }, { AI_AGENT_SO_LUOT_TOI_DA: "500" })).toMatchObject({ thucDung: 100, biKep: false, lyDoKep: null });
     expect(tinhTranLuot({ luotModel: 120 }, { AI_AGENT_SO_LUOT_TOI_DA: "500" })).toMatchObject({ thucDung: 120, biKep: false });
