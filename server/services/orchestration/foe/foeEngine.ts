@@ -731,6 +731,8 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   khongBanGhi?: Map<string, string[]>;
   /** A2(n) T9 (T9-CONTINUE-K1) — the STOPs whose going was told as replacing an earlier "did NOT go out", once per walk */
   stopDaDiDaBao?: Set<string>;
+  /** A2(n) T9 lượt sửa 1 (R-2) — steps whose LAST hand-over was answered SIMULATED: nothing reached the device */
+  giaoMoPhong?: Set<string>;
   /** A2(n) T5 (H1, race) — a STOP that failed before the latch with no code: duongKetThuc puts it in state C if the run latches after all. Not sent again. */
   stopTuChoiTruocKhoa?: Map<string, { attempt: number; vi: ViChuaRa }>;
   /** A2(n) T7b-1 fix 1 (RA-1, R3-E) — what an Abort's sweep of this live walk could not send while the run was not latched: its `abort:` row may be the write lost */
@@ -1781,7 +1783,7 @@ function baoStopDaDiSau(rc: RunContext, id: string): void {
   if (!rc.chuaRaDaBao?.has(id) && !stopChuaRaTuNguCanh(rc.context).includes(id)) return;
   (rc.stopDaDiDaBao ??= new Set()).add(id);
   const chu = chuBuTruCua(rc, id);
-  baoKetCucKhongRo(rc, { loai: "stopNotSent", stepId: chu ? chu.step.id : id, compId: chu ? id : KHONG_CO_BU_TRU, error: loiCuaChot(rc), lan: luotDiCua(rc), biet: true, thayCu: "chuaRa" });
+  baoKetCucKhongRo(rc, { loai: "stopNotSent", stepId: chu ? chu.step.id : id, compId: chu ? id : KHONG_CO_BU_TRU, error: loiCuaChot(rc), lan: luotDiCua(rc), biet: true, thayCu: "chuaRa", ...(rc.giaoMoPhong?.has(id) ? { moPhong: true as const } : {}) }); // lượt sửa 1 (R-2) — simulated: never "went"
 }
 
 /** A2(n) T6d (E-C6) — the one URGENT of a verified STOP the edge snapshot refused as not pinned: a forward STOP in its own name, a compensation's under its owner. Once per walk; the key is durable. */
@@ -1804,14 +1806,26 @@ async function vaoChuaRaTuTruocKhoa(rc: RunContext): Promise<void> {
   rc.stopTuChoiTruocKhoa?.clear();
 }
 
+/** A2(n) T9 lượt sửa 1 (R-1) — the source of a row's dispatcher answer when its text carries none (a refused attempt left `running`, laHangChuaRa): the same reading as the walk's (nguonCuaKetQua). */
+function viTuKetQuaHang(r: { error?: string | null; resultJson?: unknown } | undefined): ViChuaRa | undefined {
+  const kq = (r?.resultJson ?? null) as { routedTo?: unknown; status?: unknown; detail?: unknown } | null;
+  if (!kq || typeof kq.routedTo !== "string") return undefined;
+  const ma = maTuChoiCua({ error: r?.error ?? null, status: typeof kq.status === "string" ? kq.status : null, detail: (kq.detail ?? null) as { reason?: unknown } | null });
+  return { nguon: nguonCuaKetQua(String(kq.status), ma, kq.routedTo === "robot-dispatcher"), ma };
+}
+
 /** A2(n) T5 (H1) — a STOP that stays owed, this walk's or a row's: told by name, the run held so an Abort can send it. */
 async function giuStopChuaRa(rc: RunContext, src: AbortSweepSource | null): Promise<StepOutcome | undefined> {
   let giu: StepOutcome | undefined;
   for (const id of new Set([...(rc.chuaRaStop?.keys() ?? []), ...(src?.chuaRa ?? [])])) {
-    const vi = rc.chuaRaStop?.get(id) ?? viChuaRaCuaLoi((src?.hang ?? []).find((r) => r.stepId === id)?.error);
+    let vi = rc.chuaRaStop?.get(id) ?? viChuaRaCuaLoi((src?.hang ?? []).find((r) => r.stepId === id)?.error);
     // T9 (T9-CHU-NO-GIA) — a debt the rows hold of a step the definition does not make a STOP (its refused attempt is its row's last word): words only, the debt stays as read
     const s = findStepDeep(rc.def.steps, id);
-    if (!rc.chuaRaStop?.has(id) && s && !(await isStopCandidate(s, rc.machineById).catch(() => true))) (rc.khongStopNo ??= new Set()).add(id); // a step the definition does not hold: the old words
+    if (!rc.chuaRaStop?.has(id) && s && !(await isStopCandidate(s, rc.machineById).catch(() => true))) {
+      (rc.khongStopNo ??= new Set()).add(id); // a step the definition does not hold: the old words
+      // lượt sửa 1 (R-1) — its row carries no code: the source is the dispatcher's answer on it (laHangChuaRa: refused, no answer of the "may have flown" kind), read by the same rule as any row
+      vi ??= viTuKetQuaHang((src?.hang ?? []).find((r) => r.stepId === id));
+    }
     baoStopChuaRa(rc, id, vi);
     giu ??= { kind: "held", stepId: id, reason: "outcomeUnknown", error: loiGiuChuaRa(id, vi, cachChuaRa(rc, id)) };
   }
@@ -3302,6 +3316,9 @@ async function execCommandMot(rc: RunContext, step: Extract<WorkflowStep, { type
   if (cong) baoKetCucKhongRo(rc, { loai: loaiGuiStop(rc, step.id, result.ok ? { kind: "ok" } : undefined), stepId: cong.chu.step.id, compId: step.id, error: rc.loiBuTru?.get(cong.chu.comp.id) ?? "", lan: luotDiCua(rc) });
   // A refused attempt is not "on its way" any more: a STOP whose retry an abort cancels is sent once more by the sweep.
   if (!result.ok) rc.dispatched.delete(step.id);
+  // T9 lượt sửa 1 (R-2) — the last answer only: simulated reached no device
+  if (result.status === "simulated" || result.detail?.simulated === true) (rc.giaoMoPhong ??= new Set()).add(step.id);
+  else rc.giaoMoPhong?.delete(step.id);
   // A2(n) T9 (XAC_NHAN, D) — a closed list: a verified STOP for this dispatch, ok, not simulated, `acked_verified`. Anything else that went is only its trace (khongRoTruoc, xacNhan false)
   const xacNhan = xnCho !== undefined && laStopGiao && result.ok && result.status === "acked_verified" && result.detail?.simulated !== true;
   const vetKhongRo = xnCho !== undefined && result.ok ? { buoc: xnCho, ma: maKetCucKhongRoCua(rc.khongRoTai?.get(xnCho) ?? loiCuaChot(rc)), xacNhan } : null;

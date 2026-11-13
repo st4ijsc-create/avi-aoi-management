@@ -48,7 +48,7 @@ import { toRobotJob } from "../../equipment/robotJobMapping";
 import { readEdgeAssignment } from "../../edge/edgeExecutionSchema"; // A2(n) T8 lượt sửa 1 (CHAN-3) — a run given to an edge node: its claim's progress is its heartbeat; lượt sửa 2 (CHAN-4): through the shared read (0370 missing ⇒ no edge)
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, xacNhanHetChot, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, xacNhanHetChot, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
 
@@ -370,7 +370,8 @@ export function loiKhongGuiChot(stepId: string): string {
  */
 export function loiKhongGuiChotStop(stepId: string): string {
   // data-raw-ok: machine-readable code first (known code, MA_LOI_DA_BIET); ids are the workflow's own
-  return `${FOE_NOT_SENT_RUN_LATCHED}: run latched — STOP step "${stepId}" is not walked forward here: the run's STOP pass sends it, or names it if it stays owed. Another command of this run has an unknown outcome.`;
+  // lượt sửa 1 (R-3) — the door does not know whether it is a pinned STOP (a stop-typed step whose pins read "not pinned" comes here too): never "STOP step", never "the pass sends it"
+  return `${FOE_NOT_SENT_RUN_LATCHED}: run latched — command step "${stepId}" is not walked forward here: the run's STOP pass decides it: it goes only as a verified pinned STOP, else it is named as NOT sent. Another command of this run has an unknown outcome.`;
 }
 /** Does a stored error say that? Only a row or resume state can (the walk carries khongGuiChot itself). */
 export const laLoiKhongGuiChot = (error: string | null | undefined): boolean => typeof error === "string" && error.startsWith(`${FOE_NOT_SENT_RUN_LATCHED}:`);
@@ -644,7 +645,7 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
   // A2(n) T9 (decision 3, XAC_NHAN, X1, X2, X2-EXC) — every unknown covered by a confirmed STOP and no forward work dropped: no URGENT is needed (the trace stays on the rows and in the context). ONE reading
   // (xacNhanHetChot) for this gate, every end that comes here, and the obligation sweep
   const lenhCua = x.def ? new Set(allStepsOf(x.def.steps as WorkflowStep[]).filter((s) => s.type === "command").map((s) => s.id)) : null;
-  const xacNhanHet = xacNhanHetChot({ chot, rows: x.rows, ctx: x.ctx, ...(lenhCua ? { laLenh: (id: string) => lenhCua.has(id) } : {}), khongRo: x.boNho?.khongRo, boTien: x.boNho?.boTien });
+  const xacNhanHet = xacNhanHetChot({ chot, rows: x.rows, ctx: x.ctx, ...(lenhCua ? { laLenh: (id: string) => lenhCua.has(id), lenhTien: lenhTienCua(x.def!.steps as WorkflowStep[]) } : {}), khongRo: x.boNho?.khongRo, boTien: x.boNho?.boTien });
   if (chot && x.ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null && !xacNhanHet) {
     benChot = await choi(motBen([...(x.daCo ?? []), ...(x.boNho?.baoCho ?? [])], hanMs, label));
     if (!benChot && !doi) {
@@ -672,6 +673,19 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
   if (nguoi) return out;
   if (giuNo) return { ...out, vi: "no", loi: loiGiuChuaRa(no[0] as string, viChuaRaCuaLoi(rows.find((r) => r.stepId === no[0])?.error) ?? x.boNho?.viCua?.(no[0] as string), x.boNho?.cachCua?.(no[0] as string)) };
   if (!ben) return { ...out, vi: "khongBen", loi: loiGiuKhongBen(x.runId, { ma: benChot ? null : (chot?.ma ?? null), khongXacNhan }) };
+  return out;
+}
+
+/** A2(n) T9 lượt sửa 1 — the forward commands of a definition: sequence / parallel / branch (both arms), never inside a compensation */
+function lenhTienCua(steps: readonly WorkflowStep[], out: string[] = []): string[] {
+  for (const s of steps) {
+    if (s.type === "command") out.push(s.id);
+    else if (s.type === "sequence" || s.type === "parallel") lenhTienCua(s.steps, out);
+    else if (s.type === "branch") {
+      lenhTienCua(s.then, out);
+      lenhTienCua(s.else ?? [], out);
+    }
+  }
   return out;
 }
 
@@ -944,6 +958,32 @@ export type RunDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
  * could not verify (the T6e-K1 words), never "Command … NOT handed". A read-only answer of central (verifyStopsForAbort: bounded, read failure ⇒ unsure); past the bound or on any
  * error ⇒ false (the words stay as they were). Nothing on the wire changes: the edge never says it.
  */
+/**
+ * A2(n) T9 lượt sửa 1 (dieu-phoi 11/11: the edge's words are central's, branch (1)) — central's reading of an edge's report for its words, by the precedent of stopKhongXacMinhEdge: forwardNotSent as that;
+ * stopNotSent of the step the report names (its STOP: compId, or stepId): no STOP by the definition (isStopCandidate) ⇒ khongStop; stop-typed and central's verifier does not verify it as a pinned STOP (unsure
+ * or not pinned) ⇒ chuaXacMinh. Read-only, bounded; any error or past the bound ⇒ {} (the words as they were). Nothing on the wire changes.
+ */
+export async function cachEdgeTrungTam(runId: number, def: WorkflowDefinition | null | undefined, x: { loai: string; stepId: string; compId?: string }): Promise<CachEdgeTrungTam> {
+  if (x.loai === "forwardNotSent") return { stopKhongXacMinh: await stopKhongXacMinhEdge(runId, def, x) };
+  if (x.loai !== "stopNotSent" || !def) return {};
+  try {
+    return await withDeadline(
+      (async (): Promise<CachEdgeTrungTam> => {
+        const id = x.compId && x.compId !== KHONG_CO_BU_TRU ? x.compId : x.stepId;
+        const s = allStepsOf(def.steps).find((y) => y.id === id);
+        if (!s || s.type !== "command") return {};
+        const map = await loadMachines([...new Set(allStepsOf(def.steps).filter((y) => y.type === "command").map((y) => (y as { machineId: number }).machineId))]);
+        if (!(await isStopCandidate(s, map))) return { khongStop: true };
+        const v = await verifyStopsForAbort(runId, { steps: [s] } as WorkflowDefinition, map);
+        return v.ids.has(s.id) ? {} : { chuaXacMinh: true };
+      })(),
+      2 * STOP_DB_STEP_DEADLINE_MS,
+      `FOE run ${runId} step ${x.stepId} STOP words`,
+    );
+  } catch {
+    return {};
+  }
+}
 export async function stopKhongXacMinhEdge(runId: number, def: WorkflowDefinition | null | undefined, x: { loai: string; stepId: string }): Promise<boolean> {
   if (x.loai !== "forwardNotSent" || !def) return false;
   try {
@@ -1912,7 +1952,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
   const [run] = await db.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).for("update").limit(1);
   if (!run) return { ok: true, status: "missing", changed: false };
   // dieu-phoi 08/11 T6e-K2; A2(n) T7 — the URGENTs of what rode on this end: the end gate waits for them (bounded), they are raised whatever this end becomes
-  const daCo = baoKhongRo.map((x) => stopKhongXacMinhEdge(runId, endTho.def, x).then((k) => canhBaoTuBaoCaoEdge(runId, x, run.startedBy ?? null, k)).catch(() => false));
+  const daCo = baoKhongRo.map((x) => cachEdgeTrungTam(runId, endTho.def, x).then((k) => canhBaoTuBaoCaoEdge(runId, x, run.startedBy ?? null, k)).catch(() => false));
   const ctx = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
   const stopped = run.status === "aborted" || ctx[FOE_REJECT_CLAIM_CTX_KEY] != null;
   if (stopped || (run.status !== "running" && run.status !== "compensating")) return { ok: true, status: run.status, changed: false };

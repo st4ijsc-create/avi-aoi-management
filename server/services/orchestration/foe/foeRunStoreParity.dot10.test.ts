@@ -7818,9 +7818,9 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
       // (A) refused again / the read throws again
       const c = await q2Giu(noi, `q7${noi[0]}`);
       expect(runRow(c).status).toBe("held");
-      // T9 (T7B1-NOTPINNED, T9-CHU-Q2B; no-cho-T9, dieu-phoi 08/11) — was "Abort sends it again" on both: nt's pins were never verified (the marked route), so central's words now promise only the
-      // condition (a read that finds it pinned: Abort sends it; not pinned: nothing). The edge's words come from its report, which carries no such mark (a contract): unchanged there
-      expect(urgentCua("stopNotSent").map((a) => String(a.message)).join(" "), "the words the Abort must make true").toMatch(noi === "central" ? /if a later read finds it a pinned STOP, Abort sends it; if it is not, nothing is sent/ : /Abort sends it again/);
+      // T9 (T7B1-NOTPINNED, T9-CHU-Q2B; no-cho-T9, dieu-phoi 08/11) — was "Abort sends it again" on both: nt's pins were never verified (the marked route), so the words now promise only the
+      // condition (a read that finds it pinned: Abort sends it; not pinned: nothing). T9 lượt sửa 1 (dieu-phoi 11/11, branch (1)) — the edge's words are central's too (cachEdgeTrungTam): the same
+      expect(urgentCua("stopNotSent").map((a) => String(a.message)).join(" "), "the words the Abort must make true").toMatch(/if a later read finds it a pinned STOP, Abort sends it; if it is not, nothing is sent/);
       const a1 = await bam(c);
       expect(a1.ok).toBe(true);
       expect(runRow(c).status).toBe("aborted");
@@ -7947,6 +7947,103 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     await wait(60);
     expect(ids()).toEqual(["x"]);
     expect(buocBo()).toEqual(["nt"]);
+  });
+  // ── T9 lượt sửa 1 (R-1, dieu-phoi 11/11) — THE MATRIX: source of the debt × the LAST hand-over's outcome × central / edge. In every cell the URGENT stop_not_sent, the run's error and nt's row
+  // say the same of the device: "nothing written / refused before a driver" ONLY where the source proves it; "may have reached / not confirmed out" for every other; simulated never "went" ───────────────
+  type KetCuc = "ok" | "simulated" | "DRIVER_WRITE_FAILED" | "ADAPTER_OFFLINE" | "ADAPTER_OWNED_BY_EDGE" | "nem";
+  const KHONG_GHI = /nothing was written|refused before it reached a driver|did NOT go out|refused before a driver/;
+  const CO_THE = /may have (reached|gone out)|not confirmed out|nothing confirms/;
+  /** the last hand-over of nt answers `k`; `ghimThat`: the dispatcher finds nt pinned (its write would go) */
+  const datKetCuc = (k: KetCuc, edge: boolean) => {
+    const ghimThat = k === "ok" || k === "simulated" || k === "DRIVER_WRITE_FAILED" || k === "ADAPTER_OWNED_BY_EDGE" || k === "nem";
+    for (const t of rows("device_tags")) if (t.tagKey === "run") t.stopValue = ghimThat ? 0 : null;
+    if (k === "ok") {
+      h.acked = true;
+      h.ackStatus = "acked";
+    }
+    if (k === "DRIVER_WRITE_FAILED") h.tuChoi.set("nt", { status: "failed", error: "DRIVER_WRITE_FAILED: link reset", detail: { ...(edge ? { edge: true } : {}), reason: "DRIVER_WRITE_FAILED" } });
+    if (k === "ADAPTER_OFFLINE") offline();
+    if (k === "ADAPTER_OWNED_BY_EDGE") h.chuEdge.set(501, NODE);
+    if (k === "nem") h.tuChoi.set("nt", { nem: "socket hang up" } as never);
+  };
+  /** the cell's words: the URGENTs stop_not_sent of nt, the run's error, nt's row */
+  const chuO = (c: number) => ({
+    urg: urgentCua("stopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "nt" || String(a.dedupKey).split(":")[3] === "nt").map((a) => `${a.title} ${a.message}`).join(" | "),
+    run: String(runRow(c).error ?? ""),
+    hang: String(hang(c, "nt")?.error ?? ""),
+    kq: (hang(c, "nt")?.resultJson ?? null) as Record<string, unknown> | null,
+  });
+  /** one rule, every cell: the row's word on the device is the URGENT's and the run's; simulated never went; nobody verified nt: never called a STOP, no plain promise */
+  const kiemO = (o: ReturnType<typeof chuO>, k: KetCuc, chuaXacMinh: boolean, nhan: string) => {
+    for (const [ten, t] of [["URGENT", o.urg], ["run", o.run], ["row", o.hang]] as const) expect(t, `${nhan} ${ten}: simulated / accepted never 'went' nor 'owed no more'`).not.toMatch(/went after all|owed no more/);
+    if (k === "ok" || k === "simulated") {
+      expect(o.urg, `${nhan}: it was answered: no stop_not_sent`).toBe("");
+      if (k === "simulated") expect(o.kq?.status, `${nhan}: nt's row says simulated`).toBe("simulated");
+      return;
+    }
+    const khongGhi = k === "ADAPTER_OFFLINE";
+    expect(o.hang, `${nhan}: nt's row in state C`).toMatch(/^FOE_STOP_NOT_SENT: /);
+    for (const [ten, t] of [["URGENT", o.urg], ["run", o.run], ["row", o.hang]] as const) {
+      if (!(ten === "run" && nhan.startsWith("E×"))) expect(t, `${nhan} ${ten}: the device's word`).toMatch(khongGhi ? KHONG_GHI : CO_THE); // an edge run's error is the node's segment text ("held … outcomeUnknown"): it must only never say the other word
+      expect(t, `${nhan} ${ten}: never the other word`).not.toMatch(khongGhi ? CO_THE : KHONG_GHI);
+    }
+    if (chuaXacMinh) for (const [ten, t] of [["URGENT", o.urg], ["run", o.run]] as const) {
+      expect(t, `${nhan} ${ten}: nobody verified nt: no plain promise`).not.toMatch(/Abort sends it again|press Abort again, there is no time limit/);
+      expect(t, `${nhan} ${ten}: nt is no verified STOP`).not.toMatch(/STOP "nt" (did NOT|is not confirmed|NOT confirmed)/);
+    }
+  };
+  const KET_CUC: KetCuc[] = ["ok", "simulated", "DRIVER_WRITE_FAILED", "ADAPTER_OFFLINE", "ADAPTER_OWNED_BY_EDGE", "nem"];
+  for (const k of KET_CUC) {
+    it(`T9F1-MT central marked route (pins unread) × ${k}: the URGENT, the run's error and nt's row say one thing of the device`, async () => {
+      h.ghim = PIN_BAD;
+      h.dispatcherThat = true;
+      h.duocSauKhoa.add("nt");
+      datKetCuc(k, false);
+      if (k === "ADAPTER_OWNED_BY_EDGE" || k === "nem" || k === "DRIVER_WRITE_FAILED") mien.add("nt"); // a write that may have gone: the fake's table does not count it
+      h.slow.set("x", 10);
+      h.timeoutDispatch.add("x");
+      const c = await centralRun(NP1(`t9mtm${KET_CUC.indexOf(k)}`), 1);
+      await wait(120);
+      expect(sentOf("nt").length, "nt was handed over").toBeGreaterThan(0);
+      kiemO(chuO(c), k, true, `M×${k}`);
+    });
+    it(`T9F1-MT central verified pinned STOP × ${k}: the same rule; the words of a pinned STOP keep their promise`, async () => {
+      seedHalt();
+      h.ghim = PIN_OK;
+      datKetCuc(k, false);
+      for (const t of rows("device_tags")) if (t.tagKey === "run") t.stopValue = 0; // nt pinned for the verifier too
+      if (k === "ADAPTER_OFFLINE") h.tuChoiKhongGhi.add("nt");
+      h.slow.set("x", 10);
+      h.timeoutDispatch.add("x");
+      const c = await centralRun(def(`t9mtv${KET_CUC.indexOf(k)}`, [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [otStop("nt")])])])]), 1); // nt a pinned STOP (the halt pin)
+      await wait(120);
+      expect(sentOf("nt").length, "nt was handed over").toBeGreaterThan(0);
+      kiemO(chuO(c), k, false, `V×${k}`);
+    });
+  }
+  // the edge: the node walks, central composes the URGENT (canhBaoTuBaoCaoEdge, cachEdgeTrungTam); ADAPTER_OWNED_BY_EDGE is no edge outcome (the node owns its adapters: central's queue route only)
+  for (const k of ["ok", "simulated", "DRIVER_WRITE_FAILED", "ADAPTER_OFFLINE", "nem"] as const) {
+    it(`T9F1-MT edge marked route (pins unread) × ${k}: central's words of the node's report agree with the node's row and error`, async () => {
+      const { e } = await q2Edge(`t9mte${k.length}${k[0]}`, (e) => {
+        goiChuaDoc("nt")(e);
+        datKetCuc(k, true);
+        if (k === "DRIVER_WRITE_FAILED" || k === "nem") mien.add("nt");
+      });
+      await wait(60);
+      kiemO(chuO(e.runId), k, true, `E×${k}`);
+    });
+  }
+  it("T9F1-Q2-EDGE the words of Q2-ABORT-T7b edge's hold (the package's stopsUnsure, ADAPTER_OFFLINE): central composes them: not verified, nothing written, the promise a condition", async () => {
+    const { e } = await q2Edge("t9q2ed", (e) => {
+      goiChuaDoc("nt")(e);
+      offline();
+    });
+    const chu = urgentCua("stopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "nt").map((a) => `${a.title} ${a.message}`).join(" | ");
+    expect(runRow(e.runId).status).toBe("held");
+    expect(chu).toMatch(/could not be verified as a pinned STOP/);
+    expect(chu).toMatch(/nothing was written to the device/);
+    expect(chu).toMatch(/if a later read finds it a pinned STOP, Abort sends it; if it is not, nothing is sent/);
+    expect(chu).not.toMatch(/Abort sends it again/);
   });
 });
 
@@ -8831,6 +8928,53 @@ describe("A2(n) T7 fix 1 — the walk's memory at an exception (K1), the gate's 
       kiemChuCuoi(c);
     });
   }
+  // T9 lượt sửa 1 (R-2) — the cases above hand st over SIMULATED (the fake's default): their check only looked for "replaces the earlier", blind to "went after all … owed no more" said of a simulated
+  // hand-over. Each answer of the Continue now its own case: a real one (acked) went; a simulated one says so, the STOP still needed on the machine
+  for (const tt of ["simulated", "acked"] as const) {
+    it(`T9F1-R2 ${tt}: the Continue's hand-over of st answered ${tt}: the correction ${tt === "simulated" ? "says SIMULATED, nothing reached the device, never 'went' nor 'owed no more'" : "says it went"}`, async () => {
+      vaoC();
+      matHangSt();
+      const c = await centralRun(dV(`t9r2${tt[0]}`), 1);
+      await waitFor(() => runRow(c).status !== "running", "the end of the walk");
+      await wait(40);
+      expect(runRow(c).status).toBe("held");
+      h.hangNem = null;
+      h.tuChoi.clear();
+      h.sent.length = 0;
+      if (tt === "acked") {
+        h.acked = true;
+        h.ackStatus = "acked";
+      }
+      grantMachineControl();
+      const view = (await getRun(c, { bindingDigest: true }))!;
+      await resumeRun(c, { approved: true, note: "checked on site", expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+      await waitFor(() => !["queued", "running", "compensating"].includes(String(runRow(c).status)), "the end of the Continue");
+      await wait(40);
+      expect(ids().filter((x) => x === "st")).toEqual(["st"]);
+      const sau = h.alerts.filter((a) => String(a.dedupKey).split(":")[2] === "st" && !String(a.dedupKey).endsWith(":chot")).map((a) => `${a.title} ${a.message}`).join(" | ");
+      expect(sau, "the correction").toMatch(/replaces the earlier/);
+      if (tt === "simulated") {
+        expect(sau).toMatch(/SIMULATED/);
+        expect(sau).toMatch(/check the machine on site/i);
+        expect(sau).not.toMatch(/went after all|owed no more|accepted it/);
+      } else expect(sau).toMatch(/went after all/);
+    });
+  }
+  // T9 lượt sửa 1 (R-3) — a stop-typed step whose pins READ "not pinned" at the door of a latched run: no STOP: its containers' rows and the run's error never call it a STOP step, never "the pass sends it"
+  it("T9F1-R3 a stop-typed step read not pinned at the door: the words carried up never say 'STOP step' nor that the STOP pass sends it", async () => {
+    seedHalt();
+    h.ghim = async () => ({ pinnedStop: false, loiDocGhim: null });
+    h.timeoutDispatch.add("x");
+    const nt: WorkflowStep = { id: "nt", type: "command", machineId: 1, command: "stop", args: { tagKey: "run", value: 0 } } as never;
+    const c = await centralRun(def("t9r3", [gate(), parF("p", [move("x"), box("b", [delay("w", 40), nt])])]), 1);
+    await waitFor(() => runRow(c).status !== "running", "the end of the walk");
+    await wait(40);
+    const chu = [String(runRow(c).error ?? ""), ...stepRows(c).map((r) => String(r.error ?? ""))].join(" | ");
+    expect(chu, "the measured input: nt reached the door").toContain('"nt"');
+    expect(chu).not.toMatch(/STOP step "nt"/);
+    expect(chu).not.toMatch(/the run's STOP pass sends it/);
+    expect(ids().filter((x) => x === "nt"), "no hand-over").toEqual([]);
+  });
 
   // ── (b) the Abort: the STOP before any wait ─────────────────────────────────────────────────────────────────────────
   for (const auditTreo of [false, true]) {
@@ -9897,6 +10041,8 @@ describe("A2(n) T7b-1 — the Abort of a latched run, central: the shared planne
     expect(chu, "y is no STOP").not.toMatch(/STOP "y"/);
     expect(chu, "nobody failed to read y's pins: it has none").not.toMatch(/nobody could read its pins/);
     expect(chu, "the words say what y is").toMatch(/no STOP/);
+    // T9 lượt sửa 1 (R-1) — the source is the dispatcher's answer left on y's row (rejected): refused before a driver, by that code, the one rule
+    expect(chu, "the source, from y's row").toMatch(/refused before it reached a driver \(REJECTED\)/);
   });
 
   // ── B5-ABORT (13a, điều phối: T16 không qua nếu thiếu): the verified STOPs behind EDGE_HOLD_UNUSED_NOT_REPORTED ────
@@ -14738,7 +14884,9 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
     await wait(60);
     const c = e.runId;
     expect(runRow(c).status).toBe("held");
-    expect(urgentCua("stopNotSent").map((a) => String(a.message)).join(" "), "the words the Abort must make true").toContain("Abort sends it again");
+    // T9 lượt sửa 1 (dieu-phoi 11/11, branch (1); the name keeps its old words) — was "Abort sends it again": nt's pins were never verified (the package's stopsUnsure, central's read too), and central
+    // composes the edge's words: the promise is the condition (cachEdgeTrungTam, dangChuaRa)
+    expect(urgentCua("stopNotSent").map((a) => String(a.message)).join(" "), "the words the Abort must make true").toMatch(/if a later read finds it a pinned STOP, Abort sends it; if it is not, nothing is sent/);
     h.tuChoi.clear();
     h.tuChoiKhongGhi.clear();
     h.chuEdge.set(501, NODE);
@@ -16561,6 +16709,26 @@ describe("A2(n) T9 — the confirmation of a STOP after an unknown attempt (XAC_
     expect(giaoCua("m")).toEqual([]);
     expect(stepRows(c).some((r) => r.stepId === "m" && /^FOE_NOT_SENT_RUN_LATCHED:/.test(String(r.error ?? ""))), "the drop is on m's row").toBe(true);
     expect(runRow(c).status).toBe("held");
+  });
+  // T9 lượt sửa 1 (rà I) — the drop no row names (chuaDen: a container never begun at the door, its command has no row at all): the end gate with no walk's memory (an edge segment end) must not take
+  // the confirmation alone for an end
+  it("T9F1-CHUADEN edge: x's own STOP confirmed, a command in a container never begun dropped with no row (chuaDen), no URGENT durable: central's end gate holds the run", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.alertDurable = false;
+    const e = await edgeAssignedRun(def("t9f1cd", [gate(), parF("p", [move("x", { compensation: otStop("cs") }), box("v", [delay("w", 30), box("c2", [move("m")])])])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("x");
+    h.acked = true;
+    h.ackStatus = "acked_verified";
+    await edgeSegment(e, 2);
+    await wait(30);
+    const c = e.runId;
+    expect(vet(c, "cs")).toMatchObject({ buoc: "x", xacNhan: true });
+    expect(giaoCua("m")).toEqual([]);
+    expect(stepRows(c).some((r) => r.stepId === "m"), "the measured input: m has no row").toBe(false);
+    expect(runRow(c).status, "a drop no row names: the confirmation is not enough").toBe("held");
   });
   it("X2-EXC đối chứng: confirmed, nothing dropped, the last write throws: the exception ends it all the same, no URGENT needed", async () => {
     h.alertDurable = false;
