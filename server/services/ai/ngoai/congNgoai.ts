@@ -254,6 +254,49 @@ function cheYeuCau(yc: YeuCauNhaCungCap, tu: TuDienNhay): { daChe: YeuCauNhaCung
   return { daChe: { ...yc, tinNhan, ...(congCu ? { congCu } : {}) }, soTruong };
 }
 
+/**
+ * ★ 2026-11-14 (do-model) — bộ che NÉM (lỗi mã che, đầu vào lạ) ⇒ `NGOAI_CHE_HONG`, cùng mã với lỗi dựng từ điển; trước giữ chỗ / sổ /
+ * gọi ⇒ không gì rời máy. Trước đây lỗi gốc (vd RangeError của regex) bay thẳng ra người gọi, sai loại lỗi.
+ */
+export function cheYeuCauHoacHong(yc: YeuCauNhaCungCap, tu: TuDienNhay): { daChe: YeuCauNhaCungCap; soTruong: number } {
+  try {
+    return cheYeuCau(yc, tu);
+  } catch {
+    throw new LoiNgoai("NGOAI_CHE_HONG");
+  }
+}
+
+/** Thông điệp lỗi dài hơn ⇒ KHÔNG che, KHÔNG gửi nội dung (xem `cheThongDiepLoi`). */
+export const TRAN_THONG_DIEP_LOI_CHE = 8000;
+const TRAN_CHI_TIET_LOI = 500;
+
+/**
+ * ★ 2026-11-14 (do-model) — chi tiết lỗi ra người gọi: ≤ `TRAN_THONG_DIEP_LOI_CHE` ký tự ⇒ che CẢ chuỗi rồi cắt 500 (như cũ).
+ * Dài hơn ⇒ chỉ báo độ dài, không nội dung. KHÔNG cắt trước khi che: cắt có thể chẻ một bí mật (PEM không nhãn còn < 12 dòng, token
+ * ngắn hơn mẫu) để nó lọt luật che, và phần che phía trước co lại kéo mảnh đó vào 500 ký tự đầu. Che hỏng ⇒ cũng không nội dung.
+ */
+function cheThongDiepLoi(s: string, tu: TuDienNhay): string {
+  if (s.length > TRAN_THONG_DIEP_LOI_CHE) return `thong-diep-loi-qua-dai (${s.length} ky tu)`;
+  try {
+    return cheChuoi(s, tu).giaTri.slice(0, TRAN_CHI_TIET_LOI);
+  } catch {
+    return "thong-diep-loi-che-hong";
+  }
+}
+
+/**
+ * Lỗi của lần gọi nhà cung cấp ⇒ `LoiNgoai` đã che cho người gọi. (H3.1) `NGOAI_NHA_CUNG_CAP_LOI` giữ loại lỗi (UI nói đúng "hết hạn mức"
+ * / "tràn ngữ cảnh"), thông điệp vẫn che; (H3.3a, rà kiem-dinh a14) `requestId` KHÔNG đi theo lỗi ra người gọi — chỉ vào sổ.
+ */
+export function cheLoiNgoai(e: unknown, tu: TuDienNhay): LoiNgoai {
+  if (e instanceof LoiNgoai) {
+    return e.ma === "NGOAI_NHA_CUNG_CAP_LOI"
+      ? new LoiNgoai(e.ma, cheThongDiepLoi(e.chiTiet ?? "", tu), { ...(e.phanLoai ? { phanLoai: e.phanLoai } : {}) })
+      : e;
+  }
+  return new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", cheThongDiepLoi(String((e as Error)?.message ?? e), tu));
+}
+
 async function kiemDuyetLuong(db: DbCong, flowId: string | null, phienBan: number | undefined, nhaMay: number): Promise<void> {
   if (!flowId || typeof phienBan !== "number") throw new LoiNgoai("NGOAI_CHUA_DUYET", "thieu-phien-ban");
   const { sql } = await import("drizzle-orm");
@@ -388,7 +431,7 @@ async function goiSauKiemTruoc(yc: YeuCauGoiNgoai, dep: PhuThuocCong, k: KiemTru
   } catch {
     throw new LoiNgoai("NGOAI_CHE_HONG");
   }
-  const { daChe, soTruong } = cheYeuCau(yeuCau, tu);
+  const { daChe, soTruong } = cheYeuCauHoacHong(yeuCau, tu);
   const noiDungDaChe = JSON.stringify(daChe);
   // (7)–(9) MỖI lần thử: giữ chỗ → sổ Ý ĐỊNH riêng → gọi (rà kiem-dinh lô 2 mục 5: mỗi lần thử có hàng ý định + kết quả của nó ⇒
   //   đối soát chi phí khớp bộ đếm từng lần). Ghi sổ ý định lỗi ⇒ hoàn chỗ + `NGOAI_SO_HONG`, KHÔNG gọi.
@@ -410,14 +453,8 @@ async function goiSauKiemTruoc(yc: YeuCauGoiNgoai, dep: PhuThuocCong, k: KiemTru
     }
     console.warn(`[AiNgoai] không ghi được kết quả sổ cho ý định ${yDinhId} (${h.ketCuc})`);
   };
-  const cheLoi = (e: unknown): LoiNgoai =>
-    e instanceof LoiNgoai
-      ? e.ma === "NGOAI_NHA_CUNG_CAP_LOI"
-        ? // (H3.1) giữ loại lỗi cho người gọi (UI nói đúng "hết hạn mức" / "tràn ngữ cảnh") — thông điệp vẫn che.
-          //   (H3.3a, rà kiem-dinh a14) `requestId` KHÔNG đi theo lỗi ra người gọi — chỉ vào sổ (lấy từ lỗi GỐC ở `ghiKq`).
-          new LoiNgoai(e.ma, cheChuoi(e.chiTiet ?? "", tu).giaTri.slice(0, 500), { ...(e.phanLoai ? { phanLoai: e.phanLoai } : {}) })
-        : e
-      : new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", cheChuoi(String((e as Error)?.message ?? e), tu).giaTri.slice(0, 500));
+  // `requestId` vào sổ lấy từ lỗi GỐC ở `ghiKq`, không từ lỗi đã che.
+  const cheLoi = (e: unknown): LoiNgoai => cheLoiNgoai(e, tu);
   let kq: KetQuaNhaCungCap | null = null;
   let phieu: PhieuGiu;
   let yDinhId = 0;
