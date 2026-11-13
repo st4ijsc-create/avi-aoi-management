@@ -4663,7 +4663,7 @@ export async function resumeRun(
           enabled: true,
           runId,
           reason: FOE_ABORT_UNCONFIRMED,
-          message: `Rejection of run ${runId} not confirmed by the database in time — STOP steps confirmed sent: 0; ${chuThuLai()}`,
+          message: `Rejection of run ${runId} not confirmed by the database in time — STOP steps handed to the dispatcher (the machine has not confirmed them): 0; ${chuThuLai()}`,
           abortStops: emptyAbortReport(),
         };
       }
@@ -4674,7 +4674,7 @@ export async function resumeRun(
           enabled: true,
           runId,
           reason: FOE_ABORT_UNCONFIRMED,
-          message: `Rejection of run ${runId} not confirmed by the database in time — STOP steps confirmed sent: ${abortStops.sent.length}; ${chuThuLai()}`,
+          message: `Rejection of run ${runId} not confirmed by the database in time — STOP steps handed to the dispatcher (the machine has not confirmed them): ${abortStops.sent.length}; ${chuThuLai()}`,
           abortStops,
         };
       }
@@ -6547,11 +6547,26 @@ function viAbortChuaRa(r: { result: EquipmentCommandResult | null; error: string
   return { nguon: nguonCuaKetQua(String(r.result.status), ma, r.robot), ma };
 }
 
+/**
+ * A2(n) T9 lượt sửa 3 (RA2-8) — is this run given to an edge node: Đợt 10's assignment row (runEdgeAssignments, the one edgeAssignmentOwnershipRefusal guards), or E4's column. Bounded by D; unread ⇒ false
+ * (the words stay central's, as before: a central run is never told of a node it has not).
+ */
+async function laRunGiaoEdge(runId: number, run: OrchestrationRun | undefined): Promise<boolean> {
+  if (run?.edgeNodeId != null) return true;
+  try {
+    const d = await getDb();
+    if (!d) return false;
+    return (await withDeadline(readEdgeAssignment(d, runId), STOP_DB_STEP_DEADLINE_MS, `FOE run ${runId} its edge assignment`)) !== null;
+  } catch {
+    return false;
+  }
+}
+
 /** A2(n) T7b-1 (5a, A-REF, B2) — the URGENT of a STOP an Abort of a latched run handed over and that did not go: its own name, owed, press Abort again. One bounded try each; never a command. */
-async function baoStopChuaRaAbort(runId: number, ds: ReadonlyArray<{ id: string; vi: ViChuaRa; chu: ChuStopAbort | null }>, owner: number | null): Promise<void> {
+async function baoStopChuaRaAbort(runId: number, ds: ReadonlyArray<{ id: string; vi: ViChuaRa; chu: ChuStopAbort | null }>, owner: number | null, adapterNut = false): Promise<void> {
   await Promise.all(
     ds.map((x) =>
-      withDeadline(canhBaoKetCucKhongRo({ loai: "abortStopNotSent", runId, stepId: x.id, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "chot", biet: true, vi: x.vi, ...(x.chu ? { chuAbort: x.chu } : {}), owner }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} STOP ${x.id} not out URGENT`).catch(
+      withDeadline(canhBaoKetCucKhongRo({ loai: "abortStopNotSent", runId, stepId: x.id, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "chot", biet: true, vi: x.vi, ...(x.chu ? { chuAbort: x.chu } : {}), ...(adapterNut ? { adapterNut: true as const } : {}), owner }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} STOP ${x.id} not out URGENT`).catch(
         (err: unknown) => console.error(`[FOE] abort of run ${runId}: the URGENT of STOP ${x.id} not out failed: ${(err as Error)?.message ?? err}`),
       ),
     ),
@@ -7075,7 +7090,9 @@ async function runAbortStopSweep(
         return { id, vi, chu: !opts.ketThucKhac ? chuStopAbort(chuBam, luu) : khongXacMinhKetThuc.has(id) ? ("daKetThucKhongXacMinh" as const) : hoChuaKhoa ? ("daKetThucChuaKhoa" as const) : ("daKetThuc" as const) };
       }),
     );
-    await baoStopChuaRaAbort(runId, ds, owner);
+    // T9 lượt sửa 3 (RA2-8) — central's Abort of a run given to an edge node: its adapters are the node's (edgeAssignmentOwnershipRefusal), whatever this press's code (ADAPTER_OFFLINE: the owner not read):
+    // the words of the node's road, the same rule as the node's own sweep (edgeReportsCentral), never "press Abort again, there is no time limit"
+    await baoStopChuaRaAbort(runId, ds, owner, await laRunGiaoEdge(runId, run));
   }
   // a snapshot: later replies keep updating the rows / audit, not this answer
   return { ...report, sent: [...report.sent], failed: [...report.failed], pending: [...report.pending] };
@@ -7262,7 +7279,8 @@ export async function abortRun(
         enabled: foeEnabled(),
         runId,
         reason: FOE_ABORT_UNCONFIRMED,
-        message: `Abort of run ${runId} not confirmed by the database in time — STOP steps confirmed sent: ${abortStops.sent.length}; ${chuThuLai()}`,
+        // H38 thêm (dieu-phoi 13/11, P3 of kiem-dinh) — `sent` is the dispatcher's acceptance, the machine has not confirmed it: never "confirmed sent" (here and in the two rejection answers)
+        message: `Abort of run ${runId} not confirmed by the database in time — STOP steps handed to the dispatcher (the machine has not confirmed them): ${abortStops.sent.length}; ${chuThuLai()}`,
         abortStops,
       };
     }

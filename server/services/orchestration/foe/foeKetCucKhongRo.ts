@@ -570,11 +570,11 @@ export function chuQuetChuaXong(runId: number): string {
 const stopCua = (a: Pick<CanhBaoKhongRo, "stepId" | "compId">): string => (a.compId === KHONG_CO_BU_TRU ? a.stepId : a.compId);
 
 /**
- * A2(n) T9 (T9-CHU-Q2B, T7b-2 ADAPTER_OWNED_BY_EDGE) — central's dispatcher did not write it: the adapter is an edge node's, and it queued an adapter STOP for that node (commandDispatcher.routeEdgeOwnedAdapterCommand). Nothing
- * comes back to central to confirm it, so the debt stays and a press only queues it again: no word promises that a press sends it.
+ * A2(n) T9 (T9-CHU-Q2B, T7b-2 ADAPTER_OWNED_BY_EDGE) — central's dispatcher did not write it: the adapter is an edge node's, and it handed an adapter STOP to that node (commandDispatcher.routeEdgeOwnedAdapterCommand). The
+ * debt stays and central cannot clear it: no word promises that a press sends it. T9 lượt sửa 3 (RA2-1) — what a further press does is the node's road as measured (cauNut, CAU_NUT_SAU), never "only queues".
  */
 function chuGiaoNut(id: string): string {
-  return `Central's dispatcher did not write STOP ${id} itself: its adapter belongs to an edge node, and it queued an adapter STOP for that edge node (ADAPTER_OWNED_BY_EDGE). Nothing confirms that it reached the device, and central cannot clear it: it stays owed. Check the machine on site and use its direct STOP / E-STOP. A further press of Abort only queues it for the edge node again and confirms nothing.`;
+  return `Central's dispatcher did not write STOP ${id} itself: its adapter belongs to an edge node, and it handed an adapter STOP to that edge node (ADAPTER_OWNED_BY_EDGE). Nothing confirms that it reached the device, and central cannot clear it: it stays owed. ${cauNut("A further")}. ${CAU_NUT_SAU}.`;
 }
 
 /** A2(n) T5 (H11) — the two sides of the words of state C: true of the source. "did NOT go out" only where nothing reached a driver; "once the read recovers" only where a read failed. */
@@ -599,27 +599,41 @@ export function dangChuaRa(vi: ViChuaRa | undefined, cach?: { khongStop?: boolea
   const laStop = cach?.khongStop ? "khong" : cach?.chuaXacMinh && ghi !== "khongBiet" ? "chuaXacMinh" : "ghim";
   return { ghi, laStop, ...(cach?.adapterNut ? { adapterNut: true } : {}) };
 }
-/** lượt sửa 2 (R-4) — what a press can do for a STOP of an edge node's adapter: queue it for the node; nothing confirms it */
-const CAU_NUT = "a press of Abort at central only queues it for the edge node that holds its adapter, and central hears nothing back of it";
+/**
+ * lượt sửa 2 (R-4) — what a press can do for a STOP of an edge node's adapter. T9 lượt sửa 3 (RA2-1, dieu-phoi 13/11: the approved direction, each clause on the road as measured):
+ *   • the press: commandDispatcher.routeEdgeOwnedAdapterCommand (central holds no driver) queues an adapter STOP of the pinned values for the owning node (enqueueEdgeDeviceRequest); the node unreachable at the
+ *     press (edgeNodeReachability: no pull / stale heartbeat / unreadable) ⇒ central's fallback STOP of the pinned values too (sendCentralAdapterStop); the queue failing ⇒ the fallback STOP; the owner
+ *     unreadable ⇒ not routed, alert ot_stop_owner_unknown. These hold at any press, so in every cell of an edge node's adapter;
+ *   • the answer: the node's command_ack → ackEdgeCommand → ackStopRequest (edge_stop_ack_edge); a refused / failed STOP is listed for a person (device_pending_stops.needsResolution, EdgeResolutionPanel
+ *     of Robot Control); none within the ack bound ⇒ alertUndeliveredStops (a critical alert). Nothing of it clears the run's debt or this URGENT;
+ *   • the safe act, in every cell (dieu-phoi condition 2).
+ */
+const cauNut = (dau: "a" | "a further" | "A further"): string =>
+  `${dau} press of Abort at central hands it to the edge node that holds its adapter (if central cannot read who holds the adapter, it is not routed and an alert says so; if central finds that node unreachable, or cannot queue it for the node, central also sends its own fallback STOP of the adapter's pinned values)`;
+const CAU_NUT = cauNut("a");
+const CAU_NUT_SAU =
+  "The node's answer is recorded at central when it comes: a refused or failed one is listed among the unconfirmed STOPs for a person to resolve, and none within its bound raises a further alert. Whether it reached the device is not known until then: check the machine on site and use its direct STOP / E-STOP";
 /** R-1 — the clause of `ghi`, the same for the URGENT and the run's error */
 function cauGhi(d: DangChuaRa, ma: string): string {
   if (d.ghi === "khong") return `it was refused before it reached a driver${ma}: nothing was written to the device`;
   if (d.ghi === "coThe") return `it is not confirmed out: it may have reached the device${ma}`;
-  if (d.ghi === "nut") return `its adapter belongs to an edge node and central's dispatcher only queued an adapter STOP for that node (ADAPTER_OWNED_BY_EDGE): nothing confirms that it reached the device`;
+  if (d.ghi === "nut") return `its adapter belongs to an edge node and central's dispatcher handed an adapter STOP to that node (ADAPTER_OWNED_BY_EDGE): nothing confirms that it reached the device`;
   return `nobody could read its pins${ma}`;
 }
 /** R-1 — what a press can do, by the two readings */
 function cauHua(d: DangChuaRa): string {
   if (d.laStop === "khong") return "Nothing sends it again, an Abort neither";
   if (d.adapterNut && d.ghi !== "nut") {
-    if (d.ghi === "khongBiet") return `It stays owed: if it is a pinned STOP, once the read recovers ${CAU_NUT}; if it is not, nothing is sent`; // the words of a read keep their condition
-    return d.laStop === "ghim" ? `It stays owed: ${CAU_NUT}` : `It stays owed: if a later read finds it a pinned STOP, ${CAU_NUT}; if it is not, nothing is sent`;
+    if (d.ghi === "khongBiet") return `It stays owed: if it is a pinned STOP, once the read recovers ${CAU_NUT}; if it is not, nothing is sent. ${CAU_NUT_SAU}`; // the words of a read keep their condition
+    return d.laStop === "ghim" ? `It stays owed: ${CAU_NUT}. ${CAU_NUT_SAU}` : `It stays owed: if a later read finds it a pinned STOP, ${CAU_NUT}; if it is not, nothing is sent. ${CAU_NUT_SAU}`;
   }
-  if (d.ghi === "nut") return "It stays owed and central cannot clear it: a further press of Abort only queues it for the edge node again and confirms nothing";
+  if (d.ghi === "nut") return `It stays owed and central cannot clear it: ${cauNut("a further")}. ${CAU_NUT_SAU}`;
   if (d.ghi === "khongBiet" && d.laStop === "ghim") return "It stays owed: if it is a pinned STOP, Abort sends it once the read recovers; if it is not, nothing is sent";
   if (d.laStop === "chuaXacMinh" || d.ghi === "khongBiet") return "It stays owed: if a later read finds it a pinned STOP, Abort sends it; if it is not, nothing is sent";
   return "It stays owed: Abort sends it again";
 }
+/** T9 lượt sửa 3 (RA2-1) — the promise of an edge node's adapter already ends with the safe act (CAU_NUT_SAU): nothing is added after it */
+const huaCoTay = (d: DangChuaRa): boolean => d.laStop !== "khong" && (d.adapterNut === true || d.ghi === "nut");
 
 function chuStopChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "thayCu" | "khongStop" | "chuaXacMinh" | "moPhong" | "adapterNut">): [string, string] {
   const id = `"${stopCua(a)}"`;
@@ -634,15 +648,15 @@ function chuStopChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "tha
   // a pinned STOP: the words of T5 (H11), unchanged; lượt sửa 2 (R-4) — on an edge node's adapter the promise is the node's queue (cauHua)
   if (d.laStop === "ghim") {
     if (d.ghi === "nut") return [`STOP ${id} queued for the edge node, not confirmed out`, chuGiaoNut(id)];
-    const huaNut = d.adapterNut ? `${cauHua(d)}.` : null;
-    if (d.ghi === "coThe") return [`STOP ${id} NOT confirmed out`, `STOP ${id} is not confirmed out: it may have reached the device${ma}. ${huaNut ?? `${giu}: Abort sends it again.`} ${tay}.`];
-    if (d.ghi === "khong") return [`STOP ${id} did NOT go out`, `STOP ${id} did NOT go out: it was refused before it reached a driver${ma}. ${huaNut ?? `${giu}: Abort sends it again.`} ${tay}.`];
-    return [`STOP ${id} did NOT go out`, `STOP ${id} did NOT go out: nobody could read its pins${ma}. ${huaNut ?? `${giu}: if it is a pinned STOP, Abort sends it once the read recovers; if it is not, nothing is sent.`} ${tay}.`];
+    const huaNut = d.adapterNut ? `${cauHua(d)}.` : null; // lượt sửa 3 — it ends with the safe act
+    if (d.ghi === "coThe") return [`STOP ${id} NOT confirmed out`, `STOP ${id} is not confirmed out: it may have reached the device${ma}. ${huaNut ?? `${giu}: Abort sends it again. ${tay}.`}`];
+    if (d.ghi === "khong") return [`STOP ${id} did NOT go out`, `STOP ${id} did NOT go out: it was refused before it reached a driver${ma}. ${huaNut ?? `${giu}: Abort sends it again. ${tay}.`}`];
+    return [`STOP ${id} did NOT go out`, `STOP ${id} did NOT go out: nobody could read its pins${ma}. ${huaNut ?? `${giu}: if it is a pinned STOP, Abort sends it once the read recovers; if it is not, nothing is sent. ${tay}.`}`];
   }
   // T9 — a step that is no STOP (T9-CHU-NO-GIA) or that nobody verified (T7B1-NOTPINNED): never "STOP", the promise a condition or none; what the device got is `ghi`'s alone
   const dau = d.laStop === "khong" ? `Step ${id} is no STOP, and the record of its last attempt was not completed: ${cauGhi(d, ma)}` : `Step ${id} could not be verified as a pinned STOP: ${cauGhi(d, ma)}`;
   const tieuDe = `step ${id} ${d.ghi === "khong" ? "NOT sent" : "NOT confirmed out"}: ${d.laStop === "khong" ? "it is no STOP" : "not verified as a pinned STOP"}`;
-  return [tieuDe, `${dau}. ${cauHua(d)}. Check the machine on site and use its direct STOP / E-STOP if needed.`];
+  return [tieuDe, `${dau}. ${cauHua(d)}.${huaCoTay(d) ? "" : " Check the machine on site and use its direct STOP / E-STOP if needed."}`];
 }
 
 /**
@@ -661,7 +675,7 @@ function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "ch
   // T7b-1d lượt sửa 3 (F1, dieu-phoi 10/11, (a)) — "no time limit" is of the debt while it stands. A press that reads it as no pinned STOP ends it (C-CLR); a pin set again after that is sent only within the window of the Abort (H31):
   // the upper limit is said, nothing is promised past it. One key, as before
   // T9 lượt sửa 2 (R-4, dieu-phoi 13/11) — an edge node's adapter: a press at central only queues it for the node: no "no time limit", no Abort that sends it
-  const nutSau = `It stays owed: ${CAU_NUT}. Check the machine on site and ${tay}.`;
+  const nutSau = `It stays owed: ${CAU_NUT}. ${CAU_NUT_SAU}.`; // T9 lượt sửa 3 (RA2-1) — the node's road as measured, the safe act at its end
   const khongHan = a.adapterNut ? nutSau : `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}. If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes of ${MOC_CUA_SO}: past that, check the machine on site and use its direct STOP / E-STOP.`;
   // H28 (dieu-phoi 09/11) — a debt durable nowhere: a press may send it (the body of a container: it does) or may not reach it (a compensation not due): no promise, no minutes
   const han = a.adapterNut ? nutSau : `This could not be recorded: a further press of Abort may send it, but may not reach it: check the machine on site and ${tay}.`;
@@ -860,15 +874,18 @@ export function viChuaRaCuaLoi(error: string | null | undefined): ViChuaRa | und
  * The run's error while a STOP stays owed: the code first, the way out: Abort, never Continue. T9 — `cach` (the same reading as the URGENT, chuStopChuaRa): `khongStop` a step that is no STOP (T9-CHU-NO-GIA),
  * `chuaXacMinh` pins nobody verified (T7B1-NOTPINNED); the code ADAPTER_OWNED_BY_EDGE: queued for the node (T9-CHU-Q2B). The code stays first: the row readers key on it.
  */
-export function loiGiuChuaRa(stopId: string, vi: ViChuaRa | undefined, cach?: { khongStop?: boolean; chuaXacMinh?: boolean }): string {
+export function loiGiuChuaRa(stopId: string, vi: ViChuaRa | undefined, cach?: { khongStop?: boolean; chuaXacMinh?: boolean; adapterNut?: boolean }): string {
   const d = dangChuaRa(vi, cach); // T9 lượt sửa 1 (R-1) — the one rule, as the URGENT
   const ma = vi ? ` (${vi.ma})` : "";
-  if (d.laStop !== "ghim") return `${FOE_STOP_NOT_SENT}: step "${stopId}" ${d.laStop === "khong" ? "is no STOP" : "could not be verified as a pinned STOP"}: ${cauGhi(d, ma)}. The run is held: ${cauHua(d).replace(/^It stays owed: /, "")}. Check the machine on site.`;
+  // T9 lượt sửa 3 (RA2-2, dieu-phoi 13/11) — the promise IS the URGENT's (cauHua), "The run is held" in place of "It stays owed": an edge node's adapter (adapterNut) reads the node's road, never "Abort sends it"
+  const hua = cauHua(d);
+  const giu = hua.startsWith("It stays owed") ? `The run is held${hua.slice("It stays owed".length)}.` : `The run is held: ${hua}.`;
+  if (d.laStop !== "ghim") return `${FOE_STOP_NOT_SENT}: step "${stopId}" ${d.laStop === "khong" ? "is no STOP" : "could not be verified as a pinned STOP"}: ${cauGhi(d, ma)}. ${giu}${huaCoTay(d) ? "" : " Check the machine on site."}`;
   const dau = `${FOE_STOP_NOT_SENT}: STOP "${stopId}"`;
-  if (d.ghi === "nut") return `${dau} was queued for the edge node that owns its adapter (ADAPTER_OWNED_BY_EDGE): nothing confirms it. The run is held. Check the machine on site.`;
-  if (d.ghi === "coThe") return `${dau} is not confirmed out: it may have reached the device${ma}. The run is held: Abort sends it again.`;
-  if (d.ghi === "khong") return `${dau} did NOT go out: it was refused before it reached a driver${ma}. The run is held: Abort sends it again.`;
-  return `${dau} did NOT go out: nobody could read its pins. The run is held: if it is a pinned STOP, Abort sends it once the read recovers; if it is not, nothing is sent.`;
+  if (d.ghi === "nut") return `${dau} was handed to the edge node that owns its adapter (ADAPTER_OWNED_BY_EDGE): nothing confirms it. ${giu}`;
+  if (d.ghi === "coThe") return `${dau} is not confirmed out: it may have reached the device${ma}. ${giu}`;
+  if (d.ghi === "khong") return `${dau} did NOT go out: it was refused before it reached a driver${ma}. ${giu}`;
+  return `${dau} did NOT go out: nobody could read its pins. ${giu}`;
 }
 /**
  * A2(n) T7 (decision 1, H2, H18) — the run's error when the end gate holds it for want of a durable URGENT: the code first, then what nobody was told, then the way out. A Continue walks to the gate again

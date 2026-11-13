@@ -155,6 +155,8 @@ const h = vi.hoisted(() => ({
   /** A2(n) T7b-2 — adapter → the edge node that owns it: central's route (a command with no edge part) to it answers ADAPTER_OWNED_BY_EDGE (commandDispatcher step 4, routeEdgeOwnedAdapterCommand); chuEdgeLan counts those answers */
   chuEdge: new Map<number, number>(),
   chuEdgeLan: 0,
+  /** T9 lượt sửa 3 (RA2-1) — on: the owning node is UNREACHABLE at the press: routeEdgeOwnedAdapterCommand queues it AND sends central's fallback STOP (its answer says so); the FOE reads only the code */
+  chuEdgeDuPhong: false,
 }));
 
 vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
@@ -322,11 +324,13 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
         ghi.khongGhi = true;
         const laStopLenh = cmd.name === "stop" || cmd.name === "e_stop";
         if (laStopLenh) ghi.xepChoNut = true;
+        if (laStopLenh && h.chuEdgeDuPhong) ghi.duPhong = true;
+        const duPhong = laStopLenh && h.chuEdgeDuPhong ? `; edge node ${chuNut} is UNREACHABLE from central (heartbeat) — central fallback STOP: sent` : "";
         return {
           ok: false,
           status: "rejected",
           routedTo: "ot-dispatcher",
-          error: laStopLenh ? `adapter ${cmd.adapterId} is owned by edge node ${chuNut}: STOP queued for it as request #${h.chuEdgeLan} (delivered on its next pull — central holds no driver)` : `adapter ${cmd.adapterId} is owned by edge node ${chuNut} — central does not write to it (the edge node is the only writer)`,
+          error: laStopLenh ? `adapter ${cmd.adapterId} is owned by edge node ${chuNut}: STOP queued for it as request #${h.chuEdgeLan} (delivered on its next pull — central holds no driver)${duPhong}` : `adapter ${cmd.adapterId} is owned by edge node ${chuNut} — central does not write to it (the edge node is the only writer)`,
           detail: { simulated: false, commandLogIds: [], reason: "ADAPTER_OWNED_BY_EDGE" },
         };
       }
@@ -590,6 +594,7 @@ beforeEach(() => {
   h.ranhGioi = null;
   h.chuEdge.clear();
   h.chuEdgeLan = 0;
+  h.chuEdgeDuPhong = false;
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
   statusWrites.clear();
@@ -1023,6 +1028,15 @@ async function waitFor(fn: () => boolean, label: string, ms = 5_000) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// T9 lượt sửa 3 (RA2-1, dieu-phoi 13/11, approved direction) — what a press of Abort at central does for a STOP of an edge node's adapter, as measured on the real road (commandDispatcher
+// routeEdgeOwnedAdapterCommand: queued for the node; the node unreachable or the queue failing ⇒ central's fallback STOP of the pinned values; the node's ack recorded, a refused / failed one listed for a
+// person, none in its bound ⇒ a further alert). Never "only queues", never "hears nothing back", never a promise that Abort sends it; the safe act always
+const RE_NUT_HUA = /press of Abort at central hands it to the edge node that holds its adapter/;
+const RE_NUT_DU_PHONG = /central also sends its own fallback STOP of the adapter's pinned values/;
+const RE_NUT_TRA_LOI = /The node's answer is recorded at central when it comes/;
+const RE_TAY_MAY = /check the machine on site and use its direct STOP \/ E-STOP/;
+const RE_NUT_SAI = /only queues|hears nothing back|Abort sends it|press Abort again|no time limit/;
+
 describe("doc 81 Đợt 10 C — one walker, two stores: central and edge produce the same rows and outcomes", () => {
   it("★ gate pause → approval → motion (OT + robot) → completed: identical walker writes, outcomes, commands and final rows", async () => {
     const d = (ref: string) => def(ref, [gate(), ot("m1"), move("r1"), robotStop("s1")]);
@@ -4534,6 +4548,10 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
     expect(tieuDe, "the held URGENT").toMatch(/step "cs" NOT sent: not verified as a pinned STOP/);
     expect(tieuDe).not.toMatch(/STOP "cs" NOT sent/);
     expect(String(runRow(c).error ?? "")).not.toMatch(/STOP "cs" of its compensation NOT sent/);
+    // T9 lượt sửa 3 (RA2-THANGIU-THAN lived) — the body: a stop-typed step, never "the STOP "cs""
+    const than = urgentCua("held").map((a) => String(a.message)).join(" | ");
+    expect(than, "the held URGENT's body").toMatch(/stop-typed step "cs"/);
+    expect(than).not.toMatch(/the STOP "cs"/);
   });
   it("THAN-GIU-BOOT-T10 a boot on the same hold goes through congBootStop: inside the bound from the durable latch mark it goes; past it, nothing goes, state C, an URGENT, a person decides", async () => {
     const chay = async (ref: string, luc: string) => {
@@ -6976,7 +6994,9 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
     expect(new Set(u.map((a) => `${a.title} ${a.message}`)).size, "one text for both routes").toBe(1);
     const chu = `${u[0]!.title} ${u[0]!.message}`;
     expect(chu).toMatch(/could not be verified as a pinned STOP/);
-    expect(chu).toMatch(/a press of Abort at central only queues it for the edge node that holds its adapter/);
+    expect(chu).toMatch(RE_NUT_HUA);
+    expect(chu, "T9 lượt sửa 3 (RA2-1)").toMatch(RE_TAY_MAY);
+    expect(chu).not.toMatch(RE_NUT_SAI);
     expect(chu).not.toMatch(/Abort sends it again|STOP "nt" did NOT go out/);
   });
   it("BC-DOC the read fails at the report: the stream runs, s1 carries the mark 'docLoi', s2's refusal reaches central, the run is held, a visible alert, not the mismatch one", async () => {
@@ -7860,8 +7880,8 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
       expect(runRow(c).status).toBe("held");
       // T9 (T7B1-NOTPINNED, T9-CHU-Q2B; no-cho-T9, dieu-phoi 08/11) — was "Abort sends it again" on both: nt's pins were never verified (the marked route), so the words now promise only the
       // condition (a read that finds it pinned: Abort sends it; not pinned: nothing). T9 lượt sửa 1 (dieu-phoi 11/11, branch (1)) — the edge's words are central's too (cachEdgeTrungTam): the same
-      // T9 lượt sửa 2 (R-4, dieu-phoi 13/11) — on the edge the adapter is the node's: the promise is only the node's queue
-      expect(urgentCua("stopNotSent").map((a) => String(a.message)).join(" "), "the words the Abort must make true").toMatch(noi === "central" ? /if a later read finds it a pinned STOP, Abort sends it; if it is not, nothing is sent/ : /if a later read finds it a pinned STOP, a press of Abort at central only queues it for the edge node that holds its adapter, and central hears nothing back of it; if it is not, nothing is sent/);
+      // T9 lượt sửa 2 (R-4, dieu-phoi 13/11) — on the edge the adapter is the node's. T9 lượt sửa 3 (RA2-1) — what a press at central does there, as measured on the real road
+      expect(urgentCua("stopNotSent").map((a) => String(a.message)).join(" "), "the words the Abort must make true").toMatch(noi === "central" ? /if a later read finds it a pinned STOP, Abort sends it; if it is not, nothing is sent/ : /if a later read finds it a pinned STOP, a press of Abort at central hands it to the edge node that holds its adapter \(.+\); if it is not, nothing is sent\. The node's answer is recorded at central when it comes/);
       const a1 = await bam(c);
       expect(a1.ok).toBe(true);
       expect(runRow(c).status).toBe("aborted");
@@ -7919,6 +7939,26 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     expect(chu, "nt may be no STOP at all").not.toMatch(/STOP "nt" did NOT go out/);
     expect(chu, "what is known: its pins were not verified").toMatch(/not verified|could not be verified|could not verify/);
     expect(chu).toMatch(/check the machine on site/i);
+  });
+  // T9 lượt sửa 3 (CHU-OWNED-CU lived once RA2-8 gave an edge run's Abort the node's words: no case held a CENTRAL run whose Abort central's dispatcher routed to an edge node)
+  it("T9F3-OWNED-TT a central run held on nt, nt's adapter now an edge node's: the Abort's hand-over answered ADAPTER_OWNED_BY_EDGE: its URGENT says what central's dispatcher did and what a further press does, never 'press Abort again, there is no time limit'", async () => {
+    const c = await q2Giu("central", "t9f3ot");
+    expect(runRow(c).status).toBe("held");
+    for (const t of rows("device_tags")) if (t.tagKey === "run") t.stopValue = 0;
+    h.tuChoi.clear();
+    h.tuChoiKhongGhi.clear();
+    h.chuEdge.set(501, NODE);
+    const a = await bam(c);
+    expect(a.ok).toBe(true);
+    expect(runRow(c).status).toBe("aborted");
+    expect(sentOf("nt").some((x) => x.xepChoNut === true), "central's dispatcher routed it to the node").toBe(true);
+    expect(String(hang(c, "abort:nt")?.error)).toMatch(/\[ADAPTER_OWNED_BY_EDGE\]/);
+    const u = urgentCua("abortStopNotSent").filter((x) => String(x.dedupKey).split(":")[2] === "nt").map((x) => `${x.title} ${x.message}`).join(" | ");
+    expect(u, "an URGENT names nt").toContain('"nt"');
+    expect(u, "what central's dispatcher did").toMatch(/handed an adapter STOP to that edge node \(ADAPTER_OWNED_BY_EDGE\)/);
+    expect(u).toMatch(RE_NUT_HUA);
+    expect(u).toMatch(RE_TAY_MAY);
+    expect(u).not.toMatch(RE_NUT_SAI);
   });
   it("Q2-EDGE-NEM-T6c đối chứng central: the same tree, central's pins unreadable: the marked route, 0 PDU, state C, stop_not_sent:nt, held", async () => {
     h.ghim = PIN_BAD;
@@ -8025,8 +8065,16 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     const khongGhi = k === "ADAPTER_OFFLINE";
     expect(o.hang, `${nhan}: nt's row in state C`).toMatch(/^FOE_STOP_NOT_SENT: /);
     for (const [ten, t] of [["URGENT", o.urg], ["run", o.run], ["row", o.hang]] as const) {
-      if (!(ten === "run" && nhan.startsWith("E×"))) expect(t, `${nhan} ${ten}: the device's word`).toMatch(khongGhi ? KHONG_GHI : CO_THE); // an edge run's error is the node's segment text ("held … outcomeUnknown"): it must only never say the other word
+      expect(t, `${nhan} ${ten}: the device's word`).toMatch(khongGhi ? KHONG_GHI : CO_THE); // T9 lượt sửa 3 (RA2-2) — an edge run's error is central's own words now (the one rule), no longer the node's text
       expect(t, `${nhan} ${ten}: never the other word`).not.toMatch(khongGhi ? CO_THE : KHONG_GHI);
+    }
+    // T9 lượt sửa 3 (RA2-1, RA2-2, dieu-phoi 13/11) — an edge run: its adapter is the node's: the URGENT and the run's error say what a press does there, the answer, the safe act; never Abort's promise
+    if (nhan.startsWith("E×")) for (const [ten, t] of [["URGENT", o.urg], ["run", o.run]] as const) {
+      expect(t, `${nhan} ${ten}: no promise of Abort, no false word of the node's road`).not.toMatch(RE_NUT_SAI);
+      expect(t, `${nhan} ${ten}: what a press does`).toMatch(RE_NUT_HUA);
+      expect(t, `${nhan} ${ten}: central's fallback STOP`).toMatch(RE_NUT_DU_PHONG);
+      expect(t, `${nhan} ${ten}: the node's answer`).toMatch(RE_NUT_TRA_LOI);
+      expect(t, `${nhan} ${ten}: the safe act`).toMatch(RE_TAY_MAY);
     }
     if (chuaXacMinh) for (const [ten, t] of [["URGENT", o.urg], ["run", o.run]] as const) {
       expect(t, `${nhan} ${ten}: nobody verified nt: no plain promise`).not.toMatch(/Abort sends it again|press Abort again, there is no time limit/);
@@ -8094,6 +8142,13 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
       expect(chu, "central could not verify it").toMatch(/could not be verified as a pinned STOP/);
       expect(chu).not.toMatch(/STOP "nt" did NOT go out/);
       expect(chu).not.toMatch(/Abort sends it again/);
+      // T9 lượt sửa 3 (RA2-2) — the run's error: central's words, the same reading (fail-closed), never Abort's promise
+      const loiRun = String(runRow(e.runId).error ?? "");
+      expect(loiRun, "the run's error: not verified").toMatch(/could not be verified as a pinned STOP/);
+      expect(loiRun).not.toMatch(RE_NUT_SAI);
+      expect(loiRun).toMatch(RE_TAY_MAY);
+      expect(chu).not.toMatch(RE_NUT_SAI);
+      expect(chu).toMatch(RE_NUT_HUA);
     });
   }
   // ── T9 lượt sửa 2 (dieu-phoi: mandatory) — the matrix cell edge × a VERIFIED pinned STOP: the T5 words of a pinned STOP, with the node's queue as the only promise (R-4) ───────────────────────────
@@ -8113,8 +8168,10 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
       kiemO(o, k, false, `E×V×${k}`);
       if (k !== "ok" && k !== "simulated") {
         expect(o.urg, "a verified pinned STOP: named a STOP").toMatch(/STOP "nt" (did NOT go out|is not confirmed out|NOT confirmed out)/);
-        expect(o.urg, "R-4: the node's adapter: only its queue").toMatch(/a press of Abort at central only queues it for the edge node that holds its adapter/);
+        expect(o.urg, "R-4, T9 lượt sửa 3 (RA2-1): the node's adapter: what a press does there").toMatch(RE_NUT_HUA);
         expect(o.urg).not.toMatch(/Abort sends it again|press Abort again/);
+        expect(o.run, "RA2-2: the run's error names the STOP and keeps the rule").toMatch(/STOP "nt"/);
+        expect(o.run).not.toMatch(RE_NUT_SAI);
       }
     });
   }
@@ -8127,8 +8184,11 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     expect(runRow(e.runId).status).toBe("held");
     expect(chu).toMatch(/could not be verified as a pinned STOP/);
     expect(chu).toMatch(/nothing was written to the device/);
-    expect(chu, "T9 lượt sửa 2 (R-4): the node's queue").toMatch(/if a later read finds it a pinned STOP, a press of Abort at central only queues it for the edge node that holds its adapter, and central hears nothing back of it; if it is not, nothing is sent/);
+    expect(chu, "T9 lượt sửa 3 (RA2-1): what a press does there, a condition").toMatch(/if a later read finds it a pinned STOP, a press of Abort at central hands it to the edge node that holds its adapter \(.+\); if it is not, nothing is sent\. The node's answer is recorded at central when it comes/);
     expect(chu).not.toMatch(/Abort sends it again/);
+    expect(chu).not.toMatch(RE_NUT_SAI);
+    expect(String(runRow(e.runId).error ?? ""), "RA2-2: the run's error").not.toMatch(RE_NUT_SAI);
+    expect(String(runRow(e.runId).error ?? ""), "RA2-2: the run's error, a condition").toMatch(/could not be verified as a pinned STOP/);
   });
 });
 
@@ -9043,6 +9103,20 @@ describe("A2(n) T7 fix 1 — the walk's memory at an exception (K1), the gate's 
         expect(sau).toMatch(/check the machine on site/i);
         expect(sau).not.toMatch(/went after all|owed no more|accepted it/);
         expect(sau, "T9 lượt sửa 2 (dieu-phoi 13/11 point 1): nothing suggests an Abort, or the system, sends it").not.toMatch(/Abort[^.]*sends it|sends it again|will send|is sent again/);
+        // T9 lượt sửa 3 (RA2-MOPHONG-RETRY lived: "retries it" slipped the list above) — a WHITE list: the correction is the approved words, sentence by sentence, nothing else
+        const moPhong = h.alerts.filter((a) => String(a.dedupKey).split(":")[2] === "st" && String(a.title).includes("only SIMULATED"));
+        expect(moPhong.length, "the correction").toBeGreaterThan(0);
+        // the standard header of every URGENT of this kind (noiDungCanhBaoKhongRo's `mo`), then the cell's own words: those are the list
+        const MO = /^(A command of run \d+ has an UNKNOWN outcome \([A-Z_]+\); the state of the machine is unknown\.|Step "st" of run \d+ failed, but another command of this run has an UNKNOWN outcome \([A-Z_]+\); the state of the machine is unknown\.|The outcome of command step "st" of run \d+ is UNKNOWN \([A-Z_]+\); the state of the machine is unknown\.) /;
+        for (const a of moPhong) {
+          expect(String(a.title).split(" — ").pop()).toBe('STOP "st" only SIMULATED: still needed on the machine');
+          const than = String(a.message).replace(/ \[event [^\]]*\]$/, "");
+          expect(than, "the standard header").toMatch(MO);
+          expect(than.replace(MO, "").split(/(?<=\.) /)).toEqual([
+            'STOP "st", which an earlier URGENT said did NOT go out, was handed over on a later walk and only SIMULATED (OT control off): nothing reached the device.',
+            "This replaces the earlier URGENT about it: no Abort of this run is to be counted on for it, and the machine still needs it: check the machine on site and use its direct STOP / E-STOP.",
+          ]);
+        }
       } else expect(sau).toMatch(/went after all/);
     });
   }
@@ -13791,6 +13865,9 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
         }
         expect(a.reason).toBe("abortUnconfirmed");
         expect(a.message).toMatch(via === "abort" ? /^Abort of run \d+ not confirmed by the database in time/ : /^Rejection of run \d+ not confirmed by the database in time/);
+        // H38 thêm (dieu-phoi 13/11, P3 of kiem-dinh) — the abort / reject answer: handed to the dispatcher, never "confirmed sent" (the machine has not confirmed them)
+        expect(a.message).toMatch(/ — STOP steps handed to the dispatcher \(the machine has not confirmed them\): \d+; /);
+        expect(a.message).not.toMatch(/confirmed sent/);
         expect(a.message).toContain("check the run and retry, but no retry can be counted on after 15 minutes from when the run was aborted: check the machine on site and use its direct STOP / E-STOP.");
         await waitFor(() => runRow(c).status === "aborted", "the late write lands", 5_000);
         await wait(300);
@@ -14825,7 +14902,7 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
   // T7b-2 decides: the edge's own sweep takes the marked route (the edge's dispatcher owns the device and decides by its signed snapshot; central's can only queue a STOP for the node,
   // ADAPTER_OWNED_BY_EDGE), at the Abort, not at a later press; a STOP that did not go is owed on its abort:<id> row with the code, carried in the abort_stop's own `result` (H7), told once by central
   for (const dang of ["tuChoi", "nem", "khongTraLoi"] as const) {
-    it(`T7B2-SONG-${dang} (a) the Abort while the edge walker of the NP1 run still walks, nt's pins unreadable: the edge's sweep takes the marked route; ${dang === "tuChoi" ? "refused again" : dang === "nem" ? "the hand-over throws" : "no answer within the Abort's wait"}: aborted, owed on abort:nt with the code, ONE durable URGENT names nt and never says it went, no automatic loop; pressed again with nt pinned, it goes, the debt is gone`, async () => {
+    it(`T7B2-SONG-${dang} (a) the Abort while the edge walker of the NP1 run still walks, nt's pins unreadable: the edge's sweep takes the marked route; ${dang === "tuChoi" ? "refused again" : dang === "nem" ? "the hand-over throws" : "no answer within the Abort's wait"}: aborted, owed on abort:nt with the code, ONE durable URGENT names nt and never says it went, no automatic loop; pressed again at central: the adapter is the node's, central's dispatcher routes the STOP to it (ADAPTER_OWNED_BY_EDGE), still owed, the words true of it`, async () => {
       const x = await songAbort(`t2s${dang[0]}`, () => {
         if (dang === "nem") {
           h.tuChoi.set("nt", { nem: "the hand-over threw (test)" });
@@ -14855,8 +14932,10 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
       const u = urgentCua("abortStopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "nt");
       expect(u.length, "one durable URGENT names nt").toBe(1);
       expect(chuCua("nt"), "never says the Abort sent it").not.toMatch(daGuiChu);
-      // T9 lượt sửa 2 (R-4, dieu-phoi 13/11) — was /press Abort again/ (no time limit): the run is the node's, a press at central only queues the STOP for it
-      expect(chuCua("nt"), "it says it stays owed and a press only queues it for the node").toMatch(/a press of Abort at central only queues it for the edge node that holds its adapter, and central hears nothing back of it/);
+      // T9 lượt sửa 2 (R-4, dieu-phoi 13/11) — was /press Abort again/ (no time limit): the run is the node's. T9 lượt sửa 3 (RA2-1) — what a press at central does there, measured on the real road
+      expect(chuCua("nt"), "it says it stays owed and what a press does for the node's adapter").toMatch(RE_NUT_HUA);
+      expect(chuCua("nt")).toMatch(RE_TAY_MAY);
+      expect(chuCua("nt")).not.toMatch(RE_NUT_SAI);
       expect(chuCua("nt"), "no promise of a time").not.toMatch(/no time limit|press Abort again/);
       // A-EDGE-C — told once: the same records again (a replay) reach no handler
       x.J.veLai(x.S);
@@ -14866,17 +14945,25 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
       const n1 = h.sent.length;
       await wait(150);
       expect(h.sent.length, "no automatic loop: only a person presses again").toBe(n1);
-      // pressed again at central, the dispatcher now finds nt pinned: it goes, the debt is gone ("press Abort again" is true)
+      // T9 lượt sửa 3 (RA2-9; R-4, dieu-phoi 13/11) — pressed again at central. The run is the node's, so is nt's adapter (edgeAssignmentOwnershipRefusal): central holds no driver and its dispatcher
+      // routes the STOP to the node (routeEdgeOwnedAdapterCommand, ADAPTER_OWNED_BY_EDGE); it never "goes from central" and never clears the debt. The harness's commands are as before: one hand-over
       ghimRun(true);
       h.tuChoi.clear();
       h.tuChoiKhongGhi.clear();
       h.khongTraLoi.clear();
       mien.clear();
+      h.chuEdge.set(501, NODE);
       const a2 = await bam(c);
       expect(a2.ok).toBe(true);
-      expect(sentOf("nt").some((s) => s.khongGhi !== true && s.edge == null), "it went, from central").toBe(true);
-      expect(hang(c, "abort:nt")?.status).toBe("completed");
-      expect(noCua(c).has("nt"), "the debt is gone").toBe(false);
+      const giaoTT = sentOf("nt").filter((s) => s.edge == null);
+      expect(giaoTT.length, "the press hands nt to central's dispatcher once").toBe(1);
+      expect(giaoTT[0]?.xepChoNut, "routed to the node that holds the adapter").toBe(true);
+      expect(a2.abortStops?.sent ?? [], "nothing confirmed sent").not.toContain("nt");
+      expect(String(hang(c, "abort:nt")?.error)).toMatch(/may have gone out \[ADAPTER_OWNED_BY_EDGE\]/);
+      expect(noCua(c).has("nt"), "still owed: central cannot clear it").toBe(true);
+      expect(chuCua("nt"), "the words of what the press did").toMatch(RE_NUT_HUA);
+      expect(chuCua("nt")).not.toMatch(RE_NUT_SAI);
+      expect(chuCua("nt")).not.toMatch(daGuiChu);
       expect(runRow(c).status).toBe("aborted");
     });
   }
@@ -14974,8 +15061,8 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
     expect(runRow(c).status).toBe("held");
     // T9 lượt sửa 1 (dieu-phoi 11/11, branch (1); the name keeps its old words) — was "Abort sends it again": nt's pins were never verified (the package's stopsUnsure, central's read too), and central
     // composes the edge's words: the promise is the condition (cachEdgeTrungTam, dangChuaRa)
-    // T9 lượt sửa 2 (R-4, dieu-phoi 13/11) — the node's adapter: the press only queues it there
-    expect(urgentCua("stopNotSent").map((a) => String(a.message)).join(" "), "the words the Abort must make true").toMatch(/if a later read finds it a pinned STOP, a press of Abort at central only queues it for the edge node that holds its adapter, and central hears nothing back of it; if it is not, nothing is sent/);
+    // T9 lượt sửa 2 (R-4, dieu-phoi 13/11) — the node's adapter. T9 lượt sửa 3 (RA2-1) — what a press at central does there
+    expect(urgentCua("stopNotSent").map((a) => String(a.message)).join(" "), "the words the Abort must make true").toMatch(/if a later read finds it a pinned STOP, a press of Abort at central hands it to the edge node that holds its adapter \(.+\); if it is not, nothing is sent\. The node's answer is recorded at central when it comes/);
     h.tuChoi.clear();
     h.tuChoiKhongGhi.clear();
     h.chuEdge.set(501, NODE);
@@ -14992,6 +15079,83 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
       expect(veBuoc("nt").length, "an URGENT names nt").toBeGreaterThan(0);
       expect(chuCua("nt")).not.toMatch(daGuiChu);
     }
+  });
+  /** the hold of T7B2-SAU-OWNED: the edge segment ended held, state C on nt (the package's stopsUnsure, refused before a driver on the node) */
+  async function giuEdgeNt(ref: string): Promise<number> {
+    const e = await edgeAssignedRun(def(ref, [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [stopTyped("nt")])])])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    e.laStopNem = true;
+    e.suaGoi = (p) => ({ ...p, stopsUnsure: [...p.stopsUnsure, "nt"] });
+    h.ghim = PIN_BAD;
+    h.dispatcherThat = true;
+    h.duocSauKhoa.add("nt");
+    offline();
+    h.slow.set("x", 10);
+    h.timeoutDispatch.add("x");
+    await edgeSegment(e, 2);
+    await wait(60);
+    expect(runRow(e.runId).status).toBe("held");
+    return e.runId;
+  }
+  // ── T9 lượt sửa 3 (RA2-1, dieu-phoi 13/11: cells of the R-1 matrix, edge part) — a press at central for nt of the node's adapter, three cells of the real road: the node acks in its bound; it does
+  // not (alertUndeliveredStops); the node unreachable (central's fallback STOP). The FOE reads only the dispatcher's code, never the node's ack: the three places (URGENT, the run's error, nt's rows) say
+  // one thing in every cell, and nothing of it claims the node answered ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  for (const kieu of ["ackTrongHan", "quaHanKhongAck", "nutKhongToi"] as const) {
+    it(`T9F3-NUT ${kieu}: the URGENT, the run's error and nt's rows say what a press at central does for the node's adapter (handed to the node, central's fallback STOP, the answer recorded when it comes, check the machine); never "only queues", "hears nothing back", nor Abort's promise`, async () => {
+      const c = await giuEdgeNt(`t9f3n${kieu[0]}${kieu.length}`);
+      const truoc = { urg: urgentCua("stopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === "nt").map((a) => `${a.title} ${a.message}`).join(" | "), run: String(runRow(c).error ?? ""), hang: String(hang(c, "nt")?.error ?? "") };
+      for (const [ten, t] of [["URGENT", truoc.urg], ["run", truoc.run]] as const) {
+        expect(t, `${kieu} ${ten}: what a press does`).toMatch(RE_NUT_HUA);
+        expect(t, `${kieu} ${ten}: central's fallback STOP`).toMatch(RE_NUT_DU_PHONG);
+        expect(t, `${kieu} ${ten}: the node's answer`).toMatch(RE_NUT_TRA_LOI);
+        expect(t, `${kieu} ${ten}: the safe act`).toMatch(RE_TAY_MAY);
+        expect(t, `${kieu} ${ten}`).not.toMatch(RE_NUT_SAI);
+        expect(t, `${kieu} ${ten}: nothing says the node answered`).not.toMatch(/the node (acknowledged|confirmed|executed) it/);
+      }
+      expect(truoc.hang, "nt's row in state C, no promise").toMatch(/^FOE_STOP_NOT_SENT: /);
+      expect(truoc.hang).not.toMatch(RE_NUT_SAI);
+      h.tuChoi.clear();
+      h.tuChoiKhongGhi.clear();
+      h.chuEdge.set(501, NODE);
+      if (kieu === "nutKhongToi") h.chuEdgeDuPhong = true;
+      const a = await bam(c);
+      expect(a.ok).toBe(true);
+      expect(runRow(c).status).toBe("aborted");
+      const giaoTT = sentOf("nt").filter((s) => s.edge == null);
+      expect(giaoTT.length, "the press hands nt to central's dispatcher once").toBe(1);
+      expect(giaoTT[0]?.xepChoNut, "routed to the node").toBe(true);
+      expect(giaoTT[0]?.duPhong === true, "central's fallback STOP only where the node is unreachable").toBe(kieu === "nutKhongToi");
+      expect(String(hang(c, "abort:nt")?.error)).toMatch(/may have gone out \[ADAPTER_OWNED_BY_EDGE\]/);
+      expect(noCua(c).has("nt"), "still owed: central cannot clear it").toBe(true);
+      const sau = chuCua("nt");
+      expect(sau, "after the press: what a further press does").toMatch(RE_NUT_HUA);
+      expect(sau).toMatch(RE_NUT_DU_PHONG);
+      expect(sau).toMatch(RE_NUT_TRA_LOI);
+      expect(sau).toMatch(RE_TAY_MAY);
+      expect(sau).not.toMatch(RE_NUT_SAI);
+      expect(sau).not.toMatch(daGuiChu);
+      expect(String(runRow(c).error ?? ""), "the run's error after the press").not.toMatch(RE_NUT_SAI);
+    });
+  }
+  // ── T9 lượt sửa 3 (RA2-8) — central's own Abort of the edge run, nt's adapter answered ADAPTER_OFFLINE at central (no driver here, its owner not read: routeEdgeOwnedAdapterCommand null): the
+  // abort_stop_not_sent URGENT of nt is the node's adapter's words (baoStopChuaRaAbort, adapterNut), never "press Abort again, there is no time limit" ─────────────────────────────────────────────────────
+  it("T9F3-ABORT-TT central's Abort of the edge run, nt refused ADAPTER_OFFLINE at central: the abort_stop_not_sent of nt says what a press does for the node's adapter, never Abort's promise nor 'no time limit'", async () => {
+    const c = await giuEdgeNt("t9f3at");
+    h.tuChoi.clear();
+    h.tuChoiKhongGhi.clear();
+    offline();
+    const a = await bam(c);
+    expect(a.ok).toBe(true);
+    expect(runRow(c).status).toBe("aborted");
+    expect(sentOf("nt").filter((s) => s.edge == null).length, "the press hands nt to central's dispatcher").toBeGreaterThan(0);
+    const u = urgentCua("abortStopNotSent").filter((x) => String(x.dedupKey).split(":")[2] === "nt").map((x) => `${x.title} ${x.message}`).join(" | ");
+    expect(u, "an URGENT names nt").toContain('"nt"');
+    expect(u).not.toMatch(RE_NUT_SAI);
+    expect(u).toMatch(RE_NUT_HUA);
+    expect(u).toMatch(RE_TAY_MAY);
+    expect(u).not.toMatch(daGuiChu);
   });
 
 
@@ -16854,6 +17018,28 @@ describe("A2(n) T9 — the confirmation of a STOP after an unknown attempt (XAC_
     });
   }
 
+  // ── T9 lượt sửa 3 (RA2-R5-BO-SIMULATED, RA2-R5-BO-ACCEPTED lived) — every part of the closed list holds: acked_verified alone is not enough ──────────────────────────────────────────────────────
+  for (const [ten, kq] of [
+    ["acked_verified + simulated", { status: "acked_verified", accepted: true, simulated: true }],
+    ["acked_verified + detail.simulated", { status: "acked_verified", accepted: true, detail: { simulated: true } }],
+    ["acked_verified, not accepted", { status: "acked_verified", accepted: false }],
+  ] as const) {
+    it(`T9F3-R5 the node's row of x's STOP cs answered ${ten} and carries xacNhan: not taken: the run_end URGENT, held when it is not stored, no audit`, async () => {
+      h.alertDurable = false;
+      const runId = 99_600 + ten.length;
+      const rows = [
+        { stepId: "x", status: "failed", error: "FOE_OUTCOME_UNKNOWN: no answer from x", resultJson: { routedTo: "robot-dispatcher", status: "timeout", accepted: false } },
+        { stepId: "cs", status: "compensated", error: null, resultJson: { routedTo: "ot-dispatcher", ...kq, khongRoTruoc: { buoc: "x", ma: "FOE_OUTCOME_UNKNOWN", xacNhan: true } } },
+      ];
+      const q = await quyetDinhKetThucAnh({ runId, ctx: {}, owner: OWNER.id, rows, def: def(`t9f3r5${ten.length}`, [gate(), move("x", { compensation: otStop("cs") })]) } as never, "edgeSegment", 60);
+      await wait(30);
+      const audit = vi.mocked(logCrudOperation).mock.calls.filter((c) => (c[1] as { details?: { operation?: string; metadata?: { runId?: unknown } } }).details?.operation === AUDIT_NUT && (c[1] as { details: { metadata?: { runId?: unknown } } }).details.metadata?.runId === runId);
+      expect(q.ghi, `${ten} confirms nothing`).toBe("held");
+      expect(runEnd(runId).length, "the run_end URGENT is raised").toBe(1);
+      expect(audit).toEqual([]);
+    });
+  }
+
   // ── T9 lượt sửa 2 (P-2, dieu-phoi 13/11) — the URGENT obligation sweep reads XAC_NHAN as the gate does (with the definition); the definition unread: it raises ─────────────────────────────────────────
   for (const docLoi of [false, true]) {
     it(`T9F2-P2 a held run whose latch a confirmed STOP covers (st owed): the sweep ${docLoi ? "cannot read the definition: one run_end (the safe side)" : "raises no run_end"}`, async () => {
@@ -16879,6 +17065,71 @@ describe("A2(n) T9 — the confirmation of a STOP after an unknown attempt (XAC_
       expect(runEnd(c).length, docLoi ? "the definition unread: raised" : "the sweep honours XAC_NHAN").toBe(docLoi ? 1 : 0);
     });
   }
+
+  // ── T9 lượt sửa 3 (RA2-3, dieu-phoi 13/11: bounded per run, fail to the safe side) — the sweep reads the definition only for a run it does not skip, under its own bound; a read that hangs
+  // ends this run's read, never the pass: "not known" ⇒ raised (exactly one run_end) ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  async function p2Giu(ref: string): Promise<number> {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.timeoutOnce.add("x");
+    h.acked = true;
+    h.ackStatus = "acked_verified";
+    h.tuChoi.set("st", { status: "rejected", error: "INTERLOCK_NOT_MET: refused", detail: { reason: "INTERLOCK_NOT_MET" } });
+    const c = await centralRun(def(ref, [gate(), otStop("x"), otStop("st")]), 1);
+    await xong(c);
+    await wait(40);
+    expect(runRow(c).status, "st owed: held").toBe("held");
+    expect(vet(c, "x")).toMatchObject({ xacNhan: true });
+    expect(runEnd(c)).toEqual([]);
+    return c;
+  }
+  /** central's reads of orchestration_workflows, counted; `treo`: each never answers */
+  async function voiDocDinhNghia<T>(treo: boolean, f: () => Promise<T>): Promise<{ kq: T; doc: number }> {
+    const goc = (fake as any).select;
+    let doc = 0;
+    (fake as any).select = (pr?: unknown) => {
+      const b = goc.call(fake, pr);
+      const from = b.from.bind(b);
+      b.from = (t: any) => {
+        if (t?.[Symbol.for("drizzle:Name")] === "orchestration_workflows") {
+          doc++;
+          if (treo) {
+            const mai: any = { where: () => mai, limit: () => mai, orderBy: () => mai, for: () => mai, then: () => undefined };
+            return mai;
+          }
+        }
+        return from(t);
+      };
+      return b;
+    };
+    try {
+      return { kq: await f(), doc };
+    } finally {
+      (fake as any).select = goc;
+    }
+  }
+  it("T9F3-QUET-TREO the sweep's read of the definition hangs: the pass ends within its bound and the run is raised exactly once (not known ⇒ the safe side)", async () => {
+    const c = await p2Giu("t9f3qt");
+    h.heSoHan = 0.05;
+    const t0 = Date.now();
+    const { kq } = await voiDocDinhNghia(true, () => Promise.race([quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: Date.now() + QUET_URGENT_TUOI_TOI_THIEU_MS + 1 }), wait(3000).then(() => "treo" as const)]));
+    const ms = Date.now() - t0;
+    await wait(40);
+    expect(kq, "the pass ends").not.toBe("treo");
+    expect(ms, "within its bound (5·D at 1/20)").toBeLessThan(1000);
+    expect(runEnd(c).length, "not known: raised, once").toBe(1);
+  });
+  it("T9F3-QUET-BOQUA a run the sweep skips (a live walker of it here) is never made to read its definition: 0 reads, no run_end", async () => {
+    const c = await p2Giu("t9f3qb");
+    runRow(c).status = "running";
+    try {
+      const { doc } = await voiDocDinhNghia(false, () => quetUrgentChuaBen({ walkerSong: () => true, cheDo: "mot", bayGio: Date.now() + QUET_URGENT_TUOI_TOI_THIEU_MS + 1 }));
+      expect(doc, "a skipped run: no read of its definition").toBe(0);
+    } finally {
+      runRow(c).status = "held";
+    }
+    expect(runEnd(c)).toEqual([]);
+  });
 
   // ── T9 lượt sửa 2 (matrix, the cell "not handed": no harness knob reaches it) — the one rule on its input: no dispatcher could be asked (C-3, `doc`) ────────────────────────────────────────────────────
   it("T9F2-KHONG-GIAO the rule on 'not handed' (vi doc ADAPTER_UNRESOLVED), pins verified or not: did NOT go out, never 'may have reached', the promise a condition", () => {

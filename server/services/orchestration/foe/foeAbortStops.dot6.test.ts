@@ -595,7 +595,9 @@ describe("doc 81 Đợt 6 fix 1 (#1 #2 #8 #9) — sent once, failed STOP retried
     });
     const first = await abortRun(runId, SUP);
     expect(first).toMatchObject({ ok: false, reason: "abortUnconfirmed", abortStops: { sent: ["ra"], failed: ["stop"] } });
-    expect(first.message).toContain("STOP steps confirmed sent: 1");
+    // H38 thêm (dieu-phoi 13/11, P3 of kiem-dinh) — was "STOP steps confirmed sent: 1": `sent` is the dispatcher's acceptance, the machine has not confirmed it
+    expect(first.message).toContain("STOP steps handed to the dispatcher (the machine has not confirmed them): 1");
+    expect(first.message).not.toMatch(/confirmed sent/);
     await waitFor(() => stepRow(runId, "abort:ra")?.status === "completed" && stepRow(runId, "abort:stop")?.status === "failed");
     HANG.statuses.clear();
     const second = await abortRun(runId, SUP);
@@ -742,7 +744,9 @@ describe("doc 81 Đợt 6 fix 1 (R-6-a) — a gate REJECTION sends the remaining
     expect(r).not.toBe("HUNG");
     expect(Date.now() - t0).toBeLessThan(2 * D + 700);
     expect(r).toMatchObject({ ok: false, reason: "abortUnconfirmed", abortStops: { sent: [] } });
-    expect((r as { message: string }).message).toContain("STOP steps confirmed sent: 0");
+    // H38 thêm (dieu-phoi 13/11) — was "STOP steps confirmed sent: 0"
+    expect((r as { message: string }).message).toContain("STOP steps handed to the dispatcher (the machine has not confirmed them): 0");
+    expect((r as { message: string }).message).not.toMatch(/confirmed sent/);
     expect(otCommands().map((c) => c.commandType)).toEqual(["start"]);
     expect(robotDispatchMock).not.toHaveBeenCalled();
   });
