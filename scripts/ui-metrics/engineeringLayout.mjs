@@ -1168,7 +1168,7 @@ const ALWAYS_OFF = {
   // UNS_BROKER_URL) ⇒ không tiến trình Ollama nào được chạm; bộ canh kết nối KHÔNG đổi (vẫn bắt mọi kết nối ngoài danh sách).
   OLLAMA_BASE_URL: "http://127.0.0.1:9",
   // Luật vận hành tạm 14/11: cờ bền của FOE tắt TƯỜNG MINH (không phụ thuộc mặc định mã). FOE_ENABLED vẫn do UI_FLAGS_DEV điều khiển như cũ.
-  FOE_DURABLE: "false",
+  FOE_DURABLE: "false", OT_GATEWAY_ENABLED: "false",
 };
 /** Env của tiến trình server đo: KHÔNG kế thừa env cha (ngoài biến hệ thống), KHÔNG nạp .env. */
 function serverEnv(port, logDir, flags) {

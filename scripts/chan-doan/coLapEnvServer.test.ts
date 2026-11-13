@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as url from "node:url";
 // @ts-expect-error — mô-đun .mjs không có khai báo kiểu
-import { dungEnvCoLap, docAlwaysOff, NAM_CO_TAT, BIEN_HE_DIEU_HANH } from "./boot-lap.mjs";
+import { dungEnvCoLap, docAlwaysOff, NAM_CO_TAT, BIEN_HE_DIEU_HANH, KHOA_CAM_GHI_DE } from "./boot-lap.mjs";
 
 const REPO = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), "..", "..");
 const doc = (p: string) => fs.readFileSync(path.join(REPO, p), "utf8");
@@ -60,10 +60,31 @@ describe("boot-lap.mjs — dungEnvCoLap", () => {
     expect(env.EDGE_RUNTIME_ENABLED).toBe("false");
   });
 
-  it("tham số KEY=VAL ghi đè vẫn hoạt động (giữ hành vi cũ)", () => {
+  it("ROLE = api", () => {
+    expect(dung().ROLE).toBe("api");
+  });
+
+  it("KEY=VAL hợp lệ (PORT, BIEN_MOI) vẫn ghi đè được", () => {
     const env = dung({ PORT: "4000", BIEN_MOI: "co" });
     expect(env.PORT).toBe("4000");
     expect(env.BIEN_MOI).toBe("co");
+    for (const k of NAM_CO) expect(env[k], k).toBe("false");
+  });
+
+  it("KEY=VAL chạm năm cờ / DATABASE_URL / DOTENV_CONFIG_PATH / ROLE ⇒ ném lỗi nêu tên khoá (kể cả sai hoa thường)", () => {
+    for (const k of [...NAM_CO, "DATABASE_URL", "DOTENV_CONFIG_PATH", "ROLE"]) {
+      expect(() => dung({ [k]: "true" }), k).toThrow(new RegExp(k));
+      expect(() => dung({ [k.toLowerCase()]: "true" }), k.toLowerCase()).toThrow(new RegExp(k, "i"));
+    }
+    expect(() => dung({ robot_control_enabled: "true" })).toThrow(/robot_control_enabled/);
+    expect([...KHOA_CAM_GHI_DE].sort()).toEqual([...NAM_CO, "DATABASE_URL", "DOTENV_CONFIG_PATH", "ROLE"].sort());
+  });
+
+  it("khoá env con ⊆ (keep ∪ cấu hình đo ∪ ALWAYS_OFF ∪ năm cờ) — không biến nào khác rò vào", () => {
+    const cauHinh = ["DOTENV_CONFIG_PATH", "DATABASE_URL", "PORT", "ROLE", "JWT_SECRET", "LICENSE_BYPASS", "AUTH_2FA_BAT_BUOC", "VITE_APP_ID", "GGUF_WARM_DEEP_MODEL_ON_BOOT", "LLAMA_SERVER_ENABLED", "LLAMA_WATCHDOG_ENABLED", "AI_ORCHESTRATION_ENABLED", "AI_KB_WARM_ON_BOOT", "VITEST"];
+    const cho = new Set<string>([...BIEN_HE_DIEU_HANH, ...cauHinh, ...Object.keys(docAlwaysOff()), ...NAM_CO]);
+    const la = Object.keys(dung()).filter((k) => !cho.has(k));
+    expect(la).toEqual([]);
   });
 
   it("docAlwaysOff: đọc nguồn thật ra ≥ 10 cờ và ROBOT_CONTROL_ENABLED=false; nguồn hỏng ⇒ ném lỗi", () => {
@@ -73,10 +94,20 @@ describe("boot-lap.mjs — dungEnvCoLap", () => {
     expect(o.UNS_BROKER_URL).toBe("mqtt://127.0.0.1:9");
     expect(() => docAlwaysOff("export const khac = {};")).toThrow(/ALWAYS_OFF/);
     expect(() => docAlwaysOff('export const ALWAYS_OFF: Record<string, string> = {\n  A_B: "false",\n};')).toThrow(/không hợp lệ/);
+    // ≥ 10 khoá nhưng ROBOT_CONTROL_ENABLED=true ⇒ ném
+    const muoiKhoa = Array.from({ length: 12 }, (_, i) => `K${i}: "false"`).join(", ");
+    expect(() => docAlwaysOff(`export const ALWAYS_OFF: Record<string, string> = {\n  ${muoiKhoa}, ROBOT_CONTROL_ENABLED: "true",\n};`)).toThrow(/không hợp lệ/);
+    // ROBOT=false nhưng < 10 khoá ⇒ ném
+    expect(() => docAlwaysOff('export const ALWAYS_OFF: Record<string, string> = {\n  ROBOT_CONTROL_ENABLED: "false", K1: "false",\n};')).toThrow(/không hợp lệ/);
+    // ROBOT=false và ≥ 10 khoá ⇒ đạt
+    expect(docAlwaysOff(`export const ALWAYS_OFF: Record<string, string> = {\n  ${muoiKhoa}, ROBOT_CONTROL_ENABLED: "false",\n};`).ROBOT_CONTROL_ENABLED).toBe("false");
   });
 
-  it("nguồn boot-lap.mjs không còn ...process.env", () => {
-    expect(doc("scripts/chan-doan/boot-lap.mjs")).not.toMatch(/\.\.\.\s*process\.env/);
+  it("nguồn boot-lap.mjs không còn ...process.env; so đường dẫn chạy bằng realpath và có cảnh báo stderr khi lệch", () => {
+    const nguon = doc("scripts/chan-doan/boot-lap.mjs");
+    expect(nguon).not.toMatch(/\.\.\.\s*process\.env/);
+    expect(nguon).toContain("fs.realpathSync(process.argv[1])");
+    expect(nguon).toMatch(/console\.error\(`boot-lap: KHÔNG chạy/);
   });
 });
 
@@ -96,7 +127,7 @@ describe("instance.ts của e2e — FOE_DURABLE tường minh", () => {
       expect(than).toContain("khong-ton-tai.env");
       const sau = than.slice(than.indexOf("ALWAYS_OFF"));
       for (const k of ["FOE_ENABLED", "FOE_DURABLE", "OT_GATEWAY_ENABLED", "OT_CONTROL_ENABLED"]) {
-        expect(sau, k).toContain(`${k}: "false"`);
+        expect(sau, k).toMatch(new RegExp(`(^|[^A-Z0-9_])${k}: "false"`)); // tên đủ: AI_OT_CONTROL_ENABLED không được làm khớp nhầm OT_CONTROL_ENABLED
       }
     });
   }
@@ -108,7 +139,8 @@ describe("scripts/ui-metrics/engineeringLayout.mjs — FOE_DURABLE", () => {
   it("ALWAYS_OFF có FOE_DURABLE=false, OT_CONTROL_ENABLED=false, ROBOT_CONTROL_ENABLED=false", () => {
     const m = /const ALWAYS_OFF = \{([\s\S]*?)\n\};/.exec(nguon);
     expect(m).not.toBeNull();
-    for (const k of ["FOE_DURABLE", "OT_CONTROL_ENABLED", "ROBOT_CONTROL_ENABLED"]) expect(m![1], k).toContain(`${k}: "false"`);
+    // Khớp THEO TÊN ĐỦ (OT_CONTROL_ENABLED là đuôi của ROBOT_CONTROL_ENABLED nên toContain sẽ khớp nhầm).
+    for (const k of ["FOE_DURABLE", "OT_GATEWAY_ENABLED", "OT_CONTROL_ENABLED", "ROBOT_CONTROL_ENABLED"]) expect(m![1], k).toMatch(new RegExp(`(^|[^A-Z0-9_])${k}: "false"`));
   });
 
   it("hành vi dev KHÔNG đổi: FOE_ENABLED vẫn thuộc UI_FLAGS_DEV, FOE_DURABLE thì không (không bị bật theo)", () => {

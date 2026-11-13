@@ -9,7 +9,7 @@ import net from "node:net";
 import postgres from "postgres";
 import path from "node:path";
 import crypto from "node:crypto";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 // ── Env CÁCH LY của tiến trình server (luật vận hành tạm 14/11: server trỏ _test KHÔNG được kế thừa env cha, KHÔNG nạp .env) ──
 // Mẫu: e2e/flow-studio/instance.ts. Không rải toàn bộ env cha: biến lạ ở cha không lọt vào con.
@@ -28,8 +28,13 @@ export function docAlwaysOff(nguon = fs.readFileSync(NGUON_ALWAYS_OFF, "utf8")) 
   return kq;
 }
 
-/** Dựng env con: chỉ biến hệ điều hành cần thiết + cấu hình đo + ALWAYS_OFF + năm cờ "false"; `ghiDe` (KEY=VAL từ dòng lệnh) áp CUỐI. */
+/** Khoá KEY=VAL bị TỪ CHỐI (không phân biệt hoa thường): năm cờ an toàn + nơi trỏ DB/.env/vai trò — lệnh của người chạy bị chặn chứ không bị âm thầm sửa. */
+export const KHOA_CAM_GHI_DE = [...NAM_CO_TAT, "DATABASE_URL", "DOTENV_CONFIG_PATH", "ROLE"];
+
+/** Dựng env con: chỉ biến hệ điều hành cần thiết + cấu hình đo + ALWAYS_OFF + năm cờ "false"; `ghiDe` (KEY=VAL từ dòng lệnh) áp CUỐI, trừ KHOA_CAM_GHI_DE ⇒ ném lỗi. */
 export function dungEnvCoLap(envCha, { port, dbUrl, logDir, ghiDe = {}, alwaysOff = docAlwaysOff() }) {
+  const cam = KHOA_CAM_GHI_DE.map((k) => k.toUpperCase());
+  for (const k of Object.keys(ghiDe)) if (cam.includes(k.toUpperCase())) throw new Error(`KEY=VAL "${k}" bị từ chối: khoá này do boot-lap tự đặt (cờ an toàn / DB / .env / ROLE), không ghi đè được`);
   const env = {};
   for (const k of BIEN_HE_DIEU_HANH) if (envCha[k] != null) env[k] = envCha[k];
   Object.assign(env, {
@@ -47,7 +52,10 @@ export function dungEnvCoLap(envCha, { port, dbUrl, logDir, ghiDe = {}, alwaysOf
     VITEST: "", // không phải môi trường test
   }, alwaysOff);
   for (const k of NAM_CO_TAT) env[k] = "false";
-  return Object.assign(env, ghiDe);
+  Object.assign(env, ghiDe);
+  // Phòng thủ lớp hai: dù ghiDe lọt kiểm tra trên, năm cờ vẫn phải là "false" khi trả về.
+  for (const k of NAM_CO_TAT) if (env[k] !== "false") throw new Error(`env con có ${k}=${env[k]} — dừng, không khởi server`);
+  return env;
 }
 
 async function chinh() {
@@ -122,4 +130,7 @@ async function chinh() {
   console.log(`TONG ${ketQua.length} lần: sống ${ketQua.length - chet.length}, chết/treo ${chet.length}`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await chinh();
+// So bằng realpath (đi qua junction/symlink vẫn khớp). Gọi đúng tên boot-lap.mjs mà vẫn lệch ⇒ báo stderr, không im lặng thoát 0.
+const duongChay = process.argv[1] ? fs.realpathSync(process.argv[1]) : "";
+if (duongChay === fs.realpathSync(fileURLToPath(import.meta.url))) await chinh();
+else if (path.basename(process.argv[1] ?? "") === "boot-lap.mjs") console.error(`boot-lap: KHÔNG chạy — đường dẫn gọi (${duongChay}) lệch tệp nguồn; chạy trực tiếp bằng node scripts/chan-doan/boot-lap.mjs`);
