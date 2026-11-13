@@ -95,11 +95,54 @@ export function datCoTuongMinh(co: Record<string, string>, env: NodeJS.ProcessEn
   return Object.keys(co).sort();
 }
 
-/** Mọi cờ AI_AGENT_* THỰC SỰ có trong `env` (giá trị không bí mật) — ghi vào JSON kết quả để số đo nói rõ chạy với cờ nào. */
+/**
+ * DANH SÁCH CHO PHÉP các cờ AI_AGENT_* đã biết, MỖI CỜ MỘT KIỂU. Giá trị chỉ được ghi nguyên văn vào JSON/stderr khi khớp kiểu của cờ (số ⇒ RE_SO, bật/tắt ⇒ RE_BAT_TAT);
+ * không khớp ⇒ `<không hợp lệ, độ dài N>` (một bí mật đặt nhầm vào biến không lộ); TÊN LẠ (không có trong bảng) ⇒ chỉ ghi tên, giá trị `<tên lạ, không ghi giá trị>`.
+ * Thêm cờ mới vào harness ⇒ phải thêm tên vào bảng này (không thì JSON chỉ có tên, không có giá trị).
+ */
+const CO_KIEU_SO: ReadonlySet<string> = new Set([
+  "AI_AGENT_SO_LUOT_TOI_DA",
+  "AI_AGENT_NEN_MOC",
+  "AI_AGENT_HOUSEKEEPING_INTERVAL_MS",
+  "AI_AGENT_UOC_LUONG_TOKEN",
+  "AI_AGENT_MAX_TOKENS_MOT_LUOT",
+  "AI_AGENT_TOOL_TIMEOUT",
+]);
+const CO_KIEU_BAT_TAT: ReadonlySet<string> = new Set([
+  "AI_AGENT_THEO_VAI_TRO",
+  "AI_AGENT_AN_CONG_CU",
+  "AI_AGENT_CONG_KE_HOACH",
+  "AI_AGENT_GIU_NGHI",
+  "AI_AGENT_CON_BAO_CAO",
+  "AI_AGENT_TIEP_TUC",
+  "AI_AGENT_DAU_RA_DAI",
+  "AI_AGENT_TU_TRA_API",
+  "AI_AGENT_HOUSEKEEPING_ENABLED",
+  "AI_AGENT_GIAO_VIEC",
+  "AI_AGENT_DOC_TRUOC_KHI_GHI",
+  "AI_AGENT_TU_DONG",
+  "AI_AGENT_NEN_SO_THAT",
+  "AI_AGENT_CUU_TRAN",
+  "AI_AGENT_TOM_TAT_80",
+  "AI_AGENT_NGHI",
+  "AI_AGENT_KIEM_DAC_TA",
+  "AI_AGENT_HOAN_TAC",
+]);
+const RE_SO = /^[0-9.+-]{1,12}$/;
+const RE_BAT_TAT = /^(?:true|false|0|1|on|off|yes|no)$/i;
+
+/** Giá trị cờ ở dạng AN TOÀN để ghi báo cáo (xem bảng trên). THUẦN. */
+export function giaTriCoAnToan(ten: string, gt: string): string {
+  const kieu = CO_KIEU_SO.has(ten) ? RE_SO : CO_KIEU_BAT_TAT.has(ten) ? RE_BAT_TAT : null;
+  if (kieu === null) return "<tên lạ, không ghi giá trị>";
+  return kieu.test(gt) ? gt : `<không hợp lệ, độ dài ${gt.length}>`;
+}
+
+/** Mọi cờ AI_AGENT_* THỰC SỰ có trong `env` — ghi vào JSON kết quả / stderr để số đo nói rõ chạy với cờ nào. Giá trị CHỈ nguyên văn khi khớp kiểu của cờ đã biết (không bao giờ lộ bí mật đặt nhầm). */
 export function coAiAgentHieuLuc(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const ra: Record<string, string> = {};
   for (const k of Object.keys(env).sort()) {
-    if (k.startsWith("AI_AGENT_") && !CAM.test(k) && env[k] !== undefined) ra[k] = String(env[k]);
+    if (k.startsWith("AI_AGENT_") && !CAM.test(k) && env[k] !== undefined) ra[k] = giaTriCoAnToan(k, String(env[k]));
   }
   return ra;
 }
