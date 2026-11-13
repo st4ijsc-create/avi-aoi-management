@@ -115,6 +115,10 @@ export interface KetQuaViec {
   coAiAgent?: Record<string, string>;
   /** LUẬT dự án thật sự gửi model (ghi vào AGENTS.md của worktree VÀ ghép vào lệnh): sha256 của đúng chuỗi đó, nguồn (đường tệp hoặc "tham-so") và số byte UTF-8 */
   luat?: { sha256: string; nguon: string; byte: number };
+  /** cách đưa luật (`--luat-cach`); LUÔN có */
+  luatCach?: LuatCach;
+  /** chỉ khi `ghep`: AGENTS.md của BASE (B1) model đọc — sha256/byte của đúng nội dung ở base (null nếu base không có), và worktree sau lượt còn KHỚP base hay không */
+  b1?: { nguon: string; sha256: string | null; byte: number; saoLuotKhop: boolean };
   /** HA-3: trần lượt đã áp (chỉ khi thẻ có khoá TRẦN …): khoá thẻ, biến env, trần cứng, số thực dùng. "vòng" = một lần gọi model */
   tran?: TranLuotKetQua;
   /** `--cho-phep-db` đã bật cho lượt này (mặc định vắng = TẮT) */
@@ -278,6 +282,23 @@ export function docLuatTuTep(duong: string): { luat: string; nguon: string } {
   return { luat, nguon: abs };
 }
 
+/**
+ * `--luat-cach`: cách đưa luật cho model. `ghi-de` (mặc định, hành vi cũ): ghi `--luat` đè AGENTS.md của worktree (ẩn khỏi git) VÀ ghép vào lệnh.
+ * `ghep`: bộ chạy KHÔNG chạm tệp nào ở worktree — model đọc AGENTS.md của BASE (B1) qua docTepQuyUoc; tệp `--luat` (mặc định docs/tho-ca-pilot/bo-sung-pilot.md)
+ * chỉ ghép vào LỆNH như phần bổ sung riêng cho pilot.
+ */
+export type LuatCach = "ghi-de" | "ghep";
+/** Vắng ⇒ "ghi-de"; giá trị lạ ⇒ null (dòng lệnh thoát 2). */
+export function docLuatCach(tho: string | undefined): LuatCach | null {
+  if (tho === undefined) return "ghi-de";
+  return tho === "ghi-de" || tho === "ghep" ? tho : null;
+}
+
+/** Phần bổ sung riêng cho pilot khi `--luat-cach ghep` (nguồn sự thật trong repo). */
+export function duongTepLuatBoSung(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../docs/tho-ca-pilot/bo-sung-pilot.md");
+}
+
 /** Luật dự án nguồn sự thật (cạnh bộ chạy trong repo). */
 export function duongTepLuat(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../docs/tho-ca-pilot/luat-du-an.md");
@@ -355,7 +376,25 @@ const DRIVERS: Record<Exclude<TenDriver, "host">, Driver> = { kho: driverKho, cl
 
 const TEP_LUAT = "AGENTS.md";
 
-function thuTepDoi(wt: string): string[] {
+/**
+ * AGENTS.md của worktree KHỚP base? Base không có ⇒ worktree cũng không được có (tệp chưa theo dõi có thể bị `.git/info/exclude` của runtime nuốt khỏi `git status`,
+ * nên kiểm bằng đĩa, không bằng status). Base có ⇒ worktree phải có và `git diff --quiet <base> -- AGENTS.md` (xử lý cả chuẩn hoá cuối dòng).
+ */
+export function khopB1(wt: string, baseSha: string): boolean {
+  const baseCo = git(["cat-file", "-e", `${baseSha}:${TEP_LUAT}`], wt).ok;
+  const coTrenDia = fs.existsSync(path.join(wt, TEP_LUAT));
+  if (!baseCo) return !coTrenDia;
+  if (!coTrenDia) return false;
+  return git(["diff", "--quiet", baseSha, "--", TEP_LUAT], wt).ok;
+}
+
+/** Nội dung B1 của base (chuỗi UTF-8) hoặc null nếu base không có AGENTS.md. */
+function noiDungB1(wt: string, baseSha: string): string | null {
+  const r = git(["show", `${baseSha}:${TEP_LUAT}`], wt);
+  return r.ok ? r.out : null;
+}
+
+function thuTepDoi(wt: string, boQuaAgentsMd = true): string[] {
   const r = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], wt);
   const ra: string[] = [];
   const mucs = r.out.split("\0").filter((x) => x !== "");
@@ -364,7 +403,7 @@ function thuTepDoi(wt: string): string[] {
     const ma = m.slice(0, 2);
     const duong = m.slice(3);
     if (ma[0] === "R" || ma[0] === "C") i++; // mục kế tiếp là tên cũ
-    if (duong !== TEP_LUAT) ra.push(duong);
+    if (!boQuaAgentsMd || duong !== TEP_LUAT) ra.push(duong);
   }
   return ra.sort();
 }
@@ -411,6 +450,8 @@ export interface ThamSoViec {
   /** CHỈ cho ca kiểm: cho phép worktree không phải worktree LIÊN KẾT (kho tạm). Không có cờ CLI tương ứng. */
   choPhepKhoRieng?: boolean;
   luat?: string;
+  /** `--luat-cach` (mặc định "ghi-de" = hành vi cũ) */
+  luatCach?: LuatCach;
   /** nguồn của `luat` để ghi vào JSON (đường tệp); vắng ⇒ "tham-so" khi `luat` được truyền, ngược lại đường luat-du-an.md mặc định */
   luatNguon?: string;
   /**
@@ -474,7 +515,8 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const chung = git(["rev-parse", "--git-common-dir"], wt).out.trim();
   const laLienKet = path.resolve(wt, gitDir) !== path.resolve(wt, chung);
   if (!laLienKet && !p.choPhepKhoRieng) return tuChoi("đây là worktree CHÍNH, không phải worktree liên kết — từ chối", the.ma);
-  const trangThaiBan = () => git(["status", "--porcelain=v1", "--untracked-files=all"], wt).out.split("\n").filter((x) => x !== "" && !x.endsWith(` ${TEP_LUAT}`));
+  const cach: LuatCach = p.luatCach ?? "ghi-de";
+  const trangThaiBan = () => git(["status", "--porcelain=v1", "--untracked-files=all"], wt).out.split("\n").filter((x) => x !== "" && (cach === "ghep" || !x.endsWith(` ${TEP_LUAT}`)));
   let ban = trangThaiBan();
   const luuY0: string[] = [];
   if (ban.length > 0) {
@@ -482,7 +524,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     const nhanhHienTai = git(["branch", "--show-current"], wt).out.trim();
     if (!NHANH_PILOT.test(nhanhHienTai)) return tuChoi(`worktree không sạch (${ban.length} mục) và không đứng trên nhánh pilot/tho-ca-* — dọn tay trước khi nhận việc`, the.ma);
     // ★ PATHSPEC ở CẢ add LẪN commit (hook BG-124 dùng chung chặn commit trần: nó cuốn toàn index). Danh sách = đúng các tệp lượt trước đã đổi.
-    const tepCat = thuTepDoi(wt);
+    const tepCat = thuTepDoi(wt, cach === "ghi-de");
     const them = git(["add", "--", ...tepCat], wt);
     const loiNhan = ["pilot: cất kết quả lượt trước (không lên main)", "", "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"].join("\n");
     const cm = them.ok ? git(["-c", "user.name=tho-ca-pilot", "-c", "user.email=tho-ca-pilot@localhost", "commit", "-q", "-m", loiNhan, "--", ...tepCat], wt) : them;
@@ -514,18 +556,25 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     if (loiDb.length > 0) return tuChoi(`thẻ lỗi — ${loiDb.join("; ")}`, the.ma);
   }
 
-  // luật dự án → AGENTS.md ở gốc worktree, ẩn khỏi git (info/exclude) để không lẫn vào diff
-  const luat = p.luat ?? fs.readFileSync(duongTepLuat(), "utf8");
-  const luatNguon = p.luatNguon ?? (p.luat !== undefined ? "tham-so" : duongTepLuat());
-  fs.writeFileSync(path.join(wt, TEP_LUAT), luat, "utf8");
-  const ex = git(["rev-parse", "--git-path", "info/exclude"], wt).out.trim();
-  const exPath = path.resolve(wt, ex);
-  try {
-    fs.mkdirSync(path.dirname(exPath), { recursive: true });
-    const cu = fs.existsSync(exPath) ? fs.readFileSync(exPath, "utf8") : "";
-    if (!cu.split("\n").includes(TEP_LUAT)) fs.appendFileSync(exPath, `${cu.endsWith("\n") || cu === "" ? "" : "\n"}${TEP_LUAT}\n`);
-  } catch {
-    /* nếu không ghi được exclude, thuTepDoi vẫn bỏ AGENTS.md ra khỏi danh sách */
+  // luật dự án. `ghi-de` (mặc định): → AGENTS.md ở gốc worktree, ẩn khỏi git (info/exclude) để không lẫn vào diff, VÀ ghép vào lệnh.
+  // `ghep`: KHÔNG chạm tệp nào ở worktree; `luat` ở đây là phần bổ sung riêng cho pilot (chỉ ghép vào lệnh), model tự đọc AGENTS.md của base (B1).
+  const tepLuatMacDinh = cach === "ghep" ? duongTepLuatBoSung() : duongTepLuat();
+  const luat = p.luat ?? fs.readFileSync(tepLuatMacDinh, "utf8");
+  const luatNguon = p.luatNguon ?? (p.luat !== undefined ? "tham-so" : tepLuatMacDinh);
+  if (cach === "ghep") {
+    // worktree phải KHỚP base về AGENTS.md trước lượt (kể cả tệp chưa theo dõi bị .git/info/exclude nuốt khỏi `git status`): nếu lệch, model sẽ đọc luật không phải B1 của base
+    if (!khopB1(wt, baseSha)) return tuChoi("--luat-cach ghep: AGENTS.md ở worktree KHÁC AGENTS.md của base (tệp lạ / đã sửa / còn bản ghi-đè của lượt cũ) — dọn trước khi nhận việc", the.ma);
+  } else {
+    fs.writeFileSync(path.join(wt, TEP_LUAT), luat, "utf8");
+    const ex = git(["rev-parse", "--git-path", "info/exclude"], wt).out.trim();
+    const exPath = path.resolve(wt, ex);
+    try {
+      fs.mkdirSync(path.dirname(exPath), { recursive: true });
+      const cu = fs.existsSync(exPath) ? fs.readFileSync(exPath, "utf8") : "";
+      if (!cu.split("\n").includes(TEP_LUAT)) fs.appendFileSync(exPath, `${cu.endsWith("\n") || cu === "" ? "" : "\n"}${TEP_LUAT}\n`);
+    } catch {
+      /* nếu không ghi được exclude, thuTepDoi vẫn bỏ AGENTS.md ra khỏi danh sách */
+    }
   }
 
   if (p.driver === "host") return tuChoi("driver host phải được dựng ở dòng lệnh (phuThuocHostThat) rồi truyền vào dạng hàm", the.ma);
@@ -539,7 +588,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   for (const g of kq.ghiChu) nhatKy(g);
 
   // thu diff: đánh dấu tệp mới là "ý định thêm" để `git diff` thấy; chỉ chạm index của worktree pilot, không commit
-  const tepDoi = thuTepDoi(wt);
+  const tepDoi = thuTepDoi(wt, cach === "ghi-de");
   if (tepDoi.length > 0) git(["add", "-N", "--", ...tepDoi], wt);
   const dong = tepDoi.length ? demDong(wt, tepDoi) : { them: 0, xoa: 0 };
   const diffText = tepDoi.length ? git(["diff", "HEAD", "--", ...tepDoi], wt).out : "";
@@ -661,6 +710,13 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     ...(tran ? { tran } : {}),
     ...(dbCho ? { choPhepDb: true as const, vaiCsdl: VAI_DUOC_PHEP } : {}),
     luat: { sha256: sha256Hex(luat), nguon: luatNguon, byte: Buffer.byteLength(luat, "utf8") },
+    luatCach: cach,
+    ...(cach === "ghep"
+      ? (() => {
+          const b1 = noiDungB1(wt, baseSha);
+          return { b1: { nguon: `${TEP_LUAT}@${baseSha.slice(0, 12)}`, sha256: b1 === null ? null : sha256Hex(b1), byte: b1 === null ? 0 : Buffer.byteLength(b1, "utf8"), saoLuotKhop: khopB1(wt, baseSha) } };
+        })()
+      : {}),
     ...(p.boChay ? { boChay: p.boChay } : {}),
     ...(tsc ? { tsc } : {}),
     ...(dotBien ? { dotBien } : {}),
@@ -683,7 +739,12 @@ function docThamSo(argv: string[]): Record<string, string> {
 async function main(): Promise<number> {
   const a = docThamSo(process.argv.slice(2));
   if (!a.the) {
-    process.stderr.write("dùng: chayMotViec.ts --the <tep-the> [--wt D:\\SOURCES\\_tho_ca_wt] [--base main] [--luat <tep-luat>] [--cho-phep-db --tep-url-csdl <tep>] [--driver kho|cli] [--ra <thu-muc>] [--ghi-luot <thu-muc>] [--kho-ghi '<json>']\n");
+    process.stderr.write("dùng: chayMotViec.ts --the <tep-the> [--wt D:\\SOURCES\\_tho_ca_wt] [--base main] [--luat <tep-luat>] [--luat-cach ghi-de|ghep] [--cho-phep-db --tep-url-csdl <tep>] [--driver kho|cli] [--ra <thu-muc>] [--ghi-luot <thu-muc>] [--kho-ghi '<json>']\n");
+    return 2;
+  }
+  const luatCach = docLuatCach(a["luat-cach"]);
+  if (luatCach === null) {
+    process.stderr.write(`--luat-cach phải là ghi-de hoặc ghep (nhận "${a["luat-cach"]}")\n`);
     return 2;
   }
   // `--cho-phep-db`: URL CSDL đọc từ TỆP ngoài repo / worktree (vai tho_ca_test); lỗi ⇒ dừng, thông báo không chứa nội dung tệp
@@ -745,6 +806,7 @@ async function main(): Promise<number> {
     van: fs.readFileSync(a.the, "utf8"),
     wt: a.wt ?? "D:\\SOURCES\\_tho_ca_wt",
     base: a.base ?? "main",
+    luatCach,
     ...(a.luat ? (({ luat, nguon }) => ({ luat, luatNguon: nguon }))(docLuatTuTep(a.luat)) : {}),
     boChay: commitBoChay(),
     ...(({ choPhepDb, testDbUrl }) => ({ choPhepDb, testDbUrl }))(thamDb),
