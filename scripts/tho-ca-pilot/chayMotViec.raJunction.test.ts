@@ -108,6 +108,32 @@ describe("P3-b — junction / liên kết", () => {
   });
 });
 
+describe("P3 — ghim thêm (đột biến sống p2/p4/p9 của kiem-dinh)", () => {
+  it("★★★ junction đặt TRONG worktree trỏ RA NGOÀI: --ra qua nó vẫn bị từ chối (dạng chuỗi nằm trong worktree), cả khi đích thật nằm ngoài", () => {
+    const lk = J(wt, "lk-trong-wt-ra-ngoai");
+    fs.symlinkSync(ngoai, lk, "junction");
+    try {
+      expect(raTrongGocSandbox(lk, wt, env(""))).toBe(CHUOI);
+      expect(raTrongGocSandbox(J(lk, "ra", "sau"), wt, env(""))).toBe(CHUOI);
+      expect(raTrongGocSandbox(J(lk, "ra"), wt, env(`k=${sandbox}`))).toBe(CHUOI);
+      // đối chứng: chính đích thật (ngoài) thì được
+      expect(raTrongGocSandbox(J(ngoai, "ra"), wt, env(""))).toBeNull();
+    } finally {
+      fs.unlinkSync(lk);
+    }
+  });
+  it.skipIf(process.platform !== "win32")("★★★ gốc sandbox LÀ GỐC Ổ ĐĨA (C:\): --ra bên trong nó bị từ chối; chính gốc ổ cũng bị từ chối (biên path.sep, không thành 'C:\\')", () => {
+    const goc = path.parse(thu).root;
+    expect(goc).toMatch(/^[A-Za-z]:\\$/);
+    expect(raTrongGocSandbox(J(thu, "ra"), wt, env(`k=${goc}`))).toBe(CHUOI);
+    expect(raTrongGocSandbox(goc, wt, env(`k=${goc}`))).toBe(CHUOI);
+    expect(raTrongGocSandbox(J(goc, "bat-ky", "ra"), wt, env(`k=${goc.toLowerCase()}`))).toBe(CHUOI); // hoa/thường ổ đĩa
+  });
+  it("★★ gốc sandbox thường (không phải gốc ổ) vẫn không nuốt anh em cùng tiền tố", () => {
+    expect(raTrongGocSandbox(`${sandbox}2`, wt, env(`k=${sandbox}`))).toBeNull();
+  });
+});
+
 describe("P3-b — dòng lệnh thật: thiếu --ra khi có cờ", () => {
   it("★★★ có --cho-phep-db mà KHÔNG --ra ⇒ thoát mã 2, chuỗi cố định, không tạo %TEMP%\\tho-ca-pilot", () => {
     const tepUrl = J(thu, "tho_ca_test.url");
