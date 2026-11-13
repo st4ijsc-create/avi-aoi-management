@@ -24905,5 +24905,56 @@
     "moTaNgan": "View only — human↔robot coordination is paused until the robot/AGV module is developed.",
     "dangKiemTra": "Checking module status…",
     "veTrangChu": "Back to home"
+  },
+  "urgent": {
+    "vung": {
+      "tieuDe": "Unread urgent items",
+      "daDoc": "Read ({{n}})",
+      "moTa": "Durable URGENT alerts of a run: a card never disappears by itself; \"I have read this\" only collapses the card and does not mean it was handled."
+    },
+    "moRun": "Open the orchestration page",
+    "toiDaDoc": "I have read this",
+    "ghiNguoiGio": "records that you read it, with the time",
+    "banDaDoc": "you read this at {{gio}}",
+    "run": "run {{runId}}",
+    "ghiNhan": "recorded {{tuoi}} ago · no handling confirmed",
+    "tuoi": {
+      "giay": "{{n}} s",
+      "phut": "{{m}} min {{s}} s",
+      "gio": "{{h}} h {{m}} min",
+      "ngay": "{{d}} d {{h}} h"
+    },
+    "nhieu": "+{{n}} more URGENT",
+    "xemTatCa": "View all URGENT",
+    "thuGon": "Collapse",
+    "cu": "The URGENT list could not be refreshed — newer URGENT items may not have arrived.",
+    "chiTiet": "Original server text (English)",
+    "loiDanhDau": "Could not record that you read it — try again.",
+    "chuGiaiGhim": "Pin = the version lock on a STOP step, used to confirm that what was sent is the approved STOP.",
+    "kind": {
+      "foe_outcome_unknown_compensation_held": "Compensation could not be confirmed as a STOP and was NOT sent; the run is held for a person",
+      "foe_outcome_unknown_stop_compensation_sent": "The compensation STOP was handed to the dispatcher and received — the machine has not confirmed; check the machine",
+      "foe_outcome_unknown_stop_compensation_simulated": "The compensation STOP was only SIMULATED — it did not reach any device",
+      "foe_outcome_unknown_stop_compensation_unconfirmed": "The compensation STOP was handed over but could NOT be confirmed — check the machine on site",
+      "foe_outcome_unknown_stop_compensation_not_handed": "The compensation STOP was NOT handed to the dispatcher",
+      "foe_outcome_unknown_no_compensation": "A command with an unknown outcome has no compensation of its own",
+      "foe_outcome_unknown_approved_compensation_unconfirmed": "The approved compensation (Continue) failed or did not answer — it may or may not have reached the device — check the machine on site",
+      "foe_outcome_unknown_approved_compensation_not_sent": "The approved compensation was NOT sent",
+      "foe_outcome_unknown_compensation_not_sent_run_failed": "The edge node went down during compensation; the run failed; the compensation was NOT sent",
+      "foe_outcome_unknown_compensation_outcome_unknown": "The outcome of the compensation itself is unknown — check the machine on site",
+      "foe_outcome_unknown_write_in_flight_at_latch": "A command had been handed over before the run was latched and cannot be recalled — check the machine on site",
+      "foe_outcome_unknown_forward_not_sent": "The forward command was NOT sent; the forward step was dropped",
+      "foe_outcome_unknown_run_end": "The run cannot continue — check the machine on site",
+      "foe_outcome_unknown_stop_untaken_branch": "A STOP in a branch the run never reached was NOT sent",
+      "foe_outcome_unknown_stop_not_sent": "A STOP step has NOT gone out — it still needs to be sent",
+      "foe_outcome_unknown_stop_unconfirmed_read": "The edge reports the STOP was delivered; the centre could not read the pin to confirm — check the machine on site",
+      "foe_outcome_unknown_stop_pin_mismatch": "The edge reports delivery but the pin does not match — what went out may not be a STOP — check the machine on site",
+      "foe_outcome_unknown_stop_pin_mismatch_not_sent": "The edge's pin snapshot shows no pin — the STOP was NOT sent",
+      "foe_outcome_unknown_abort_stop_not_sent": "Abort: a STOP step has NOT gone out",
+      "foe_outcome_unknown_abort_definition_unread": "Abort: the run definition could not be read — a STOP may not be out",
+      "foe_outcome_unknown_abort_sweep_unfinished": "Abort: the STOP sweep has not finished",
+      "foe_outcome_unknown_stop_ended_unswept": "The run ended without a STOP sweep — the STOP was NOT sent; check the machine",
+      "foe_outcome_unknown_edge_stream_stuck": "The run's edge stream stalled abnormally — a STOP may not be out; check the machine"
+    }
   }
 }
