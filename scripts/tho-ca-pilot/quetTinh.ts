@@ -53,7 +53,8 @@ export interface TuyChonQuet {
 const TRAN_CANH_BAO = 100;
 /**
  * Dòng DÀI hơn ngưỡng này KHÔNG chạy các regex (một số có `[^\n]*` ⇒ dòng 550 KB lặp `require   ` làm bộ quét chạy rất lâu).
- * Thay bằng MỘT cảnh báo `dong-qua-dai` (chỉ cảnh báo, không chặn): người duyệt tự đọc dòng đó.
+ * Thay bằng MỘT cảnh báo `dong-qua-dai` (chỉ cảnh báo, không chặn): người duyệt tự đọc dòng đó. Dòng ấy KHÔNG được quét ⇒ nhét dòng dài để né quét chỉ đổi cảnh báo mẫu thành cảnh báo này.
+ * "Chú thích dài bị bỏ qua" = dòng BẮT ĐẦU (sau khoảng trắng) bằng `//`, `/*` hoặc `*` (cùng định nghĩa `laChuThich` với dòng ngắn); mã đứng sau dấu đóng chú thích khối trên cùng dòng là hạn chế đã biết.
  */
 export const TRAN_DO_DAI_DONG = 4000;
 
@@ -183,7 +184,7 @@ export function quetTinh(dongMoi: readonly DongMoi[], tuyChon: TuyChonQuet): Can
   const thay = new Set<string>();
   for (const { so, dong } of dongMoi) {
     if (dong.length > TRAN_DO_DAI_DONG && !laChuThich(dong)) {
-      ra.push({ mau: "dong-qua-dai", dong: so, manh: `dài ${dong.length} ký tự (> ${TRAN_DO_DAI_DONG}), không quét`, trich: cheMatKhauUrl(dong.slice(0, 400)).trim().slice(0, 200) });
+      ra.push({ mau: "dong-qua-dai", dong: so, manh: `dòng dài ${dong.length} ký tự (> ${TRAN_DO_DAI_DONG}) — KHÔNG ĐƯỢC QUÉT, người duyệt tự đọc`, trich: cheMatKhauUrl(dong.slice(0, 400)).trim().slice(0, 200) });
       if (ra.length >= TRAN_CANH_BAO) return ra.slice(0, TRAN_CANH_BAO);
       continue;
     }

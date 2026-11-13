@@ -96,6 +96,12 @@ describe("chín mẫu — ÂM (mã vô hại gần giống)", () => {
     expect(ra.map((c) => [c.mau, c.dong])).toEqual([["dong-qua-dai", 2]]);
     expect(ra[0]!.trich.length).toBeLessThanOrEqual(200);
   });
+  it("★★ thông điệp dong-qua-dai nói rõ dòng KHÔNG được quét; né quét bằng dòng dài vẫn để lại cảnh báo", () => {
+    const [c] = quet(`const p = "${"y".repeat(4100)}";`);
+    expect(c!.mau).toBe("dong-qua-dai");
+    expect(c!.manh).toContain("KHÔNG ĐƯỢC QUÉT");
+    expect(maus(`const a = "${"x".repeat(4100)}"; const d = process.env.DATABASE_URL;`)).toEqual(["dong-qua-dai"]);
+  });
   it("★★ biên: dòng đúng 4000 ký tự vẫn được quét; 4001 ký tự ⇒ chỉ `dong-qua-dai`; dòng chú thích dài không cảnh báo", () => {
     const them = (n: number, dau: string) => dau + "x".repeat(n - dau.length);
     expect(maus(them(4000, "const a = process.env.X; "))).toContain("process-env");
