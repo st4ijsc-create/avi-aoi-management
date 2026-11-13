@@ -148,6 +148,17 @@ describe("main() — cờ AI_AGENT_* (--co)", () => {
   });
 });
 
+describe("main() — --cong-ke-hoach", () => {
+  it("★★★ --cong-ke-hoach ⇒ AI_AGENT_CONG_KE_HOACH=1 có hiệu lực trong JSON coAiAgent; không cờ ⇒ vắng", async () => {
+    delete process.env.AI_AGENT_CONG_KE_HOACH;
+    const co = await chayCli(coBan(["--cong-ke-hoach"]));
+    expect(co.json!.coAiAgent).toMatchObject({ AI_AGENT_CONG_KE_HOACH: "1" });
+    delete process.env.AI_AGENT_CONG_KE_HOACH;
+    const khong = await chayCli(coBan());
+    expect(khong.json!.coAiAgent?.AI_AGENT_CONG_KE_HOACH).toBeUndefined();
+  });
+});
+
 describe("main() — --cho-phep-db + --tep-url-csdl (đường thành công)", () => {
   it("★★★ đủ cờ + thẻ có dòng CSDL + --ra ngoài ⇒ JSON choPhepDb=true, vaiCsdl=tho_ca_test, KHÔNG có mật khẩu ở stdout/stderr/JSON", async () => {
     fs.writeFileSync(tepThe, THE(true));
