@@ -48,7 +48,7 @@ import { toRobotJob } from "../../equipment/robotJobMapping";
 import { readEdgeAssignment } from "../../edge/edgeExecutionSchema"; // A2(n) T8 lượt sửa 1 (CHAN-3) — a run given to an edge node: its claim's progress is its heartbeat; lượt sửa 2 (CHAN-4): through the shared read (0370 missing ⇒ no edge)
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, xacNhanHetChot, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
 
@@ -646,6 +646,8 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
   // (xacNhanHetChot) for this gate, every end that comes here, and the obligation sweep
   const lenhCua = x.def ? new Set(allStepsOf(x.def.steps as WorkflowStep[]).filter((s) => s.type === "command").map((s) => s.id)) : null;
   const xacNhanHet = xacNhanHetChot({ chot, rows: x.rows, ctx: x.ctx, ...(lenhCua ? { laLenh: (id: string) => lenhCua.has(id), lenhTien: lenhTienCua(x.def!.steps as WorkflowStep[]) } : {}), khongRo: x.boNho?.khongRo, boTien: x.boNho?.boTien });
+  // lượt sửa 2 (R-5 (2)) — the confirmation came from an edge node's rows: said, once per decision, with its source
+  if (chot && x.ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null && xacNhanHet && lyDo === "edgeSegment") void ghiNenXacNhanNut(x.runId, [...xacNhanTu(x.rows, null)], "cong").catch(() => undefined);
   if (chot && x.ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null && !xacNhanHet) {
     benChot = await choi(motBen([...(x.daCo ?? []), ...(x.boNho?.baoCho ?? [])], hanMs, label));
     if (!benChot && !doi) {
@@ -864,8 +866,27 @@ async function quetMotRun(d: RunDb, run: OrchestrationRun, x: QuetMot): Promise<
   const tuHang = chotTuHang(hang, ctx[RESUME_STATE_CTX_KEY] as Parameters<typeof chotTuHang>[1]);
   const chot = tuCtx?.stepId != null ? { stepId: String(tuCtx.stepId), ma: maKetCucKhongRoCua(typeof tuCtx.ma === "string" ? tuCtx.ma : null) } : tuHang ? { stepId: tuHang.stepId, ma: tuHang.ma } : null;
   const khoaChot = chot ? `${run.id}:${chot.stepId}:chot` : null;
-  // T9 (decision 3, census of the latch's readers) — a latch every unknown of which a confirmed STOP covers owes no run_end URGENT: the gate's own reading (no definition here: a coded container counts, the safe side)
-  const noChot = chot !== null && ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null && dq.chot === null && !quetDaBenTrongProcess.has(khoaChot as string) && !xacNhanHetChot({ chot, rows: hang, ctx });
+  // T9 (decision 3, census of the latch's readers) — a latch every unknown of which a confirmed STOP covers owes no run_end URGENT. lượt sửa 2 (P-2, dieu-phoi 13/11) — read as the gate reads it: with the
+  // definition (only when a confirmation is there to read); the definition unread ⇒ raised (the safe side)
+  let noChot = chot !== null && ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] == null && dq.chot === null && !quetDaBenTrongProcess.has(khoaChot as string);
+  if (noChot && chot && xacNhanTu(hang, ctx).size > 0) {
+    let dinhNghia: Pick<WorkflowDefinition, "steps"> | null = null;
+    try {
+      const [wf] = await d.select().from(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, run.workflowId)).limit(1);
+      dinhNghia = (wf?.definitionJson as Pick<WorkflowDefinition, "steps"> | null | undefined) ?? null;
+    } catch {
+      dinhNghia = null;
+    }
+    // ONE reading (xacNhanHetChot): with no definition it never clears (its own rule), so the sweep raises
+    const lenhDn = dinhNghia ? new Set(allStepsOf(dinhNghia.steps as WorkflowStep[]).filter((s) => s.type === "command").map((s) => s.id)) : null;
+    if (xacNhanHetChot({ chot, rows: hang, ctx, ...(dinhNghia && lenhDn ? { laLenh: (id: string) => lenhDn.has(id), lenhTien: lenhTienCua(dinhNghia.steps as WorkflowStep[]) } : {}) })) {
+      noChot = false;
+      // R-5 (2) — a confirmation of a node's rows (no central context mark): said with its source
+      const daTrungTam = xacNhanTu(null, ctx);
+      const tuNut = [...xacNhanTu(hang, null)].filter((b) => !daTrungTam.has(b));
+      if (tuNut.length) void ghiNenXacNhanNut(run.id, tuNut, "quet").catch(() => undefined);
+    }
+  }
   const dau = hang
     .filter((r) => dauKhongXacNhan(r.resultJson) !== null)
     .map((r) => ({ r, dang: dauKhongXacNhan(r.resultJson) as DangKhongXacNhan, claimSeq: claimCuaHang(r) }))
@@ -965,7 +986,8 @@ export type RunDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
  */
 export async function cachEdgeTrungTam(runId: number, def: WorkflowDefinition | null | undefined, x: { loai: string; stepId: string; compId?: string }): Promise<CachEdgeTrungTam> {
   if (x.loai === "forwardNotSent") return { stopKhongXacMinh: await stopKhongXacMinhEdge(runId, def, x) };
-  if (x.loai !== "stopNotSent" || !def) return {};
+  if (x.loai !== "stopNotSent") return {};
+  if (!def) return { chuaXacMinh: true }; // lượt sửa 2 (RA-EE) — no definition to read: nothing verified
   try {
     return await withDeadline(
       (async (): Promise<CachEdgeTrungTam> => {
@@ -981,7 +1003,8 @@ export async function cachEdgeTrungTam(runId: number, def: WorkflowDefinition | 
       `FOE run ${runId} step ${x.stepId} STOP words`,
     );
   } catch {
-    return {};
+    // lượt sửa 2 (RA-EE, dieu-phoi 13/11: fail-closed) — central could not read: it cannot say the STOP is pinned, so the words promise nothing (chuaXacMinh), never the plain "Abort sends it again"
+    return { chuaXacMinh: true };
   }
 }
 export async function stopKhongXacMinhEdge(runId: number, def: WorkflowDefinition | null | undefined, x: { loai: string; stepId: string }): Promise<boolean> {

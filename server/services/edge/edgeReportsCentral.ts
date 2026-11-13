@@ -413,7 +413,8 @@ export async function reportForNode(node: EdgeNodePrincipal, runId: number, body
     if (traLoi.http === 200) {
       // A2(n) T7b-2 (H7, 5a) — the URGENT of a STOP the edge's Abort could not send: central's own text and key (abortStopNotSent, one per run and step), after the commit; a replayed record reaches no handler
       for (const [id, vi] of abortChuaRa) {
-        void canhBaoKetCucKhongRo({ loai: "abortStopNotSent", runId, stepId: id, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "chot", biet: true, vi, owner: run.startedBy ?? null }).then((ben) => {
+        // T9 lượt sửa 2 (R-4) — the run is this node's: its adapters are the node's, a press at central only queues it there (adapterNut): no "no time limit"
+        void canhBaoKetCucKhongRo({ loai: "abortStopNotSent", runId, stepId: id, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "chot", biet: true, vi, adapterNut: true, owner: run.startedBy ?? null }).then((ben) => {
           if (!ben) console.error(`[EdgeReports] run ${runId} step ${id}: the URGENT of a STOP the edge's Abort could not send is not stored`);
         });
       }
