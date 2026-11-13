@@ -11,6 +11,8 @@
  *   GIỚI HẠN: 15 phút, 12 vòng
  */
 import { docDotBien, docKhangDinhCam, type DotBienThe } from "./dotBienThuan";
+import { TRAN_CUNG_SO_LUOT } from "../../server/services/ai/agent/gioiHanLuot";
+import { docSoTran, GIOI_PHUT, GIOI_TOKEN_RA, type TranTheoThe } from "./tranLuot";
 
 export interface TheViec {
   ma: string;
@@ -32,6 +34,8 @@ export interface TheViec {
   khangDinhCam?: Array<string | RegExp>;
   /** CSDL: khai việc có chạm CSDL _test (CHỈ BỘ CHẠY đọc, KHÔNG vào lời nhắc của model). Điều kiện 2 của `--cho-phep-db`: phải nêu aoi_management_test. */
   csdl?: string;
+  /** HA-3 — trần lượt agent do khoá thẻ TƯỜNG MINH (TRẦN LƯỢT MODEL / TRẦN PHÚT / TRẦN TOKEN RA); vắng ⇒ không áp gì. Chữ tự do trong GIỚI HẠN không được phân tích để áp trần. */
+  tran?: TranTheoThe;
   gioiHan: { giay: number; vong: number };
 }
 
@@ -48,6 +52,9 @@ const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
   "DOT BIEN": "dotBien",
   "KHONG DUOC KHANG DINH": "khangDinhCam",
   "CSDL": "csdl",
+  "TRAN LUOT MODEL": "tranLuotModel",
+  "TRAN PHUT": "tranPhut",
+  "TRAN TOKEN RA": "tranTokenRa",
 };
 
 /** Bỏ dấu + in hoa để so khoá (thẻ do người gõ, dấu có thể thiếu). */
@@ -138,6 +145,18 @@ export function docTheViec(van: string): KetQuaThe {
   }
   const khangDinhCam = docKhangDinhCam((truong.get("khangDinhCam") as string) ?? "");
   const csdl = (truong.get("csdl") ?? "").trim();
+  const tran: TranTheoThe = {};
+  for (const [khoa, ten, gioi, truongTran] of [
+    ["tranLuotModel", "TRẦN LƯỢT MODEL", { min: 1, max: TRAN_CUNG_SO_LUOT }, "luotModel"],
+    ["tranPhut", "TRẦN PHÚT", GIOI_PHUT, "phut"],
+    ["tranTokenRa", "TRẦN TOKEN RA", GIOI_TOKEN_RA, "tokenRa"],
+  ] as const) {
+    const tho = truong.get(khoa);
+    if (tho === undefined) continue;
+    const n = docSoTran(tho, gioi.min, gioi.max);
+    if (n === null) return { ok: false, loi: `${ten} phải là một số nguyên trong khoảng ${gioi.min}..${gioi.max}` };
+    tran[truongTran] = n;
+  }
   return {
     ok: true,
     the: {
@@ -151,6 +170,7 @@ export function docTheViec(van: string): KetQuaThe {
       ...(db.ds.length ? { dotBien: db.ds } : {}),
       ...(khangDinhCam.length ? { khangDinhCam } : {}),
       ...(csdl ? { csdl } : {}),
+      ...(Object.keys(tran).length > 0 ? { tran } : {}),
       gioiHan: docGioiHan(truong.get("gioiHan")),
     },
   };

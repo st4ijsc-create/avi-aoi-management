@@ -90,6 +90,7 @@ import { layAnhSoModel } from "../soModel/anhSoModel";
 import { lamMoiKheDangGiu } from "../soModel/kheNangMacDinh";
 import { damBaoChiMucNen, phanGiaiChiMuc, type CongChiMucMa } from "./chiMucMaAgent";
 import { docTepQuyUoc } from "./tepQuyUocAgent";
+import { hopGioiHanLuot } from "./gioiHanLuot";
 import { taoTraDinhNghia } from "./dinhNghiaAgentMayChu";
 import { dongTheCuaCay } from "../../../db/aiAgentTheDuyet";
 import { chotMoiKeHoachDangCho } from "../../../db/aiAgentKeHoach";
@@ -1062,11 +1063,12 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
             },
             ...(haTuTriDauChung ? { haTuTriDau: true } : {}),
             signal: boHuy.signal,
+            // (HA-3) AI_AGENT_SO_LUOT_TOI_DA nâng/hạ trần lượt model (kẹp [1,120]); chưa đặt ⇒ NGUYÊN `phuThuoc.gioiHan` như cũ
             gioiHan: capNgoai
-              ? { ...phuThuoc.gioiHan, soLuotToiDa: TRAN_VONG_AGENT_NGOAI }
+              ? { ...hopGioiHanLuot(phuThuoc.gioiHan, process.env), soLuotToiDa: TRAN_VONG_AGENT_NGOAI }
               : nganSachNguCanh !== undefined
-                ? { ...phuThuoc.gioiHan, nganSachNguCanhToken: nganSachNguCanh }
-                : phuThuoc.gioiHan,
+                ? { ...hopGioiHanLuot(phuThuoc.gioiHan, process.env), nganSachNguCanhToken: nganSachNguCanh }
+                : hopGioiHanLuot(phuThuoc.gioiHan, process.env),
             ngonNgu: lang,
             uocLuongToken: uocLuongSoToken,
             // (2026-10-19) nhắc đối chiếu đặc tả sau lần test xanh đầu — tắt bằng AI_AGENT_KIEM_DAC_TA=0

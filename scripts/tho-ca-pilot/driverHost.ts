@@ -18,6 +18,7 @@ import path from "node:path";
 import { chuanDuong, kiemDiffTheoThe, vungCamCua, type TheViec } from "./theViec";
 import { chayLenhKiem, loaiUrlCsdl, xoaGiaTriBiMat, type ChayKiem, type KetQuaKiem } from "./kiemChung";
 import type { DauVaoDriver, KetQuaDriver } from "./chayMotViec";
+import type { GioiHanLuotChoDriver } from "./tranLuot";
 
 export const NHAN_PILOT = "pilot-tho-ca";
 /** nhãn trong loiCongCu cho từ chối KHÔNG phải lỗi công cụ: bộ chạy tự từ chối (lọc trước) · người duyệt từ chối · hết hạn chờ người */
@@ -199,7 +200,7 @@ type SuKien = { loai: string; [k: string]: unknown };
 export interface PhuThuocHost {
   /** trả lỗi (chuỗi) nếu môi trường không đạt; null = đạt */
   kiemMoiTruong(v: DauVaoDriver): Promise<string | null>;
-  taoLuot(y: { cauHoi: string; projectId: string }): Promise<{ ok: true; runId: string } | { ok: false; loi: string }>;
+  taoLuot(y: { cauHoi: string; projectId: string; gioiHan?: GioiHanLuotChoDriver }): Promise<{ ok: true; runId: string } | { ok: false; loi: string }>;
   nghe(runId: string, f: (m: { seq: number; suKien: SuKien }) => void): (() => void) | null;
   huy(runId: string): void;
   duyet(actionId: string): Promise<{ ok: boolean; daGhi: boolean; status: string | null }>;
@@ -234,7 +235,7 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
 
     const projectId = dep.duAnId(v.wt);
     const cauHoi = `[${NHAN_PILOT}:${v.the.ma}] ${v.lenh}`;
-    const tao = await dep.taoLuot({ cauHoi, projectId });
+    const tao = await dep.taoLuot({ cauHoi, projectId, ...(v.gioiHanLuot ? { gioiHan: v.gioiHanLuot } : {}) });
     if (!tao.ok) return { vong: null, token: null, ghiChu, hetGio: false, loi: `không tạo được lượt: ${tao.loi}` };
 
     const th = { soLanCho: 0, soChapNhan: 0, soTuChoi: 0, msCho: 0 };
@@ -449,7 +450,8 @@ export async function phuThuocHostThat(c: CauHinhHostThat): Promise<PhuThuocHost
   const { quanLyLuotChay } = await import("../../server/services/ai/agent/quanLyLuotChay");
   const tt = await import("../../server/services/ai/agent/thuTucLuotChay");
   const tk = await import("../../server/services/ai/agent/thuTucKeHoach");
-  const ql = quanLyLuotChay();
+  // HA-3: trần lượt do khoá thẻ ⇒ dựng quản lý lượt với `gioiHan` đó (chỉ khi thẻ có khoá; mặc định giữ quản lý không tham số)
+  let ql = quanLyLuotChay();
   return {
     async kiemMoiTruong(v) {
       const url = process.env.DATABASE_URL;
@@ -478,6 +480,7 @@ export async function phuThuocHostThat(c: CauHinhHostThat): Promise<PhuThuocHost
       return null;
     },
     async taoLuot(y) {
+      if (y.gioiHan) ql = quanLyLuotChay({ gioiHan: y.gioiHan });
       const kq = await ql.taoLuotChay({ user: c.nguoi, cauHoi: y.cauHoi, projectId: y.projectId, cheDo: "sua", lichSu: [], ngonNgu: "vi" });
       return kq.ok ? { ok: true, runId: kq.luot.id } : { ok: false, loi: `${kq.ma}${kq.thongDiep ? `: ${kq.thongDiep}` : ""}` };
     },
