@@ -1,0 +1,1570 @@
+{
+ "ngay": "2026-11-13",
+ "nhan": "t1-xen-ke",
+ "commit": "20fa3bad1",
+ "cayBan": false,
+ "soMau": 18,
+ "truc": "H",
+ "maxTokens": 16000,
+ "sampling": {
+  "temperature": 0.2,
+  "top_p": 0.9
+ },
+ "giayTuong": 2203,
+ "model": {
+  "tep": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+  "sha": "707a55a8a4397ecde44de0c499d3e68c1ad1d240d1da65826b4949d1043f4450",
+  "ctx": 65536,
+  "reasoningBudget": 12000,
+  "slot": 1
+ },
+ "co": {},
+ "ghiChu": "Nghiem thu T1: --tu-kiem-ma xen-ke (bat khi mau+thu tu bai chan), 18 mau => 9 mau/nhanh/bai, dung 04:30 neu chua xong. Build T1 dist 2f57d4fd tu 20fa3bad1. May :3013 tu _ai9_do_e (dist 2f57d4fd, run-eval 20fa3bad1) tren aoi_management_test, vai avi_app, may.mts sua env, AI_CHAT_TU_KIEM_MA=theo-luot chi tren :3013, llama-server :8091 khong restart.",
+ "tuKiemMaCheDo": "xen-ke",
+ "tuKiem": [
+  {
+   "id": "H-cs1",
+   "nhanh": "bat",
+   "dat": 9,
+   "n": 9,
+   "msTb": 15719,
+   "trangThai": {
+    "sach": 9
+   },
+   "vongTb": 0,
+   "kyTuThemTb": 0,
+   "msThemTb": 1982
+  },
+  {
+   "id": "H-cs1",
+   "nhanh": "tat",
+   "dat": 9,
+   "n": 9,
+   "msTb": 16375,
+   "trangThai": {},
+   "vongTb": null,
+   "kyTuThemTb": null,
+   "msThemTb": null
+  },
+  {
+   "id": "H-cs2",
+   "nhanh": "bat",
+   "dat": 9,
+   "n": 9,
+   "msTb": 33431,
+   "trangThai": {
+    "da-sua": 4,
+    "sach": 5
+   },
+   "vongTb": 0,
+   "kyTuThemTb": 2169,
+   "msThemTb": 5032
+  },
+  {
+   "id": "H-cs2",
+   "nhanh": "tat",
+   "dat": 6,
+   "n": 9,
+   "msTb": 30007,
+   "trangThai": {},
+   "vongTb": null,
+   "kyTuThemTb": null,
+   "msThemTb": null
+  },
+  {
+   "id": "H-py3",
+   "nhanh": "bat",
+   "dat": 3,
+   "n": 9,
+   "msTb": 34269,
+   "trangThai": {
+    "sach": 9
+   },
+   "vongTb": 0,
+   "kyTuThemTb": 0,
+   "msThemTb": 78
+  },
+  {
+   "id": "H-py3",
+   "nhanh": "tat",
+   "dat": 5,
+   "n": 9,
+   "msTb": 36995,
+   "trangThai": {},
+   "vongTb": null,
+   "kyTuThemTb": null,
+   "msThemTb": null
+  },
+  {
+   "id": "H-ts3",
+   "nhanh": "bat",
+   "dat": 4,
+   "n": 9,
+   "msTb": 30290,
+   "trangThai": {
+    "sach": 8,
+    "da-sua": 1
+   },
+   "vongTb": 0,
+   "kyTuThemTb": 314,
+   "msThemTb": 777
+  },
+  {
+   "id": "H-ts3",
+   "nhanh": "tat",
+   "dat": 3,
+   "n": 9,
+   "msTb": 31037,
+   "trangThai": {},
+   "vongTb": null,
+   "kyTuThemTb": null,
+   "msThemTb": null
+  }
+ ],
+ "taiMay": {
+  "soMauTai": 37,
+  "cpuTb": 29,
+  "cpuMax": 45,
+  "tienTrinhNang": {},
+  "soLuotSlotBan": 0,
+  "sach": true
+ },
+ "dungSom": null,
+ "chuaDo": [],
+ "stacks": [
+  {
+   "stack": "cs",
+   "bai": 2,
+   "luot": 36,
+   "dat": 33,
+   "passAt1": 0.917,
+   "passAtN": 1,
+   "moiMau": [
+    2,
+    2,
+    2,
+    1,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    1,
+    2,
+    1,
+    2,
+    2
+   ],
+   "cut": null,
+   "tokRaTb": null,
+   "msTb": 23883
+  },
+  {
+   "stack": "py",
+   "bai": 1,
+   "luot": 18,
+   "dat": 8,
+   "passAt1": 0.444,
+   "passAtN": 1,
+   "moiMau": [
+    1,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    1,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0
+   ],
+   "cut": null,
+   "tokRaTb": null,
+   "msTb": 35632
+  },
+  {
+   "stack": "ts",
+   "bai": 1,
+   "luot": 18,
+   "dat": 7,
+   "passAt1": 0.389,
+   "passAtN": 1,
+   "moiMau": [
+    1,
+    1,
+    0,
+    1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1
+   ],
+   "cut": null,
+   "tokRaTb": null,
+   "msTb": 30664
+  }
+ ],
+ "tong": {
+  "stack": "TỔNG",
+  "bai": 4,
+  "luot": 72,
+  "dat": 48,
+  "passAt1": 0.667,
+  "passAtN": 1,
+  "moiMau": [
+   4,
+   3,
+   2,
+   2,
+   3,
+   2,
+   3,
+   2,
+   3,
+   3,
+   4,
+   3,
+   2,
+   2,
+   3,
+   1,
+   3,
+   3
+  ],
+  "cut": null,
+  "tokRaTb": null,
+  "msTb": 28515
+ },
+ "hang": [
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 19586,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 36744,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "da-sua",
+    "ngonNgu": "cs",
+    "vong": 1,
+    "sua": 2,
+    "con": 0,
+    "kyTuThem": 4348,
+    "ms": 8265,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 47723,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 41327,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "ts",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 398,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 15134,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 1995,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 29648,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 26239,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "py",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 74,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 2,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 32698,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 12700,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 37744,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "da-sua",
+    "ngonNgu": "cs",
+    "vong": 1,
+    "sua": 1,
+    "con": 0,
+    "kyTuThem": 5621,
+    "ms": 10051,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 28676,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 3,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 23163,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "ts",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 305,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 15748,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 2011,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 28427,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 25477,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "py",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 75,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 4,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 31165,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 15035,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 30529,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 1948,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 34710,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 5,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 28874,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "ts",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 274,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 13834,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 2047,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 25527,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 32325,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "py",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 93,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 6,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 31185,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 7,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 15807,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 7,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 32909,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 1884,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 7,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 57910,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 7,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 35155,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "ts",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 408,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 8,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 16436,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 2026,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 8,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 27729,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 8,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 58109,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "py",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 70,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 8,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 28709,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 9,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 14911,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 9,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 31056,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "da-sua",
+    "ngonNgu": "cs",
+    "vong": 1,
+    "sua": 2,
+    "con": 0,
+    "kyTuThem": 4716,
+    "ms": 9264,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 9,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 41381,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 9,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 28262,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "ts",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 284,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 10,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 14643,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 1863,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 10,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 23933,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 10,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 30609,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "py",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 89,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 10,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 28553,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 11,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 17542,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 11,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 28966,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 1907,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 11,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 36086,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 11,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 34925,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "da-sua",
+    "ngonNgu": "ts",
+    "vong": 1,
+    "sua": 1,
+    "con": 0,
+    "kyTuThem": 2825,
+    "ms": 4496,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 12,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 18083,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 1912,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 12,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 25109,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 12,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 31592,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "py",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 67,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 12,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 31935,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 13,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 20756,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 13,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 26863,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 1866,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 13,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 24409,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 13,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 27896,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "ts",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 269,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 14,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 17103,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 1976,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 14,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 27833,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 14,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 51859,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "py",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 72,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 14,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 21143,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 15,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 14709,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 15,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 46103,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "da-sua",
+    "ngonNgu": "cs",
+    "vong": 1,
+    "sua": 1,
+    "con": 0,
+    "kyTuThem": 4834,
+    "ms": 8206,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 15,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 35021,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 15,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 23079,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "ts",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 277,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 16,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 15201,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 2047,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 16,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 58818,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 16,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 30408,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "py",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 74,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 16,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 32740,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 17,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 16331,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 17,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 29964,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 1898,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 17,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 27042,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 17,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 29930,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "ts",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 279,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs1",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 18,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 15293,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "cs",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 1959,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-cs2",
+   "stack": "cs",
+   "bo": "tasks-hard",
+   "mau": 18,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 23035,
+   "tuKiemMaLuot": false
+  },
+  {
+   "id": "H-py3",
+   "stack": "py",
+   "bo": "tasks-hard",
+   "mau": 18,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO"
+   ],
+   "cut": null,
+   "tokRa": null,
+   "ms": 21800,
+   "tuKiemMaLuot": true,
+   "tuKiemMa": {
+    "ok": "1",
+    "trangThai": "sach",
+    "ngonNgu": "py",
+    "vong": 0,
+    "sua": 0,
+    "con": 0,
+    "kyTuThem": 0,
+    "ms": 86,
+    "nguon": "luot"
+   }
+  },
+  {
+   "id": "H-ts3",
+   "stack": "ts",
+   "bo": "tasks-hard",
+   "mau": 18,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": null,
+   "ms": 41205,
+   "tuKiemMaLuot": false
+  }
+ ]
+}
