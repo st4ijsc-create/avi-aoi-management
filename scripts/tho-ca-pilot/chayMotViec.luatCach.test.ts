@@ -79,6 +79,20 @@ describe("docLuatCach", () => {
   });
 });
 
+describe("bo-sung-pilot.md — tệp thật", () => {
+  const tho = fs.readFileSync(duongTepLuatBoSung());
+  const chu = tho.toString("utf8");
+  it("★★ ≤ 2 KB, LF, không BOM", () => {
+    expect(tho.length).toBeLessThanOrEqual(2048);
+    expect(tho.includes(Buffer.from([0x0d, 0x0a]))).toBe(false);
+    expect(tho.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))).toBe(false);
+  });
+  it("★★ mang đủ các ý HST đã duyệt (6 lần lệnh kiểm, kết quả 'bị từ chối' kèm tự chạy, CON SỐ khi chạm CSDL, trần lượt dành 2 lượt cuối, edit_file không ghi đè, thẻ 5 phút)", () => {
+    for (const k of ["tối đa 6 lần trong lượt", "kết quả thật của lệnh kiểm", "CON SỐ", "ít nhất 2 lượt cuối", "edit_file từng chỗ", "write_file ghi đè", "5 phút", "TỆP ĐƯỢC PHÉP SỬA/TẠO", "QUY TRÌNH"]) expect(chu, k).toContain(k);
+    expect(chu).not.toContain("là bình thường");
+  });
+});
+
 describe("ghi-de (mặc định) — hành vi CŨ không đổi", () => {
   beforeEach(() => nap(true));
   it("★★★ không truyền luatCach ⇒ AGENTS.md worktree bị ghi đè bằng luật, lệnh chứa luật, JSON luatCach=ghi-de, KHÔNG có b1", async () => {
