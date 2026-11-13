@@ -6,8 +6,10 @@ import {
   cheChuoi,
   cheGiaTri,
   cheSchemaTool,
+  cheChuoiLienDai,
   laTenKhoaNhay,
   layTuDienNhay,
+  THAY,
   TU_DIEN_RONG,
   type TuDienNhay,
 } from "./cheDuLieu";
@@ -223,6 +225,116 @@ describe("chuỗi liền dài (dieu-phoi c + rà kiem-dinh, 2026-10-26): ≥ 2 0
     const ngan2 = ngan.slice(0, 1990);
     expect(cheChuoi(`id ${ngan2}`).theoLoai).not.toHaveProperty("chuoi_lien_dai");
   });
+});
+
+describe("cheChuoiLienDai — quét tuyến tính thay regex `(?<!\\S)\\S{8000,}` (V8 tràn ngăn xếp quay lui ở chuỗi liền ≥ ~5,6M ký tự)", () => {
+  // Bản THAM CHIẾU: đúng regex cũ, chỉ đổi ngưỡng. Quét mới phải cho cùng chuỗi ra và cùng số lần đếm ở mọi đầu vào nhỏ hơn mức tràn.
+  const thamChieu = (s: string, nguong: number) => {
+    let n = 0;
+    const ra = s.replace(new RegExp(`(?<!\\S)\\S{${nguong},}`, "g"), () => (n++, THAY.biMat));
+    return { ra, n };
+  };
+  const quet = (s: string, nguong?: number) => {
+    let n = 0;
+    const ra = cheChuoiLienDai(s, (loai) => {
+      expect(loai).toBe("chuoi_lien_dai");
+      n++;
+    }, nguong);
+    return { ra, n };
+  };
+  // mulberry32 — hạt cố định để ca đỏ tái lập được.
+  const prng = (hat: number) => () => {
+    hat = (hat + 0x6d2b79f5) | 0;
+    let t = Math.imul(hat ^ (hat >>> 15), 1 | hat);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  it("tập khoảng trắng = đúng `\\s` của JS: quét MỌI đơn vị mã 0..0xFFFF (ngưỡng 3) — 25 đơn vị là khoảng trắng", () => {
+    const s = Array.from({ length: 0x10000 }, (_, c) => `x${String.fromCharCode(c)}x`).join(" ");
+    const moi = quet(s, 3);
+    const cu = thamChieu(s, 3);
+    expect(moi.ra).toBe(cu.ra);
+    expect(moi.n).toBe(cu.n);
+    // \t \n \v \f \r, dấu cách, U+00A0, U+1680, U+2000–U+200A (11), U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF ⇒ 25.
+    expect(moi.n).toBe(0x10000 - 25);
+  });
+
+  it("biên 7 999 / 8 000 / 8 001, đầu/cuối chuỗi, sau khoảng trắng Unicode, cặp thay thế, nhiều khối", () => {
+    const a = (n: number) => "a".repeat(n);
+    expect(quet(a(7999))).toEqual({ ra: a(7999), n: 0 });
+    expect(quet(a(8000))).toEqual({ ra: THAY.biMat, n: 1 });
+    expect(quet(a(8001))).toEqual({ ra: THAY.biMat, n: 1 });
+    expect(quet(` ${a(8000)}\n`)).toEqual({ ra: ` ${THAY.biMat}\n`, n: 1 });
+    expect(quet(`x　${a(8000)}`)).toEqual({ ra: `x　${THAY.biMat}`, n: 1 });
+    // U+180E KHÔNG còn là khoảng trắng (Unicode ≥ 6.3) ⇒ dính vào khối: 8 002 ký tự liền ⇒ che cả khối, kể cả "x".
+    expect(quet(`x᠎${a(8000)}`)).toEqual({ ra: THAY.biMat, n: 1 });
+    expect(quet(`${a(9000)} ${"B".repeat(9000)}\t${a(10)}`)).toEqual({ ra: `${THAY.biMat} ${THAY.biMat}\t${a(10)}`, n: 2 });
+    // 😀 = 2 đơn vị mã: 4 000 cái = 8 000 đơn vị ⇒ che; 3 999 cái + "a" = 7 999 ⇒ giữ.
+    expect(quet("😀".repeat(4000)).n).toBe(1);
+    expect(quet(`${"😀".repeat(3999)}a`).n).toBe(0);
+    expect(quet("")).toEqual({ ra: "", n: 0 });
+    expect(quet(" \n\t")).toEqual({ ra: " \n\t", n: 0 });
+  });
+
+  it("vi sai hạt cố định với regex cũ: 200 chuỗi trộn khối quanh ngưỡng + khoảng trắng Unicode, ngưỡng 8 000 và ngưỡng nhỏ", () => {
+    const r = prng(0x13_11_2026);
+    const TRANG = [" ", "\n", "\t", "\r\n", " ", " ", "　", "﻿", " ", " "];
+    const CHU = ["a", "Z", "9", "+", "/", "=", ".", "{", "᠎", "đ", "😀", "​"];
+    const chon = <T,>(xs: readonly T[]) => xs[Math.floor(r() * xs.length)]!;
+    let soCa = 0;
+    let soChe = 0;
+    for (const nguong of [8000, 5, 1]) {
+      for (let ca = 0; ca < (nguong === 8000 ? 120 : 40); ca++) {
+        const doDai = nguong === 8000 ? [0, 1, 7998, 7999, 8000, 8001, 8002, 16_000] : [0, 1, nguong - 1, nguong, nguong + 1, 30];
+        let s = r() < 0.5 ? chon(TRANG) : "";
+        const soKhoi = 1 + Math.floor(r() * 5);
+        for (let k = 0; k < soKhoi; k++) {
+          const dai = r() < 0.7 ? chon(doDai) : Math.floor(r() * 2 * nguong);
+          let khoi = "";
+          while (khoi.length < dai) khoi += chon(CHU);
+          s += khoi + (k < soKhoi - 1 || r() < 0.5 ? chon(TRANG).repeat(1 + Math.floor(r() * 3)) : "");
+        }
+        const moi = quet(s, nguong);
+        const cu = thamChieu(s, nguong);
+        expect(moi.ra, `ngưỡng ${nguong} ca ${ca}`).toBe(cu.ra);
+        expect(moi.n, `ngưỡng ${nguong} ca ${ca}`).toBe(cu.n);
+        soCa++;
+        soChe += moi.n;
+      }
+    }
+    expect(soCa).toBe(200);
+    // Bộ sinh phải thật sự tạo cả ca che lẫn ca giữ, nếu không vi sai mù.
+    expect(soChe).toBeGreaterThan(50);
+  });
+
+  it("6M và 20M ký tự liền qua cheChuoi: không ném, che đúng, giữ phần ngoài khối", () => {
+    for (const n of [6_000_000, 20_000_000]) {
+      const k = cheChuoi("a".repeat(n));
+      expect(k.giaTri).toBe(THAY.biMat);
+      expect(k.theoLoai.chuoi_lien_dai).toBe(1);
+      const k2 = cheChuoi(`dau ${"Z".repeat(n)} cuoi`);
+      expect(k2.giaTri).toBe(`dau ${THAY.biMat} cuoi`);
+      expect(k2.theoLoai.chuoi_lien_dai).toBe(1);
+    }
+  }, 60_000);
+
+  it("thời gian tuyến tính: t(8n)/t(n) < 16 với n = 2,5M (tuyến tính ≈ 8, bậc hai ≈ 64), trung vị 5 mẫu", () => {
+    const doMs = (s: string) => {
+      const t0 = performance.now();
+      cheChuoiLienDai(s, () => {});
+      return performance.now() - t0;
+    };
+    const trungVi = (s: string) => {
+      const xs = Array.from({ length: 5 }, () => doMs(s)).sort((x, y) => x - y);
+      return xs[2]!;
+    };
+    const sinh = (n: number) => `${"a ".repeat(n / 8)}${"b".repeat((3 * n) / 4)}`;
+    trungVi(sinh(100_000));
+    const t1 = trungVi(sinh(2_500_000));
+    const t8 = trungVi(sinh(20_000_000));
+    expect(t8 / Math.max(t1, 1)).toBeLessThan(16);
+  }, 60_000);
 });
 
 describe("rà kiem-dinh lần 2 — ba cách né khối 2–8 KB (BẮT BUỘC trước khi bật AI_NGOAI_ENABLED)", () => {
