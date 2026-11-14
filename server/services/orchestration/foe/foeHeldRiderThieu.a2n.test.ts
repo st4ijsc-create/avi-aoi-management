@@ -32,7 +32,7 @@ vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
 
 import { FakeDb } from "../../../routers/__otFakeDb";
 import { applyEdgeSegmentEnd } from "./foeRunStore";
-import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KHONG_CO_BU_TRU, ganBaoCaoKhongRoEdge, runDaChotKhongRo, tachBaoCaoKhongRoEdge } from "./foeKetCucKhongRo";
+import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, ganBaoCaoKhongRoEdge, runDaChotKhongRo, tachBaoCaoKhongRoEdge } from "./foeKetCucKhongRo";
 import { edgeResumeStateOf, stopChuaRaTuHang } from "./foeRunStore";
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
 
@@ -141,6 +141,30 @@ describe("T4 — dạng 4, the cases of the review (rider short or unreadable)",
     expect(ctx.foeOutcomeUnknown, "STOP never in U (L-7)").toEqual(["x"]);
     expect(khoaCua("stopNotSent", "nt"), "exactly one URGENT of the owed STOP").toEqual([`${CANH_BAO_KHONG_RO_KIND.stopNotSent}:${RUN}:nt:${KHONG_CO_BU_TRU}:claim1`]);
     expect(khoaCua("noCompensation", "x")).toEqual([`${CANH_BAO_KHONG_RO_KIND.noCompensation}:${RUN}:x:-:claim1`]);
+  });
+  // HST 14/11 (R2, mục (v)): lệnh CÓ bù trừ nằm trong U ⇒ held() đặt dấu cần người bằng cơ chế có sẵn, dấu nêu ĐÚNG tên bước và bù trừ (không phải "?")
+  it("T4-B3-O16-DAU (bảng #16, R2) a command WITH a compensation may have gone (row running, authorised), the rider unreadable: the outcome-unknown mark names that step and its compensation", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    d.store.set("orchestration_run_steps", [{ runId: RUN, stepId: "x", stepType: "command", status: "running", attempt: 1, error: null, resultJson: { routedTo: "robot-dispatcher" } }]);
+    const { run, ctx } = await ket({ ref: "t4b3o16", name: "t4b3o16", steps: [{ ...move("x"), compensation: move("cx") }] } as never);
+    expect(run.status).toBe("held");
+    expect(ctx.foeOutcomeUnknown).toEqual(["x"]);
+    expect(ctx[KET_CUC_KHONG_RO_CTX_KEY], "the mark a Continue reads (a person + a reason)").toMatchObject({ stepId: "x", compId: "cx", ds: [{ stepId: "x", compId: "cx" }] });
+    expect(khoaCua("noCompensation", "x"), "no N for a command with a compensation").toEqual([]);
+  });
+  it("T4-B3-O16-DS (R2 (a) điều kiện 5) the rider READABLE and carrying the held report of x/cx, the hold for another reason (journalFull): the mark is set and its ds is never empty — exactly x/cx", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    d.store.set("orchestration_run_steps", [{ runId: RUN, stepId: "x", stepType: "command", status: "running", attempt: 1, error: null, resultJson: { routedTo: "robot-dispatcher" } }]);
+    const loi = ganBaoCaoKhongRoEdge("EDGE_HELD(journalFull): the journal refused a record (journal_full) — the run is held.", [{ loai: "held", stepId: "x", compId: "cx", ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }] as never, 4_000)!;
+    const { ctx } = await ket({ ref: "t4b3o16ds", name: "t4b3o16ds", steps: [{ ...move("x"), compensation: move("cx") }] } as never, loi);
+    expect(ctx[KET_CUC_KHONG_RO_CTX_KEY]).toMatchObject({ stepId: "x", compId: "cx", ds: [{ stepId: "x", compId: "cx" }] });
+  });
+  it("T4-B3-O16-DOI-CHUNG (R2 (a) đối chứng) the same hold, the command has NO compensation: no outcome-unknown mark (a Continue asks nothing more), N raised", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    d.store.set("orchestration_run_steps", [{ runId: RUN, stepId: "x", stepType: "command", status: "running", attempt: 1, error: null, resultJson: { routedTo: "robot-dispatcher" } }]);
+    const { ctx } = await ket({ ref: "t4b3o16dc", name: "t4b3o16dc", steps: [move("x")] } as never);
+    expect(ctx[KET_CUC_KHONG_RO_CTX_KEY]).toBeUndefined();
+    expect(khoaCua("noCompensation", "x")).toHaveLength(1);
   });
   // HST 14/11: Q2 đi cùng lô client. Ô #8 (sổ đọc lỗi VÀ lệnh không có hàng): kỳ vọng ĐÚNG là MỘT URGENT chung cho run (kind foe_outcome_unknown_ledger_unreadable,
   // dedupKey dựng theo run) cùng H; hàm thuần đã trả soLoiChung nhưng held() CHƯA dùng nó ở lượt này ⇒ it.fails.

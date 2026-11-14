@@ -182,6 +182,20 @@ describe("T4 bước 3 — quyetDinhKetDoanEdge theo bảng 16 ô", () => {
   });
 });
 
+describe("T4 bước 3 — R2 (a) (chủ dự án 14/11): cổng người + lý do", () => {
+  it("T4-B3-O16-STOP (R2 (a) điều kiện 4, L-7) lệnh có bù trừ là STOP: KHÔNG vào buTruCanNguoi (STOP không đi qua cổng người + lý do); vẫn ở U, không N", () => {
+    const r = goi({ def: dinhNghia(move("x", otStop("cs"))), hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x")] }, stops: new Set(["cs"]) });
+    expect(r.khongRo).toEqual(["x"]);
+    expect(r.chot).toEqual({ stepId: "x", ma: MA });
+    expect(cb(r)).toEqual([]);
+    expect(r.buTruCanNguoi).toEqual([]);
+  });
+  it("T4-B3-O16-HAI (R2 (a)) hai lệnh có bù trừ, chỉ một lệnh có thể đã đi: buTruCanNguoi nêu ĐÚNG lệnh đó (cặp duyệt không mở cho bù trừ khác)", () => {
+    const r = goi({ def: dinhNghia(move("x", move("cx")), move("y", move("cy"))), hang: [hangChay("x"), hangXong("y")], so: { doc: "duoc", muc: [uq("x"), uq("y", { resultStatus: "acked" })] } });
+    expect(r.buTruCanNguoi).toEqual(["x"]);
+  });
+});
+
 describe("T4 bước 3 — các ca bắt buộc thêm (R1, phần hợp U, chốt có sẵn)", () => {
   it("T4-B3-DU-DA-BAO (R1, phủ định) rider đủ VÀ đã báo noCompensation của x: central không phát thêm, không đặt chốt", () => {
     const r = goi({ def: dinhNghia(move("x")), hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x")] }, rider: "du", bao: [bao("noCompensation", "x")] });

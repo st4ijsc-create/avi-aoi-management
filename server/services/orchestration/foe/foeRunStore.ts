@@ -2050,7 +2050,7 @@ const MA_KET_DOAN_EDGE = "FOE_OUTCOME_UNKNOWN" as const;
  *   (3) U = (2) ∪ ctx.foeOutcomeUnknown with no STOP, in the definition's order (WIDE: more is never sent again, the closed direction);
  *   (4) C = the first of (2), when the context has no latch and no report on the end sets one (EXACT: C only from (2));
  *   (5) S = stopChuaRaTuHang read with the context AFTER the latch (the end's own report's or C; I-1, #4); the owner of a STOP inside a compensation by the definition;
- *   (6) N = each of (2) with no compensation (EXACT: N only from (2)); a command of U with one ⇒ buTruCanNguoi (#16: held() marks it for a person, R2);
+ *   (6) N = each of (2) with no compensation (EXACT: N only from (2)); a command of U with one that is no STOP ⇒ buTruCanNguoi (#16: held() marks it for a person, R2 (a));
  *   (7) a report that rode on the end (same loai / stepId / compId) is never raised again: the rider's / anomaly's key is the URGENT's;
  *   (8) the rider whole or short: the SAME rules (R1, H3: central does not trust a node alone) — `rider` changes no decision;
  *   (9) soLoiChung ⇔ the ledger unreadable (Q2: held() does not use it yet, HST 14/11).
@@ -2089,7 +2089,7 @@ export function quyetDinhKetDoanEdge(v: {
     return { loai: "stopNotSent", stepId: chu ? chu.step.id : id, compId: chu ? id : KHONG_CO_BU_TRU, ma: MA_KET_DOAN_EDGE, claimSeq: v.claimSeq, biet: true };
   });
   for (const s of coTheDi) if (!s.compensation) them.push({ loai: "noCompensation", stepId: s.id, compId: KHONG_CO_BU_TRU, ma: MA_KET_DOAN_EDGE, claimSeq: v.claimSeq }); // (6)
-  const buTruCanNguoi = lenh.filter((s) => s.compensation && tapU.has(s.id)).map((s) => s.id);
+  const buTruCanNguoi = lenh.filter((s) => s.compensation && !v.stops.has(s.compensation.id) && tapU.has(s.id)).map((s) => s.id); // R2 (a) điều kiện 4: a STOP compensation never behind this gate (L-7)
   const canhBao = them.filter((b) => !v.bao.some((x) => x.loai === b.loai && x.stepId === b.stepId && x.compId === b.compId)); // (7); (8) no branch on v.rider
   return { khongRo, chot, canhBao, soLoiChung: v.so.doc === "loi", buTruCanNguoi }; // (9)
 }
@@ -2187,6 +2187,10 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     const q = quyetDinhKetDoanEdge({ runId, claimSeq: end.claimSeq, def: end.def, hang, so: au ? { doc: "duoc", muc: au } : { doc: "loi" }, stops, rider: riderThieu === true ? "thieu" : "du", bao: baoKhongRo, ctx: { ...ctx, [OUTCOME_UNKNOWN_KEY]: [...prevUnknown, ...unknown] } });
     for (const b of q.canhBao) void cachEdgeTrungTam(runId, end.def, b).then((k) => canhBaoTuBaoCaoEdge(runId, b, run.startedBy ?? null, k)).catch(() => false);
     const ou = [...new Set([...prevUnknown, ...unknown, ...q.khongRo])];
+    const dauCu = reason === "outcomeUnknown" && (!error?.startsWith(`${FOE_STOP_NOT_SENT}:`) || baoKhongRo.some((x) => x.loai === "held"));
+    // R2 (a) (chủ dự án 14/11) — a command with a compensation in U: the mark NAMES it with its own compensation in `ds` (never empty, never "?"): ONE Continue by a person with a reason approves that pair (duyetKhongRo), as central's walk
+    const buTruCua = new Map(allStepsOf(end.def.steps).map((s) => [s.id, s.compensation?.id] as const));
+    const dauBu: BaoCaoKhongRoEdge[] = q.buTruCanNguoi.filter((id) => !baoKhongRo.some((b) => b.loai === "held" && b.stepId === id)).map((id) => ({ loai: "held", stepId: id, compId: buTruCua.get(id) ?? "?", ma: maKetCucKhongRoCua(end.error), claimSeq: end.claimSeq }));
     return write("held", {
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
@@ -2203,8 +2207,8 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
         ...(ou.length ? { [OUTCOME_UNKNOWN_KEY]: ou } : {}),
         // R1b-2b-2a A2(n) — held because a command's outcome is unknown and the compensation due is not a pinned STOP: the SAME marker as
         // central's own walk (codes / ids only), so a Continue needs a person with machine-control rights and a reason (resumeRun)
-        // A2(n) T5 — state C alone holds no compensation for a person: as central's own walk, no marker. T4 bước 3 (R2, #16) — a command with a compensation in U: the same marker
-        ...((reason === "outcomeUnknown" && (!error?.startsWith(`${FOE_STOP_NOT_SENT}:`) || baoKhongRo.some((x) => x.loai === "held"))) || q.buTruCanNguoi.length > 0 ? { [KET_CUC_KHONG_RO_CTX_KEY]: dauKhongRoTuEdge(end, at, baoKhongRo) } : {}),
+        // A2(n) T5 — state C alone holds no compensation for a person: as central's own walk, no marker. T4 bước 3 (R2 (a), #16) — a command with a compensation in U: the same marker, naming it
+        ...(dauCu || q.buTruCanNguoi.length > 0 ? { [KET_CUC_KHONG_RO_CTX_KEY]: dauKhongRoTuEdge(end, at, dauCu ? baoKhongRo : [...baoKhongRo, ...dauBu]) } : {}),
         ...chotTuBao,
         ...(q.chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { ...q.chot, at } } : {}),
       },
