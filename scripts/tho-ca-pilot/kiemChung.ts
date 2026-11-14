@@ -12,6 +12,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { cheTokenCoTienTo } from "../../shared/mauBiMat";
 import type { KetQuaDotBien } from "./dotBien";
 
 /**
@@ -72,6 +73,13 @@ export interface KetQuaKiem {
 }
 
 const boMau = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+/**
+ * HA-11 — che token có tiền tố nhà cung cấp (sk-ant-, ghp_, AKIA…) trong đầu ra lệnh kiểm. MỘT nguồn mẫu: `shared/mauBiMat.ts` (phương án B1).
+ * Không có mẫu nào khớp ⇒ chuỗi trả về NGUYÊN VĂN từng byte. Giới hạn đã biết (theo mauBiMat): khoá OpenAI/Stripe/AWS dính liền chữ phía trước vẫn lọt.
+ */
+export const THAY_TOKEN_BI_MAT = "[REDACTED_SECRET]";
+export const cheTokenTrongDauRa = (s: string): string => cheTokenCoTienTo(s, THAY_TOKEN_BI_MAT);
 
 /**
  * `--cho-phep-db`: lọc chuỗi kết nối CSDL (có thể kèm mật khẩu) khỏi ĐẦU RA LỆNH KIỂM trước khi nó vào lời nhắc của model, JSON `kiem` hay nhật ký.
@@ -392,13 +400,14 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
     let dau = "";
     let hetGio = false;
     const env: NodeJS.ProcessEnv = { ...envSachChoTienTrinhCon(process.env, opt), CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" };
-    const locLoi = (x: string) => (opt.testDbUrl !== undefined ? xoaGiaTriBiMat(loaiUrlCsdl(x), giaTriBiMatTuUrl(opt.testDbUrl)) : x);
+    const locLoi = (x: string) => cheTokenTrongDauRa(opt.testDbUrl !== undefined ? xoaGiaTriBiMat(loaiUrlCsdl(x), giaTriBiMatTuUrl(opt.testDbUrl)) : x);
     const ketThuc = (exit: number | null, loi?: string) => {
       clearTimeout(dongHo);
       const coDb = opt.testDbUrl !== undefined;
       const tho = boMau(dau);
-      // CỜ TẮT ⇒ đầu ra KHÔNG đổi một byte; chỉ khi có `--cho-phep-db` mới lọc URL / giá trị bí mật và ghi tên ca đỏ, đầu ra đầy đủ
-      const sach = coDb ? xoaGiaTriBiMat(loaiUrlCsdl(tho), giaTriBiMatTuUrl(opt.testDbUrl)) : tho;
+      // CỜ TẮT ⇒ đầu ra KHÔNG đổi một byte NẾU không chứa token có tiền tố nhà cung cấp (HA-11: che các mẫu đó ở CẢ HAI nhánh);
+      // chỉ khi có `--cho-phep-db` mới lọc thêm URL / giá trị bí mật và ghi tên ca đỏ, đầu ra đầy đủ
+      const sach = cheTokenTrongDauRa(coDb ? xoaGiaTriBiMat(loaiUrlCsdl(tho), giaTriBiMatTuUrl(opt.testDbUrl)) : tho);
       xong({
         lenh,
         exit,
