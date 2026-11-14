@@ -13,6 +13,8 @@
 import { docDotBien, docKhangDinhCam, type DotBienThe } from "./dotBienThuan";
 import { TRAN_CUNG_SO_LUOT } from "../../server/services/ai/agent/gioiHanLuot";
 import { tachChoPhep } from "./quetTinh";
+import { docBangDem, type MucDem } from "./hauQua";
+import { docKiemThat } from "./kiemThat";
 import { docSoTran, GIOI_PHUT, GIOI_TOKEN_RA, type TranTheoThe } from "./tranLuot";
 
 export interface TheViec {
@@ -39,6 +41,11 @@ export interface TheViec {
   tran?: TranTheoThe;
   /** HA-10 — `KIỂM PHỦ: CÓ`: trước khi nhận "xong", mọi dòng ĐÃ DUYỆT (trừ GIỮ:) phải có ca MỚI tên `[Dk] ` (xem kiemPhu.ts). Host-only; mặc định TẮT. */
   kiemPhu?: boolean;
+  /** HA-6b — `BẢNG ĐẾM:` (host-only): các mục đếm hàng CSDL trước/sau lượt, dạng đóng (xem hauQua.ts). Vắng ⇒ không kiểm hậu quả. Model không thấy. */
+  bangDem?: MucDem[];
+  /** HA-6b — `LỆNH KIỂM THẬT:` + `CÂY GIẢ:` (host-only, đi đôi): lệnh chạy sản phẩm trên fixture ngoài worktree sau khi lệnh kiểm xanh (xem kiemThat.ts). Model không thấy. */
+  lenhKiemThat?: string;
+  cayGia?: string;
   /** HA-9 — mục cho phép của bộ quét tĩnh (khoá `CHO PHÉP TRONG TEST`): tắt cảnh báo oan, CHỈ khi đoạn khớp nằm trong chính mục. Không phải quyền — chỉ bộ chạy đọc. */
   choPhepTrongTest?: string[];
   gioiHan: { giay: number; vong: number };
@@ -61,6 +68,9 @@ const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
   "TRAN PHUT": "tranPhut",
   "TRAN TOKEN RA": "tranTokenRa",
   "KIEM PHU": "kiemPhu",
+  "BANG DEM": "bangDem",
+  "LENH KIEM THAT": "lenhKiemThat",
+  "CAY GIA": "cayGia",
   "CHO PHEP TRONG TEST": "choPhepTrongTest",
 };
 
@@ -154,6 +164,10 @@ export function docTheViec(van: string): KetQuaThe {
   const csdl = (truong.get("csdl") ?? "").trim();
   const kiemPhuTho = chuanKhoa((truong.get("kiemPhu") ?? "").trim());
   if (kiemPhuTho !== "" && kiemPhuTho !== "CO" && kiemPhuTho !== "KHONG") return { ok: false, loi: `KIỂM PHỦ phải là CÓ hoặc KHÔNG (nhận "${(truong.get("kiemPhu") ?? "").trim().slice(0, 20)}")` };
+  const bangDemDoc = docBangDem(truong.get("bangDem") as string | undefined);
+  if (!bangDemDoc.ok) return { ok: false, loi: bangDemDoc.loi };
+  const kiemThatDoc = docKiemThat(truong.get("lenhKiemThat") as string | undefined, truong.get("cayGia") as string | undefined);
+  if (!kiemThatDoc.ok) return { ok: false, loi: kiemThatDoc.loi };
   const choPhepTrongTest = tachChoPhep((truong.get("choPhepTrongTest") ?? "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean).join(";"));
   const tran: TranTheoThe = {};
   for (const [khoa, ten, gioi, truongTran] of [
@@ -181,6 +195,8 @@ export function docTheViec(van: string): KetQuaThe {
       ...(khangDinhCam.length ? { khangDinhCam } : {}),
       ...(csdl ? { csdl } : {}),
       ...(kiemPhuTho === "CO" ? { kiemPhu: true } : {}),
+      ...(bangDemDoc.muc.length ? { bangDem: bangDemDoc.muc } : {}),
+      ...(kiemThatDoc.kiemThat ? { lenhKiemThat: kiemThatDoc.kiemThat.lenh, cayGia: kiemThatDoc.kiemThat.cay } : {}),
       ...(choPhepTrongTest.length ? { choPhepTrongTest } : {}),
       ...(Object.keys(tran).length > 0 ? { tran } : {}),
       gioiHan: docGioiHan(truong.get("gioiHan")),

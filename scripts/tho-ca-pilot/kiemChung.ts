@@ -225,10 +225,10 @@ export function demCaTest(nguon: string): number {
 
 export const RE_TEP_TEST = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 
-export type KetCucKiem = "xong" | "kiem-do" | "test-rong" | "bao-sai" | "dot-bien-song" | "vi-pham" | "het-gio" | "loi-driver" | "khong-lam" | "tu-choi" | "thieu-phu";
+export type KetCucKiem = "xong" | "kiem-do" | "test-rong" | "bao-sai" | "dot-bien-song" | "vi-pham" | "het-gio" | "loi-driver" | "khong-lam" | "tu-choi" | "thieu-phu" | "hau-qua-xau";
 
 /** Ketcuc nào là "đã chốt xấu" ⇒ L3 không được nâng lên (sticky). */
-const KET_CUC_XAU = new Set<KetCucKiem>(["vi-pham", "het-gio", "loi-driver", "khong-lam", "tu-choi", "kiem-do", "test-rong", "bao-sai", "dot-bien-song", "thieu-phu"]);
+const KET_CUC_XAU = new Set<KetCucKiem>(["vi-pham", "het-gio", "loi-driver", "khong-lam", "tu-choi", "kiem-do", "test-rong", "bao-sai", "dot-bien-song", "thieu-phu", "hau-qua-xau"]);
 
 export interface DauVaoQuyet {
   /** ketCuc do phần diff/driver đã quyết trước khi kiểm chứng */
@@ -245,6 +245,10 @@ export interface DauVaoQuyet {
   dotBien?: KetQuaDotBien | null;
   /** HA-10: độ phủ danh sách ĐÃ DUYỆT (chỉ khi thẻ bật KIỂM PHỦ và các bước trước xanh); `dongThieu` khác rỗng ⇒ thieu-phu */
   phu?: { dongThieu: readonly number[] } | null;
+  /** HA-6b: kiểm hậu quả (đếm hàng CSDL; chỉ khi thẻ có BẢNG ĐẾM và mọi bước trước đều xanh); ketCuc "hau-qua-xau" ⇒ KHÔNG ĐẠT, đứng SAU đột biến (đếm sau lệnh kiểm cuối) */
+  hauQua?: { ketCuc: "ok" | "hau-qua-xau"; lyDo: string | null } | null;
+  /** HA-6b phần 2: LỆNH KIỂM THẬT trên cây giả (chạy SAU mọi bước trên, TRƯỚC đếm hàng); `dat:false` ⇒ hau-qua-xau */
+  kiemThat?: { dat: boolean; lyDo: string | null } | null;
 }
 
 export interface QuyetKetCuc {
@@ -279,6 +283,8 @@ export function quyetKetCuc(v: DauVaoQuyet): QuyetKetCuc {
     }
     if (d.khongApDung > 0) return { ketCuc: "kiem-do", lyDo: `L3b: ${d.khongApDung}/${d.tong} đột biến không áp dụng/không kết luận được (lỗi thẻ hoặc hết hạn)` };
   }
+  if (v.kiemThat && !v.kiemThat.dat) return { ketCuc: "hau-qua-xau", lyDo: `HA-6b: LỆNH KIỂM THẬT trên cây giả KHÔNG đạt (${v.kiemThat.lyDo ?? "không rõ"}) dù lệnh kiểm xanh` };
+  if (v.hauQua && v.hauQua.ketCuc === "hau-qua-xau") return { ketCuc: "hau-qua-xau", lyDo: v.hauQua.lyDo ?? "HA-6b: hậu quả xấu" };
   return r;
 }
 

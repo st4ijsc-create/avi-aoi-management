@@ -26,6 +26,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chuanDuong, docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
+import { demTatCa, tinhHauQua, type KetQuaDem, type KetQuaHauQua, type MayDem } from "./hauQua";
+import { moMayDemTuUrl } from "./mayDemPg";
+import { chayKiemThat, chupWt, type KetQuaKiemThat } from "./kiemThat";
 import { CAU_LUAT_PHU, docDongDaDuyet, docVitestJson, tenMoiCa, tinhPhu, type DongDuyet, type KetQuaPhu } from "./kiemPhu";
 import { dongBaoTran, dongCanhBaoKep, gioiHanChoLuot, tinhTranLuot, type GioiHanLuotChoDriver, type TranLuotKetQua } from "./tranLuot";
 import { apDungDotBien, kiemDotBienTrenBase, quetGhimNghiNgo, quetKhangDinhCam, tepTestDoi, type KetQuaDotBien } from "./dotBien";
@@ -186,6 +189,10 @@ export interface KetQuaViec {
   b1?: { nguon: string; sha256: string | null; byte: number; saoLuotKhop: boolean };
   /** HA-10: độ phủ danh sách ĐÃ DUYỆT (chỉ khi thẻ bật KIỂM PHỦ) */
   phu?: PhuJson;
+  /** HA-6b: kiểm hậu quả (đếm hàng CSDL trước/sau; chỉ khi thẻ có BẢNG ĐẾM) */
+  hauQua?: KetQuaHauQua;
+  /** HA-6b phần 2: kết quả LỆNH KIỂM THẬT (KHÔNG có lệnh / đường / đầu ra) */
+  kiemThat?: KetQuaKiemThat;
   /** HA-3: trần lượt đã áp (chỉ khi thẻ có khoá TRẦN …): khoá thẻ, biến env, trần cứng, số thực dùng. "vòng" = một lần gọi model */
   tran?: TranLuotKetQua;
   /** `--cho-phep-db` đã bật cho lượt này (mặc định vắng = TẮT) */
@@ -552,6 +559,8 @@ export interface ThamSoViec {
   testDbUrl?: string;
   /** chỉ cho ca kiểm: thay nhà máy dựng hàm chạy lệnh kiểm để quan sát tham số (mặc định taoChayLenhKiem) */
   taoChayKiem?: typeof taoChayLenhKiem;
+  /** HA-6b: mở bộ đếm hàng từ URL CSDL (mặc định postgres.js; ca kiểm tiêm bản giả). Chỉ gọi khi có `--cho-phep-db` và thẻ có BẢNG ĐẾM. */
+  moMayDem?: (url: string) => Promise<{ may: MayDem; dong: () => Promise<void> }>;
   /** commit bộ chạy (dòng lệnh tính bằng `commitBoChay`); vắng ⇒ không ghi */
   boChay?: BoChay;
   nhatKy?: (s: string) => void;
@@ -675,7 +684,23 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const canhBaoKep = tran ? dongCanhBaoKep(tran) : null;
   if (canhBaoKep) nhatKy(canhBaoKep);
   // L3b: model/driver KHÔNG được thấy đột biến hay chuỗi cấm — gỡ khỏi `the` đưa cho driver (ghepLenh cũng không in chúng)
-  const { dotBien: _dotBien, khangDinhCam: _khangDinhCam, csdl: _csdl, ...theChoDriver } = the;
+  const { dotBien: _dotBien, khangDinhCam: _khangDinhCam, csdl: _csdl, bangDem: _bangDem, lenhKiemThat: _lenhKiemThat, cayGia: _cayGia, ...theChoDriver } = the;
+  // HA-6b: đếm hàng CSDL TRƯỚC lượt (chỉ khi có cờ DB + thẻ có BẢNG ĐẾM). Lỗi ⇒ ghi lại, phán quyết fail-closed ở cuối.
+  const mucDem = the.bangDem ?? [];
+  const demLan = async (): Promise<KetQuaDem> => {
+    let m: { may: MayDem; dong: () => Promise<void> };
+    try {
+      m = await (p.moMayDem ?? moMayDemTuUrl)(p.testDbUrl ?? "");
+    } catch {
+      return { ok: false, lyDo: "không mở được kết nối đếm" };
+    }
+    try {
+      return await demTatCa(m.may, mucDem);
+    } finally {
+      await m.dong().catch(() => undefined);
+    }
+  };
+  const demTruoc: KetQuaDem | null = mucDem.length > 0 && dbCho ? await demLan() : null;
   // HA-10: tên ca có sẵn ở BASE của các tệp test trong LỆNH KIỂM (ca MỚI phải khác) — đọc bằng `git show`, không chạm worktree
   const tepTestPhu = the.kiemPhu ? tepTestTrongLenh(the.lenhKiem).map(chuanDuong).filter((x): x is string => x !== null) : [];
   const tenCaCuPhu = new Set<string>();
@@ -742,6 +767,8 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   let tsc: KetQuaTsc | null = null;
   let dotBien: KetQuaDotBien | null = null;
   let phu: PhuJson | null = null;
+  let hauQua: KetQuaHauQua | null = null;
+  let kiemThat: KetQuaKiemThat | null = null;
   let lyDoKiem: string | null = null;
   const khongTepRong = !tepTest.some((t) => t.soCa === 0);
   if (ketCuc === "xong") {
@@ -768,6 +795,19 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
       dotBien = await apDungDotBien(wt, the.dotBien, tepDoi, the.lenhKiem, chayKiemDung, p.hanKiemGiay ?? 300);
       qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc, phu, dotBien });
     }
+    // HA-6b phần 2: LỆNH KIỂM THẬT trên cây giả (host chép fixture vào thư mục tạm; model không thấy lệnh / đường / đầu ra)
+    if (qd.ketCuc === "xong" && the.lenhKiemThat && the.cayGia) {
+      nhatKy("chạy LỆNH KIỂM THẬT trên cây giả (HA-6b)");
+      kiemThat = await chayKiemThat({ lenh: the.lenhKiemThat, cay: the.cayGia }, wt, chayKiemDung, p.hanKiemGiay ?? 300, (w) => chupWt(w, (d, a) => { const r = git(a, d); return r.ok ? r.out : null; }));
+      qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc, phu, dotBien, kiemThat });
+    }
+    // HA-6b: SAU lệnh kiểm cuối + đột biến — đếm lại hàng CSDL; chênh ở mục chấm / không đếm được (có cờ DB) ⇒ hau-qua-xau
+    if (qd.ketCuc === "xong" && mucDem.length > 0) {
+      nhatKy("kiểm hậu quả: đếm hàng CSDL (HA-6b)");
+      const sau = dbCho ? await demLan() : null;
+      hauQua = tinhHauQua({ muc: mucDem, coDb: dbCho, truoc: demTruoc, sau });
+      qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc, phu, dotBien, kiemThat, hauQua });
+    }
     ketCuc = qd.ketCuc as KetQuaViec["ketCuc"];
     lyDoKiem = qd.lyDo;
   } else if ((ketCuc === "loi-driver" || ketCuc === "het-gio") && tepTest.some((t) => t.soCa > 0) && khongTepRong) {
@@ -782,6 +822,13 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     lyDoKiem = `ketCuc ${ketCuc} giữ nguyên; lệnh kiểm chạy bổ sung: exit ${kiem.exit}${kiem.vitest.ca ? `, Tests ${kiem.vitest.ca.dat} passed / ${kiem.vitest.ca.tong}` : ""}${tsc ? `; tsc exit ${tsc.exit}, ${tsc.tongLoi} lỗi` : ""}`;
   }
 
+  // HA-6c: kết cục ĐÃ đỏ từ bước trước (tsc, kiểm, phủ…) nên đếm hậu quả ở trên không chạy — vẫn ĐẾM SAU để ghi số đo (lệnh kiểm có thể đã rò hàng dù test xanh/đỏ). KẾT CỤC GIỮ NGUYÊN: chỉ thêm trường `hauQua` (có `ghiKhiDo`).
+  if (mucDem.length > 0 && dbCho && hauQua === null) {
+    nhatKy(`lượt ${ketCuc} — vẫn đếm hàng CSDL để ghi số đo hậu quả (HA-6c; kết cục giữ nguyên)`);
+    const sau = await demLan();
+    hauQua = { ...tinhHauQua({ muc: mucDem, coDb: dbCho, truoc: demTruoc, sau }), ghiKhiDo: true };
+    if (hauQua.ketCuc === "hau-qua-xau") luuY.push(`HA-6c: kết cục ${ketCuc} giữ nguyên, nhưng hậu quả CSDL cũng xấu: ${hauQua.lyDo ?? "không rõ"}`);
+  }
   // `--cho-phep-db`: đầu ra ĐẦY ĐỦ của lần chạy lệnh kiểm cuối (đã lọc URL + bí mật) ra TỆP cho người duyệt; không vào JSON, không vào lời nhắc model
   if (dbCho && kiem?.dauRaDayDu !== undefined) {
     try {
@@ -816,6 +863,8 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     ...(p.coAiAgent ? { coAiAgent: p.coAiAgent } : {}),
     ...(tran ? { tran } : {}),
     ...(phu ? { phu } : {}),
+    ...(hauQua ? { hauQua } : {}),
+    ...(kiemThat ? { kiemThat } : {}),
     ...(dbCho ? { choPhepDb: true as const, vaiCsdl: VAI_DUOC_PHEP } : {}),
     luat: { sha256: sha256Hex(luat), nguon: luatNguon, byte: Buffer.byteLength(luat, "utf8") },
     luatCach: cach,
