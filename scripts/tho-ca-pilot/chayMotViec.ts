@@ -27,7 +27,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chuanDuong, docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
 import { demTatCa, tinhHauQua, type KetQuaDem, type KetQuaHauQua, type MayDem } from "./hauQua";
-import { moMayDemTuUrl } from "./mayDemPg";
+import { moMayDemTuUrl, moMayQuetTuUrl } from "./mayDemPg";
+import { luuYQuetRong, quetTatCa, soSanhQuet, type KetQuaQuet, type KetQuaQuetRong, type MayQuet } from "./quetRong";
 import { chayKiemThat, chupWt, type KetQuaKiemThat } from "./kiemThat";
 import { CAU_LUAT_PHU, docDongDaDuyet, docVitestJson, tenMoiCa, tinhPhu, type DongDuyet, type KetQuaPhu } from "./kiemPhu";
 import { dongBaoTran, dongCanhBaoKep, gioiHanChoLuot, tinhTranLuot, type GioiHanLuotChoDriver, type TranLuotKetQua } from "./tranLuot";
@@ -191,6 +192,8 @@ export interface KetQuaViec {
   phu?: PhuJson;
   /** HA-6b: kiểm hậu quả (đếm hàng CSDL trước/sau; chỉ khi thẻ có BẢNG ĐẾM) */
   hauQua?: KetQuaHauQua;
+  /** HA-6d: quét rộng count(*) mọi bảng trước/sau (chỉ khi `--quet-rong` + `--cho-phep-db`); CHỈ GHI, không đổi ketCuc */
+  quetRong?: KetQuaQuetRong;
   /** HA-6b phần 2: kết quả LỆNH KIỂM THẬT (KHÔNG có lệnh / đường / đầu ra) */
   kiemThat?: KetQuaKiemThat;
   /** HA-3: trần lượt đã áp (chỉ khi thẻ có khoá TRẦN …): khoá thẻ, biến env, trần cứng, số thực dùng. "vòng" = một lần gọi model */
@@ -561,6 +564,10 @@ export interface ThamSoViec {
   taoChayKiem?: typeof taoChayLenhKiem;
   /** HA-6b: mở bộ đếm hàng từ URL CSDL (mặc định postgres.js; ca kiểm tiêm bản giả). Chỉ gọi khi có `--cho-phep-db` và thẻ có BẢNG ĐẾM. */
   moMayDem?: (url: string) => Promise<{ may: MayDem; dong: () => Promise<void> }>;
+  /** HA-6d: bật quét rộng mọi bảng trước/sau (cờ `--quet-rong`); cần `choPhepDb`. Mặc định TẮT. */
+  quetRong?: boolean;
+  /** HA-6d: mở bộ quét rộng từ URL CSDL (mặc định postgres.js; ca kiểm tiêm bản giả) */
+  moMayQuet?: (url: string) => Promise<{ may: MayQuet; dong: () => Promise<void> }>;
   /** commit bộ chạy (dòng lệnh tính bằng `commitBoChay`); vắng ⇒ không ghi */
   boChay?: BoChay;
   nhatKy?: (s: string) => void;
@@ -596,6 +603,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     const lyDoDb = kiemChoPhepDb(the, p.testDbUrl);
     if (lyDoDb) return tuChoi(lyDoDb, the.ma);
   }
+  if (p.quetRong && !dbCho) return tuChoi("--quet-rong cần --cho-phep-db (không có cờ DB thì không có gì để quét)", the.ma);
   const chayKiemDung: ChayKiem = p.chayKiem ?? (p.taoChayKiem ?? taoChayLenhKiem)(dbCho ? { testDbUrl: p.testDbUrl } : {});
 
   const wt = path.resolve(p.wt);
@@ -701,6 +709,21 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     }
   };
   const demTruoc: KetQuaDem | null = mucDem.length > 0 && dbCho ? await demLan() : null;
+  // HA-6d: quét rộng TRƯỚC lượt (chỉ khi `--quet-rong` + cờ DB). Lỗi ⇒ ghi lại (ok:false), KHÔNG ném, KHÔNG đổi kết cục.
+  const quetLan = async (): Promise<KetQuaQuet> => {
+    let m: { may: MayQuet; dong: () => Promise<void> };
+    try {
+      m = await (p.moMayQuet ?? moMayQuetTuUrl)(p.testDbUrl ?? "");
+    } catch {
+      return { ok: false, lyDo: "không mở được kết nối quét" };
+    }
+    try {
+      return await quetTatCa(m.may);
+    } finally {
+      await m.dong().catch(() => undefined);
+    }
+  };
+  const quetTruoc: KetQuaQuet | null = p.quetRong && dbCho ? await quetLan() : null;
   // HA-10: tên ca có sẵn ở BASE của các tệp test trong LỆNH KIỂM (ca MỚI phải khác) — đọc bằng `git show`, không chạm worktree
   const tepTestPhu = the.kiemPhu ? tepTestTrongLenh(the.lenhKiem).map(chuanDuong).filter((x): x is string => x !== null) : [];
   const tenCaCuPhu = new Set<string>();
@@ -829,6 +852,14 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     hauQua = { ...tinhHauQua({ muc: mucDem, coDb: dbCho, truoc: demTruoc, sau }), ghiKhiDo: true };
     if (hauQua.ketCuc === "hau-qua-xau") luuY.push(`HA-6c: kết cục ${ketCuc} giữ nguyên, nhưng hậu quả CSDL cũng xấu: ${hauQua.lyDo ?? "không rõ"}`);
   }
+  // HA-6d: quét rộng SAU (luôn, kể cả khi kết cục đã đỏ) rồi so với lần quét trước; bảng ngoài thẻ đổi ⇒ chỉ ghi `quetRong` + lưu ý, KHÔNG đổi kết cục
+  let quetRong: KetQuaQuetRong | null = null;
+  if (quetTruoc !== null) {
+    nhatKy("quét rộng count(*) mọi bảng SAU lượt (HA-6d)");
+    quetRong = soSanhQuet(quetTruoc, await quetLan(), new Set(mucDem.map((m) => m.bang)));
+    const ly = luuYQuetRong(quetRong);
+    if (ly !== "") luuY.push(ly);
+  }
   // `--cho-phep-db`: đầu ra ĐẦY ĐỦ của lần chạy lệnh kiểm cuối (đã lọc URL + bí mật) ra TỆP cho người duyệt; không vào JSON, không vào lời nhắc model
   if (dbCho && kiem?.dauRaDayDu !== undefined) {
     try {
@@ -864,6 +895,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     ...(tran ? { tran } : {}),
     ...(phu ? { phu } : {}),
     ...(hauQua ? { hauQua } : {}),
+    ...(quetRong ? { quetRong } : {}),
     ...(kiemThat ? { kiemThat } : {}),
     ...(dbCho ? { choPhepDb: true as const, vaiCsdl: VAI_DUOC_PHEP } : {}),
     luat: { sha256: sha256Hex(luat), nguon: luatNguon, byte: Buffer.byteLength(luat, "utf8") },
@@ -908,6 +940,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   const thamDb = thamSoDbTuDongLenh(a, (d) => docUrlTuTep(d, [process.cwd(), ...(a.wt ? [a.wt] : [])]));
   if (thamDb.loi) {
     process.stderr.write(`${thamDb.loi}\n`);
+    return 2;
+  }
+  if (a["quet-rong"] !== undefined && !thamDb.choPhepDb) {
+    process.stderr.write("--quet-rong cần --cho-phep-db\n");
     return 2;
   }
   if (thamDb.choPhepDb) {
@@ -967,6 +1003,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     ...(a.luat ? (({ luat, nguon }) => ({ luat, luatNguon: nguon }))(docLuatTuTep(a.luat)) : {}),
     boChay: commitBoChay(),
     ...(({ choPhepDb, testDbUrl }) => ({ choPhepDb, testDbUrl }))(thamDb),
+    quetRong: a["quet-rong"] !== undefined,
     driver,
     tenDriver: drv,
     ra: a.ra ?? path.join(os.tmpdir(), "tho-ca-pilot"),
