@@ -68,6 +68,8 @@ export interface KetQuaQuetRong {
   khongDem: string[];
   /** tổng chênh của mọi bảng đếm được ở cả hai lần */
   tongChenh: number;
+  /** lượt chạy với `--quet-rong-cham`: bảng ngoài thẻ đổi (hoặc quét không xong) ⇒ hau-qua-xau */
+  cham?: true;
 }
 
 /** THUẦN. `bangTrongThe` = tên bảng có trong BẢNG ĐẾM của thẻ. Một lần quét hỏng ⇒ ok:false, mọi số rỗng. */
@@ -102,4 +104,16 @@ export function luuYQuetRong(k: KetQuaQuetRong): string {
   if (k.ngoaiThe.length === 0) return "";
   const t = k.doi.filter((d) => k.ngoaiThe.includes(d.bang));
   return `HA-6d: bảng NGOÀI thẻ BẢNG ĐẾM đổi (chỉ ghi, không đổi kết cục): ${t.map((d) => `${d.bang} ${d.truoc ?? "∅"}→${d.sau ?? "∅"}${d.chenh === null ? "" : ` (${d.chenh > 0 ? "+" : ""}${d.chenh})`}`).join(" | ")}`;
+}
+
+/**
+ * Các dòng CẢNH BÁO đưa lên ĐẦU kết quả cho người duyệt (HA-6d, chế độ thường lẫn `--quet-rong-cham`): (1) bảng NGOÀI thẻ đổi / quét không xong (cùng chữ với `luuYQuetRong`);
+ * (2) bảng KHÔNG đếm được (quá hạn / lỗi) ở ít nhất một lần quét — đó là CHỖ MÙ của phép quét. Rỗng nếu không có gì đáng nêu.
+ */
+export function canhBaoQuetRong(k: KetQuaQuetRong): string[] {
+  const ra: string[] = [];
+  const ngoai = luuYQuetRong(k);
+  if (ngoai !== "") ra.push(ngoai);
+  if (k.ok && k.khongDem.length > 0) ra.push(`HA-6d: ${k.khongDem.length} bảng KHÔNG đếm được (quá hạn hoặc lỗi) — chỗ MÙ của phép quét: ${k.khongDem.join(", ")}`);
+  return ra;
 }

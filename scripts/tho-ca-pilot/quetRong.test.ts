@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { HAN_MOI_BANG_QUET_MS, mayQuetRongPostgres, type SqlDem } from "./mayDemPg";
-import { luuYQuetRong, quetTatCa, soSanhQuet, TRAN_SO_BANG_QUET, type KetQuaQuet, type MayQuet } from "./quetRong";
+import { canhBaoQuetRong, luuYQuetRong, quetTatCa, soSanhQuet, TRAN_SO_BANG_QUET, type KetQuaQuet, type MayQuet } from "./quetRong";
 
 const may = (ds: string[] | Error, dem: (b: string) => number | null | Error): MayQuet => ({
   lietKe: async () => {
@@ -144,5 +144,32 @@ describe("mayQuetRongPostgres — bản giả của thẻ mẫu", () => {
     await expect(mayQuetRongPostgres(sql2).dem("kin")).rejects.toThrow("permission denied");
     const r = await quetTatCa(mayQuetRongPostgres(sqlGia((c) => (c.includes("set_config") ? [{}] : c.includes("information_schema") ? [{ table_name: "kin" }, { table_name: "ok" }] : c.includes("<id:kin>") ? quyen : [{ n: "4" }])).sql));
     expect(r).toEqual({ ok: true, dem: { kin: null, ok: 4 } });
+  });
+});
+
+describe("canhBaoQuetRong — dòng cảnh báo đưa lên đầu", () => {
+  const trongThe = new Set(["a"]);
+  it("★★★ không bảng ngoài thẻ đổi, không bảng nào mù ⇒ []", () => {
+    expect(canhBaoQuetRong(soSanhQuet(ok({ a: 1, b: 2 }), ok({ a: 2, b: 2 }), trongThe))).toEqual([]);
+  });
+  it("★★★ bảng NGOÀI thẻ đổi ⇒ một dòng (cùng chữ với luuYQuetRong), nêu tên + số; bảng trong thẻ không có mặt", () => {
+    const k = soSanhQuet(ok({ a: 1, b: 5 }), ok({ a: 9, b: 7 }), trongThe);
+    const cb = canhBaoQuetRong(k);
+    expect(cb).toEqual([luuYQuetRong(k)]);
+    expect(cb[0]).toContain("b 5→7 (+2)");
+    expect(cb[0]).not.toContain("a 1→9");
+  });
+  it("★★★ bảng KHÔNG đếm được ⇒ dòng 'chỗ MÙ' nêu số lượng và tên; đứng SAU dòng bảng ngoài thẻ khi có cả hai", () => {
+    const rieng = canhBaoQuetRong(soSanhQuet(ok({ a: 1, lon: null, x: 3 }), ok({ a: 1, lon: 9, x: 3 }), trongThe));
+    expect(rieng).toEqual(["HA-6d: 1 bảng KHÔNG đếm được (quá hạn hoặc lỗi) — chỗ MÙ của phép quét: lon"]);
+    const ca = canhBaoQuetRong(soSanhQuet(ok({ a: 1, b: 1, lon: null }), ok({ a: 1, b: 4, lon: null }), trongThe));
+    expect(ca).toHaveLength(2);
+    expect(ca[0]).toContain("bảng NGOÀI thẻ BẢNG ĐẾM đổi");
+    expect(ca[1]).toContain("chỗ MÙ");
+    expect(ca[1]).toContain("lon");
+  });
+  it("★★★ quét không xong ⇒ MỘT dòng 'quét rộng không xong' (không thêm dòng chỗ mù)", () => {
+    const k = soSanhQuet({ ok: false, lyDo: "không mở được kết nối quét" }, ok({}), trongThe);
+    expect(canhBaoQuetRong(k)).toEqual(["HA-6d: quét rộng không xong (trước: không mở được kết nối quét) — không có số đo ngoài thẻ"]);
   });
 });

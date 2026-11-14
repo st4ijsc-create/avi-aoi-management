@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { chayMotViec, main } from "./chayMotViec";
+import { chayMotViec, main, thamSoQuetRongTuDongLenh } from "./chayMotViec";
 import type { MayDem } from "./hauQua";
 import type { ChayKiem } from "./kiemChung";
 import type { MayQuet } from "./quetRong";
@@ -172,5 +172,114 @@ describe("HA-6d — cờ dòng lệnh", () => {
     const ma = await main(["--the", "khong-ton-tai.txt", "--quet-rong"]);
     expect(ma).toBe(2);
     expect(ghi.join("")).toContain("--quet-rong cần --cho-phep-db");
+  });
+});
+
+describe("HA-6d — --quet-rong-cham (chấm) và cảnh báo ở đầu", () => {
+  const ngoai = [{ machines: 10, user_corporate_assignments: 5 }, { machines: 10, user_corporate_assignments: 6 }];
+  it("★★★ -cham: bảng NGOÀI thẻ đổi ⇒ ketCuc hau-qua-xau (ok:false); lý do nêu tên bảng; quetRong.cham=true; kết quả thẻ vẫn nêu tên bảng", async () => {
+    const q = moQuetGia(ngoai);
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: q.moMayQuet });
+    expect(r.ketCuc).toBe("hau-qua-xau");
+    expect(r.ok).toBe(false);
+    expect(r.quetRong).toMatchObject({ ok: true, cham: true, ngoaiThe: ["user_corporate_assignments"] });
+    expect(r.luuY?.join(" ")).toContain("HA-6d (chấm): bảng NGOÀI thẻ BẢNG ĐẾM đổi: user_corporate_assignments");
+    expect(q.nk.mo).toBe(2); // -cham hàm ý bật quét rộng, không cần thêm --quet-rong
+  });
+  it("★★★ -cham: chỉ bảng TRONG thẻ đổi (hoặc không bảng nào đổi) ⇒ KHÔNG nâng, ketCuc xong", async () => {
+    const r1 = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetGia([{ machines: 10, a: 1 }, { machines: 11, a: 1 }]).moMayQuet });
+    expect(r1.ketCuc).toBe("xong");
+    expect(r1.quetRong).toMatchObject({ cham: true, ngoaiThe: [] });
+  });
+  it("★★★ -cham: quét KHÔNG xong ⇒ fail-closed hau-qua-xau, lý do nêu quét không xong, không lộ mật khẩu", async () => {
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetGia([{ a: 1 }, "mo-loi"]).moMayQuet });
+    expect(r.ketCuc).toBe("hau-qua-xau");
+    expect(r.luuY?.join(" ")).toContain("HA-6d (chấm): quét rộng không xong (sau: không mở được kết nối quét) — fail-closed");
+    expect(JSON.stringify(r)).not.toContain(DAU);
+  });
+  it("★★★ -cham: kết cục ĐÃ đỏ (kiem-do) + bảng ngoài thẻ đổi ⇒ kết cục giữ nguyên kiem-do (không ghi đè)", async () => {
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetGia(ngoai).moMayQuet, chayKiem: kiemDo });
+    expect(r.ketCuc).toBe("kiem-do");
+    expect(r.quetRong).toMatchObject({ cham: true, ngoaiThe: ["user_corporate_assignments"] });
+  });
+  it("★★★ -cham mà KHÔNG có cờ DB ⇒ tu-choi nêu đúng cờ, 0 lần mở", async () => {
+    const q = moQuetGia(ngoai);
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: q.moMayQuet, choPhepDb: false, testDbUrl: undefined });
+    expect(r.ketCuc).toBe("tu-choi");
+    expect(r.loi).toContain("--quet-rong-cham cần --cho-phep-db");
+    expect(q.nk.mo).toBe(0);
+  });
+  it("★★★ chế độ thường: bảng ngoài thẻ đổi ⇒ canhBaoQuet NGAY SAU ketCuc trong JSON, luuY[0] là dòng đó, nhật ký có 'CẢNH BÁO'; ketCuc xong", async () => {
+    const nk: string[] = [];
+    const r = await chay(THE(BANG), { quetRong: true, moMayQuet: moQuetGia(ngoai).moMayQuet, nhatKy: (s) => nk.push(s) });
+    expect(r.ketCuc).toBe("xong");
+    const khoa = Object.keys(r);
+    expect(khoa[khoa.indexOf("ketCuc") + 1]).toBe("canhBaoQuet");
+    expect(r.canhBaoQuet).toHaveLength(1);
+    expect(r.canhBaoQuet![0]).toContain("user_corporate_assignments 5→6 (+1)");
+    expect(r.luuY![0]).toBe(r.canhBaoQuet![0]);
+    expect(nk.filter((s) => s.startsWith("CẢNH BÁO HA-6d"))).toEqual([`CẢNH BÁO ${r.canhBaoQuet![0]}`]);
+  });
+  it("★★★ chế độ thường: bảng KHÔNG đếm được (quá hạn) ⇒ canhBaoQuet nêu 'chỗ MÙ' + tên bảng ở đầu; ketCuc xong; không có cảnh báo ⇒ không có khoá canhBaoQuet", async () => {
+    const r = await chay(THE(BANG), { quetRong: true, moMayQuet: moQuetGia([{ machines: 10, lon: null }, { machines: 10, lon: null }]).moMayQuet });
+    expect(r.ketCuc).toBe("xong");
+    expect(r.canhBaoQuet).toEqual(["HA-6d: 1 bảng KHÔNG đếm được (quá hạn hoặc lỗi) — chỗ MÙ của phép quét: lon"]);
+    expect(r.luuY![0]).toBe(r.canhBaoQuet![0]);
+    const sach = await chay(THE(BANG).replace("TC-94", "TC-92"), { quetRong: true, moMayQuet: moQuetGia([{ machines: 1 }, { machines: 1 }]).moMayQuet });
+    expect("canhBaoQuet" in sach).toBe(false);
+  });
+});
+
+describe("HA-6d — cờ --quet-rong-cham ở dòng lệnh", () => {
+  afterEach(() => vi.restoreAllMocks());
+  it("★★★ `--quet-rong-cham` KHÔNG kèm `--cho-phep-db` ⇒ main trả 2, thông báo nêu cờ", async () => {
+    const ghi: string[] = [];
+    vi.spyOn(process.stderr, "write").mockImplementation(((s: unknown) => (ghi.push(String(s)), true)) as typeof process.stderr.write);
+    expect(await main(["--the", "khong-ton-tai.txt", "--quet-rong-cham"])).toBe(2);
+    expect(ghi.join("")).toContain("--quet-rong-cham cần --cho-phep-db");
+  });
+});
+
+describe("HA-6d — ca nghiệm thu thuần: mô phỏng TC-13 âm (10 bảng đổi: 9 trong thẻ + user_corporate_assignments)", () => {
+  // số thật của lượt TC-13 âm 14/11: 6 bảng nền +1, product_inspections +8, measurement_point_defs +1, measurement_results +4, user_corporate_assignments +1 (ngoài thẻ) = 20 hàng
+  const TRUOC = { factories: 0, workshops: 0, production_lines: 0, stations: 0, machines: 0, workstations: 0, product_inspections: 155182, measurement_point_defs: 0, measurement_results: 49968, user_corporate_assignments: 3, audit_logs: 1314346, users: 40 };
+  const SAU = { factories: 1, workshops: 1, production_lines: 1, stations: 1, machines: 1, workstations: 1, product_inspections: 155190, measurement_point_defs: 1, measurement_results: 49972, user_corporate_assignments: 4, audit_logs: 1314346, users: 40 };
+  const BANG9 = ["factories", "workshops", "production_lines", "stations", "machines", "workstations", "product_inspections", "measurement_point_defs", "measurement_results"].join("\n");
+  it("★★★ --quet-rong-cham báo ĐỦ 10 bảng đổi (tổng +20), đúng 1 bảng ngoài thẻ; bảng không đổi (audit_logs, users) không có mặt; ketCuc hau-qua-xau", async () => {
+    const q = moQuetGia([TRUOC, SAU]);
+    const d = moDemGia([TRUOC, SAU]); // bộ đếm của thẻ (HA-6b) cũng thấy 9 bảng của nó đổi
+    const r = await chay(THE(BANG9), { quetRongCham: true, moMayQuet: q.moMayQuet, moMayDem: d.moMayDem });
+    expect(r.ketCuc).toBe("hau-qua-xau");
+    expect(r.ok).toBe(false);
+    expect(r.quetRong!.doi.map((x) => x.bang)).toEqual(["factories", "machines", "measurement_point_defs", "measurement_results", "product_inspections", "production_lines", "stations", "user_corporate_assignments", "workshops", "workstations"]);
+    expect(r.quetRong!.doi).toHaveLength(10);
+    expect(r.quetRong!.tongChenh).toBe(20);
+    expect(r.quetRong!.ngoaiThe).toEqual(["user_corporate_assignments"]);
+    expect(r.quetRong!.doi.find((x) => x.bang === "product_inspections")).toEqual({ bang: "product_inspections", truoc: 155182, sau: 155190, chenh: 8 });
+    expect(r.quetRong!.doi.find((x) => x.bang === "user_corporate_assignments")).toEqual({ bang: "user_corporate_assignments", truoc: 3, sau: 4, chenh: 1 });
+    expect(r.hauQua!.bang.filter((x) => x.chenh !== 0)).toHaveLength(9); // HA-6b chỉ thấy 9 bảng trong thẻ
+    expect(r.canhBaoQuet![0]).toContain("user_corporate_assignments 3→4 (+1)");
+  });
+  it("★★★ cùng số liệu nhưng bộ đếm của thẻ KHÔNG thấy (chênh 0): chỉ -cham bắt được ⇒ ketCuc hau-qua-xau với lý do bảng ngoài thẻ", async () => {
+    const d = moDemGia([TRUOC, TRUOC]);
+    const r = await chay(THE(BANG9), { quetRongCham: true, moMayQuet: moQuetGia([TRUOC, SAU]).moMayQuet, moMayDem: d.moMayDem });
+    expect(r.hauQua).toMatchObject({ ketCuc: "ok" });
+    expect(r.ketCuc).toBe("hau-qua-xau");
+    expect(r.luuY?.join(" ")).toContain("HA-6d (chấm): bảng NGOÀI thẻ BẢNG ĐẾM đổi: user_corporate_assignments");
+  });
+});
+
+describe("HA-6d — thamSoQuetRongTuDongLenh (thuần)", () => {
+  it("★★★ chuyển đúng hai cờ sang tham số; không cờ ⇒ cả hai false và không lỗi", () => {
+    expect(thamSoQuetRongTuDongLenh({}, true)).toEqual({ quetRong: false, quetRongCham: false });
+    expect(thamSoQuetRongTuDongLenh({ "quet-rong": "1" }, true)).toEqual({ quetRong: true, quetRongCham: false });
+    expect(thamSoQuetRongTuDongLenh({ "quet-rong-cham": "1" }, true)).toEqual({ quetRong: false, quetRongCham: true });
+    expect(thamSoQuetRongTuDongLenh({ "quet-rong": "1", "quet-rong-cham": "1" }, true)).toEqual({ quetRong: true, quetRongCham: true });
+  });
+  it("★★★ thiếu --cho-phep-db ⇒ lỗi nêu đúng cờ (-cham ưu tiên khi có cả hai); không cờ quét thì không lỗi dù không có cờ DB", () => {
+    expect(thamSoQuetRongTuDongLenh({ "quet-rong": "1" }, false).loi).toBe("--quet-rong cần --cho-phep-db");
+    expect(thamSoQuetRongTuDongLenh({ "quet-rong-cham": "1" }, false).loi).toBe("--quet-rong-cham cần --cho-phep-db");
+    expect(thamSoQuetRongTuDongLenh({ "quet-rong": "1", "quet-rong-cham": "1" }, false).loi).toBe("--quet-rong-cham cần --cho-phep-db");
+    expect(thamSoQuetRongTuDongLenh({}, false)).toEqual({ quetRong: false, quetRongCham: false });
   });
 });
