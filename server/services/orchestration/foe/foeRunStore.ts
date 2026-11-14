@@ -48,8 +48,9 @@ import { toRobotJob } from "../../equipment/robotJobMapping";
 import { readEdgeAssignment } from "../../edge/edgeExecutionSchema"; // A2(n) T8 lượt sửa 1 (CHAN-3) — a run given to an edge node: its claim's progress is its heartbeat; lượt sửa 2 (CHAN-4): through the shared read (0370 missing ⇒ no edge)
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, rutGonGiua, TRAN_TEN_NUT, TRAN_LY_DO, VI_KHONG_BAO, CAU_TAY_MAY, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, docDsKhongRoEdge, TRAN_LOI_EDGE, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, rutGonGiua, TRAN_TEN_NUT, TRAN_LY_DO, VI_KHONG_BAO, CAU_TAY_MAY, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
+import { edgeStepAuthorizations } from "../../edge/edgeControlSchema"; // T9 lượt sửa 3e — central's authorisation ledger (0372), read at an edge segment end (SELECT only)
 import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
 
 const napDispatcher = napMotLan(() => import("../../ot/commandDispatcher"));
@@ -706,7 +707,7 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
     // T9 lượt sửa 3 (RA2-2) — an edge segment's end: central's reading of it, the node's adapter (one rule with the URGENT); central's walk: its memory, as before
     const cach = x.cachNo ? await x.cachNo(id0) : x.boNho?.cachCua?.(id0);
     // lượt sửa 3c (mục 1) — an edge segment: the node's report first, then the row's own code; nothing ⇒ NOT_REPORTED (fail-closed: never "did NOT go out")
-    const vi = x.viNo?.(id0) ?? viChuaRaCuaLoi(rows.find((r) => r.stepId === id0)?.error) ?? x.boNho?.viCua?.(id0) ?? (x.cachNo ? VI_KHONG_BAO : undefined);
+    const vi = x.viNo?.(id0) ?? viChuaRaCuaLoi(rows.find((r) => r.stepId === id0)?.error) ?? x.boNho?.viCua?.(id0) ?? VI_KHONG_BAO; // T9 lượt sửa 3e (A1-8) — central's walk too: no code ⇒ the cautious words
     return { ...out, vi: "no", loi: loiGiuChuaRa(id0, vi, cach) };
   }
   if (!ben) return { ...out, vi: "khongBen", loi: loiGiuKhongBen(x.runId, { ma: benChot ? null : (chot?.ma ?? null), khongXacNhan }) };
@@ -1838,11 +1839,43 @@ export interface EdgeSegmentEndApply {
   outcomeUnknown?: string[];
 }
 
-/** fix review 1 — the outcome-unknown steps of a segment end: the structured list, else the `EDGE_OUTCOME_UNKNOWN(a,b)` prefix of its error; only COMMAND steps of the definition. */
+/**
+ * fix review 1 — the outcome-unknown steps a segment end NAMES: the structured list (an in-process end), else the `EDGE_OUTCOME_UNKNOWN(a,b)` list of its error; only COMMAND steps of the definition.
+ * T9 lượt sửa 3e — a list not read whole (docDsKhongRoEdge) names EVERY command step (fail-closed: the words alone cannot say which went). Central's end reads tapKhongRoEdge, not this.
+ */
 export function edgeOutcomeUnknownOf(end: Pick<EdgeSegmentEndApply, "outcomeUnknown" | "error" | "def">): string[] {
-  const named = end.outcomeUnknown ?? (/^EDGE_OUTCOME_UNKNOWN\(([^)]{1,4000})\)/.exec(end.error ?? "")?.[1].split(",") ?? []);
   const commands = new Set(allStepsOf(end.def.steps).filter((s) => s.type === "command").map((s) => s.id));
-  return [...new Set(named.map((x) => x.trim()).filter((x) => commands.has(x)))];
+  if (end.outcomeUnknown) return [...new Set(end.outcomeUnknown.map((x) => x.trim()).filter((x) => commands.has(x)))];
+  const d = docDsKhongRoEdge(end.error, commands);
+  return d.hong ? [...commands] : [...new Set(d.ids)];
+}
+
+/**
+ * T9 lượt sửa 3e (HST 14/11, phương án (a)) — THE outcome-unknown steps of an edge segment end, for central's latch (foeOutcomeUnknown ⇒ runDaChotKhongRo): what central's own STRUCTURED data
+ * says went (the rows and the authorisation ledger: edgeResumeStateOf's outcomeUnknown — a command sent, its row not final: not completed / skipped / compensated / failed) ∪ what the end names
+ * (the in-process list, or the words read whole). Never fewer than the words name. Not read whole (`hong`: the list cut, empty, an id of no command step, a text at the ceiling, a list that does
+ * not cover what the ledger says went), a rider marked short (`thieu`), or the ledger unreadable (`uyQuyen` null) ⇒ fail-closed: every command step whose row is not final (it may have gone). A STOP is never in it (L-7: it is sent
+ * again; `stops`). A final row is never pulled in by the rows (nobody confirms a finished step by hand). Pure.
+ */
+export function tapKhongRoEdge(x: {
+  def: Pick<WorkflowDefinition, "steps">;
+  error?: string;
+  outcomeUnknown?: readonly string[];
+  /** the wire text was at its ceiling (cut) */
+  catDay?: boolean;
+  /** the rider lost reports to the text's floor (ganBaoCaoKhongRoEdge): not read whole */
+  thieu?: boolean;
+  rows: ReadonlyArray<{ stepId: string; status: string; resultJson?: unknown; error?: string | null }>;
+  uyQuyen: ReadonlySet<string> | null;
+  stops: ReadonlySet<string>;
+}): { ids: string[]; hong: boolean } {
+  const lenh = new Set(allStepsOf(x.def.steps).filter((s) => s.type === "command").map((s) => s.id));
+  const chu = x.outcomeUnknown ? { coDau: false, ids: x.outcomeUnknown.map((v) => v.trim()).filter((v) => lenh.has(v)), hong: false } : docDsKhongRoEdge(x.error, lenh);
+  const daGuiTheo = (uq: ReadonlySet<string>) => Object.entries(edgeResumeStateOf(x.def, x.rows, uq, [], x.stops).state).filter(([, e]) => e.state === "outcomeUnknown").map(([id]) => id);
+  const daGui = x.uyQuyen ? daGuiTheo(x.uyQuyen) : [];
+  const hong = chu.hong || x.thieu === true || x.uyQuyen === null || (chu.coDau && (x.catDay === true || daGui.some((id) => !chu.ids.includes(id))));
+  const coTheDaDi = hong ? daGuiTheo(new Set(x.rows.map((r) => r.stepId))) : [];
+  return { ids: [...new Set([...chu.ids, ...daGui, ...coTheDaDi])].filter((id) => lenh.has(id) && !x.stops.has(id)), hong };
 }
 export type EdgeSegmentEndResult = { ok: true; status: string; changed: boolean } | { ok: false; code: "not_finished"; message: string };
 
@@ -2018,8 +2051,25 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
   // R1b-2b-2a A2(n) (I-5) — the segment's outcome-unknown reports ride on its end (never stored in the run's error): a full journal that lost
   // the anomaly does not lose the URGENT; the same event as the anomaly route ⇒ the same dedup key
   // M-2, m-H — a report counts only for THIS claim and for a step of the assigned definition paired with its own compensation
-  const { error: loiEnd, bao: baoKhongRo } = tachBaoCaoKhongRoEdge(endTho.error, (x) => x.claimSeq === endTho.claimSeq && baoCaoHopLe(endTho.def, x));
+  const { error: loiEnd, bao: baoKhongRo, thieu: riderThieu } = tachBaoCaoKhongRoEdge(endTho.error, (x) => x.claimSeq === endTho.claimSeq && baoCaoHopLe(endTho.def, x));
   const end: EdgeSegmentEndApply = { ...endTho, error: loiEnd };
+  /**
+   * T9 lượt sửa 3e — the steps this end leaves outcome-unknown (tapKhongRoEdge), from central's own rows and ledger, whatever the wire did to the words: SELECT only, in this transaction, after the run
+   * row's lock (no new lock, no new order). The ledger unreadable ⇒ null (fail-closed). STOPs by the definition's own steps (laStopTheoBuoc, no machine read): never unknown (L-7).
+   */
+  const khongRoCuaDoan = async (): Promise<string[]> => {
+    const hangKr = await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
+    let uyQuyen: Set<string> | null = null;
+    try {
+      const au = (await db.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.runId, runId))) as Array<{ stepId: string; supersededAt: unknown }>;
+      uyQuyen = new Set(au.filter((a) => a.supersededAt == null).map((a) => a.stepId));
+    } catch {
+      uyQuyen = null;
+    }
+    const stops = new Set<string>();
+    for (const s of allStepsOf(end.def.steps)) if (s.type === "command" && (await laStopTheoBuoc(s, new Map()).catch(() => false))) stops.add(s.id);
+    return tapKhongRoEdge({ def: end.def, error: end.error, outcomeUnknown: end.outcomeUnknown, catDay: (endTho.error?.length ?? 0) >= TRAN_LOI_EDGE, thieu: riderThieu === true, rows: hangKr, uyQuyen, stops }).ids;
+  };
   const [run] = await db.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).for("update").limit(1);
   if (!run) return { ok: true, status: "missing", changed: false };
   // dieu-phoi 08/11 T6e-K2; A2(n) T7 — the URGENTs of what rode on this end: the end gate waits for them (bounded), they are raised whatever this end becomes
@@ -2065,7 +2115,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     // node's free text: central's 500 cut, as before lượt sửa 3 (edgeHeldMark.a2n: the mark at the head, the advice whole, the error under 800)
     const loiHien = error?.startsWith(`${FOE_STOP_NOT_SENT}:`) ? await loiNoTrungTam() : error?.slice(0, 500);
     // fix review 1 — a command the edge sent but could not record: never sent again (foeEngine reads the list on the re-walk)
-    const unknown = edgeOutcomeUnknownOf(end);
+    const unknown = await khongRoCuaDoan(); // T9 lượt sửa 3e — central's rows and ledger, the words only add
     const prevUnknown = Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : [];
     return write("held", {
       currentStepId: null,
@@ -2101,7 +2151,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     const daBao = q.moi && q.chot ? { [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: q.chot.stepId, at: new Date().toISOString() } } : {};
     if (q.ghi === "terminal") return { patch: Object.keys(daBao).length ? { contextJson: { ...ctx, ...chotTuBao, ...daBao } } : {} };
     const at = new Date().toISOString();
-    const unknown = edgeOutcomeUnknownOf(end);
+    const unknown = await khongRoCuaDoan(); // T9 lượt sửa 3e — central's rows and ledger, the words only add
     const prevUnknown = Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : [];
     return {
       giu: await write("held", {

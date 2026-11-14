@@ -742,6 +742,8 @@ interface EdgeHarness {
   runId: number;
   /** fix review 2 — the complete request lost its outcome-unknown list / prefix (E did not forward it) */
   stripEndUnknown?: boolean;
+  /** T9 lượt sửa 3e — the segment end as the complete request carries it (edgeExecutionAgent → edgeProtocol strictObject): what central is given, not the walker's in-process end */
+  quaDay?: (out: Record<string, any>) => Promise<Record<string, any>>;
   /** fix review 1 — the journal refuses the record matching this (once refused, every later non-STOP record too) */
   refuse?: (rec: EdgeRunRecordIn) => boolean;
   /** the walker's run-status calls on the edge stores of every segment (central only applies the segment END) */
@@ -958,7 +960,7 @@ async function edgeSegment(x: EdgeHarness, claimSeq: number, opts: { beforeEnd?:
     if (row.status !== "running" && row.status !== "compensating") continue;
     row.contextJson = { ...(row.contextJson ?? {}), ...edgeContextPatchOf(r.patch, row.contextJson).patch };
   }
-  const end = x.stripEndUnknown && out.outcome ? { ...out, outcomeUnknown: undefined, error: undefined } : out;
+  const end = x.quaDay && out.outcome ? await x.quaDay(out) : x.stripEndUnknown && out.outcome ? { ...out, outcomeUnknown: undefined, error: undefined } : out;
   if (end.outcome && !x.quaBaoCao) {
     const ket = await applyEdgeSegmentEnd(fake as never, x.runId, { ...(end as any), nodeCode: "EDGE-A", claimSeq, def: d });
     // A2(n) T7b-3 (H36) — what completeForNodeV2 does once that end has committed: a run that acted, never latched and ended with no STOP sweep is told what it owes
@@ -2129,7 +2131,8 @@ describe("doc 81 Đợt 10 C fix review 2 (R-10-ae) — what a Continue must nev
     e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
     e.stripEndUnknown = true;
     await edgeSegment(e, 2);
-    expect(runRow(e.runId).contextJson.foeOutcomeUnknown).toBeUndefined(); // the hint never arrived
+    // T9 lượt sửa 3e (HST 14/11, phương án (a)) — was: undefined (the hint never arrived). Central now reads its own rows and ledger at the end: r1 authorised, no result ⇒ named, the run latched
+    expect(runRow(e.runId).contextJson.foeOutcomeUnknown).toEqual(["r1"]);
     e.refuse = undefined;
     e.stripEndUnknown = false;
     await approveEdgeGate(e);
@@ -2256,8 +2259,9 @@ describe("doc 81 Đợt 10 C fix review 3 (R-10-ao) — ANY authorisation on a n
     expect(edgeResumeStateOf(d, [{ stepId: "s9", status: "running", resultJson: { routedTo: "robot-dispatcher" } }], new Set(["s9"]), ["s9"], new Set(["s9"])).state).toEqual({});
   });
 
-  it("★ N3 only 42P01 (no table) means 'no ledger'; any other ledger error (42703, 42883, a connection error) refuses the Continue", async () => {
-    for (const [code, refused] of [["42703", true], ["42883", true], ["08006", true], ["42P01", false]] as const) {
+  // T9 lượt sửa 3e (C-2, HST 14/11) — was: 42P01 (no table) means 'no ledger' ⇒ continued. Now refused too, with its own words (the run is an edge run: its ledger may have existed)
+  it("★ N3 any ledger error (42703, 42883, a connection error) refuses the Continue; T9F3E-C2 a missing ledger table (42P01) refuses it too, and says why", async () => {
+    for (const [code, refused] of [["42703", true], ["42883", true], ["08006", true], ["42P01", true]] as const) {
       const e = await edgeAssignedRun(def(`ao-n3-${code}`, [gate(), ot("m1")]));
       await edgeSegment(e, 1);
       const sel = FakeDb.prototype.select.bind(fake);
@@ -2273,7 +2277,8 @@ describe("doc 81 Đợt 10 C fix review 3 (R-10-ao) — ANY authorisation on a n
       try {
         const view = (await getRun(e.runId, { bindingDigest: true }))!;
         const r = await resumeRun(e.runId, { approved: true, expectedStepId: "g1", expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
-        if (refused) expect(r, code).toMatchObject({ ok: false, message: expect.stringMatching(/could not be read to continue it safely/) });
+        if (code === "42P01") expect(r, code).toMatchObject({ ok: false, message: expect.stringMatching(/authorisation ledger of edge commands \(migration 0372\) is missing.*it is NOT continued\. Abort it \(its STOPs are sent\)/) });
+        else if (refused) expect(r, code).toMatchObject({ ok: false, message: expect.stringMatching(/could not be read to continue it safely/) });
         else expect(r, code).toMatchObject({ ok: true, status: "queued" });
       } finally {
         (fake as any).select = sel;
@@ -6976,6 +6981,22 @@ describe("A2(n) T5 fix 1 — what an edge reports of a STOP central cannot verif
     return { J, S, sh, con };
   }
   const tatCaChu = () => h.alerts.map((a) => `${a.title} ${a.message}`).join(" | ");
+  // T9 lượt sửa 3e (A1-12, test only) — the WRITER of the one row of an unsent STOP with no code: the real report path
+  it("T9F3E-A112-NOI-GHI an edge's FAILED abort_stop of a verified STOP with no closed value (edgeReportsCentral.ts:391): the abort: row is written failed, 'STOP not confirmed by the edge node', and it is a debt", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const e = await edgeAssignedRun(dMot("t9f3ea112"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await claimPackage(e, 2);
+    await chuanBi(e, 2);
+    const r = (await reportForNode(NUT, e.runId, { claimSeq: 2, claimToken: TOKEN, epoch: EPOCH, stream: edgeRunStream(e.runId, 2), records: [{ kind: "abort_stop", seq: 1, stepId: "s1", status: "failed", result: null, at: Date.now() }] })) as Record<string, any>;
+    expect(r.http, JSON.stringify(r)).toBe(200);
+    expect(stepRows(e.runId).find((x) => x.stepId === "abort:s1")).toMatchObject({ status: "failed", error: "STOP not confirmed by the edge node" });
+    const khoa = { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: "2026-11-14T00:00:00.000Z" } };
+    expect([...stopChuaRaTuHang(stepRows(e.runId) as never, khoa)], "latched: owed, by its status").toEqual(["s1"]);
+    expect(phanLoaiStopAbort("s1", { hang: stepRows(e.runId) as never, ctx: {} }).lop, "a press owes it").toBe("no");
+  });
 
   // T9 lượt sửa 2 (F1-EDGE-HUA-ANOMALY lived: no case took the anomaly route alone) — here the events stream (eventsForNode → canhBaoTuAnomalyEdge) is shipped and answered BEFORE the segment end applies:
   // the stop_not_sent of nt is first raised by the anomaly route, and its words are central's own reading (cachEdgeTrungTam): not verified, the node's queue, never the plain "Abort sends it again"
@@ -8260,8 +8281,9 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
       await edgeSegment(e, 2);
       await wait(80);
       const run = String(runRow(e.runId).error ?? "");
-      expect(run, "a step, never a STOP nobody pinned").toMatch(/step "nt_dung…tai_01" could not be verified as a pinned STOP/);
-      expect(run).not.toMatch(/STOP "nt_dung/);
+      // T9 lượt sửa 3e (A1-31, HST (Y)) — the id printed 6…5 + "#" + 6 hex of its whole (was 7…6: "nt_dung…tai_01")
+      expect(run, "a step, never a STOP nobody pinned").toMatch(/step "nt_dun…ai_01#[0-9a-f]{6}" could not be verified as a pinned STOP/);
+      expect(run).not.toMatch(/STOP "nt_dun/);
       expect(run).not.toMatch(/nobody could read its pins/);
       if (k === "ADAPTER_OFFLINE") expect(run).toMatch(/refused before it reached a driver \(ADAPTER_OFFLINE\)/);
       else {
@@ -17355,7 +17377,7 @@ describe("A2(n) T9 — the confirmation of a STOP after an unknown attempt (XAC_
           const loi = rs.chuGiuEdge!("n".repeat(200), 2_147_483_647, "r".repeat(200), loiGiuChuaRa(id, vi, { ...cach, adapterNut: nut } as never));
           expect(loi.length, `${nhan}: the held error ≤ 800`).toBeLessThanOrEqual(800);
           expect(loi, `${nhan}: the safe act whole`).toContain(SAFE);
-          expect(loi, `${nhan}: the id cut in the middle, head and tail kept`).toMatch(/"dau[b]*…[b]*cuoi"/);
+          expect(loi, `${nhan}: the id cut in the middle, head and tail kept`).toMatch(/"dau[b]*…[b]*cuoi#[0-9a-f]{6}"/); // T9 lượt sửa 3e (A1-31, HST (Y)): + "#" and 6 hex of the whole id
           expect(loi, `${nhan}: never the whole id`).not.toContain(id);
           for (const loai of ["stopNotSent", "abortStopNotSent"] as const) {
             const n = noiDungCanhBaoKhongRo({ loai, runId: 2_147_483_647, stepId: id, compId: KHONG_CO_BU_TRU, error: "FOE_STOP_NOT_SENT", lan: "chot", biet: true, vi, ...cach, adapterNut: nut } as never);
@@ -17580,5 +17602,326 @@ describe("A2(n) T9 — the confirmation of a STOP after an unknown attempt (XAC_
       expect(chu, loai).toMatch(/check the machine on site/i);
       expect(chu, loai).not.toMatch(/Abort/);
     }
+  });
+});
+
+describe("T9 lượt sửa 3e — an edge end whose list of outcome-unknown steps the wire cut: central latches the run from its rows and its ledger, whatever the length of the words", () => {
+  const parE = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
+  const QT = { id: 0, role: "system", name: "qt-orchestrator" };
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const urgentCua = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND) => h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND[kind]);
+  const ctxCua = (c: number) => (runRow(c).contextJson as Record<string, unknown> | null) ?? {};
+  /** the complete request (edgeExecutionAgent): no outcomeUnknown on the wire (strictObject), the error cut at 4 000 */
+  const day = async (out: Record<string, any>) => ({
+    outcome: out.outcome,
+    ...(out.gateStepId ? { gateStepId: out.gateStepId } : {}),
+    ...(out.heldReason ? { heldReason: out.heldReason } : {}),
+    ...(typeof out.error === "string" ? { error: out.error.slice(0, 4000) } : {}),
+  });
+  /** kiem-dinh's case: five more reports on the rider (steps of no definition: central drops them, the edge's budget counts them) */
+  const dayNamBao = async (out: Record<string, any>) => {
+    const kk = await import("./foeKetCucKhongRo");
+    const t = kk.tachBaoCaoKhongRoEdge(out.error);
+    const bao = [...t.bao, ...Array.from({ length: 5 }, (_, i) => ({ loai: "held", stepId: `s${i}`.padEnd(100, "y"), compId: `c${i}`.padEnd(100, "z"), ma: "EDGE_OUTCOME_UNKNOWN", claimSeq: 2 }))] as never[];
+    return day({ ...out, error: kk.ganBaoCaoKhongRoEdge(t.error, bao, 4000) });
+  };
+  /** n robot commands in parallel, all sent, every result refused by the journal: the edge ends held(journalFull) naming n steps; `them` after them (never reached) */
+  async function doanCat(ref: string, n: number, len: number, quaDay: (out: Record<string, any>) => Promise<Record<string, any>>, them: WorkflowStep[] = []) {
+    const ids = Array.from({ length: n }, (_, i) => `m${i}-`.padEnd(len, "q"));
+    const e = await edgeAssignedRun(def(ref, [gate(), parE("p", ids.map((id) => move(id))), ...them]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const n0 = h.sent.length;
+    for (const id of ids) h.slow.set(id, 40);
+    e.refuse = (rec) => rec.kind === "step" && typeof (rec.result as { routedTo?: unknown } | null)?.routedTo === "string";
+    e.quaDay = quaDay;
+    const s2 = await edgeSegment(e, 2);
+    e.refuse = undefined;
+    e.quaDay = undefined;
+    h.slow.clear();
+    expect(h.sent.slice(n0).filter((x) => ids.includes(String(x.stepId))), "every command went once").toHaveLength(n);
+    expect(runRow(e.runId).status).toBe("held");
+    return { e, ids, s2 };
+  }
+  const chot = async (c: number) => (await import("./foeKetCucKhongRo")).runDaChotKhongRo(ctxCua(c));
+  const dsKhongRo = (c: number) => [...((ctxCua(c).foeOutcomeUnknown as string[] | undefined) ?? [])].sort();
+
+  it("T9F3E-CHOT-32 32 ids × 128, NO rider (the list alone past the budget): the run is latched at its end, its context names every command sent; a Continue re-sends none", async () => {
+    const { e, ids } = await doanCat("f3e32", 32, 128, day);
+    expect(await chot(e.runId), "latched at the end, whatever the length of the words").toBe(true);
+    expect(dsKhongRo(e.runId)).toEqual([...ids].sort());
+    const n1 = h.sent.length;
+    await continueOutcomeUnknown(e, "checked on site");
+    if (runRow(e.runId).status === "queued") await edgeSegment(e, 3);
+    expect(h.sent.slice(n1).filter((x) => ids.includes(String(x.stepId))), "none sent again").toEqual([]);
+  });
+  it("T9F3E-CHOT-KD kiem-dinh's 25 ids × 110 + five reports on the rider: latched at the end, every command sent named", async () => {
+    const { e, ids } = await doanCat("f3ekd", 25, 110, dayNamBao);
+    expect(await chot(e.runId)).toBe(true);
+    expect(dsKhongRo(e.runId)).toEqual([...ids].sort());
+  });
+  it("T9F3E-CHOT-DUNG the words that fit (3 ids): read whole, the same list as before, latched", async () => {
+    const { e, ids, s2 } = await doanCat("f3ed", 3, 20, day);
+    expect(String(s2.out.error)).toMatch(new RegExp(`^EDGE_OUTCOME_UNKNOWN\\(${ids.join(",")}\\): sent, but the result could not be recorded`));
+    expect(await chot(e.runId)).toBe(true);
+    expect(ctxCua(e.runId).foeOutcomeUnknown).toEqual(ids);
+  });
+  it("T9F3E-QT (a) between that end and a Continue, the QT pump's rejection is no person's: refused, the run stays held, nothing sent", async () => {
+    const { e } = await doanCat("f3eqt", 32, 128, day);
+    const n1 = h.sent.length;
+    const view = (await getRun(e.runId, { bindingDigest: true }))!;
+    const r = await resumeRun(e.runId, { approved: false, note: "QT saga fail (test)", expectedStepId: view.run.currentStepId }, QT);
+    await wait(40);
+    expect(r.ok).toBe(false);
+    expect(String(r.message)).toMatch(/a system rejection does not end it/);
+    expect(runRow(e.runId).status).toBe("held");
+    expect(h.sent.slice(n1)).toEqual([]);
+  });
+  it("T9F3E-ABORT (c) an Abort in that gap whose sweep passes its ceiling: the URGENT of a latched run's unfinished sweep (abortSweepUnfinished)", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const { e } = await doanCat("f3eab", 32, 128, day, [otStop("s")]);
+    h.alerts.length = 0;
+    h.heSoHan = 0.05;
+    h.classifyLoi = true;
+    let tha: () => void = () => undefined;
+    const cho = new Promise<void>((ok) => (tha = ok));
+    h.treoLaStop = () => cho;
+    try {
+      const a = await Promise.race([abortRun(e.runId, OWNER, "press"), wait(4000).then(() => null)]);
+      expect(a, "the Abort answered").not.toBeNull();
+      expect(a!.abortStops?.quetChuaXong).toBe(true);
+      await waitFor(() => urgentCua("abortSweepUnfinished").length > 0, "the URGENT of a latched run's sweep");
+    } finally {
+      h.classifyLoi = false;
+      h.treoLaStop = null;
+      tha();
+      await wait(60);
+    }
+  });
+  it("T9F3E-NO-C (d) a STOP refused at its dispatcher (state C: handed over, not taken, the row's last word) on that run is a STOP still owed", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const { e } = await doanCat("f3eno", 32, 128, day, [otStop("s")]);
+    const tuChoi = { stepId: "s", stepType: "command", status: "running", resultJson: { routedTo: "ot-opcua", accepted: false, status: "rejected", detail: {} }, error: null };
+    expect([...stopChuaRaTuHang([...stepRows(e.runId), tuChoi] as never, ctxCua(e.runId))]).toEqual(["s"]);
+  });
+  it("T9F3E-DONG-BO (b, measured) assignRun / syncRunResult in that gap: refused because the node protocol owns the run (edgeCoordinator.ts:465-470, :597-602), before any latch is read; nothing written, nothing sent", async () => {
+    process.env.EDGE_RUNTIME_ENABLED = "true";
+    try {
+      const { e } = await doanCat("f3edb", 32, 128, day);
+      const truoc = JSON.stringify({ run: runRow(e.runId), steps: stepRows(e.runId) });
+      const n1 = h.sent.length;
+      const { assignRun } = await import("../../edge/edgeCoordinator");
+      const a = await assignRun(e.runId, NODE + 1);
+      expect(a.ok).toBe(false);
+      expect(String((a as { message?: string }).message)).toMatch(/assigned to an edge node for execution; it cannot be re-delegated/);
+      const s = await syncRunResult({ edgeNodeCode: "EDGE-A", runId: e.runId, status: "completed", contextJson: { k: 1 }, steps: [{ stepId: "m0-", stepType: "command", status: "completed", attempt: 1 }] } as never);
+      expect(s.ok).toBe(false);
+      expect(String((s as { message?: string }).message)).toMatch(/executed by an edge node under the node protocol/);
+      expect(JSON.stringify({ run: runRow(e.runId), steps: stepRows(e.runId) })).toBe(truoc);
+      expect(h.sent.slice(n1)).toEqual([]);
+    } finally {
+      delete process.env.EDGE_RUNTIME_ENABLED;
+    }
+  });
+  it("T9F3E-BAM-LAI (B-6, B-9) that run's STOP the first Abort could not send (refused at its dispatcher): a press past the 15 minutes is a latched run's press — the STOP goes again", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const { e } = await doanCat("f3ebl", 32, 128, day, [otStop("s")]);
+    h.tuChoi.set("s", { status: "failed", error: "ADAPTER_OFFLINE", detail: { reason: "ADAPTER_OFFLINE" } });
+    try {
+      await abortRun(e.runId, OWNER, "first");
+      await wait(60);
+    } finally {
+      h.tuChoi.clear();
+    }
+    expect(runRow(e.runId).status).toBe("aborted");
+    runRow(e.runId).finishedAt = new Date(Date.now() - 2 * 3_600_000);
+    const n1 = h.sent.length;
+    const r = await abortRun(e.runId, OWNER, "again");
+    await wait(60);
+    expect(h.sent.slice(n1).filter((x) => x.stepId === "s" && x.khongGhi !== true).map((x) => String(x.name)), String((r as { message?: string } | null)?.message)).toContain("stop");
+  });
+  it("T9F3E-BANG (B-1, the readers of the latch, bảng ca) after that end every reader of runDaChotKhongRo(ctx) reads the run latched: QT pump foeEngine.ts:4544, edgeCoordinator.ts:541, resendAbortStops :6418, the sweep's URGENT :6487, the end with no sweep :6664, the planner :6800 / :6812, its catch :7073, the debt foeRunStore.ts:440, /authorize foeKetCucKhongRo.ts:348", async () => {
+    const kk = await import("./foeKetCucKhongRo");
+    for (const [ref, n, len, quaDay] of [["f3eb1", 32, 128, day], ["f3eb2", 25, 110, dayNamBao], ["f3eb3", 30, 128, day]] as const) {
+      const { e } = await doanCat(ref, n, len, quaDay);
+      const ctx = ctxCua(e.runId);
+      expect(kk.runDaChotKhongRo(ctx), ref).toBe(true);
+      // /authorize 5b: a compensation of that run is refused (no Continue approved it)
+      expect(kk.buTruBiChanKhongRo(ctx, stepRows(e.runId) as never, "m0-", "c"), ref).toBe(true);
+    }
+  });
+  it("T9F3E-C2-ABORT (C-2) the ledger table missing (42P01): the Continue is refused and says why; an Abort is not — it ends the run and its pinned STOP goes", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const { e } = await doanCat("f3ec2", 3, 20, day, [otStop("s")]);
+    const sel = FakeDb.prototype.select.bind(fake);
+    (fake as any).select = (p?: unknown) => {
+      const q = sel(p as never);
+      const from = q.from.bind(q);
+      q.from = (t: any) => {
+        if (t?.[Symbol.for("drizzle:Name")] === "edge_step_authorizations") throw Object.assign(new Error("relation does not exist (test)"), { code: "42P01" });
+        return from(t);
+      };
+      return q;
+    };
+    try {
+      const r = await continueOutcomeUnknown(e, "checked on site");
+      expect(r).toMatchObject({ ok: false, message: expect.stringMatching(/\(migration 0372\) is missing.*NOT continued/) });
+      expect(runRow(e.runId).status).toBe("held");
+      const n1 = h.sent.length;
+      await abortRun(e.runId, OWNER, "press");
+      await wait(60);
+      expect(runRow(e.runId).status).toBe("aborted");
+      expect(h.sent.slice(n1).filter((x) => x.stepId === "s" && x.khongGhi !== true).map((x) => String(x.name))).toContain("stop");
+    } finally {
+      (fake as any).select = sel;
+    }
+  });
+  it("T9F3E-A113-CUA (A1-13, foeEngine.ts:1024) a STOP-typed step whose resume state carries no door's code (nothing proves it unsent) on a latched run: the STOP pass of a Continue still sends it", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const c = await centralRun(def("f3ea113", [gate("g0"), ot("x"), gate("g1"), otStop("s2")]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("awaiting_confirm");
+    runRow(c).contextJson = { ...ctxCua(c), [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: new Date().toISOString() }, foeResumeState: { s2: { state: "doneFailed", error: "a STOP whose row lost its words (test)" } } };
+    h.traTimeout = 1;
+    h.sent.length = 0;
+    grantMachineControl();
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    await resumeRun(c, { approved: true, note: "checked on site", expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => !["queued", "running", "compensating"].includes(String(runRow(c).status)), "the end of the Continue");
+    await wait(40);
+    expect(h.sent.filter((x) => x.stepId === "s2" && x.khongGhi !== true).map((x) => String(x.name)), "the pinned STOP goes").toContain("stop");
+    expect(h.sent.filter((x) => x.stepId === "x"), "nothing forward").toEqual([]);
+  });
+  it("T9F3E-A18-CONG (A1-8, foeRunStore.ts:709) central's end gate, a STOP owed on a row whose code ([MA]) cannot be read and no walk's memory of it: the cautious words (NOT_REPORTED), never 'did NOT go out'", async () => {
+    const khoa = { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: "2026-11-14T00:00:00.000Z" } };
+    const rowsNo = [{ stepId: "nt", stepType: "command", status: "failed", attempt: 1, error: 'FOE_STOP_NOT_SENT: STOP "nt" did NOT go out (attempt 1).', resultJson: null }];
+    const q = await quyetDinhKetThucAnh({ runId: 99_911, ctx: khoa, owner: OWNER.id, rows: rowsNo as never, def: { steps: [move("x"), otStop("nt")] } as never }, "walk", 200);
+    expect(q.ghi).not.toBe("terminal");
+    expect(String(q.loi), "fail-closed: no code read").toMatch(/may have reached the device \(NOT_REPORTED\)/);
+    expect(String(q.loi)).not.toMatch(/did NOT go out/);
+  });
+  /** a central run at its second gate, latched, its STOP s2 owed as `no` says: the rows / context of an earlier walk (this walk's memory is new) */
+  const khoaS2 = async (ref: string, no: { ctx?: string[]; hang?: Record<string, unknown> }) => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const c = await centralRun(def(ref, [gate("g0"), ot("x"), gate("g1"), otStop("s2")]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("awaiting_confirm");
+    runRow(c).contextJson = { ...ctxCua(c), [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: new Date().toISOString() }, ...(no.ctx ? { foeStopChuaRa: no.ctx } : {}) };
+    if (no.hang) fake.store.set("orchestration_run_steps", [...rows("orchestration_run_steps"), { runId: c, stepId: "s2", stepType: "command", attempt: 1, ...no.hang } as never]);
+    h.traTimeout = 1;
+    return c;
+  };
+  const tiepTucS2 = async (c: number) => {
+    h.sent.length = 0;
+    grantMachineControl();
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    await resumeRun(c, { approved: true, note: "checked on site", expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => !["queued", "running", "compensating"].includes(String(runRow(c).status)), "the end of the Continue");
+    await wait(40);
+    return String(stepRows(c).find((r) => r.stepId === "s2")?.error ?? "");
+  };
+  /** s2's pins read and answered "not pinned" at the pass (the verifier and the dispatcher's own read) */
+  const khongGhimS2 = () => {
+    fake.seed(deviceTags, rows("device_tags").map((t) => (t.tagKey === "halt" ? { ...t, stopValue: null } : t)));
+    h.ghim = async () => ({ pinnedStop: false, loiDocGhim: null });
+  };
+  it("T9F3E-A17-NO-CTX (A1-7, foeEngine.ts:1670-1680) a STOP owed in the context alone (its row's write lost, T7b-1), a later walk (a new memory) reads it 'not pinned': it may have gone — never the door's 'not sent'", async () => {
+    const c = await khoaS2("f3ea17c", { ctx: ["s2"] });
+    khongGhimS2();
+    const loi = await tiepTucS2(c);
+    expect(loi, "its row").not.toBe("");
+    expect(loi, "nothing describes it: the cautious words").toMatch(/^FOE_OUTCOME_UNKNOWN: command step "s2" has no recorded outcome/);
+    expect(loi).not.toMatch(/^FOE_NOT_SENT_RUN_LATCHED/);
+  });
+  it("T9F3E-A17-TU-CHOI (A1-7, the other way) the same, its row the dispatcher's structured refusal (running, handed over, not taken): it stays 'not sent' — the cautious words only when nothing describes it", async () => {
+    const c = await khoaS2("f3ea17t", { hang: { status: "running", error: null, resultJson: { routedTo: "ot-dispatcher", accepted: false, status: "rejected", detail: { reason: "ADAPTER_OFFLINE" } } } });
+    khongGhimS2();
+    const loi = await tiepTucS2(c);
+    expect(loi, "the refusal says it: not sent").toMatch(/^FOE_NOT_SENT_RUN_LATCHED/);
+  });
+  it("T9F3E-A17-821 (A1-7, foeEngine.ts:821-824 → :2107-2108) an earlier walk's row of state C whose code ([MA]) cannot be read, then this walk's attempt refused: the words keep 'may have gone' (the earlier one may have), never 'did NOT go out'", async () => {
+    const c = await khoaS2("f3ea178", { hang: { status: "failed", error: 'FOE_STOP_NOT_SENT: STOP "s2" is not confirmed out (attempt 1).', resultJson: null } });
+    h.tuChoi.set("s2", { status: "failed", error: "ADAPTER_OFFLINE", detail: { reason: "ADAPTER_OFFLINE" } });
+    let loi = "";
+    try {
+      loi = await tiepTucS2(c);
+    } finally {
+      h.tuChoi.clear();
+    }
+    expect(loi).toMatch(/^FOE_STOP_NOT_SENT: STOP "s2" is not confirmed out/);
+    expect(loi).toMatch(/may have gone out \[NOT_REPORTED\]/);
+    expect(loi).not.toMatch(/did NOT go out/);
+  });
+  it("T9F3E-STOP-NHAM (L-7) a pinned STOP taken by mistake for no STOP and named in that run's foeOutcomeUnknown: the walker still sends it on the Continue (foeEngine.ts:1097-1098, `!stop`)", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const ids = ["m0", "m1", "m2"];
+    const e = await edgeAssignedRun(def("f3esn", [gate(), parE("p", [...ids.map((id) => move(id)), otStop("s")])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    for (const id of ids) h.slow.set(id, 40);
+    e.refuse = (rec) => rec.kind === "step" && typeof (rec.result as { routedTo?: unknown } | null)?.routedTo === "string";
+    e.quaDay = day;
+    h.tuChoi.set("s", { status: "failed", error: "ADAPTER_OFFLINE", detail: { edge: true, stop: true, pinnedStop: true, reason: "ADAPTER_OFFLINE" } }); // the STOP did not go this segment: still due
+    try {
+      await edgeSegment(e, 2);
+    } finally {
+      h.tuChoi.clear();
+    }
+    e.refuse = undefined;
+    e.quaDay = undefined;
+    h.slow.clear();
+    expect(runRow(e.runId).status).toBe("held");
+    // the misclassification: the end's set named the STOP too
+    runRow(e.runId).contextJson = { ...ctxCua(e.runId), foeOutcomeUnknown: [...ids, "s"] };
+    const n1 = h.sent.length;
+    await continueOutcomeUnknown(e, "checked on site");
+    if (runRow(e.runId).status === "queued") await edgeSegment(e, 3);
+    await wait(40);
+    expect(h.sent.slice(n1).filter((x) => x.stepId === "s" && x.khongGhi !== true).map((x) => String(x.name)), "the pinned STOP goes").toContain("stop");
+    expect(h.sent.slice(n1).filter((x) => ids.includes(String(x.stepId))), "the unknown commands never again").toEqual([]);
+  });
+  it("T9F3E-SO-LOI the ledger cannot be read at that end and the words name no list: every command whose row is not final is named (fail-closed), the run latched; a STOP never", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const ids = Array.from({ length: 3 }, (_, i) => `m${i}`);
+    const e = await edgeAssignedRun(def("f3esl", [gate(), parE("p", [...ids.map((id) => move(id)), otStop("s")])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    for (const id of ids) h.slow.set(id, 40);
+    e.refuse = (rec) => rec.kind === "step" && typeof (rec.result as { routedTo?: unknown } | null)?.routedTo === "string";
+    const sel = FakeDb.prototype.select.bind(fake);
+    e.quaDay = async (out) => {
+      // the wire, and from here central's ledger read throws (the end's own read)
+      (fake as any).select = (p?: unknown) => {
+        const q = sel(p as never);
+        const from = q.from.bind(q);
+        q.from = (t: any) => {
+          if (t?.[Symbol.for("drizzle:Name")] === "edge_step_authorizations") throw Object.assign(new Error("ledger (test)"), { code: "08006" });
+          return from(t);
+        };
+        return q;
+      };
+      // and the words name no list (the held words of a hold for a person: the list never rides on them): only the rows can say what went
+      return day({ ...out, error: "EDGE_HELD(journalFull): the journal refused a record (journal_full) — the run is held." });
+    };
+    try {
+      await edgeSegment(e, 2);
+    } finally {
+      (fake as any).select = sel;
+      e.refuse = undefined;
+      e.quaDay = undefined;
+      h.slow.clear();
+    }
+    expect(runRow(e.runId).status).toBe("held");
+    expect(await chot(e.runId)).toBe(true);
+    expect(dsKhongRo(e.runId)).toEqual(ids);
+    expect(dsKhongRo(e.runId)).not.toContain("s");
   });
 });

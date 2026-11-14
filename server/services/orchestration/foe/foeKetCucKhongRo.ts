@@ -46,6 +46,7 @@
  * No migration, no flag (AI_OT_CONTROL_ENABLED unchanged): the run / step statuses exist; the marker and the resume state are context JSON;
  * the alert kind and the audit action are free text.
  */
+import { hash } from "node:crypto"; // T9 lượt sửa 3e (A1-31) — the short hash of a printed step id (one call: no hasher object, nothing the T8 census reads as a write)
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { users } from "../../../../drizzle/schema";
@@ -266,7 +267,7 @@ export function xacNhanTu(rows: ReadonlyArray<{ stepId: string; resultJson?: unk
  */
 export function xacNhanHetChot(x: {
   chot: { stepId: string } | null;
-  rows: ReadonlyArray<{ stepId: string; error?: string | null; resultJson?: unknown }> | null;
+  rows: ReadonlyArray<{ stepId: string; status?: string; error?: string | null; resultJson?: unknown }> | null;
   ctx: Record<string, unknown> | null | undefined;
   laLenh?: (stepId: string) => boolean;
   /** T9 lượt sửa 1 (rà I, chuaDen) — the FORWARD commands of the definition (never a compensation): with no walk's memory, one with no row may be forward work dropped that no row names */
@@ -285,6 +286,8 @@ export function xacNhanHetChot(x: {
   for (const r of x.rows) {
     if (r.stepId.startsWith("abort:")) continue;
     if (x.laLenh(r.stepId) && typeof r.error === "string" && r.error.startsWith(DAU_KHONG_GUI_CHOT)) return false;
+    // T9 lượt sửa 3e (A1-13) — a command whose row is not final and does not carry that proof (the door's code) may have gone: it needs its confirmation too, never "nothing dropped"
+    if (x.laLenh(r.stepId) && typeof r.status === "string" && !HANG_XONG.has(r.status)) can.add(r.stepId);
     if (x.laLenh(r.stepId) && loiLaKetCucKhongRo(r.error)) can.add(r.stepId);
     const t = khongRoTruocCua(r.resultJson);
     if (t) can.add(t.buoc);
@@ -323,6 +326,8 @@ export interface BangChungBuoc {
   /** A2(n) T5 (H16): the row says only what an edge reported, central could not verify it: no last word, whatever its status */
   khongXacNhan?: boolean;
 }
+/** T9 lượt sửa 3e (A1-13) — a row's final statuses (edgeResumeStateOf's FINAL) */
+const HANG_XONG: ReadonlySet<string> = new Set(["completed", "skipped", "compensated", "failed"]);
 /** The prefix foeRunStore.loiKhongGuiChot writes. Spelled here: foeRunStore imports this module, a pure function must not pull the store in. F12-11 builds its row with the writer. */
 const DAU_KHONG_GUI_CHOT = "FOE_NOT_SENT_RUN_LATCHED:";
 
@@ -585,17 +590,28 @@ export const CAU_TAY_MAY = "check the machine on site and use its direct STOP / 
 /** T9 lượt sửa 3c (mục 3) — at most this many ids of a list are named, each at its ceiling; the rest are counted */
 export const TRAN_DS = 4;
 function danhSachGon(ds: readonly string[]): string {
-  const ten = ds.slice(0, TRAN_DS).map((id) => `"${rutGonGiua(id, TRAN_ID_BUOC)}"`).join(", ");
+  const ten = ds.slice(0, TRAN_DS).map((id) => `"${idGonCua(id)}"`).join(", ");
   return ds.length > TRAN_DS ? `${ten} and ${ds.length - TRAN_DS} more` : ten;
 }
 /** mục 4 — the fixed ceilings (characters) of the variable parts of the words */
 export const TRAN_ID_BUOC = 14;
+/**
+ * T9 lượt sửa 3e (A1-31, HST (Y) 14/11) — a printed step id: whole up to TRAN_ID_BUOC; longer: its head and tail at TRAN_ID_HIEN, "#", the first TRAN_BAM_ID hex of the sha256 of the WHOLE id. Two
+ * different STOPs never print alike (the inbox dedup also matches kind + words: criticalStopAlert.ts:53), the same id prints the same everywhere. Measured on the real path (fix3c-ra dai4, 1,87 M
+ * sentences): 7…6#6 803 (over 800), 6…5#6 799, 5…4#6 795, 4…3#8 795 — the longest visible part under 800. Pure.
+ */
+export const TRAN_ID_HIEN = 12;
+export const TRAN_BAM_ID = 6;
+export function idGonCua(id: string): string {
+  const x = String(id);
+  return x.length <= TRAN_ID_BUOC ? x : `${rutGonGiua(x, TRAN_ID_HIEN)}#${hash("sha256", x, "hex").slice(0, TRAN_BAM_ID)}`;
+}
 export const TRAN_MA = 32;
 export const TRAN_TEN_NUT = 16;
 export const TRAN_LY_DO = 32;
 /** mục 4 — the event as its words name it: step / compensation ids cut at their ceiling; the caller keeps the original for its key */
 function chuGonCua(a: CanhBaoKhongRo): CanhBaoKhongRo {
-  return { ...a, stepId: rutGonGiua(a.stepId, TRAN_ID_BUOC), compId: rutGonGiua(a.compId, TRAN_ID_BUOC) }; // the code (vi.ma) stays whole here: the rule compares it; it is cut where it is printed
+  return { ...a, stepId: idGonCua(a.stepId), compId: idGonCua(a.compId) }; // the code (vi.ma) stays whole here: the rule compares it; it is cut where it is printed
 }
 
 /** The STOP of state C, as the words name it. */
@@ -932,7 +948,7 @@ export function viChuaRaCuaLoi(error: string | null | undefined): ViChuaRa | und
  */
 export function loiGiuChuaRa(stopIdGoc: string, vi: ViChuaRa | undefined, cach?: { khongStop?: boolean; chuaXacMinh?: boolean; adapterNut?: boolean | "khongBiet" }): string {
   const d = dangChuaRa(vi, cach); // T9 lượt sửa 1 (R-1) — the one rule, as the URGENT
-  const stopId = rutGonGiua(stopIdGoc, TRAN_ID_BUOC); // lượt sửa 3b (mục 4) — the id and the code at their ceilings; the step's row keeps the whole id
+  const stopId = idGonCua(stopIdGoc); // lượt sửa 3b (mục 4) — the id and the code at their ceilings; the step's row keeps the whole id
   const ma = vi ? ` (${rutGonGiua(vi.ma, TRAN_MA)})` : "";
   // T9 lượt sửa 3 (RA2-2, dieu-phoi 13/11) — the promise IS the URGENT's (cauHua), "The run is held" in place of "It stays owed": an edge node's adapter (adapterNut) reads the node's road, never "Abort sends it"
   const hua = cauHua(d);
@@ -1035,19 +1051,62 @@ const BAO_CAO_CUOI = "]]";
  * M-2 — ALWAYS appended, even empty: the LAST rider is the edge's own, so text inside a device's error can never pose as one.
  */
 export function ganBaoCaoKhongRoEdge(error: string | undefined, bao: readonly BaoCaoKhongRoEdge[], toiDa: number): string | undefined {
-  const s = `${BAO_CAO_DAU}${JSON.stringify(bao)}${BAO_CAO_CUOI}`;
-  if (s.length > toiDa) return error; // the anomalies are the first route; never a cut JSON
-  return `${(error ?? "").slice(0, toiDa - s.length)}${s}`;
+  const e = error ?? "";
+  // T9 lượt sửa 3e — the list of a node's outcome-unknown steps: under toiDa (central reads toiDa or more as cut)
+  const laDs = e.startsWith(DAU_DS_KHONG_RO_EDGE);
+  const tran = laDs ? toiDa - 1 : toiDa;
+  // T9 lượt sửa 3e (HST 14/11) — the text is never cut under its floor (every prefix and code central reads at its head, SAN_LOI_EDGE): the rider gives way, reports dropped from its end, and a
+  // rider that lost any is MARKED (BAO_CAO_DAU_THIEU: central reads it as not read whole ⇒ fail-closed); never a cut JSON. A ceiling too small for even an empty rider: the text alone (no wire's)
+  const san = Math.min(e.length, SAN_LOI_EDGE);
+  let s = riderCua(bao, false);
+  for (let k = bao.length; tran - s.length < san && k >= 0; k--) s = riderCua(bao.slice(0, k), true);
+  if (tran - s.length < san) return error;
+  const ngan = tran - s.length;
+  if (!laDs) return `${e.slice(0, ngan)}${s}`;
+  // the list is never cut inside: the words after it go first; a list that does not fit whole is sent EMPTY ("EDGE_OUTCOME_UNKNOWN()": central reads it unreadable ⇒ every step that may have gone)
+  const j = e.indexOf(CUOI_DS_KHONG_RO_EDGE, DAU_DS_KHONG_RO_EDGE.length);
+  if ((j >= 0 ? j + 1 : e.length) <= ngan) return `${e.slice(0, ngan)}${s}`;
+  return `${`${DAU_DS_KHONG_RO_EDGE})${j >= 0 ? e.slice(j + 1) : ""}`.slice(0, ngan)}${s}`;
+}
+const riderCua = (bao: readonly BaoCaoKhongRoEdge[], thieu: boolean): string => `${thieu ? BAO_CAO_DAU_THIEU : BAO_CAO_DAU}${JSON.stringify(bao)}${BAO_CAO_CUOI}`;
+/** T9 lượt sửa 3e — a rider that lost reports to the floor of the text: never one that looks whole */
+const BAO_CAO_DAU_THIEU = " [[A2N-THIEU:";
+/**
+ * T9 lượt sửa 3e (HST 14/11) — the floor of the text a segment end carries, measured: the longest head central reads, `EDGE_HELD(centralUnreachable): EDGE_UNUSED_NOT_REPORTED:` (56;
+ * edgeProgramReportRule.edgeHoldMarkOf, any reason × EDGE_HOLD_UNUSED_NOT_REPORTED); the others are shorter: EDGE_HELD(<reason>): EDGE_CONSUME_OVERRUN: (≤ 53), EDGE_OUTCOME_UNKNOWN( (21),
+ * FOE_OUTCOME_UNKNOWN: / EDGE_OUTCOME_UNKNOWN: (20 / 21), FOE_STOP_NOT_SENT: (18; foeRunStore heldAdvice / held / the marker).
+ */
+export const SAN_LOI_EDGE = 56;
+/** T9 lượt sửa 3e — the node's list of outcome-unknown steps (edgeRunStore.segmentEndGoc writes `EDGE_OUTCOME_UNKNOWN(a,b): sent, but the result could not be recorded …`) */
+export const DAU_DS_KHONG_RO_EDGE = "EDGE_OUTCOME_UNKNOWN(";
+export const CUOI_DS_KHONG_RO_EDGE = "): sent, but the result could not be recorded";
+/** the complete request's `error` ceiling (edgeProtocol zText(4 000), the agent's slice): a text this long was cut */
+export const TRAN_LOI_EDGE = 4_000;
+/**
+ * T9 lượt sửa 3e — central's reading of that list: the ids between the prefix and the node's words after it (an id may hold a ")"), only steps of `lenh`. `hong` ⇔ not read whole: no end of the
+ * list (cut), empty, an id of no command step (a cut id, an id with a ","), or the text at the ceiling. Pure.
+ */
+export function docDsKhongRoEdge(error: string | null | undefined, lenh: ReadonlySet<string>): { coDau: boolean; ids: string[]; hong: boolean } {
+  if (typeof error !== "string" || !error.startsWith(DAU_DS_KHONG_RO_EDGE)) return { coDau: false, ids: [], hong: false };
+  const j = error.indexOf(CUOI_DS_KHONG_RO_EDGE, DAU_DS_KHONG_RO_EDGE.length);
+  const k = error.indexOf(")", DAU_DS_KHONG_RO_EDGE.length);
+  const tho = error.slice(DAU_DS_KHONG_RO_EDGE.length, j >= 0 ? j : k >= 0 ? k : error.length).split(",");
+  const ids = tho.filter((x) => lenh.has(x));
+  return { coDau: true, ids, hong: j < 0 || ids.length !== tho.length || error.length >= TRAN_LOI_EDGE };
 }
 /** M-2 — `hopLe`: central's check of each report (this claim; a step / compensation of the assigned definition). */
-export function tachBaoCaoKhongRoEdge(error: string | undefined, hopLe: (x: BaoCaoKhongRoEdge) => boolean = () => true): { error: string | undefined; bao: BaoCaoKhongRoEdge[] } {
+export function tachBaoCaoKhongRoEdge(error: string | undefined, hopLe: (x: BaoCaoKhongRoEdge) => boolean = () => true): { error: string | undefined; bao: BaoCaoKhongRoEdge[]; thieu?: true } {
   if (typeof error !== "string") return { error, bao: [] };
-  const i = error.lastIndexOf(BAO_CAO_DAU);
+  // T9 lượt sửa 3e — the LAST rider, whole or marked short (`thieu`: reports were dropped for the text's floor)
+  const iDu = error.lastIndexOf(BAO_CAO_DAU);
+  const iThieu = error.lastIndexOf(BAO_CAO_DAU_THIEU);
+  const thieu = iThieu > iDu;
+  const i = thieu ? iThieu : iDu;
   if (i < 0 || !error.endsWith(BAO_CAO_CUOI)) return { error, bao: [] };
   try {
-    const v = JSON.parse(error.slice(i + BAO_CAO_DAU.length, -BAO_CAO_CUOI.length)) as unknown;
+    const v = JSON.parse(error.slice(i + (thieu ? BAO_CAO_DAU_THIEU : BAO_CAO_DAU).length, -BAO_CAO_CUOI.length)) as unknown;
     const bao = Array.isArray(v) ? v.map((x) => docAnomalyKhongRo(JSON.stringify(x))).filter((x): x is BaoCaoKhongRoEdge => x !== null && hopLe(x)) : [];
-    return { error: error.slice(0, i) || undefined, bao };
+    return { error: error.slice(0, i) || undefined, bao, ...(thieu ? { thieu: true as const } : {}) };
   } catch {
     return { error, bao: [] };
   }

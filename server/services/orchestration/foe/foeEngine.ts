@@ -103,7 +103,7 @@ import {
   type PhanLoaiBuTru,
 } from "./foeBuTruBiNgat";
 // R1b-2b-2a A2(n) — an UNKNOWN outcome never triggers a device write from a non-STOP compensation: split by energy direction
-import { type DangDauVetAbort, type ChuStopAbort, type PhanLoaiStopAbort, chuBamSauKhongDoc, chuKhongDocDinhNghia, chuQuetChuaXong, chuStopAbort, MOC_CUA_SO, STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_XAC_NHAN_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo, chuBamDaKetThuc, type KetThucKhongQuet, type NoKetThucKhongQuet } from "./foeKetCucKhongRo";
+import { type DangDauVetAbort, type ChuStopAbort, type PhanLoaiStopAbort, chuBamSauKhongDoc, chuKhongDocDinhNghia, chuQuetChuaXong, chuStopAbort, MOC_CUA_SO, STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_XAC_NHAN_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, VI_KHONG_BAO, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo, chuBamDaKetThuc, type KetThucKhongQuet, type NoKetThucKhongQuet } from "./foeKetCucKhongRo";
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED, FOE_NOT_SENT_RUN_LATCHED, FOE_STOP_NOT_SENT } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
 export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
@@ -819,7 +819,8 @@ async function loadCompletedSteps(runId: number): Promise<{ completed: Set<strin
   }
   // doc 81 Đợt 6 — same read, the abort sweep's picture; A2(n) (b) — a row with the unknown code latches the run even if the context lost it (a crash)
   const stopCoTheRa = new Map(rows.flatMap((r) => {
-    const vi = viChuaRaCuaLoi(r.error);
+    // T9 lượt sửa 3e (A1-7) — a row in state C whose code cannot be read: the dispatcher's own answer on it, else it may have gone (NOT_REPORTED), never "not sent"
+    const vi = viChuaRaCuaLoi(r.error) ?? (laHangChuaRa(r) ? viTuKetQuaHang(r) ?? VI_KHONG_BAO : undefined);
     return laHangChuaRa(r) && vi?.nguon === "driverLoi" ? [[r.stepId, vi.ma] as const] : [];
   }));
   return { completed: set, prior: priorStepsOf(rows), ...(chotTuHang(rows) ? { khongRoChotHang: true } : {}), khongRoHang: buocCoTheDaBayTuHang(rows), stopCoTheRa };
@@ -1021,7 +1022,9 @@ async function execStep(rc: RunContext, step: WorkflowStep, quaCua = false): Pro
   //   • outcomeUnknown — handled below: never sent again, a failure.
   const rs = resumeStateOf(rc, step.id);
   // A2(n) — a STOP pass on a step the sink refused: "not sent" is what it says, the pass is there to send it. Nothing else skips this.
-  const tuChoiChuaGui = quaCua && rs !== null && laLoiKhongGuiChot(rs.error);
+  // T9 lượt sửa 3e (A1-13) — and a STOP-typed step with a resume state, wherever it is walked: a resume state is no proof it went (L-7: a STOP is sent again on a Continue; the door and the pass
+  // decide it, a STOP that is no verified pinned one is named NOT sent). An unreadable classification is taken for a STOP (the door then decides)
+  const tuChoiChuaGui = rs !== null && ((quaCua && laLoiKhongGuiChot(rs.error)) || (step.type === "command" && (await laStopTheoBuoc(step, rc.machineById).catch(() => true))));
   if (rs && rs.state !== "outcomeUnknown" && !tuChoiChuaGui) {
     rc.settled.add(step.id); // minor (re-review N2) — the abort sweep's picture of this segment knows it is settled
     if (!rc.prior.startOrder.includes(step.id) && !rc.startOrder.includes(step.id)) rc.startOrder.push(step.id);
@@ -1667,10 +1670,13 @@ async function guiStopSauChot(rc: RunContext, cuoi = false): Promise<void> {
     for (const id of plan.notPinned) {
       const chuaRa = rc.chuaRaStop?.has(id) === true || src.chuaRa?.has(id) === true; // T5 (C-CLR) — the read answered: not a STOP. Nothing is owed any more, a person gets out of the hold
       if (!rc.denCuaStop?.has(id) && !chuaRa) continue;
-      const vi = rc.chuaRaStop?.get(id) ?? viChuaRaCuaLoi((src.hang ?? []).find((r) => r.stepId === id)?.error);
+      const hangNo = (src.hang ?? []).find((r) => r.stepId === id);
+      // T9 lượt sửa 3e (A1-7) — the row's code, else its dispatcher's own answer (structured: a refusal stays "not sent")
+      const vi = rc.chuaRaStop?.get(id) ?? viChuaRaCuaLoi(hangNo?.error) ?? viTuKetQuaHang(hangNo);
       datChuaRa(rc, id, undefined);
       // read, not a STOP: not sent. One that may already have gone out never reads so; a row in state C says itself whether it did (an earlier walk's unsettled row is not "no last word")
-      const coTheDaRa = chuaRa ? vi?.nguon === "driverLoi" || rc.stopCoTheRa?.has(id) === true : ketCucRiengKhongRo(rc, id);
+      // T9 lượt sửa 3e (A1-7) — a debt nothing describes (the context's list alone, its row lost: T7b-1): it may have gone (the cautious words), never "not sent"
+      const coTheDaRa = chuaRa ? vi === undefined || vi.nguon === "driverLoi" || rc.stopCoTheRa?.has(id) === true : ketCucRiengKhongRo(rc, id);
       const error = coTheDaRa ? loiCoMaKhongRo(`command step "${id}" has no recorded outcome from an earlier attempt`) : loiKhongGuiChot(id);
       await giuCoKhongRo(true, rc, id, rc.store.upsertStep(rc.runId, id, "command", { status: "failed", error, finishedAt: new Date() }));
     }
@@ -1826,6 +1832,7 @@ async function giuStopChuaRa(rc: RunContext, src: AbortSweepSource | null): Prom
       // lượt sửa 1 (R-1) — its row carries no code: the source is the dispatcher's answer on it (laHangChuaRa: refused, no answer of the "may have flown" kind), read by the same rule as any row
       vi ??= viTuKetQuaHang((src?.hang ?? []).find((r) => r.stepId === id));
     }
+    vi ??= VI_KHONG_BAO; // T9 lượt sửa 3e (A1-8) — a debt whose code no row and no memory gives: "not confirmed out, it may have reached the device", never "did NOT go out"
     baoStopChuaRa(rc, id, vi);
     giu ??= { kind: "held", stepId: id, reason: "outcomeUnknown", error: loiGiuChuaRa(id, vi, cachChuaRa(rc, id)) };
   }
@@ -4327,9 +4334,10 @@ async function edgeResumeStateFor(d: NonNullable<Awaited<ReturnType<typeof getDb
     const auths = (await d.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.runId, runId))) as Array<{ stepId: string; supersededAt: unknown }>;
     authorised = new Set(auths.filter((a) => a.supersededAt == null).map((a) => a.stepId));
   } catch (err) {
-    // N3 — ONLY a missing table (0372 not applied ⇒ no v2 edge ever ran) means "no ledger"; anything else refuses the Continue
+    // N3 — any ledger error refuses the Continue. T9 lượt sửa 3e (C-2, HST 14/11) — a missing table (42P01) too: this is a run assigned to an edge node (its only caller), its ledger may have
+    // existed (a restored database); without it nothing says which commands went. Said so; an Abort and its STOPs never come here
     const code = (err as { code?: unknown; cause?: { code?: unknown } } | null)?.code ?? (err as { cause?: { code?: unknown } } | null)?.cause?.code;
-    if (code !== "42P01") throw err;
+    throw code === "42P01" ? Object.assign(new Error("ledger missing"), { soVang: true }) : err;
   }
   // N2 — STOP steps (the walker's own candidates: robot stop job / stop-typed OT) are never outcome-unknown: re-sent (L-7)
   const map = await loadMachines(validateWorkflow(def, null).referencedMachineIds);
@@ -4778,7 +4786,9 @@ export async function resumeRun(
           return { ok: false, enabled: true, runId, status: run.status, message: `EDGE_RESUME_AMBIGUOUS(${derived.ambiguous.join(",")}): the step rows of run ${runId} do not say whether these steps failed before their compensation ran — it is NOT continued (nothing would be re-sent on a guess). Abort the run, or check the equipment.` };
         }
         resume = derived.state;
-      } catch {
+      } catch (err) {
+        // T9 lượt sửa 3e (C-2) — the ledger table is missing: it is not continued, and said why (Abort still ends it and sends its STOPs)
+        if ((err as { soVang?: unknown } | null)?.soVang === true) return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId}: central's authorisation ledger of edge commands (migration 0372) is missing, so which commands of this run went cannot be told — it is NOT continued. Abort it (its STOPs are sent), then check the equipment.` };
         return { ok: false, enabled: true, runId, status: run.status, message: `Run ${runId}: its step rows could not be read to continue it safely — retry.` };
       }
       // R1b-2b-2a A2(n) (C-2) — the FACT on an edge run: what the rows say the re-walk would write, whatever the hold's reason, the marker or the
