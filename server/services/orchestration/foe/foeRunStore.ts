@@ -2035,6 +2035,65 @@ export function chuGiuEdge(nodeCode: string, runId: number, reason: string, loi:
   return `Edge node ${rutGonGiua(nodeCode, TRAN_TEN_NUT)} held run ${runId} (${rutGonGiua(reason, TRAN_LY_DO)})${loi ? `: ${loi}` : ""}`;
 }
 
+/** T4 bước 3 — the 0372 ledger at a segment end: read (its records) or unreadable */
+export type TrangThaiSo = { doc: "duoc"; muc: ReadonlyArray<{ stepId: string; supersededAt: unknown; resultStatus?: string | null }> } | { doc: "loi" };
+/** T4 bước 3 — the rider: "thieu" ⇔ riderThieu === true (cut, JSON broken, not an array) */
+export type TrangThaiRider = "du" | "thieu";
+/** T4 bước 3 — THE code of every decision central makes at an edge segment end (the latch, S, N): one place */
+const MA_KET_DOAN_EDGE = "FOE_OUTCOME_UNKNOWN" as const;
+/**
+ * T4 bước 3 (HST 14/11, dac-ta-ham-thuan.md; bảng 16 ô) — what central decides at the end of an edge segment that is held, from STRUCTURED data only (the rows, the 0372
+ * ledger, the definition's STOPs, what rode on the end, the context before this write). Pure: no DB, no clock, no URGENT raised. The rules, in this order:
+ *   (1) the commands: every `command` step of the definition that is no STOP (`stops`, L-7);
+ *   (2) "may have gone": the ledger's condition (read: an authorisation, not superseded, whose result is not a known one; unreadable: met) AND the rows' (a row:
+ *       not completed / skipped / compensated, a final `failed` too; no row: only on a ledger READ with such an authorisation, ★2 #5; unreadable + no row ⇒ not, Q2 #8);
+ *   (3) U = (2) ∪ ctx.foeOutcomeUnknown with no STOP, in the definition's order (WIDE: more is never sent again, the closed direction);
+ *   (4) C = the first of (2), when the context has no latch and no report on the end sets one (EXACT: C only from (2));
+ *   (5) S = stopChuaRaTuHang read with the context AFTER the latch (the end's own report's or C; I-1, #4); the owner of a STOP inside a compensation by the definition;
+ *   (6) N = each of (2) with no compensation (EXACT: N only from (2)); a command of U with one ⇒ buTruCanNguoi (#16: held() marks it for a person, R2);
+ *   (7) a report that rode on the end (same loai / stepId / compId) is never raised again: the rider's / anomaly's key is the URGENT's;
+ *   (8) the rider whole or short: the SAME rules (R1, H3: central does not trust a node alone) — `rider` changes no decision;
+ *   (9) soLoiChung ⇔ the ledger unreadable (Q2: held() does not use it yet, HST 14/11).
+ * Never a STOP in U; never a resend; H is held()'s (always `held`).
+ */
+export function quyetDinhKetDoanEdge(v: {
+  runId: number;
+  claimSeq: number;
+  def: WorkflowDefinition;
+  hang: ReadonlyArray<{ stepId: string; stepType?: string; status: string; error?: string | null; resultJson?: unknown }>;
+  so: TrangThaiSo;
+  stops: ReadonlySet<string>;
+  rider: TrangThaiRider;
+  bao: ReadonlyArray<BaoCaoKhongRoEdge>;
+  ctx: Readonly<Record<string, unknown>>;
+}): { khongRo: string[]; chot: { stepId: string; ma: typeof MA_KET_DOAN_EDGE } | null; canhBao: BaoCaoKhongRoEdge[]; soLoiChung: boolean; buTruCanNguoi: string[] } {
+  const tat = allStepsOf(v.def.steps);
+  const lenh = tat.filter((s) => s.type === "command" && !v.stops.has(s.id)); // (1)
+  const muc = v.so.doc === "duoc" ? v.so.muc : null; // (2)
+  const ketQuaBiet = new Set(["simulated", "acked", "acked_verified", "rejected"]);
+  const soDat = (id: string) => muc === null || muc.some((a) => a.stepId === id && a.supersededAt == null && !ketQuaBiet.has(String(a.resultStatus ?? "")));
+  const hangDat = (id: string) => {
+    const cua = v.hang.filter((r) => r.stepId === id);
+    return cua.length > 0 ? cua.some((r) => !["completed", "skipped", "compensated"].includes(r.status)) : muc !== null;
+  };
+  const coTheDi = lenh.filter((s) => soDat(s.id) && hangDat(s.id));
+  const ctxU = Array.isArray(v.ctx[OUTCOME_UNKNOWN_KEY]) ? (v.ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : []; // (3)
+  const tapU = new Set([...coTheDi.map((s) => s.id), ...ctxU.filter((id) => !v.stops.has(id))]);
+  const khongRo = [...new Set([...tat.map((s) => s.id).filter((id) => tapU.has(id)), ...tapU])];
+  const daChot = v.ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] != null; // (4)
+  const chot = coTheDi[0] && !daChot && !v.bao[0] ? { stepId: coTheDi[0].id, ma: MA_KET_DOAN_EDGE } : null;
+  const chotBao = !daChot && v.bao[0] ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: v.bao[0].stepId, ma: v.bao[0].ma } } : {}; // (5)
+  const sauChot = { ...v.ctx, ...chotBao, ...(chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: chot } : {}), [OUTCOME_UNKNOWN_KEY]: [...ctxU, ...khongRo] };
+  const them: BaoCaoKhongRoEdge[] = [...stopChuaRaTuHang(v.hang, sauChot)].map((id) => {
+    const chu = chuBuTruTrongDinhNghia(v.def.steps, id);
+    return { loai: "stopNotSent", stepId: chu ? chu.step.id : id, compId: chu ? id : KHONG_CO_BU_TRU, ma: MA_KET_DOAN_EDGE, claimSeq: v.claimSeq, biet: true };
+  });
+  for (const s of coTheDi) if (!s.compensation) them.push({ loai: "noCompensation", stepId: s.id, compId: KHONG_CO_BU_TRU, ma: MA_KET_DOAN_EDGE, claimSeq: v.claimSeq }); // (6)
+  const buTruCanNguoi = lenh.filter((s) => s.compensation && tapU.has(s.id)).map((s) => s.id);
+  const canhBao = them.filter((b) => !v.bao.some((x) => x.loai === b.loai && x.stepId === b.stepId && x.compId === b.compId)); // (7); (8) no branch on v.rider
+  return { khongRo, chot, canhBao, soLoiChung: v.so.doc === "loi", buTruCanNguoi }; // (9)
+}
+
 /**
  * The end of an edge walk segment, with finishWalk's / setRunStatusUnlessAborted's semantics (design §2.6), on `db` (B's
  * transaction). Never from 'aborted' or a centrally STOPPED run (a rejection's claim token) — only from 'running' /
@@ -2118,34 +2177,16 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     // fix review 1 — a command the edge sent but could not record: never sent again (foeEngine reads the list on the re-walk)
     const unknown = await khongRoCuaDoan(); // T9 lượt sửa 3e — central's rows and ledger, the words only add
     const prevUnknown = Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : [];
-    // T4 dạng 4, hướng (2) (chu-du-an-HST 14/11, tuyen-cu-chi) — the rider short or unreadable (riderThieu): what it would have carried, from STRUCTURED data (SELECT only, after the run row's lock).
-    // What may have gone (a): a command whose row is not completed / skipped / compensated (a final `failed` too) and that the 0372 ledger shows authorised, not superseded, with no result that
-    // says how it went (none, or not simulated / acked / acked_verified / rejected); the ledger read in a SAVEPOINT, unreadable ⇒ every such row (fail-closed). The latch: the first of them. Every
-    // STOP the rows owe and each of them with no compensation is told under the rider's / anomaly route's own key (kind:run:step:comp:claimN, the whole id) ⇒ a late anomaly is the same URGENT (b)
-    const bu: { chot: Record<string, unknown>; khongRo: string[] } = { chot: {}, khongRo: [] };
-    if (riderThieu === true) {
-      const hang = (await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId))) as Array<{ stepId: string; status: string }>;
-      const au = (await db.transaction(async (sp) => sp.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.runId, runId))).catch(() => null)) as Array<{ stepId: string; supersededAt: unknown; resultStatus?: string | null }> | null;
-      const lenh = new Map(allStepsOf(end.def.steps).filter((s) => s.type === "command").map((s) => [s.id, s] as const));
-      const stops = new Set<string>(); // T4 (I-1, M-1) — STOPs by the definition's own steps (as khongRoCuaDoan): never in what may have gone (L-7)
-      for (const st of lenh.values()) if (await laStopTheoBuoc(st, new Map()).catch(() => false)) stops.add(st.id);
-      const ketQuaBiet = new Set(["simulated", "acked", "acked_verified", "rejected"]);
-      const coTheDi = (id: string) => au === null || au.some((a) => a.stepId === id && a.supersededAt == null && !ketQuaBiet.has(String(a.resultStatus ?? "")));
-      // T4 (★2) — ∪ what central's rows and ledger already named unknown (a command authorised whose row never came); (I-1) the latch first, then the debt read with it
-      bu.khongRo = [...new Set([...hang.filter((r) => lenh.has(r.stepId) && !stops.has(r.stepId) && !["completed", "skipped", "compensated"].includes(r.status) && coTheDi(r.stepId)).map((r) => r.stepId), ...unknown.filter((id) => lenh.has(id) && !stops.has(id))])];
-      if (bu.khongRo[0] && ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] == null && chotTuBao[KET_CUC_KHONG_RO_CHOT_CTX_KEY] == null) bu.chot = { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: bu.khongRo[0], ma: "FOE_OUTCOME_UNKNOWN", at } };
-      const no = stopChuaRaTuHang(hang, { ...ctx, ...chotTuBao, ...bu.chot, [OUTCOME_UNKNOWN_KEY]: [...prevUnknown, ...unknown, ...bu.khongRo] });
-      const them: BaoCaoKhongRoEdge[] = [...no].map((id) => {
-        const chu = chuBuTruTrongDinhNghia(end.def.steps, id);
-        return { loai: "stopNotSent", stepId: chu ? chu.step.id : id, compId: chu ? id : KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: end.claimSeq, biet: true };
-      });
-      for (const id of bu.khongRo) if (!lenh.get(id)?.compensation) them.push({ loai: "noCompensation", stepId: id, compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: end.claimSeq });
-      for (const b of them) {
-        if (baoKhongRo.some((x) => x.loai === b.loai && x.stepId === b.stepId && x.compId === b.compId)) continue;
-        void cachEdgeTrungTam(runId, end.def, b).then((k) => canhBaoTuBaoCaoEdge(runId, b, run.startedBy ?? null, k)).catch(() => false);
-      }
-    }
-    if (bu.khongRo.length) unknown.push(...bu.khongRo);
+    // T4 bước 3 (HST 14/11, R1) — whole rider or short: the rows and the 0372 ledger (SELECT only, after the run row's lock; the ledger in a SAVEPOINT, unreadable ⇒ "loi"), the STOPs by the
+    // definition (as khongRoCuaDoan, L-7); quyetDinhKetDoanEdge decides U / C / N / S / the mark for a person, held() only writes. Each URGENT under the rider's / anomaly's own key (b)
+    const hang = (await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId))) as Array<{ stepId: string; status: string }>;
+    const au = (await db.transaction(async (sp) => sp.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.runId, runId))).catch(() => null)) as Array<{ stepId: string; supersededAt: unknown; resultStatus?: string | null }> | null;
+    const stops = new Set<string>();
+    for (const st of allStepsOf(end.def.steps)) if (st.type === "command" && (await laStopTheoBuoc(st, new Map()).catch(() => false))) stops.add(st.id);
+    // the context it reads: the run's, its list ∪ khongRoCuaDoan (3e: U wide, and a latch S is read with)
+    const q = quyetDinhKetDoanEdge({ runId, claimSeq: end.claimSeq, def: end.def, hang, so: au ? { doc: "duoc", muc: au } : { doc: "loi" }, stops, rider: riderThieu === true ? "thieu" : "du", bao: baoKhongRo, ctx: { ...ctx, [OUTCOME_UNKNOWN_KEY]: [...prevUnknown, ...unknown] } });
+    for (const b of q.canhBao) void cachEdgeTrungTam(runId, end.def, b).then((k) => canhBaoTuBaoCaoEdge(runId, b, run.startedBy ?? null, k)).catch(() => false);
+    const ou = [...new Set([...prevUnknown, ...unknown, ...q.khongRo])];
     return write("held", {
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
@@ -2159,13 +2200,13 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
         interruptedAt: at,
         interruptedFrom: run.status,
         interruptedBy: `edge held: ${reason}`,
-        ...(unknown.length ? { [OUTCOME_UNKNOWN_KEY]: [...new Set([...prevUnknown, ...unknown])] } : {}),
+        ...(ou.length ? { [OUTCOME_UNKNOWN_KEY]: ou } : {}),
         // R1b-2b-2a A2(n) — held because a command's outcome is unknown and the compensation due is not a pinned STOP: the SAME marker as
         // central's own walk (codes / ids only), so a Continue needs a person with machine-control rights and a reason (resumeRun)
-        // A2(n) T5 — state C alone holds no compensation for a person: as central's own walk, no marker
-        ...(reason === "outcomeUnknown" && (!error?.startsWith(`${FOE_STOP_NOT_SENT}:`) || baoKhongRo.some((x) => x.loai === "held")) ? { [KET_CUC_KHONG_RO_CTX_KEY]: dauKhongRoTuEdge(end, at, baoKhongRo) } : {}),
+        // A2(n) T5 — state C alone holds no compensation for a person: as central's own walk, no marker. T4 bước 3 (R2, #16) — a command with a compensation in U: the same marker
+        ...((reason === "outcomeUnknown" && (!error?.startsWith(`${FOE_STOP_NOT_SENT}:`) || baoKhongRo.some((x) => x.loai === "held"))) || q.buTruCanNguoi.length > 0 ? { [KET_CUC_KHONG_RO_CTX_KEY]: dauKhongRoTuEdge(end, at, baoKhongRo) } : {}),
         ...chotTuBao,
-        ...bu.chot,
+        ...(q.chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { ...q.chot, at } } : {}),
       },
     });
   };

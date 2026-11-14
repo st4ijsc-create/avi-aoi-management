@@ -1,0 +1,218 @@
+/**
+ * T4 bước 3 (HST 14/11) — ca của hàm thuần `quyetDinhKetDoanEdge`, viết TRƯỚC mã, theo bảng 16 ô (`thuc-thi\T4\bang-truong-hop-held.md`) và đặc tả
+ * (`thuc-thi\T4\dac-ta-ham-thuan.md`, kể cả các mục "HST duyệt" / "HST xác nhận"). Ca gọi THẲNG hàm: không DB, không mạng, không đồng hồ.
+ *
+ * Độ rộng của đầu ra (HST xác nhận 14/11): U (`khongRo`) RỘNG (thừa không sao, thiếu là ★); C, N, S, `soLoiChung`, `buTruCanNguoi` ĐÚNG ⇒ với C, N, S
+ * mọi ca so ĐÚNG cả tập (`toEqual` trên tập đã sắp), không dùng `toContain`. Ô #8 (Q2) không có ca ở đây: HST 14/11, Q2 đi cùng lô client; ca `it.fails`
+ * của ô đó nằm ở `foeHeldRiderThieu.a2n.test.ts` (đường tích hợp, URGENT chung).
+ */
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../../db/connection", () => ({ getDb: async () => null, isEdgeProcessRole: () => false }));
+
+import { FOE_STOP_NOT_SENT, quyetDinhKetDoanEdge, stopChuaRaTuHang } from "./foeRunStore";
+import { KET_CUC_KHONG_RO_CHOT_CTX_KEY, KHONG_CO_BU_TRU, type BaoCaoKhongRoEdge } from "./foeKetCucKhongRo";
+import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
+
+type VaoHam = Parameters<typeof quyetDinhKetDoanEdge>[0];
+type RaHam = ReturnType<typeof quyetDinhKetDoanEdge>;
+
+const RUN = 9;
+const MA = "FOE_OUTCOME_UNKNOWN";
+const move = (id: string, compensation?: WorkflowStep): WorkflowStep =>
+  ({ id, type: "command", machineId: 2, command: "run_job", args: { robotId: 2, jobType: "move", params: { x: 1 } }, ...(compensation ? { compensation } : {}) }) as never;
+const otStop = (id: string): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop", args: { tagKey: "halt", value: true } }) as never;
+const dinhNghia = (...steps: WorkflowStep[]): WorkflowDefinition => ({ ref: "t4b3", name: "t4b3", steps }) as never;
+
+/** một mục sổ 0372: uỷ quyền, chưa supersede, chưa có kết quả (ghi đè bằng `x`) */
+const uq = (stepId: string, x: Record<string, unknown> = {}) => ({ stepId, supersededAt: null, resultStatus: null, ...x });
+const hangChay = (stepId: string) => ({ stepId, stepType: "command", status: "running", error: null, resultJson: { routedTo: "robot-dispatcher" } });
+const hangXong = (stepId: string) => ({ stepId, stepType: "command", status: "completed", error: null, resultJson: null });
+/** hàng `failed` đã final, mất mã (lỗi thiết bị thường, không có FOE_OUTCOME_UNKNOWN) */
+const hangHongMatMa = (stepId: string) => ({ stepId, stepType: "command", status: "failed", error: "ROBOT_FAULT: gripper", resultJson: null });
+/** hàng của STOP: lần thử bị dispatcher từ chối, là chữ cuối của hàng (vế 2 của laHangChuaRa) ⇒ nợ CHỈ khi run đã chốt */
+const hangStopTuChoi = (stepId: string) => ({
+  stepId,
+  stepType: "command",
+  status: "running",
+  error: null,
+  resultJson: { routedTo: "ot-dispatcher", accepted: false, status: "rejected", detail: { edge: true, reason: "ADAPTER_OFFLINE" } },
+});
+/** hàng của STOP ở trạng thái C (mã FOE_STOP_NOT_SENT): nợ dù run chưa chốt */
+const hangStopTrangThaiC = (stepId: string) => ({ stepId, stepType: "command", status: "failed", error: `${FOE_STOP_NOT_SENT}: adapter offline`, resultJson: null });
+const bao = (loai: BaoCaoKhongRoEdge["loai"], stepId: string, compId = KHONG_CO_BU_TRU): BaoCaoKhongRoEdge => ({ loai, stepId, compId, ma: MA, claimSeq: 1 });
+
+const goi = (x: Partial<VaoHam> & { def: WorkflowDefinition }): RaHam =>
+  quyetDinhKetDoanEdge({ runId: RUN, claimSeq: 1, hang: [], so: { doc: "duoc", muc: [] }, stops: new Set(), rider: "thieu", bao: [], ctx: {}, ...x });
+/** N và S cùng nhau, đúng tập (đã sắp): `loai:stepId:compId` */
+const cb = (r: RaHam) => r.canhBao.map((b) => `${b.loai}:${b.stepId}:${b.compId}`).sort();
+const N = (id: string) => `noCompensation:${id}:${KHONG_CO_BU_TRU}`;
+const S = (id: string) => `stopNotSent:${id}:${KHONG_CO_BU_TRU}`;
+
+describe("T4 bước 3 — quyetDinhKetDoanEdge theo bảng 16 ô", () => {
+  it("T4-B3-O1 (#1) hàng running, sổ uỷ quyền chưa có kết quả, rider thiếu: U, C, N — mỗi URGENT đúng khoá và mã", () => {
+    const r = goi({ def: dinhNghia(move("x")), hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x")] } });
+    expect(r.khongRo).toEqual(["x"]);
+    expect(r.chot).toEqual({ stepId: "x", ma: MA });
+    expect(r.canhBao).toEqual([{ loai: "noCompensation", stepId: "x", compId: KHONG_CO_BU_TRU, ma: MA, claimSeq: 1 }]);
+    expect(r.soLoiChung).toBe(false);
+    expect(r.buTruCanNguoi).toEqual([]);
+  });
+
+  it("T4-B3-O2 (#2) hàng failed final CÓ mã FOE_OUTCOME_UNKNOWN, sổ ghi timeout (không phải kết quả đã biết): U, C, N", () => {
+    const r = goi({ def: dinhNghia(move("x")), hang: [{ ...hangHongMatMa("x"), error: "FOE_OUTCOME_UNKNOWN: robot timeout" }], so: { doc: "duoc", muc: [uq("x", { resultStatus: "timeout" })] } });
+    expect(r.khongRo).toEqual(["x"]);
+    expect(r.chot).toEqual({ stepId: "x", ma: MA });
+    expect(cb(r)).toEqual([N("x")]);
+  });
+
+  it("T4-B3-O3 (#3) hàng failed final MẤT mã, sổ uỷ quyền chưa có kết quả: U, C, N", () => {
+    const r = goi({ def: dinhNghia(move("x")), hang: [hangHongMatMa("x")], so: { doc: "duoc", muc: [uq("x")] } });
+    expect(r.khongRo).toEqual(["x"]);
+    expect(r.chot).toEqual({ stepId: "x", ma: MA });
+    expect(cb(r)).toEqual([N("x")]);
+    expect(r.buTruCanNguoi).toEqual([]);
+  });
+
+  it("T4-B3-O4 (#4 đúng nghĩa, I-1) hàng failed mất mã, STOP chỉ nợ khi run ĐÃ chốt: chốt đặt trước, nợ đọc với chốt đó ⇒ đúng một S", () => {
+    const hang = [hangHongMatMa("x"), hangStopTuChoi("nt")];
+    expect([...stopChuaRaTuHang(hang, {})], "tiền đề: run chưa chốt ⇒ lần thử bị từ chối không phải nợ; hàng mất mã không tự chốt").toEqual([]);
+    const r = goi({ def: dinhNghia(move("x"), otStop("nt")), hang, so: { doc: "duoc", muc: [uq("x")] }, stops: new Set(["nt"]) });
+    expect(r.khongRo, "STOP không bao giờ vào U (L-7)").toEqual(["x"]);
+    expect(r.chot).toEqual({ stepId: "x", ma: MA });
+    expect(cb(r)).toEqual([N("x"), S("nt")]);
+    expect(r.canhBao.find((b) => b.loai === "stopNotSent")).toEqual({ loai: "stopNotSent", stepId: "nt", compId: KHONG_CO_BU_TRU, ma: MA, claimSeq: 1, biet: true });
+  });
+
+  it("T4-B3-O4-KHONG-CHOT (#4, phía phủ định) lệnh đã xong và sổ acked ⇒ không chốt ⇒ cùng hàng STOP ấy KHÔNG nợ, không S", () => {
+    const r = goi({ def: dinhNghia(move("x"), otStop("nt")), hang: [hangXong("x"), hangStopTuChoi("nt")], so: { doc: "duoc", muc: [uq("x", { resultStatus: "acked" })] }, stops: new Set(["nt"]) });
+    expect(r.khongRo).toEqual([]);
+    expect(r.chot).toBeNull();
+    expect(cb(r)).toEqual([]);
+  });
+
+  it("T4-B3-O5 (#5, ★2) lệnh KHÔNG có hàng, sổ uỷ quyền chưa có kết quả, rider thiếu: U, C, N", () => {
+    const r = goi({ def: dinhNghia(move("x")), so: { doc: "duoc", muc: [uq("x")] } });
+    expect(r.khongRo).toEqual(["x"]);
+    expect(r.chot).toEqual({ stepId: "x", ma: MA });
+    expect(cb(r)).toEqual([N("x")]);
+  });
+
+  it("T4-B3-O6 (#6, R1) như #5 nhưng rider ĐỌC ĐƯỢC và im về x: central vẫn tự phát N và đặt C (H3: không tin nút một mình)", () => {
+    const r = goi({ def: dinhNghia(move("x")), so: { doc: "duoc", muc: [uq("x")] }, rider: "du", bao: [] });
+    expect(r.khongRo).toEqual(["x"]);
+    expect(r.chot).toEqual({ stepId: "x", ma: MA });
+    expect(cb(r)).toEqual([N("x")]);
+  });
+
+  it("T4-B3-O7 (#7) sổ ĐỌC LỖI: lệnh có hàng chưa xong vẫn tính (U, C, N, soLoiChung); lệnh KHÔNG có hàng thì không tính (luật 2, Q2)", () => {
+    const r = goi({ def: dinhNghia(move("x"), move("z")), hang: [hangChay("x")], so: { doc: "loi" } });
+    expect(r.khongRo).toEqual(["x"]);
+    expect(r.chot).toEqual({ stepId: "x", ma: MA });
+    expect(cb(r)).toEqual([N("x")]);
+    expect(r.soLoiChung).toBe(true);
+  });
+
+  it("T4-B3-O9 (#9) sổ đọc lỗi, có STOP nợ: U chỉ có lệnh (STOP KHÔNG vào U), C, N, S", () => {
+    const r = goi({ def: dinhNghia(move("x"), otStop("nt")), hang: [hangChay("x"), hangStopTuChoi("nt")], so: { doc: "loi" }, stops: new Set(["nt"]) });
+    expect(r.khongRo).toEqual(["x"]);
+    expect(r.chot).toEqual({ stepId: "x", ma: MA });
+    expect(cb(r)).toEqual([N("x"), S("nt")]);
+    expect(r.soLoiChung).toBe(true);
+  });
+
+  it("T4-B3-O10 (#10, phủ định) hàng completed, sổ acked: không U, không C, không N", () => {
+    const r = goi({ def: dinhNghia(move("x")), hang: [hangXong("x")], so: { doc: "duoc", muc: [uq("x", { resultStatus: "acked" })] } });
+    expect(r).toEqual({ khongRo: [], chot: null, canhBao: [], soLoiChung: false, buTruCanNguoi: [] });
+  });
+
+  it("T4-B3-O11 (#11, I-A) không có hàng, sổ ghi rejected: không U, không C, không N (so cả tập)", () => {
+    const r = goi({ def: dinhNghia(move("x")), so: { doc: "duoc", muc: [uq("x", { resultStatus: "rejected" })] } });
+    expect(r).toEqual({ khongRo: [], chot: null, canhBao: [], soLoiChung: false, buTruCanNguoi: [] });
+  });
+
+  it("T4-B3-O11-ACKED (I-A, hệ quả rộng) hàng running nhưng sổ đã có kết quả acked: không C, không N cho x", () => {
+    const r = goi({ def: dinhNghia(move("x")), hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x", { resultStatus: "acked" })] } });
+    expect(r.chot).toBeNull();
+    expect(cb(r)).toEqual([]);
+    expect(r.khongRo).toEqual([]);
+  });
+
+  it("T4-B3-O12 (#12, phủ định) không có hàng, sổ không có mục: không U, không C, không N", () => {
+    const r = goi({ def: dinhNghia(move("x")), so: { doc: "duoc", muc: [] } });
+    expect(r).toEqual({ khongRo: [], chot: null, canhBao: [], soLoiChung: false, buTruCanNguoi: [] });
+  });
+
+  it("T4-B3-O13 (#13, phía S) rider đọc được đã báo stopNotSent của STOP nợ: central KHÔNG phát S thứ hai (cùng loai/stepId/compId)", () => {
+    const r = goi({ def: dinhNghia(otStop("nt")), hang: [hangStopTrangThaiC("nt")], stops: new Set(["nt"]), rider: "du", bao: [bao("stopNotSent", "nt")] });
+    expect(r.khongRo).toEqual([]);
+    expect(r.chot, "bao đặt chốt, hàm không đặt").toBeNull();
+    expect(cb(r)).toEqual([]);
+  });
+
+  it("T4-B3-O13B (m-7, R1) rider đọc được mà IM về STOP đang nợ: central tự phát đúng một S", () => {
+    const r = goi({ def: dinhNghia(otStop("nt")), hang: [hangStopTrangThaiC("nt")], stops: new Set(["nt"]), rider: "du", bao: [] });
+    expect(r.khongRo).toEqual([]);
+    expect(r.chot).toBeNull();
+    expect(cb(r)).toEqual([S("nt")]);
+  });
+
+  it("T4-B3-O14 (#14, M-7) rider có phần tử hỏng bị bộ tách đọc là NGUYÊN VẸN, không báo cáo (rider du, bao rỗng): central vẫn phát phần còn thiếu — U, C, N", () => {
+    const r = goi({ def: dinhNghia(move("x")), hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x")] }, rider: "du", bao: [] });
+    expect(r.khongRo).toEqual(["x"]);
+    expect(r.chot).toEqual({ stepId: "x", ma: MA });
+    expect(cb(r)).toEqual([N("x")]);
+  });
+
+  it("T4-B3-O15 (#15) rider bị cắt, còn sót báo cáo đầu (stopNotSent của n1): chốt là của bao; STOP nt chỉ nợ nhờ chốt đó ⇒ S cho nt, không S thứ hai cho n1", () => {
+    const hang = [hangStopTrangThaiC("n1"), hangStopTuChoi("nt")];
+    expect([...stopChuaRaTuHang(hang, {})], "tiền đề: chưa chốt ⇒ chỉ n1 nợ").toEqual(["n1"]);
+    const r = goi({ def: dinhNghia(otStop("n1"), otStop("nt")), hang, stops: new Set(["n1", "nt"]), rider: "thieu", bao: [bao("stopNotSent", "n1")] });
+    expect(r.khongRo).toEqual([]);
+    expect(r.chot).toBeNull();
+    expect(cb(r)).toEqual([S("nt")]);
+  });
+
+  it("T4-B3-O16 (#16, R2) lệnh CÓ bù trừ: U, C; KHÔNG N; buTruCanNguoi nêu đúng lệnh đó", () => {
+    const r = goi({ def: dinhNghia(move("x", move("cx"))), hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x")] } });
+    expect(r.khongRo).toEqual(["x"]);
+    expect(r.chot).toEqual({ stepId: "x", ma: MA });
+    expect(cb(r)).toEqual([]);
+    expect(r.buTruCanNguoi).toEqual(["x"]);
+  });
+});
+
+describe("T4 bước 3 — các ca bắt buộc thêm (R1, phần hợp U, chốt có sẵn)", () => {
+  it("T4-B3-DU-DA-BAO (R1, phủ định) rider đủ VÀ đã báo noCompensation của x: central không phát thêm, không đặt chốt", () => {
+    const r = goi({ def: dinhNghia(move("x")), hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x")] }, rider: "du", bao: [bao("noCompensation", "x")] });
+    expect(r.khongRo).toEqual(["x"]);
+    expect(r.chot).toBeNull();
+    expect(cb(r)).toEqual([]);
+  });
+
+  it("T4-B3-DU-MOT-PHAN (R1) rider đủ nhưng chỉ báo x, y cũng có thể đã đi: central chỉ phát phần còn thiếu (y)", () => {
+    const r = goi({ def: dinhNghia(move("x"), move("y")), hang: [hangChay("x"), hangChay("y")], so: { doc: "duoc", muc: [uq("x"), uq("y")] }, rider: "du", bao: [bao("noCompensation", "x")] });
+    expect(r.khongRo).toEqual(["x", "y"]);
+    expect(r.chot).toBeNull();
+    expect(cb(r)).toEqual([N("y")]);
+  });
+
+  it("T4-B3-U-HOP (luật 3) U = tập bước 2 ∪ ctx.foeOutcomeUnknown trừ STOP, theo thứ tự định nghĩa; C và N CHỈ từ tập bước 2", () => {
+    const r = goi({ def: dinhNghia(move("w"), move("x"), otStop("nt")), hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x")] }, stops: new Set(["nt"]), ctx: { foeOutcomeUnknown: ["nt", "w"] } });
+    expect(r.khongRo).toEqual(["w", "x"]);
+    expect(r.chot).toEqual({ stepId: "x", ma: MA });
+    expect(cb(r)).toEqual([N("x")]);
+  });
+
+  it("T4-B3-CHOT-CO-SAN (luật 4) run đã có chốt: hàm không đặt chốt mới, N vẫn phát", () => {
+    const r = goi({ def: dinhNghia(move("x")), hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x")] }, ctx: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "z", ma: MA, at: "t" } } });
+    expect(r.chot).toBeNull();
+    expect(r.khongRo).toEqual(["x"]);
+    expect(cb(r)).toEqual([N("x")]);
+  });
+
+  it("T4-B3-SO-SUPERSEDE (luật 2) mục sổ đã supersede không làm lệnh 'có thể đã đi'", () => {
+    const r = goi({ def: dinhNghia(move("x")), so: { doc: "duoc", muc: [uq("x", { supersededAt: "2026-11-14T00:00:00Z" })] } });
+    expect(r).toEqual({ khongRo: [], chot: null, canhBao: [], soLoiChung: false, buTruCanNguoi: [] });
+  });
+});
