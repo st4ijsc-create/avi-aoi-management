@@ -14,8 +14,14 @@
  * NGUYÊN TẮC CHỌN MẪU: chỉ dạng có TIỀN TỐ do nhà cung cấp định nghĩa + thân đủ dài (dương tính giả gần 0 trong mã/văn
  * xuôi). Bí mật KHÔNG có hình dạng (mật khẩu, token nội bộ 32 hex) không thuộc tệp này — tầng chặn-theo-TỆP và luật
  * "gán khoá = giá trị" của từng phía lo.
- *   · biên TRÁI `(?<![A-Za-z0-9])`: `xghp_…`, `aAKIA…` (tiền tố nằm GIỮA một định danh) không bị coi là khoá; gạch dưới
- *     được phép đứng trước (`MY_ghp_…` vẫn che — nghiêng về che thừa).
+ *   · biên TRÁI — ★ 2026-11-14 (chu-du-an-HST chọn phương án B1, lô mauBiMat): tiền tố TỰ NÓ không thể là một đoạn chữ
+ *     thường tự nhiên (`sk-ant-apiNN-`, `gh?_`, `github_pat_`, `glpat-`, `xox?-<số>`, `AIza`, `npm_`) có `dinhTrai: true` ⇒
+ *     KHÔNG đòi biên trái, khoá DÍNH liền chữ/số phía trước (`esk-ant-…`, `xghp_…`) vẫn bị che. Tiền tố còn lại GIỮ biên trái
+ *     `(?<![A-Za-z0-9])`, vì đoạn của chúng là chữ tự nhiên ngay sau một từ: `-admin-`/`-proj-`/`-svcacct-` sau "task/desk/
+ *     risk" (`task-admin-dashboard-…`), `_live_` sau "risk" (`risk_live_…`), `AKIA` trong chữ hoa (`MAKIAGE…`, `SLOVAKIA…`).
+ *     Đo trước khi chọn (kho mã repo + bộ ca âm tổng hợp): xem `mauBiMat.test.ts`. Gạch dưới được phép đứng trước ở mọi
+ *     mẫu (`MY_ghp_…` vẫn che — nghiêng về che thừa).
+ *     GIỚI HẠN ĐÃ BIẾT: khoá OpenAI/Stripe/AWS dính chữ phía trước vẫn lọt, bằng hiện nay.
  *   · không biên PHẢI: thân lượng từ `{n,}` tham lam đã nuốt hết phần còn lại; dạng độ dài CỐ ĐỊNH (`AKIA`, `AIza`) có
  *     đuôi thừa thì phần thừa còn lại — vẫn không rò lõi.
  */
@@ -25,44 +31,60 @@ export interface MauToken {
   ten: string;
   /** Nguồn regex của CẢ token (tiền tố + thân), không cờ, không biên. */
   nguon: string;
+  /** Nguồn regex của riêng TIỀN TỐ — cho bộ che luồng giữ token đang mọc (`RE_TOKEN_CO_TIEN_TO_DANG_GO`). */
+  tienTo: string;
+  /** true ⇒ khớp cả khi dính liền chữ/số phía trước (không biên trái). Xem nguyên tắc ở đầu tệp. */
+  dinhTrai?: true;
 }
 
 export const MAU_TOKEN_CO_TIEN_TO: readonly MauToken[] = [
   // GitHub: PAT cổ điển / OAuth / user-to-server / server-to-server / refresh — thân thật 36 ký tự [A-Za-z0-9].
-  { ten: "github", nguon: "gh[pousr]_[A-Za-z0-9]{20,}" },
+  { ten: "github", nguon: "gh[pousr]_[A-Za-z0-9]{20,}", tienTo: "gh[pousr]_", dinhTrai: true },
   // GitHub fine-grained PAT: `github_pat_` + 82 ký tự [A-Za-z0-9_].
-  { ten: "github_pat", nguon: "github_pat_[A-Za-z0-9_]{22,}" },
+  { ten: "github_pat", nguon: "github_pat_[A-Za-z0-9_]{22,}", tienTo: "github_pat_", dinhTrai: true },
   // GitLab PAT: `glpat-` + 20 ký tự.
-  { ten: "gitlab", nguon: "glpat-[A-Za-z0-9_-]{20,}" },
+  { ten: "gitlab", nguon: "glpat-[A-Za-z0-9_-]{20,}", tienTo: "glpat-", dinhTrai: true },
   // Slack: `xox[abprs]-` + SỐ + `-` … (đòi SỐ ngay sau tiền tố ⇒ tên kiểu "xoxb" + gạch + chữ thường không phải khoá — ví dụ đầy đủ chỉ để trong test, vì `vsce package` quét dist và chặn chuỗi giống khoá Slack).
-  { ten: "slack", nguon: "xox[abprs]-[0-9]{6,}-[A-Za-z0-9-]{8,}" },
-  // AWS access key id: đúng 20 ký tự.
-  { ten: "aws", nguon: "AKIA[0-9A-Z]{16}" },
+  { ten: "slack", nguon: "xox[abprs]-[0-9]{6,}-[A-Za-z0-9-]{8,}", tienTo: "xox[abprs]-", dinhTrai: true },
+  // AWS access key id: đúng 20 ký tự. GIỮ biên trái: `AKIA` nằm trong chữ hoa tự nhiên (`MAKIAGE…`, `SLOVAKIA…`).
+  { ten: "aws", nguon: "AKIA[0-9A-Z]{16}", tienTo: "AKIA" },
   // Google API key: đúng 39 ký tự.
-  { ten: "google", nguon: "AIza[0-9A-Za-z_-]{35}" },
-  // Stripe secret / restricted key (live).
-  { ten: "stripe", nguon: "[sr]k_live_[0-9A-Za-z]{16,}" },
+  { ten: "google", nguon: "AIza[0-9A-Za-z_-]{35}", tienTo: "AIza", dinhTrai: true },
+  // Stripe secret / restricted key (live). GIỮ biên trái: `risk_live_…`.
+  { ten: "stripe", nguon: "[sr]k_live_[0-9A-Za-z]{16,}", tienTo: "[sr]k_live_" },
   // npm access token: `npm_` + 36 (`npm_config_x`/`npm_package_y` dừng ở `_` ⇒ không khớp).
-  { ten: "npm", nguon: "npm_[A-Za-z0-9]{30,}" },
+  { ten: "npm", nguon: "npm_[A-Za-z0-9]{30,}", tienTo: "npm_", dinhTrai: true },
   // OpenAI khoá dự án/tài khoản dịch vụ/quản trị — thân có `-`/`_`, luật `sk-[A-Za-z0-9]{16,}` cũ của máy chủ dừng ở `-`.
-  { ten: "openai", nguon: "sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}" },
+  //   GIỮ biên trái: `task-admin-dashboard-…`, `desk-proj-…`.
+  { ten: "openai", nguon: "sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}", tienTo: "sk-(?:proj|svcacct|admin)-" },
+  // ★ 2026-11-14 — Anthropic khoá API / quản trị: `sk-ant-api03-…` / `sk-ant-admin01-…`, thân base64url (thật ~95 ký tự).
+  //   Trước đây KHÔNG mẫu nào của máy chủ/extension che dạng này (luật `sk-[A-Za-z0-9]{16,}` dừng ở `-` sau "ant").
+  { ten: "anthropic", nguon: "sk-ant-(?:api|admin)[0-9]{2}-[A-Za-z0-9_-]{20,}", tienTo: "sk-ant-", dinhTrai: true },
 ];
 
 const BIEN_TRAI = "(?<![A-Za-z0-9])";
+const MAU_DINH_TRAI = MAU_TOKEN_CO_TIEN_TO.filter((m) => m.dinhTrai);
+const MAU_CO_BIEN = MAU_TOKEN_CO_TIEN_TO.filter((m) => !m.dinhTrai);
+const gop = (ds: readonly MauToken[], lay: (m: MauToken) => string) => ds.map(lay).join("|");
 
 /**
  * Regex GỘP (cờ `g`) mọi mẫu trên. Dùng với `String.replace` (tự đặt lại `lastIndex`); ĐỪNG dùng `.test()`/`.exec()`
  * trên hằng `g` này (có trạng thái) — gọi `cheTokenCoTienTo` hoặc dựng regex riêng từ `MAU_TOKEN_CO_TIEN_TO`.
  */
-export const RE_TOKEN_CO_TIEN_TO = new RegExp(`${BIEN_TRAI}(?:${MAU_TOKEN_CO_TIEN_TO.map((m) => m.nguon).join("|")})`, "g");
+export const RE_TOKEN_CO_TIEN_TO = new RegExp(
+  `(?:${gop(MAU_DINH_TRAI, (m) => m.nguon)})|${BIEN_TRAI}(?:${gop(MAU_CO_BIEN, (m) => m.nguon)})`,
+  "g",
+);
 
 /**
  * Tiền tố ĐANG MỌC ở đuôi bộ đệm (cho bộ che luồng): tiền tố đã đủ, thân còn đang tới. Bộ che luồng phải GIỮ từ đây
  * tới khi gặp ký tự kết thúc — không thì token dài hơn đuôi giữ thường (32 ký tự, vd `github_pat_` 93 ký tự) bị nhả
- * dần từng mảnh trước khi đủ độ dài để mẫu đầy đủ khớp.
+ * dần từng mảnh trước khi đủ độ dài để mẫu đầy đủ khớp. Mẫu `dinhTrai` giữ cả khi dính chữ (chỉ trễ nhả, không che thừa).
+ * `sk-` trần (biên trái) giữ cho luật `sk-…` chung của máy chủ.
  */
-export const RE_TOKEN_CO_TIEN_TO_DANG_GO =
-  /(?<![A-Za-z0-9])(?:gh[pousr]_|github_pat_|glpat-|xox[abprs]-|AKIA|AIza|[sr]k_live_|npm_|sk-)[A-Za-z0-9_-]*$/;
+export const RE_TOKEN_CO_TIEN_TO_DANG_GO = new RegExp(
+  `(?:(?:${gop(MAU_DINH_TRAI, (m) => m.tienTo)})|${BIEN_TRAI}(?:${gop(MAU_CO_BIEN, (m) => m.tienTo)}|sk-))[A-Za-z0-9_-]*$`,
+);
 
 /** Thay mọi token có tiền tố bằng `thay`. Thuần, không ném. */
 export function cheTokenCoTienTo(s: string, thay: string): string {
