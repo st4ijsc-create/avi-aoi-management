@@ -8,8 +8,9 @@
  * `disconnect()`; supervisor kẹt ở `reconnecting`, `stop()` treo.
  *
  * Oracle ĐỘC LẬP với mã sản phẩm: kho thanh ghi của server giả (Map do test giữ), mã lỗi
- * hệ điều hành (ECONNREFUSED), địa chỉ TEST-NET-1 192.0.2.1 (RFC 5737 — dành cho tài
- * liệu, không bao giờ định tuyến tới thiết bị thật), và socket half-open do test tự dựng.
+ * hệ điều hành (ECONNREFUSED), một đích im lặng giả (lỗ đen trong tiến trình, xem `datLoDen`;
+ * trước đây là TEST-NET-1 192.0.2.1 thật, gửi SYN ra gateway), và socket half-open do test tự dựng.
+ * Test chỉ kết nối tới loopback (nguyên tắc C, chủ dự án duyệt 14/11).
  * Mọi khẳng định "không treo" đo bằng `settleWithin` (hạn giờ tường minh), KHÔNG dựa vào
  * vitest timeout.
  */
@@ -55,6 +56,41 @@ async function settleWithin<T>(
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Lỗ đen giả trong tiến trình: thay `net.Socket.prototype.connect` (khuôn của edgeGatewayBoot.dot10.test.ts). Lời connect tới
+ * ĐÚNG (host, port) không bao giờ xong và không gửi gói nào (như SYN không ai trả lời); socket ở trạng thái `connecting`. Nếu
+ * socket chưa bị destroy sau `etimedoutSauMs` thì nó nhận lỗi ETIMEDOUT như hệ điều hành báo (đo ~21 s). Đích khác: connect thật.
+ * Đích nên là loopback cổng đóng: nếu lỗ đen hỏng, connect thật bị từ chối ngay trên máy, không rời máy.
+ */
+function datLoDen(host: string, port: number, etimedoutSauMs = 21_000): { bat: net.Socket[]; goLai: () => void } {
+  const goc = net.Socket.prototype.connect;
+  const bat: net.Socket[] = [];
+  const hen: NodeJS.Timeout[] = [];
+  net.Socket.prototype.connect = function (this: net.Socket, ...args: unknown[]) {
+    // net.connect() gọi socket.connect(mảng đã chuẩn hoá [options, cb]); gọi thẳng thì (options, cb) hoặc (port, host, cb).
+    const a0 = Array.isArray(args[0]) ? (args[0] as unknown[])[0] : args[0];
+    const dich = typeof a0 === "object" && a0 !== null ? (a0 as { host?: string; port?: number | string }) : { port: a0 as number, host: args[1] as string | undefined };
+    if (dich.host === host && Number(dich.port) === port) {
+      bat.push(this);
+      (this as unknown as { connecting: boolean }).connecting = true;
+      const t = setTimeout(() => {
+        if (!this.destroyed) this.destroy(Object.assign(new Error(`connect ETIMEDOUT ${host}:${port}`), { code: "ETIMEDOUT" }));
+      }, etimedoutSauMs);
+      t.unref();
+      hen.push(t);
+      return this;
+    }
+    return (goc as (...x: unknown[]) => net.Socket).apply(this, args);
+  } as typeof net.Socket.prototype.connect;
+  return {
+    bat,
+    goLai: () => {
+      net.Socket.prototype.connect = goc;
+      hen.splice(0).forEach(clearTimeout);
+    },
+  };
+}
 
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -145,12 +181,18 @@ describe("ModbusDriver × ServerTCP thật (doc 81 Đợt 1B Task 1)", () => {
     expect(d.isConnected()).toBe(false);
   });
 
-  it("IP KHÔNG định tuyến (TEST-NET-1 192.0.2.1) ⇒ connect lỗi trong timeoutMs + 1s", async () => {
-    const d = new ModbusDriver();
-    const r = await settleWithin(d.connect({ endpoint: "tcp://192.0.2.1:502", timeoutMs: 1000 }), 2000);
-    expect(r.settled, `connect IP không định tuyến treo > 2000 ms`).toBe(true);
-    expect(r.ok).toBe(false);
-    expect(r.elapsed).toBeGreaterThanOrEqual(900); // tôn trọng timeoutMs, không trả sớm giả
+  it("đích IM LẶNG (SYN không ai trả lời — lỗ đen giả tại 127.0.0.1:9) ⇒ connect lỗi trong timeoutMs + 1s", async () => {
+    const lo = datLoDen("127.0.0.1", 9);
+    try {
+      const d = new ModbusDriver();
+      const r = await settleWithin(d.connect({ endpoint: "tcp://127.0.0.1:9", timeoutMs: 1000 }), 2000);
+      expect(lo.bat, "lời connect phải rơi vào lỗ đen (nếu không: cổng 9 từ chối ngay, ca này mất nghĩa)").toHaveLength(1);
+      expect(r.settled, `connect đích im lặng treo > 2000 ms`).toBe(true);
+      expect(r.ok).toBe(false);
+      expect(r.elapsed).toBeGreaterThanOrEqual(900); // tôn trọng timeoutMs, không trả sớm giả
+    } finally {
+      lo.goLai();
+    }
   });
 
   it("server half-open (nhận FIN nhưng không bao giờ đóng) ⇒ disconnect trả về ≤ 2s + biên VÀ socket bị destroy", async () => {

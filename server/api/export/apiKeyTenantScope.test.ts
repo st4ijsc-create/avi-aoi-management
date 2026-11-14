@@ -293,6 +293,7 @@ const exportPath = (name: string, extra = "") =>
 const totalFor = (rows: any[], machineId: number): number =>
   rows.filter((r) => Number(r.machine_id) === machineId).reduce((s, r) => s + Number(r.total), 0);
 
+// Hạn hook riêng: beforeAll chạy ~45 lượt DB tuần tự; cổng gộp 14/11 11:16 hết giờ 30 s dưới tải nặng (chạy riêng 3–4 s).
 beforeAll(async () => {
   const conn0 = await getDb();
   await chonNgayTrong(async (tu, den) => {
@@ -400,8 +401,9 @@ beforeAll(async () => {
   server = s;
   await new Promise<void>((resolve) => s.listen(0, "127.0.0.1", resolve));
   baseUrl = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
-});
+}, 120_000);
 
+// Hạn riêng cho afterAll cùng lý do (đợi server.close + DELETE api_keys dưới tải).
 afterAll(async () => {
   const s = server;
   if (s) await new Promise<void>((resolve) => s.close(() => resolve()));
@@ -411,7 +413,7 @@ afterAll(async () => {
   //   thay vì cố định. Đừng thêm lệnh xoá ở đây; nó sẽ ném và làm ĐỎ cả file vì một lý do
   //   không liên quan gì tới phạm vi.
   if (conn && createdKeyIds.length) await conn.delete(apiKeys).where(inArray(apiKeys.id, createdKeyIds));
-});
+}, 60_000);
 
 // ══════════════════════════════════════════════════════════════════════════════════════════
 // 0. Dữ liệu dựng sẵn có ĐÚNG hình dạng đã khai không (đo trước khi đo bất cứ thứ gì khác)

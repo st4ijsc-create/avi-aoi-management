@@ -106,7 +106,7 @@ async function seedNhaMay(ten: string): Promise<NhaMay> {
 
 async function seedAdapter(ten: string, machineId: number | null, protocol = "stub", isEnabled = true): Promise<number> {
   const code = `${RUN}-${ten}`;
-  const endpoint = protocol === "stub" ? `stub://${code}` : "10.0.0.5:102";
+  const endpoint = protocol === "stub" ? `stub://${code}` : "127.0.0.1:9";
   const [r] = await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "pollIntervalMs", "isEnabled", status)
     VALUES (${machineId}, ${code}, ${code}, ${protocol}, ${endpoint}, 500, ${isEnabled}, 'connected') RETURNING id`);
   return Number(r.id);

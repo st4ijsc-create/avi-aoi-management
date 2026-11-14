@@ -131,6 +131,15 @@ describe("chín mẫu — ÂM (mã vô hại gần giống)", () => {
     expect(maus('const p = "D:////SOURCES/_tho_ca_wt/x";')).not.toContain("mang-ngoai");
     expect(maus('const u = "ftp://ben-ngoai.example/x";')).toContain("mang-ngoai");
   });
+  it("★★ (w4) gốc worktree / thư mục tạm có `/` hoặc `\\` CUỐI vẫn khớp: `D:/x/` ⇒ `D:/x/a.ts` được, `D:/x` trần được, `D:/x-evil/a.ts` vẫn cảnh báo", () => {
+    for (const goc of ["D:/x/", "D:\\x\\", "D:/x//"]) {
+      const o = { wt: goc, thuMucTam: [TMP] };
+      const m = (ma: string) => quetTinh(dongMoiCuaTep("", ma), o).map((c) => c.mau);
+      expect(m('const p = "D:/x/a.ts";'), goc).toEqual([]);
+      expect(m('const p = "D:/x";'), goc).toEqual([]);
+      expect(m('const p = "D:/x-evil/a.ts";'), goc).toContain("duong-tuyet-doi");
+    }
+  });
   it("★★ biên: dòng đúng 4000 ký tự vẫn được quét; 4001 ký tự ⇒ chỉ `dong-qua-dai`; dòng chú thích dài không cảnh báo", () => {
     const them = (n: number, dau: string) => dau + "x".repeat(n - dau.length);
     expect(maus(them(4000, "const a = process.env.X; "))).toContain("process-env");

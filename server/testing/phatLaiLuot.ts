@@ -14,6 +14,7 @@
 import { createHash } from "node:crypto";
 import os from "node:os";
 import type { GgufChatOptions, GgufStreamChunk } from "../services/aiGgufEngine";
+import { MAU_TOKEN_CO_TIEN_TO, nguonCoBien } from "../../shared/mauBiMat";
 
 /** 2 = tin của mỗi lượt lưu dạng HIỆU so với lượt trước (`tinChung` + `tinMoi`) — lịch sử chỉ-nối-thêm ⇒ fixture O(n) thay vì O(n²). */
 export const PHIEN_BAN_FIXTURE = 2;
@@ -263,6 +264,11 @@ const MAU_CAM: ReadonlyArray<[string, RegExp]> = [
   ["mat-khau", /\b(password|passwd|pwd)\s*[=:]\s*["']?[^\s"'&;]{4,}/i],
   ["chuoi-ket-noi", /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@"']+:[^\s@/"']+@/i],
   ["khoa-slack", /\bxox[abposr]-[A-Za-z0-9-]{10,}/],
+  // ★ 2026-11-14 (lô "một nguồn mẫu", chu-du-an-HST): bộ DÒ rò phải mạnh ít nhất bằng bộ CHE. Các luật `khoa-*` ở trên dùng `\b` ⇒
+  // khoá DÍNH chữ phía trước (`esk-ant-api03-…`, `xghp_…`) lọt, và thiếu hẳn gitlab/google/stripe/npm/github_pat. Thêm MỌI mẫu của
+  // `shared/mauBiMat.ts` (cùng quy tắc biên trái với bộ che, qua `nguonCoBien`), nhãn `token-<ten>`. GIỮ các luật cũ: chúng rộng
+  // hơn ở vài chỗ (`sk-` chung, `sk-ant-` bất kỳ thân, slack thân ngắn) — dò thừa là hướng an toàn của bộ quét rò.
+  ...MAU_TOKEN_CO_TIEN_TO.map((m): [string, RegExp] => [`token-${m.ten}`, new RegExp(nguonCoBien(m))]),
 ];
 
 export function kiemMauCam(s: string): string[] {

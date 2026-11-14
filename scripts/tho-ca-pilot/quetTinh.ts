@@ -16,6 +16,7 @@
  * Hạn chế đã biết — người duyệt vẫn là cổng. Bộ quét là regex theo dòng, KHÔNG phải trình phân tích; các dạng sau KHÔNG bị bắt (kiem-dinh đã đo), và KHÔNG cố vá hết bằng regex:
  *   process["env"], `const { env } = process`, `(0, eval)(…)`, `globalThis["ev" + "al"]`, giải mã Buffer / base64 rồi chạy,
  *   đường UNC `\\server\share` và `//server/share`, đường leo thư mục TƯƠNG ĐỐI `../../..` (đường tuyệt đối có `..` thì ĐÃ chuẩn hoá trước khi so với worktree), gọi tiến trình con qua `cp["spawn"](…)`,
+ *   đường mã hoá phần trăm (`..%2f`, `%2e%2e/`) không được giải mã trước khi so với worktree,
  *   dòng bắt đầu bằng `*` mà KHÔNG có dấu đóng khối (vd `*p = fetch(…)`) bị coi là dòng giữa khối chú thích nhiều dòng — cần trạng thái khối qua nhiều dòng, ngoài phạm vi quét theo dòng.
  * Cảnh báo là GỢI Ý cho người duyệt, không phải bằng chứng sạch: không có cảnh báo ≠ an toàn.
  *

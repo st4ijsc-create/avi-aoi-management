@@ -12,6 +12,11 @@
  * different content (R-10-ag), unsigned non-STOP, and the seeded global safety-PLC row (B fix 2 G5 / R-10-aw, owner question).
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+// D2 — this suite drives the STOP sweep's transient session to its OWN fake / sim / loopback devices on the _test DB: the DB-name
+// read (csdlDichStop) is replaced HERE (vitest only — the production module has no switch, no env, no export) so the sweep takes
+// its normal path. Without it the sweep simulates on _test (D2) and the owed STOPs of this suite stay pending.
+vi.mock("../robot/csdlDichStop", () => ({ docCsdlDichStop: vi.fn(() => ({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null })) }));
+import { docCsdlDichStop } from "../robot/csdlDichStop";
 
 vi.hoisted(() => {
   if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "f1-dot10-attack-session-secret-0123456789abcd";
@@ -123,6 +128,16 @@ const hooks: CentralTestHooks = {
     return t;
   },
 };
+
+// D2 canary — chạy TRƯỚC mọi ca DB, không chạm DB: vi.mock("../robot/csdlDichStop") ở đầu tệp phải có hiệu lực (deviceOwnershipService import đúng
+// mô-đun đó). Không ăn ⇒ vòng quét trên _test mô phỏng (D2) và các ca STOP bên dưới đỏ vì lý do KHÁC — ca này đỏ trước, nói rõ.
+describe("D2 canary — vi.mock(csdlDichStop) có hiệu lực", () => {
+  it("docCsdlDichStop là hàm mock và trả chac-khong-phai-test", () => {
+    console.log("[D2 canary]", import.meta.url, "— docCsdlDichStop là mock:", vi.isMockFunction(docCsdlDichStop)); // không có đường thuần (không DB) nào trong deviceOwnershipService tới csdlDichStop / driverRegistry khi DB sống
+    expect(vi.isMockFunction(docCsdlDichStop), "D2: vi.mock('../robot/csdlDichStop') KHÔNG có hiệu lực — vòng quét sẽ mô phỏng trên _test; các ca STOP của tệp này không còn nghĩa").toBe(true);
+    expect(docCsdlDichStop(), "D2: mock csdlDichStop trả sai giá trị").toEqual({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null });
+  });
+});
 
 describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — attack suite through the real HTTP surface (design §5b)", () => {
   beforeAll(async () => {

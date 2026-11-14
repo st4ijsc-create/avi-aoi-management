@@ -1611,10 +1611,28 @@ export default function OrchestrationStudio() {
     }
   };
 
+  /** Luật đầu vào step id MỚI: mỗi mã lỗi của server có câu i18n RIÊNG nêu đúng lý do (ký tự / độ dài / tiền tố abort: / dấu riêng). */
+  const stepIdRefusalText = (e: { path: string; code?: string; kyTu?: string; doDai?: number; toiDa?: number }): string => {
+    const path = e.path;
+    switch (e.code) {
+      case "STEP_ID_TOO_LONG":
+        return t("studio.deployStepIdQuaDai", "Not deployed: the step id at {{path}} is {{doDai}} characters long; the limit is {{toiDa}}. Shorten it, then deploy again.", { path, doDai: e.doDai ?? 0, toiDa: e.toiDa ?? 0 });
+      case "STEP_ID_ABORT_PREFIX":
+        return t("studio.deployStepIdTienToAbort", "Not deployed: the step id at {{path}} starts with \"abort:\", which is reserved. Rename the step, then deploy again.", { path });
+      case "STEP_ID_RESERVED_MARKER":
+        return t("studio.deployStepIdDauHieuRieng", "Not deployed: the step id at {{path}} contains the reserved marker \"[[A2N\". Rename the step, then deploy again.", { path });
+      default:
+        return t("studio.deployStepIdKyTu", "Not deployed: the step id at {{path}} contains {{kyTu}}. A step id may not contain \",\" \"(\" \")\" or a line break — rename the step, then deploy again.", { path, kyTu: e.kyTu ?? "" });
+    }
+  };
   const deployM = trpc.orchestration.deployWorkflow.useMutation({
     onSuccess: (r) => {
       if (r?.ok) { toast.success(t("studio.deployed", "Workflow saved / deployed")); void workflowsQ.refetch(); }
-      else toast.error(definitionRefusalText(r) ?? r?.message ?? t("studio.deployFail", "Deploy failed"));
+      else {
+        // luật đầu vào step id MỚI: server trả errors[] có code STEP_ID_FORBIDDEN_CHAR + path + kyTu ⇒ câu i18n nêu đúng ký tự và vị trí step.
+        const kyTuId = r?.errors?.find((e) => e.code?.startsWith("STEP_ID_"));
+        toast.error(kyTuId ? stepIdRefusalText(kyTuId) : definitionRefusalText(r) ?? r?.message ?? t("studio.deployFail", "Deploy failed"));
+      }
     },
     onError: (e) => toastTrpcError(e),
   });

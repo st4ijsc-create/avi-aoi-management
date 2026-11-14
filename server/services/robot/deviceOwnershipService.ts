@@ -26,6 +26,7 @@ import { getDb } from "../../db/connection";
 import { withDeadline } from "../ot/drivers/boundedClose";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { STOP_DB_STEP_DEADLINE_MS } from "./stopJob";
+import { docCsdlDichStop } from "./csdlDichStop";
 
 export type DeviceKind = "robot" | "adapter";
 export interface CentralStopOutcome {
@@ -181,7 +182,7 @@ export async function sweepPendingCentralStops(opts: { device?: { kind: DeviceKi
     if (opts.device) {
       const sent = await sendCentralStop(opts.device.kind, opts.device.id);
       const notSent = sent.sent === "simulated"; // fix review 6 (NF5-5)
-      void raiseCentralStopAlert(opts.device.kind, opts.device.id, opts.actorUserId ? [opts.actorUserId] : [], notSent ? `pending STOP requests could not be read (${errText(err)}) and the STOP was NOT SENT: central control is off (${sent.detail}) — stop the equipment on site (hardware E-STOP)` : `pending STOP requests could not be read (${errText(err)}); a STOP was ${sent.sent} anyway`);
+      void raiseCentralStopAlert(opts.device.kind, opts.device.id, opts.actorUserId ? [opts.actorUserId] : [], notSent ? `pending STOP requests could not be read (${errText(err)}) and the STOP was NOT SENT: ${notSentWhy(sent)} — stop the equipment on site (hardware E-STOP)` : `pending STOP requests could not be read (${errText(err)}); a STOP was ${sent.sent} anyway`);
       return [{ requestIds: [], outcome: sent.ok && sent.sent === "sent" ? "done" : "failed", sent: sent.sent, detail: sent.detail, ackErrors: [], ...(notSent ? { notSent: true as const } : {}) }];
     }
     // final fix wave (M-2) — a DB without 0374 (the new build deployed before the migrations) is said ONCE, not every 10 s
@@ -222,7 +223,7 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
     const episodeKey = `${kind}:${deviceId}`;
     const repeat = force && !deviceScoped && busyEpisodeAlerted.get(episodeKey) === sent.sent;
     if (force && !deviceScoped) busyEpisodeAlerted.set(episodeKey, sent.sent);
-    if (!repeat) void raiseCentralStopAlert(kind, deviceId, actorUserId ? [actorUserId] : [], notSent ? `the pending STOP requests could not be read/locked (${why}) and the STOP was NOT SENT: central control is off (${sent.detail}) — stop the equipment on site (hardware E-STOP)` : `the pending STOP requests could not be read/locked (${why}); a STOP was ${sent.sent} anyway (${sent.detail}) — the requests are acknowledged by the next sweep`);
+    if (!repeat) void raiseCentralStopAlert(kind, deviceId, actorUserId ? [actorUserId] : [], notSent ? `the pending STOP requests could not be read/locked (${why}) and the STOP was NOT SENT: ${notSentWhy(sent)} — stop the equipment on site (hardware E-STOP)` : `the pending STOP requests could not be read/locked (${why}); a STOP was ${sent.sent} anyway (${sent.detail}) — the requests are acknowledged by the next sweep`);
     return { requestIds: [], outcome: sent.ok && sent.sent === "sent" ? "done" : "failed", sent: sent.sent, detail: sent.detail, ackErrors: [], ...(notSent ? { notSent: true as const } : {}) };
   };
   const db = await getDb().catch(() => null);
@@ -233,6 +234,7 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
   /** R-10-ay — requests central executes because the device's EDGE owner answered notOwnedHere (it cannot list the device) */
   let cannotList: number[] = [];
   let notSentAlert = false;
+  let notSentTestDb = false;
   let deviceBusy = false;
   try {
     await db.transaction(async (tx) => {
@@ -274,7 +276,7 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
           return;
         }
         try {
-          await tx.transaction(async (sp) => recordCentralStopAttempt(sp, { kind, deviceId, ok: false, detail: `NOT SENT — central control is off (${sent.detail})` }));
+          await tx.transaction(async (sp) => recordCentralStopAttempt(sp, { kind, deviceId, ok: false, detail: `NOT SENT — ${notSentWhy(sent)}` }));
         } catch (err) {
           console.error(`[DeviceOwner] the not-sent central STOP attempt on ${kind} ${deviceId} could not be recorded: ${errText(err)}`);
         }
@@ -282,6 +284,7 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
         recipients = [...new Set(pending.map((p) => p.requestedBy).concat(actorUserId ? [actorUserId] : []))];
         cannotList = pending.filter((p) => p.cannotList).map((p) => p.requestId);
         notSentAlert = true;
+        notSentTestDb = sent.testDb === true;
         return;
       }
       const result: "done" | "failed" = sent.ok && sent.sent === "sent" ? "done" : "failed";
@@ -315,7 +318,7 @@ async function executeDeviceStopsLocked(kind: DeviceKind, deviceId: number, acto
   }
   const o = outcome as CentralStopOutcome | null;
   if (o && notSentAlert) {
-    void raiseCentralStopAlert(kind, deviceId, recipients, `the STOP was NOT SENT: central control is off (${o.detail}) — requests ${o.requestIds.map((i) => `#${i}`).join(", ")} stay PENDING${cannotList.length > 0 ? " (its edge owner cannot list the device)" : ""}. Stop the equipment on site (hardware E-STOP) or enable central control`);
+    void raiseCentralStopAlert(kind, deviceId, recipients, `the STOP was NOT SENT: ${notSentWhy({ detail: o.detail, testDb: notSentTestDb })} — requests ${o.requestIds.map((i) => `#${i}`).join(", ")} stay PENDING${cannotList.length > 0 ? " (its edge owner cannot list the device)" : ""}. Stop the equipment on site (hardware E-STOP)${notSentTestDb ? "" : " or enable central control"}`);
     return o;
   }
   if (o?.notSent) return o; // rate-limited repeat of the not-sent case (recorded + alerted within the last window)
@@ -350,16 +353,36 @@ export async function sendCentralRobotStop(
   }
 }
 
-/** One STOP to the device through central's path. Never throws. */
-async function sendCentralStop(kind: DeviceKind, deviceId: number): Promise<{ ok: boolean; sent: "sent" | "simulated" | "failed"; detail: string }> {
+/** One STOP to the device through central's path — the STOP sweep's only sender (D2: `fromSweep`). Never throws. */
+async function sendCentralStop(kind: DeviceKind, deviceId: number): Promise<{ ok: boolean; sent: "sent" | "simulated" | "failed"; detail: string; testDb?: true }> {
   try {
-    return kind === "robot" ? await sendRobotStop(deviceId) : await sendAdapterStop(deviceId);
+    return kind === "robot" ? await sendRobotStop(deviceId, undefined, true) : await sendAdapterStop(deviceId, true);
   } catch (err) {
     return { ok: false, sent: "failed", detail: errText(err) };
   }
 }
 
-async function sendRobotStop(robotId: number, prefetched?: Promise<import("./robotStopRow").RobotStopRowRead>): Promise<{ ok: boolean; sent: "sent" | "simulated" | "failed"; detail: string }> {
+/**
+ * D2 (chủ dự án duyệt 14/11, phương án (x)) — ONLY the STOP sweep's transient session: on a DB that is CERTAINLY `_test`
+ * (csdlDichStop) it is not opened ("simulated" ⇒ the sweep's NOT SENT record + CRITICAL alert). DB name not determinable ⇒ sent as
+ * before, and ONE critical alert per process. No env / flag / export opens it.
+ */
+let dbNameUnknownAlerted = false;
+function sweepTestDbStop(what: string): { ok: true; sent: "simulated"; detail: string; testDb: true } | null {
+  const d = docCsdlDichStop();
+  if (d.trangThai === "chac-la-test") return { ok: true, sent: "simulated", detail: `this server's DB is a _test DB (${d.ten}) — the central transient STOP session was not opened — ${what}`, testDb: true };
+  if (d.trangThai === "khong-xac-dinh" && !dbNameUnknownAlerted) {
+    dbNameUnknownAlerted = true;
+    // fixed grep code D2_DB_NAME_UNKNOWN, once per process: without a pool the alert below reaches no inbox (log + alert stream only)
+    console.error(`[DeviceOwner] D2_DB_NAME_UNKNOWN — the name of this server's DB could not be determined (${d.lyDo}): the STOP sweep cannot tell a _test DB, transient STOP sessions are opened as before`);
+    void raiseDbNameUnknownAlert(d.lyDo ?? "unknown").catch(() => undefined);
+  }
+  return null;
+}
+/** Why a "simulated" sweep STOP was not sent: the D2 `_test` guard, else central control off (dry-run). */
+const notSentWhy = (s: { detail: string; testDb?: boolean }) => (s.testDb ? s.detail : `central control is off (${s.detail})`);
+
+async function sendRobotStop(robotId: number, prefetched?: Promise<import("./robotStopRow").RobotStopRowRead>, fromSweep = false): Promise<{ ok: boolean; sent: "sent" | "simulated" | "failed"; detail: string; testDb?: true }> {
   const { getActiveRobot } = await import("./robotManager");
   if (getActiveRobot(robotId)) {
     const { dispatchRobotJob } = await import("./robotCommandDispatcher");
@@ -368,6 +391,8 @@ async function sendRobotStop(robotId: number, prefetched?: Promise<import("./rob
   }
   // no session (central skipped the robot while an edge owned it): a transient one, bounded
   if (process.env.ROBOT_CONTROL_ENABLED !== "true") return { ok: true, sent: "simulated", detail: "dry-run (ROBOT_CONTROL_ENABLED off) — nothing sent" };
+  const d2 = fromSweep ? sweepTestDbStop("nothing was sent") : null; // D2 — before the robot row read and the driver
+  if (d2) return d2;
   // R-10-ak — the row read before the send is bounded by the STOP bound; unreadable ⇒ failed (the caller alerts)
   // NF-2 — one bounded read (prefetched by the console at request entry, in parallel with its owner read)
   const { prefetchRobotStopRow } = await import("./robotStopRow");
@@ -404,7 +429,7 @@ export async function sendCentralAdapterStop(adapterId: number): Promise<{ ok: b
   }
 }
 
-async function sendAdapterStop(adapterId: number): Promise<{ ok: boolean; sent: "sent" | "simulated" | "failed"; detail: string }> {
+async function sendAdapterStop(adapterId: number, fromSweep = false): Promise<{ ok: boolean; sent: "sent" | "simulated" | "failed"; detail: string; testDb?: true }> {
   const db = await getDb();
   if (!db) return { ok: false, sent: "failed", detail: "database unavailable (stop pins)" };
   const { loadStopPins } = await import("../ot/stopPin");
@@ -435,6 +460,8 @@ async function sendAdapterStop(adapterId: number): Promise<{ ok: boolean; sent: 
   let executed: Awaited<ReturnType<typeof executeOtDeviceWrite>>;
   if (running) executed = await write(running);
   else {
+    const d2 = fromSweep ? sweepTestDbStop("the pinned stop was not written") : null; // D2 — no running driver: before the load / driver
+    if (d2) return d2;
     const { loadEnabledAdapters } = await import("../ot/deviceAdapter");
     // R-10-ay — the adapter may be EDGE-owned (its owner cannot list it): central's transient STOP loads it anyway
     const a = (await loadEnabledAdapters({ includeEdgeOwned: true })).find((x) => x.adapterId === adapterId);
@@ -500,6 +527,7 @@ function rateLimited(m: Map<string, number>, key: string, everyMs: number): bool
 export function _resetSweepRateLimitsForTests(): void {
   notSentRecorded.clear();
   cannotListAlerted.clear();
+  dbNameUnknownAlerted = false;
 }
 
 /** R-10-ba — a request is never acked without a recorded central STOP execution. */
@@ -541,6 +569,21 @@ function raiseCentralStopAlert(kind: DeviceKind, deviceId: number, recipients: n
       entityId: deviceId,
     }),
   );
+}
+
+/** D2 — the sweep cannot tell whether its DB is `_test` (once per process): durable CRITICAL to the active admins (URGENT, cap-exempt). */
+async function raiseDbNameUnknownAlert(why: string): Promise<void> {
+  const db = await getDb().catch(() => null);
+  const to = db ? rowsOf(await withDeadline(Promise.resolve(db.execute(sql`SELECT id FROM public.users WHERE "isActive" = true AND role = 'admin'`)), STOP_DB_STEP_DEADLINE_MS, "db-name alert recipients").catch(() => [])).map((u) => Number(u.id)) : [];
+  const { raiseCriticalStopAlert } = await import("./criticalStopAlert");
+  await raiseCriticalStopAlert({
+    kind: "central_stop_db_name_unknown",
+    title: "STOP sweep: this server's database name could not be determined",
+    message: `The name of the database this server connects to could not be determined (${why}), so the STOP sweep cannot tell whether it runs on a _test DB: STOPs owed are sent as before on transient sessions. Check DATABASE_URL.`,
+    recipients: to,
+    dedupKey: `central_stop_db_name_unknown:${process.pid}`,
+    entityType: "robot",
+  });
 }
 
 // ── R-10-v — live application of ownership (this process + other replicas) ──────────────────────────────────────────
