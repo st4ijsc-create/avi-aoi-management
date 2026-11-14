@@ -95,6 +95,9 @@ const CA: Ca[] = [
   { ten: "?database= rỗng, user _test", url: "postgres://u_test:p@h/aoi_management?database=", mong: LA },
   { ten: "?dbname= (libpq) không được đọc ⇒ PGDATABASE", url: "postgres://u:p@h/?dbname=aoi_management", env: { PGDATABASE: "aoi_management_test" }, mong: LA },
   { ten: "?user= ghi đè user, database đã lùi về user cũ", url: "postgres://u:p@h:5432?user=svc_test", mong: KHONG },
+  // `?database=` rỗng bị bỏ khỏi gói khởi động ⇒ máy chủ lấy tên user ĐÃ bị `?user=` ghi đè (bỏ dòng ghi đè user ⇒ ca đầu GỬI thật trên _test)
+  { ten: "?user=x_test&database= ⇒ tên CSDL là user ghi đè (_test)", url: "postgres://u:p@h/aoi_management?user=x_test&database=", mong: LA },
+  { ten: "?user=aoi_management&database= trên path x_test ⇒ không phải _test", url: "postgres://u:p@h/x_test?user=aoi_management&database=", mong: KHONG },
   // socket
   { ten: "socket postgres:///ten?host=… prod", url: "postgres:///aoi_management?host=/var/run/postgresql", mong: KHONG },
   { ten: "socket postgres:///ten?host=… _test", url: "postgres:///aoi_management_test?host=/var/run/postgresql", mong: LA },
