@@ -2127,11 +2127,14 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
       const hang = (await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId))) as Array<{ stepId: string; status: string }>;
       const au = (await db.transaction(async (sp) => sp.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.runId, runId))).catch(() => null)) as Array<{ stepId: string; supersededAt: unknown; resultStatus?: string | null }> | null;
       const lenh = new Map(allStepsOf(end.def.steps).filter((s) => s.type === "command").map((s) => [s.id, s] as const));
-      const no = stopChuaRaTuHang(hang, ctx);
+      const stops = new Set<string>(); // T4 (I-1, M-1) — STOPs by the definition's own steps (as khongRoCuaDoan): never in what may have gone (L-7)
+      for (const st of lenh.values()) if (await laStopTheoBuoc(st, new Map()).catch(() => false)) stops.add(st.id);
       const ketQuaBiet = new Set(["simulated", "acked", "acked_verified", "rejected"]);
       const coTheDi = (id: string) => au === null || au.some((a) => a.stepId === id && a.supersededAt == null && !ketQuaBiet.has(String(a.resultStatus ?? "")));
-      bu.khongRo = hang.filter((r) => lenh.has(r.stepId) && !no.has(r.stepId) && !["completed", "skipped", "compensated"].includes(r.status) && coTheDi(r.stepId)).map((r) => r.stepId);
+      // T4 (★2) — ∪ what central's rows and ledger already named unknown (a command authorised whose row never came); (I-1) the latch first, then the debt read with it
+      bu.khongRo = [...new Set([...hang.filter((r) => lenh.has(r.stepId) && !stops.has(r.stepId) && !["completed", "skipped", "compensated"].includes(r.status) && coTheDi(r.stepId)).map((r) => r.stepId), ...unknown.filter((id) => lenh.has(id) && !stops.has(id))])];
       if (bu.khongRo[0] && ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] == null && chotTuBao[KET_CUC_KHONG_RO_CHOT_CTX_KEY] == null) bu.chot = { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: bu.khongRo[0], ma: "FOE_OUTCOME_UNKNOWN", at } };
+      const no = stopChuaRaTuHang(hang, { ...ctx, ...chotTuBao, ...bu.chot, [OUTCOME_UNKNOWN_KEY]: [...prevUnknown, ...unknown, ...bu.khongRo] });
       const them: BaoCaoKhongRoEdge[] = [...no].map((id) => {
         const chu = chuBuTruTrongDinhNghia(end.def.steps, id);
         return { loai: "stopNotSent", stepId: chu ? chu.step.id : id, compId: chu ? id : KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: end.claimSeq, biet: true };

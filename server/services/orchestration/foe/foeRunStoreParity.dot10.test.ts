@@ -519,7 +519,8 @@ beforeEach(() => {
     const a = cmd.edge?.authorization;
     if (!a) return;
     for (const r of fake.store.get("edge_step_authorizations") ?? []) {
-      if (r.runId === a.runId && r.stepId === a.stepId && r.attempt === a.attempt) Object.assign(r, { resultReportedAt: new Date(), resultStatus: trangThai ?? (ok ? "simulated" : "rejected") });
+      // T4 (M-8) — as central records it (edgeReportsCentral.ts:635 `resultReportedAt IS NULL`): once, the first result; a second report never overwrites it
+      if (r.runId === a.runId && r.stepId === a.stepId && r.attempt === a.attempt && r.resultReportedAt == null) Object.assign(r, { resultReportedAt: new Date(), resultStatus: trangThai ?? (ok ? "simulated" : "rejected") });
     }
   };
   fake.store.clear();
@@ -18025,6 +18026,8 @@ describe("T4 [H11] / B5 — six damaged forms of the words on the old route (cen
     // the harness journals the timed-out dispatch as the real edge does (robot: "failed"): x authorised, a result that does not say how it went
     expect((fake.store.get("edge_step_authorizations") ?? []).filter((a) => a.runId === x.e.runId && a.stepId === "x").map((a) => a.resultStatus), "x: authorised, its ledger result as the real robot edge writes it").toEqual(["failed"]);
     batBuoc(x, "x", "nt");
+    // T4 (I-2) — the latch's OWN record, from the structured source (the 0372 ledger), not only the list: removing it makes this red
+    expect(x.ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY], "the latch's record").toMatchObject({ stepId: "x", ma: "FOE_OUTCOME_UNKNOWN" });
     expect(x.ctx.foeOutcomeUnknown, "(a) the command whose row carries the code (final) may have gone: never sent again").toEqual(["x"]);
   });
   it("T4-H11-4-MOT (b) the rider broken at the end, the anomaly route arrives LATER (the events journal recovered): each STOP and each command is ONE URGENT, under one key naming the whole id", async () => {
