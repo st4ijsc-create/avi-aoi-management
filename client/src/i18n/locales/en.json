@@ -24928,6 +24928,7 @@
     "xemTatCa": "View all URGENT",
     "thuGon": "Collapse",
     "cu": "The URGENT list could not be refreshed — newer URGENT items may not have arrived.",
+    "khongTai": "The URGENT list could not be loaded — alerts may be missing. Check the orchestration page directly.",
     "chiTiet": "Original server text (English)",
     "loiDanhDau": "Could not record that you read it — try again.",
     "chuGiaiGhim": "Pin = the version lock on a STOP step, used to confirm that what was sent is the approved STOP.",

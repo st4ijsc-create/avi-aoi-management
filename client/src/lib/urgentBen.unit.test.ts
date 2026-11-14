@@ -37,6 +37,14 @@ describe("laUrgentA2n", () => {
   ])("★ %s ⇒ KHÔNG phải URGENT A2(n)", (_t, x) => {
     expect(laUrgentA2n(hang(1, x as Partial<HangThongBao>))).toBe(false);
   });
+  it.each([
+    ["tiền tố ở GIỮA", `x_${TIEN_TO_KIND}edge_stream_stuck`],
+    ["tiền tố ở CUỐI", `edge_${TIEN_TO_KIND}`],
+    ["tiền tố viết hoa", TIEN_TO_KIND.toUpperCase() + "x"],
+    ["tiền tố thiếu dấu _ cuối", "foe_outcome_unknown"],
+  ])("★ P3 u3: kind %s ⇒ KHÔNG phải URGENT A2(n) (chỉ startsWith, không includes)", (_t, kind) => {
+    expect(laUrgentA2n(hang(1, { metadata: { kind } }))).toBe(false);
+  });
   it("kind LẠ nhưng đúng tiền tố ⇒ vẫn là URGENT (hiện bằng title, không bao giờ ẩn), khoaNhan = null", () => {
     const g = phanNhomUrgent([hang(1, { metadata: { kind: `${TIEN_TO_KIND}kind_moi_chua_co_nhan` } })]);
     expect(g.chuaDoc).toHaveLength(1);
