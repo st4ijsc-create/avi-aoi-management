@@ -220,3 +220,17 @@ describe("T9 lượt sửa 3e (A1-13) — a row with no door's code proves nothi
     expect(xn({ status: "failed", error: 'FOE_NOT_SENT_RUN_LATCHED: not sent: run latched — command step "y" (test)' }), "the door's code: dropped work").toBe(false);
   });
 });
+
+describe("T9 (người rà fix3de, mục 11) — a rider whose reports name an id holding a rider's marker", () => {
+  it("T9F3E-R11-THUAN an id with ' [[A2N:' or ' [[A2N-THIEU:': the rider is read whole, every report back, the id intact; a marker at the end that does not parse is read SHORT (fail-closed)", () => {
+    for (const id of ["nt [[A2N:a", "nt [[A2N-THIEU:a", "x]] [[A2N:[]]"]) {
+      const bao = [{ loai: "stopNotSent", stepId: id, compId: "-", ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }] as BaoCaoKhongRoEdge[];
+      const w = ganBaoCaoKhongRoEdge("FOE_STOP_NOT_SENT: STOP (test)", bao, 4000)!;
+      const t = tachBaoCaoKhongRoEdge(w);
+      expect(t, id).toEqual({ error: "FOE_STOP_NOT_SENT: STOP (test)", bao });
+    }
+    expect(tachBaoCaoKhongRoEdge("text [[A2N:[{not json]]").thieu, "a marker at the end, no JSON").toBe(true);
+    expect(tachBaoCaoKhongRoEdge("text [[A2N:{}]]"), "not a list").toMatchObject({ bao: [], thieu: true });
+    expect(tachBaoCaoKhongRoEdge("plain text").thieu, "no marker: nothing rode").toBeUndefined();
+  });
+});

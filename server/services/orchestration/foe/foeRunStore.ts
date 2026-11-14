@@ -2061,7 +2061,8 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     const hangKr = await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
     let uyQuyen: Set<string> | null = null;
     try {
-      const au = (await db.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.runId, runId))) as Array<{ stepId: string; supersededAt: unknown }>;
+      // a SAVEPOINT (kiem-dinh): on PostgreSQL a failed statement aborts the whole transaction — the ledger's failure must not take the end's own writes with it
+      const au = (await db.transaction(async (sp) => sp.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.runId, runId)))) as Array<{ stepId: string; supersededAt: unknown }>;
       uyQuyen = new Set(au.filter((a) => a.supersededAt == null).map((a) => a.stepId));
     } catch {
       uyQuyen = null;

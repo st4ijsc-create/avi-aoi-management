@@ -8348,6 +8348,25 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     expect(loi).not.toMatch(/did NOT go out/);
     expect(loi).toContain(SAFE_TAY);
   });
+  // T9 lượt sửa 3e (người rà fix3de, mục 11: probe fix3de-ra\ra\probe\r11.ts.txt, đưa vào làm ca) — a STOP id holding a rider marker (workflowModel forbids no character): the edge × verified pinned
+  // STOP cell, DRIVER_WRITE_FAILED: the segment end's rider must still carry its reports, so central raises the URGENT of that STOP
+  for (const L of ["nt [[A2N:a", "nt [[A2N-THIEU:a"] as const) {
+    it(`T9F3E-R11 the STOP id ${JSON.stringify(L)}: the end's rider is read whole, the stop_not_sent URGENT of that STOP raised`, async () => {
+      seedHalt();
+      h.ghim = PIN_OK;
+      const e = await denBuoc(def(`f3er11${L.length}`, [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [otStop(L)])])])]));
+      for (const t of rows("device_tags")) if (t.tagKey === "run") t.stopValue = 0;
+      h.tuChoi.set(L, { status: "failed", error: "DRIVER_WRITE_FAILED: link reset", detail: { edge: true, reason: "DRIVER_WRITE_FAILED" } });
+      mien.add(L);
+      h.slow.set("x", 10);
+      h.timeoutDispatch.add("x");
+      await edgeSegment(e, 2);
+      await wait(80);
+      expect(runRow(e.runId).status).toBe("held");
+      const urg = h.alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.stopNotSent && String(a.dedupKey).includes(L));
+      expect([...new Set(urg.map((a) => String(a.dedupKey)))], `the URGENT of STOP ${JSON.stringify(L)}: ${h.alerts.map((a) => a.kind).join(",")}`).toHaveLength(1);
+    });
+  }
   it("T9F1-Q2-EDGE the words of Q2-ABORT-T7b edge's hold (the package's stopsUnsure, ADAPTER_OFFLINE): central composes them: not verified, nothing written, the promise a condition", async () => {
     const { e } = await q2Edge("t9q2ed", (e) => {
       goiChuaDoc("nt")(e);

@@ -1068,7 +1068,9 @@ export function ganBaoCaoKhongRoEdge(error: string | undefined, bao: readonly Ba
   if ((j >= 0 ? j + 1 : e.length) <= ngan) return `${e.slice(0, ngan)}${s}`;
   return `${`${DAU_DS_KHONG_RO_EDGE})${j >= 0 ? e.slice(j + 1) : ""}`.slice(0, ngan)}${s}`;
 }
-const riderCua = (bao: readonly BaoCaoKhongRoEdge[], thieu: boolean): string => `${thieu ? BAO_CAO_DAU_THIEU : BAO_CAO_DAU}${JSON.stringify(bao)}${BAO_CAO_CUOI}`;
+// T9 (người rà fix3de, mục 11) — an id may hold a rider's marker (workflowModel forbids no character): every "[[A2N" inside the JSON is written [[A2N (only a JSON string can hold it; JSON.parse gives the id back), so the
+// rider's own marker is the only one in it
+const riderCua = (bao: readonly BaoCaoKhongRoEdge[], thieu: boolean): string => `${thieu ? BAO_CAO_DAU_THIEU : BAO_CAO_DAU}${JSON.stringify(bao).replace(/\[\[A2N/g, "\\u005b[A2N")}${BAO_CAO_CUOI}`;
 /** T9 lượt sửa 3e — a rider that lost reports to the floor of the text: never one that looks whole */
 const BAO_CAO_DAU_THIEU = " [[A2N-THIEU:";
 /**
@@ -1106,9 +1108,10 @@ export function tachBaoCaoKhongRoEdge(error: string | undefined, hopLe: (x: BaoC
   try {
     const v = JSON.parse(error.slice(i + (thieu ? BAO_CAO_DAU_THIEU : BAO_CAO_DAU).length, -BAO_CAO_CUOI.length)) as unknown;
     const bao = Array.isArray(v) ? v.map((x) => docAnomalyKhongRo(JSON.stringify(x))).filter((x): x is BaoCaoKhongRoEdge => x !== null && hopLe(x)) : [];
-    return { error: error.slice(0, i) || undefined, bao, ...(thieu ? { thieu: true as const } : {}) };
+    return { error: error.slice(0, i) || undefined, bao, ...(thieu || !Array.isArray(v) ? { thieu: true as const } : {}) };
   } catch {
-    return { error, bao: [] };
+    // T9 (người rà fix3de, mục 11) — a marker at the end that does not parse: never read as a whole rider with no report — short (fail-closed)
+    return { error, bao: [], thieu: true };
   }
 }
 
