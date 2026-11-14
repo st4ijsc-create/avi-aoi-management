@@ -1,6 +1,6 @@
 /**
  * Họ đầu vào XẤU cho bộ che `cheDuLieu.cheChuoi` (ReDoS / bậc hai) — MỘT nguồn cho:
- *   · ca thời gian `cheDuLieu.test.ts` ("thời gian TUYẾN TÍNH với đầu vào xấu", rà kiem-dinh F);
+ *   · ca thời gian `cheDuLieu.thoiGian.test.ts` ("thời gian TUYẾN TÍNH với đầu vào xấu", rà kiem-dinh F; cổng chạy tệp đó MỘT MÌNH);
  *   · ca tất định `cheDuLieu.redos.test.ts` (A2 — công regex tuyến tính theo n).
  * Mỗi họ: (tên, n ⇒ chuỗi có độ dài ~ tỉ lệ n). Thêm họ mới ở ĐÂY, cả hai ca tự có. Thuần, không import.
  */

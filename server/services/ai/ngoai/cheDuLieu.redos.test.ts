@@ -12,7 +12,7 @@
  * THỨ TỰ (C1): mọi ca TĨNH chạy TRƯỚC, không gọi cheChuoi; mọi lần gọi cheChuoi nằm trong Worker có hạn.
  *
  * ⚠ A1 + A2 KHÔNG bắt: lùi BẬC HAI (đa thức) BÊN TRONG MỘT lần gọi regex (vd `/[^\0]*\0/.test(s)`) và vòng lặp bậc hai KHÔNG dùng regex
- *   (vd quét tay `cheChuoiLienDai`). Phần đó do ca THỜI GIAN trong `cheDuLieu.test.ts` lo — ĐỪNG gỡ ca thời gian vì đã có tệp này.
+ *   (vd quét tay `cheChuoiLienDai`). Phần đó do ca THỜI GIAN trong `cheDuLieu.thoiGian.test.ts` lo — ĐỪNG gỡ ca thời gian vì đã có tệp này.
  */
 import { describe, it, expect, afterEach, vi } from "vitest";
 import path from "node:path";
@@ -261,7 +261,7 @@ describe("A2 — bộ đếm công (tự kiểm, regex tầm thường trên lu�
 
 // ─── A2 + regex đã chạy: cheChuoi CHỈ chạy trong Worker có hạn ──────────────────────────────────────────────────────────────
 describe("A2 — công regex của cheChuoi TUYẾN TÍNH (Worker có hạn) + mọi regex đã chạy", () => {
-  // ⚠ KHÔNG bắt lùi bậc hai BÊN TRONG một lần gọi regex — xem đầu tệp; ca thời gian của cheDuLieu.test.ts vẫn cần.
+  // ⚠ KHÔNG bắt lùi bậc hai BÊN TRONG một lần gọi regex — xem đầu tệp; ca thời gian của cheDuLieu.thoiGian.test.ts vẫn cần.
   let kq: KetQuaA2 | { loi: string } | "het-gio" | undefined;
   const layKq = async (): Promise<KetQuaA2> => {
     kq ??= await chayA2TrongWorker(2_000);
