@@ -225,6 +225,22 @@ describe("cổng AI ngoài — từ chối sớm (không gọi, không sổ)", (
     expect(g.nhan).toHaveLength(0);
   });
 
+  it("bộ che NÉM giữa chừng (từ điển hỏng khi duyệt) ⇒ NGOAI_CHE_HONG, nhà cung cấp KHÔNG được gọi, không hàng sổ, không giữ chỗ", async () => {
+    const g = taoNhaCungCapGia([{ kieu: "tra", noiDung: "ok" }]);
+    const tapHong = {
+      [Symbol.iterator]() {
+        throw new RangeError("che-hong");
+      },
+    } as unknown as ReadonlySet<string>;
+    const truocSo = await soHangSo(A);
+    const truocGiu = await tokenGiu(A);
+    const tuHong = { tenNguoiDung: tapHong, tenKhach: new Set<string>(), tenNhaMay: new Set<string>() };
+    expect(await maLoi(goiAiNgoai(yc(), dep(g, { layTuDien: async () => tuHong })))).toBe("NGOAI_CHE_HONG");
+    expect(g.nhan).toHaveLength(0);
+    expect(await soHangSo(A)).toBe(truocSo);
+    expect(await tokenGiu(A)).toBe(truocGiu);
+  });
+
   it("kiểu: người gọi KHÔNG khai được mức dữ liệu / nhà máy tính trần", () => {
     expectTypeOf<YeuCauGoiNgoai["ngu"]>().not.toHaveProperty("mucDuLieu");
     expectTypeOf<YeuCauGoiNgoai["ngu"]>().not.toHaveProperty("factoryId");
