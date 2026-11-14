@@ -1677,8 +1677,8 @@ export default function OrchestrationStudio() {
     if (r?.reason === "abortUnconfirmed") {
       toast.error(
         kind === "reject"
-          ? t("studio.rejectUnconfirmed", "The rejection could not be confirmed in the database in time. STOP steps handed to the dispatcher: {{sent}}. Check the run and retry.", { sent: stops.sent.length })
-          : t("studio.abortUnconfirmed", "The abort could not be confirmed in the database in time. STOP steps handed to the dispatcher: {{sent}}. Check the run and retry.", { sent: stops.sent.length }),
+          ? t("studio.rejectUnconfirmed", "The rejection could not be confirmed in the database in time. STOP steps handed to the dispatcher: {{sent}}. Check the run and retry.", { sent: soGiaoThat(stops) })
+          : t("studio.abortUnconfirmed", "The abort could not be confirmed in the database in time. STOP steps handed to the dispatcher: {{sent}}. Check the run and retry.", { sent: soGiaoThat(stops) }),
       );
     } else if (ke.dau === "chuaBiet") {
       toast.warning(
