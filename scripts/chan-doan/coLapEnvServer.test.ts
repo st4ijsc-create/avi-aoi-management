@@ -122,6 +122,14 @@ describe("boot-lap.mjs — dungEnvCoLap", () => {
     expect(() => dung({ XLOG_JSON: "1" })).toThrow(/XLOG_JSON/);
   });
 
+  it("KHOA_TAT_DUOC: chiều BẬT (true/1/on/yes) ⇒ ném — đây là cờ nạp model/CUDA; chiều tắt \"0\" trên khoá ngoài ALWAYS_OFF ⇒ được", () => {
+    for (const k of KHOA_TAT_DUOC as string[]) {
+      for (const v of ["true", "1", "on", "yes"]) expect(() => dung({ [k]: v }), `${k}=${v}`).toThrow(new RegExp(k));
+    }
+    expect(dung({ AI_KB_WARM_ON_BOOT: "0" }).AI_KB_WARM_ON_BOOT).toBe("0");
+    expect(dung({ EDGE_FACTORY_DRIFT_ALERT: "0" }).EDGE_FACTORY_DRIFT_ALERT).toBe("0");
+  });
+
   it("cờ cực tính ngược: tắt KHÔNG an toàn ⇒ ném (RBAC_SCOPED_ADMIN, AUDIT_ALL_MUTATIONS, RATE_LIMIT_REDIS)", () => {
     for (const k of ["RBAC_SCOPED_ADMIN", "AUDIT_ALL_MUTATIONS", "RATE_LIMIT_REDIS"]) {
       for (const v of ["false", "off", "0"]) expect(() => dung({ [k]: v }), `${k}=${v}`).toThrow(new RegExp(k));
