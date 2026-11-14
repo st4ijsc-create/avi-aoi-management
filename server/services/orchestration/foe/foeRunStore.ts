@@ -2117,6 +2117,31 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     // fix review 1 — a command the edge sent but could not record: never sent again (foeEngine reads the list on the re-walk)
     const unknown = await khongRoCuaDoan(); // T9 lượt sửa 3e — central's rows and ledger, the words only add
     const prevUnknown = Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : [];
+    // T4 dạng 4, hướng (2) (chu-du-an-HST 14/11, tuyen-cu-chi) — the rider short or unreadable (riderThieu): what it would have carried, from STRUCTURED data (SELECT only, after the run row's lock).
+    // What may have gone (a): a command whose row is not completed / skipped / compensated (a final `failed` too) and that the 0372 ledger shows authorised, not superseded, with no result that
+    // says how it went (none, or not simulated / acked / acked_verified / rejected); the ledger read in a SAVEPOINT, unreadable ⇒ every such row (fail-closed). The latch: the first of them. Every
+    // STOP the rows owe and each of them with no compensation is told under the rider's / anomaly route's own key (kind:run:step:comp:claimN, the whole id) ⇒ a late anomaly is the same URGENT (b)
+    const bu: { chot: Record<string, unknown>; khongRo: string[] } = { chot: {}, khongRo: [] };
+    if (riderThieu === true) {
+      const hang = (await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId))) as Array<{ stepId: string; status: string }>;
+      const au = (await db.transaction(async (sp) => sp.select().from(edgeStepAuthorizations).where(eq(edgeStepAuthorizations.runId, runId))).catch(() => null)) as Array<{ stepId: string; supersededAt: unknown; resultStatus?: string | null }> | null;
+      const lenh = new Map(allStepsOf(end.def.steps).filter((s) => s.type === "command").map((s) => [s.id, s] as const));
+      const no = stopChuaRaTuHang(hang, ctx);
+      const ketQuaBiet = new Set(["simulated", "acked", "acked_verified", "rejected"]);
+      const coTheDi = (id: string) => au === null || au.some((a) => a.stepId === id && a.supersededAt == null && !ketQuaBiet.has(String(a.resultStatus ?? "")));
+      bu.khongRo = hang.filter((r) => lenh.has(r.stepId) && !no.has(r.stepId) && !["completed", "skipped", "compensated"].includes(r.status) && coTheDi(r.stepId)).map((r) => r.stepId);
+      if (bu.khongRo[0] && ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] == null && chotTuBao[KET_CUC_KHONG_RO_CHOT_CTX_KEY] == null) bu.chot = { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: bu.khongRo[0], ma: "FOE_OUTCOME_UNKNOWN", at } };
+      const them: BaoCaoKhongRoEdge[] = [...no].map((id) => {
+        const chu = chuBuTruTrongDinhNghia(end.def.steps, id);
+        return { loai: "stopNotSent", stepId: chu ? chu.step.id : id, compId: chu ? id : KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: end.claimSeq, biet: true };
+      });
+      for (const id of bu.khongRo) if (!lenh.get(id)?.compensation) them.push({ loai: "noCompensation", stepId: id, compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: end.claimSeq });
+      for (const b of them) {
+        if (baoKhongRo.some((x) => x.loai === b.loai && x.stepId === b.stepId && x.compId === b.compId)) continue;
+        void cachEdgeTrungTam(runId, end.def, b).then((k) => canhBaoTuBaoCaoEdge(runId, b, run.startedBy ?? null, k)).catch(() => false);
+      }
+    }
+    if (bu.khongRo.length) unknown.push(...bu.khongRo);
     return write("held", {
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
@@ -2136,6 +2161,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
         // A2(n) T5 — state C alone holds no compensation for a person: as central's own walk, no marker
         ...(reason === "outcomeUnknown" && (!error?.startsWith(`${FOE_STOP_NOT_SENT}:`) || baoKhongRo.some((x) => x.loai === "held")) ? { [KET_CUC_KHONG_RO_CTX_KEY]: dauKhongRoTuEdge(end, at, baoKhongRo) } : {}),
         ...chotTuBao,
+        ...bu.chot,
       },
     });
   };

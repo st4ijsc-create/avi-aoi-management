@@ -217,6 +217,13 @@ export const HAM_TRUNG_GIAN: readonly { ten: string; nguon: string; lyDo: string
   { ten: "laLoiCuaKhoa", nguon: "A1-20", lyDo: "mã trong chữ khối chứa ⇒ đi vào khối để nêu việc bị bỏ" },
   { ten: "standardCodeToReason", nguon: "A1-40", lyDo: "từ khoá trong mã báo động ⇒ loại Andon safety" },
   { ten: "decodeRobotMode", nguon: "A1-39", lyDo: "chữ dashboard UR ⇒ mode robot" },
+  // T4 (chu-du-an-HST 14/11, hướng (2): vá lỗ census) — hai hàm đọc chữ bên trong (qua chotTuHang / stopChuaRaTuHang / viChuaRaCuaLoi / loiLaKetCucKhongRo) mà trước đây không có tên ⇒ nơi gọi chúng không bị thấy
+  { ten: "quyetDinhKetThucAnh", nguon: "T4 (MOI)", lyDo: "cổng kết thúc run: chốt (chotTuHang), nợ STOP (stopChuaRaTuHang), mã [MA] (viChuaRaCuaLoi) đọc từ chữ hàng ⇒ held / terminal / URGENT" },
+  { ten: "edgeResumeStateOf", nguon: "T4 (MOI)", lyDo: "trạng thái tiếp tục của run edge từ hàng + sổ; cờ khongRo đọc từ chữ hàng (loiLaKetCucKhongRo) ⇒ không gửi lại / bù trừ cần người" },
+  // T4 (HST hướng (b), sau đối chiếu của kiem-dinh 14/11, `_kd_out\htg_out.txt`) — ba hàm bọc nữa
+  { ten: "buTruBiChanKhongRo", nguon: "T4 (MOI)", lyDo: "bù trừ bị chặn vì kết cục không rõ: đọc chữ hàng / resume state (loiLaKetCucKhongRo) ⇒ /authorize từ chối outcome_unknown_held" },
+  { ten: "baoCaoKhongRoTuHang", nguon: "T4 (MOI), A1-36", lyDo: "báo cáo không rõ của đoạn edge chết từ hàng + sổ (edgeResumeStateOf, chữ hàng) ⇒ dấu + URGENT" },
+  { ten: "priorStepsOf", nguon: "T4 (MOI), A1-2", lyDo: "settled / attempted từ hàng (laHangChuaRa: chữ FOE_STOP_NOT_SENT) ⇒ bước đã xong hay phải gửi lại" },
 ];
 const TEN_TRUNG_GIAN = new Set(HAM_TRUNG_GIAN.map((h) => h.ten));
 
@@ -507,7 +514,8 @@ export interface DongDongBang {
   ma: string;
   lyDo: string;
   /** Chỉ còn cần cho tuyến complete/anomaly cũ (HST chọn phương án (B) ngày 14/11: giữ giao thức 2, thêm tuyến mới có cấu trúc). */
-  nhan?: "tuyen-cu-chi";
+  /** T4 (HST + dieu-phoi 14/11) — `hien-thi`: chỉ phục vụ màn hình, không quyết an toàn (quyết định thật ở nơi khác, ghi trong lý do). */
+  nhan?: "tuyen-cu-chi" | "hien-thi";
 }
 
 /**
@@ -611,6 +619,28 @@ const DONG_BANG: readonly DongDongBang[] = [
   { tep: "server/services/orchestration/foe/foeKetCucKhongRo.ts", ham: "tachBaoCaoKhongRoEdge", dang: "goi:docAnomalyKhongRo", chu: "docAnomalyKhongRo(JSON.stringify(x))", ma: "A1-24", lyDo: "tachBaoCaoKhongRoEdge: lọc báo cáo qua docAnomalyKhongRo", nhan: "tuyen-cu-chi" },
   // T4 (chu-du-an-HST 14/11, lần 2) — nơi SOẠN rider, không suy trạng thái: thoát dấu [[A2N trong JSON để dấu của nút là dấu duy nhất (R-i)
   { tep: "server/services/orchestration/foe/foeKetCucKhongRo.ts", ham: "riderCua", dang: ".replace", chu: "JSON.stringify(bao).replace(/\\[\\[A2N/g,\"\\\\u005b[A2N\")", ma: "R-i", lyDo: "riderCua: soạn rider, thoát mọi [[A2N trong JSON (id có dấu rider) ⇒ tachBaoCaoKhongRoEdge chỉ thấy dấu của nút; không đọc chữ", nhan: "tuyen-cu-chi" },
+  // T4 dạng 4, hướng (2) (chu-du-an-HST 14/11) — dòng do sửa: nợ STOP ở held() khi rider thiếu / không đọc được (tập "có thể đã đi" lấy từ sổ 0372, không từ chữ)
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "held", dang: "goi:stopChuaRaTuHang", chu: "stopChuaRaTuHang(hang,ctx)", ma: "A1-3", lyDo: "held (dạng 4: rider thiếu / không đọc được): nợ STOP từ chữ hàng ⇒ URGENT stopNotSent theo đúng khoá của rider / anomaly (fail-closed, không chặn STOP)", nhan: "tuyen-cu-chi" },
+  // T4 (chu-du-an-HST 14/11, hướng (2): vá lỗ census) — dòng lộ ra khi đưa quyetDinhKetThucAnh và edgeResumeStateOf vào HAM_TRUNG_GIAN (mã MOI, ô gốc trong lý do)
+  { tep: "server/services/orchestration/foe/foeEngine.ts", ham: "quyetDinhKetThuc", dang: "goi:quyetDinhKetThucAnh", chu: "quyetDinhKetThucAnh(x,lyDo,hanMs)", ma: "MOI-19", lyDo: "cổng kết thúc của walker trung tâm (ảnh có sẵn), ô gốc A1-14 / A1-3: chốt / nợ STOP từ chữ hàng ⇒ held hoặc URGENT run_end; ĐÓNG (nợ ⇒ held)" },
+  { tep: "server/services/orchestration/foe/foeEngine.ts", ham: "quyetDinhKetThuc", dang: "goi:quyetDinhKetThucAnh", chu: "quyetDinhKetThucAnh({runId:rc.runId,ctx:rc.context,owner:rc.runOwner,rows:src?.hang??null,def:rc.def,boNho:boNhoCua(rc),chiDoi:x.chiDoi},lyDo,hanMs)", ma: "MOI-20", lyDo: "cổng kết thúc của walker trung tâm (từ rc + hàng), ô gốc A1-14 / A1-3 / A1-8; hàng không đọc được ⇒ held; ĐÓNG" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "congCuoi", dang: "goi:quyetDinhKetThucAnh", chu: "quyetDinhKetThucAnh({runId,ctx,owner:run.startedBy??null,rows:hang,def:end.def,daCo,cachNo:cachNoEdge,viNo:viBao,chotTuBao:tuBao?{stepId:tuBao.stepId,ma:tuBao.ma}:null,claimSeq:end.claimSeq},\"edgeSegment\",undefined,KET_DOAN_EDGE_TONG_MS)", ma: "MOI-21", lyDo: "cổng kết thúc của đoạn edge ở trung tâm (T7 C1), ô gốc A1-14 / A1-3: nợ STOP hoặc chốt không có URGENT bền ⇒ held; ĐÓNG" },
+  { tep: "server/services/orchestration/foe/foeEngine.ts", ham: "edgeResumeStateFor", dang: "goi:edgeResumeStateOf", chu: "edgeResumeStateOf(def,rows,authorised,hintUnknown,stops)", ma: "MOI-22", lyDo: "trạng thái tiếp tục run edge khi Continue (hàng + sổ 0372 + hintUnknown), ô gốc B-2 / B-3a / A1-15: khongRo ⇒ không gửi lại, bù trừ cần người; ĐÓNG" },
+  { tep: "server/services/orchestration/foe/foeEngine.ts", ham: "getRun", dang: "goi:edgeResumeStateOf", chu: "edgeResumeStateOf(usable,stepRows,newSet())", ma: "MOI-23", lyDo: "getRun: CHỈ màn hình (khongRoCho cho Studio hỏi lý do); quyết định thật ở resumeRun (MOI-22, B-14); không quyết an toàn", nhan: "hien-thi" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "daGuiTheo", dang: "goi:edgeResumeStateOf", chu: "edgeResumeStateOf(x.def,x.rows,uq,[],x.stops)", ma: "MOI-24", lyDo: "tapKhongRoEdge (A1-22): lệnh đã gửi theo hàng + sổ ⇒ tập không rõ cuối đoạn (HỢP, không bao giờ ít hơn chữ); ĐÓNG" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "baoCaoKhongRoTuHang", dang: "goi:edgeResumeStateOf", chu: "edgeResumeStateOf(def,rows,authorised,[],stops)", ma: "MOI-25", lyDo: "báo cáo không rõ từ hàng + sổ (đoạn edge chết, interruptedForNode, ô gốc A1-36): bù trừ cần người / URGENT; ĐÓNG" },
+  // T4 (HST hướng (b), sau đối chiếu của kiem-dinh 14/11) — dòng lộ ra khi đưa buTruBiChanKhongRo, baoCaoKhongRoTuHang, priorStepsOf vào HAM_TRUNG_GIAN (mã MOI, ô gốc trong lý do)
+  { tep: "server/services/edge/edgeAuthorizeCentral.ts", ham: "authorizeForNode", dang: "goi:buTruBiChanKhongRo", chu: "tham-chieu:buTruBiChanKhongRo", ma: "MOI-26", lyDo: "authorizeForNode (5b): lấy hàm từ import động (tham chiếu), quyết định ở dòng MOI-27" },
+  { tep: "server/services/edge/edgeAuthorizeCentral.ts", ham: "authorizeForNode", dang: "goi:buTruBiChanKhongRo", chu: "buTruBiChanKhongRo(run.contextJsonasRecord<string,unknown>|null,hang,chu.step.id,chu.comp.id)", ma: "MOI-27", lyDo: "/authorize 5b: bù trừ KHÔNG phải STOP của run chốt (ngữ cảnh hoặc chotTuHang của hàng, ô gốc B-12 / A1-14) ⇒ từ chối outcome_unknown_held; STOP không tới đây (L-7). Kế thừa A1-14: hàng mất mã và ngữ cảnh mất chốt ⇒ không chặn" },
+  { tep: "server/services/edge/edgeExecutionCentral.ts", ham: "interruptedForNode", dang: "goi:baoCaoKhongRoTuHang", chu: "baoCaoKhongRoTuHang(defKhongRo,hangBuoc,a.claimSeqasnumber,newSet(uyQuyen.filter((u)=>u.supersededAt==null).map((u)=>u.stepId)),stopIds)", ma: "MOI-28", lyDo: "đoạn edge chết (ô gốc A1-36, I-D): báo cáo + dấu held + URGENT từ hàng + sổ 0372; sổ đọc lỗi ⇒ 503, không ghi gì (ĐÓNG)" },
+  { tep: "server/services/edge/edgeRunStore.ts", ham: "EdgeRunStore.sweepSource", dang: "goi:priorStepsOf", chu: "priorStepsOf(rows)", ma: "MOI-29", lyDo: "quét STOP cục bộ của walker edge (ô gốc A1-2): hàng trạng thái C không settled ⇒ STOP gửi lại. Kế thừa A1-2: hàng mất mã ⇒ settled" },
+  { tep: "server/services/orchestration/foe/foeEngine.ts", ham: "loadCompletedSteps", dang: "goi:priorStepsOf", chu: "priorStepsOf([])", ma: "MOI-30", lyDo: "loadCompletedSteps: không có DB ⇒ prior rỗng kèm unknown: true (tính là đã tác động, R-6-c; ĐÓNG)" },
+  { tep: "server/services/orchestration/foe/foeEngine.ts", ham: "loadCompletedSteps", dang: "goi:priorStepsOf", chu: "priorStepsOf(rows)", ma: "MOI-31", lyDo: "loadCompletedSteps: prior của walk trung tâm (ô gốc A1-2): settled / attempted từ hàng. Kế thừa A1-2" },
+  { tep: "server/services/orchestration/foe/foeEngine.ts", ham: "rcTuHang", dang: "goi:priorStepsOf", chu: "priorStepsOf(hang)", ma: "MOI-32", lyDo: "rcTuHang: ảnh của run chốt đã lưu cho bộ lập kế hoạch Abort (ô gốc A1-2). Kế thừa A1-2" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "edgePriorPictureOf", dang: "goi:priorStepsOf", chu: "priorStepsOf(rows)", ma: "MOI-33", lyDo: "ảnh prior gửi cho đoạn edge kế tiếp (settled / attempted, ô gốc A1-2); hàng không đọc được ⇒ unknown: true. Kế thừa A1-2" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "liveSweepSource", dang: "goi:priorStepsOf", chu: "priorStepsOf(rows)", ma: "MOI-34", lyDo: "nguồn quét Abort của walk sống (ô gốc A1-2). Kế thừa A1-2" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "storedSweepSource", dang: "goi:priorStepsOf", chu: "priorStepsOf([])", ma: "MOI-35", lyDo: "storedSweepSource: hàng không đọc được ⇒ prior rỗng, undecidable ⇒ STOP được gửi (R-6-c; ĐÓNG)" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "storedSweepSource", dang: "goi:priorStepsOf", chu: "priorStepsOf(rows)", ma: "MOI-36", lyDo: "nguồn quét Abort của run đã lưu (ô gốc A1-2). Kế thừa A1-2" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "priorStepsOf", dang: "goi:laHangChuaRa", chu: "laHangChuaRa(r)", ma: "A1-2", lyDo: "priorStepsOf: hàng trạng thái C ⇒ không settled" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "laLoiKhongGuiChot", dang: ".startsWith", chu: "error.startsWith(`${FOE_NOT_SENT_RUN_LATCHED}:`)", ma: "A1-13", lyDo: "thân laLoiKhongGuiChot: tiền tố FOE_NOT_SENT_RUN_LATCHED:" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "laHangMaChuaRa", dang: ".startsWith", chu: "r.error.startsWith(`${FOE_STOP_NOT_SENT}:`)", ma: "A1-1", lyDo: "thân laHangMaChuaRa: tiền tố FOE_STOP_NOT_SENT: ⇒ nợ STOP" },
@@ -696,11 +726,13 @@ const DONG_BANG: readonly DongDongBang[] = [
  * phải bắt: mọi thay đổi `LICH_SU_MOC` / `MOC_GOC` cần số quyết định (QUYET_DINH_MOC) trong commit.
  * Mỗi bước của T1 bỏ dòng: xoá dòng, THÊM một phần tử mới (nhỏ hơn) vào cuối `LICH_SU_MOC`, hạ `SO_DONG_MOC` bằng nó, cùng commit.
  */
-// T4 (chu-du-an-HST, 2026-11-14, lần 2) — mốc đặt lại 161: thêm dòng SOẠN rider ở riderCua (thoát dấu [[A2N, R-i, tuyen-cu-chi); ghim lại phần tử đầu, không ghi [160, 161]. Từ đây chỉ được GIẢM.
-const MOC_GOC = 161;
-const LICH_SU_MOC: readonly number[] = [161];
+// T4 (chu-du-an-HST, 2026-11-14, lần 2) — mốc đặt lại 161: thêm dòng SOẠN rider ở riderCua (thoát dấu [[A2N, R-i, tuyen-cu-chi); ghim lại phần tử đầu, không ghi [160, 161].
+// QUYET_DINH_MOC lần 3 (chu-du-an-HST, 2026-11-14): mốc LICH_SU_MOC = 180 = 161 + 1 (A1-3, held() dạng 4) + 7 (MOI-19…25) + 11 (MOI-26…36); số chạy thật của kiem-dinh trên
+// df934d38e + dung-yen-b.patch. Ghim lại phần tử đầu. Từ đây chỉ được GIẢM.
+const MOC_GOC = 180;
+const LICH_SU_MOC: readonly number[] = [180];
 /** Mốc số dòng đóng băng: bằng phần tử cuối của `LICH_SU_MOC`, chỉ được GIẢM. */
-const SO_DONG_MOC = 161;
+const SO_DONG_MOC = 180;
 
 /**
  * HST 14/11 T2-DK1 — "ngoài tầm" không được thành "ngoài sổ". 21 ô của bảng kiểm kê mà census KHÔNG bắt được (không có phép so chữ để bắt:
@@ -932,7 +964,7 @@ describe("census — chữ không phải trạng thái (central/edge)", () => {
     for (const d of DONG_BANG) {
       expect(d.ma, khoa(d)).toMatch(/^(A1-\d+|B-\d+[a-g]?|C-\d+|E-\d+|R-ii?|MOI-\d+)$/);
       expect(d.lyDo.trim().length, `thiếu lý do: ${khoa(d)}`).toBeGreaterThan(5);
-      if (d.nhan !== undefined) expect(d.nhan).toBe("tuyen-cu-chi");
+      if (d.nhan !== undefined) expect(["tuyen-cu-chi", "hien-thi"], khoa(d)).toContain(d.nhan);
     }
   });
 });

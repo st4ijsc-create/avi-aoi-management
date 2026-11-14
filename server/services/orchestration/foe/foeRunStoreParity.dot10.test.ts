@@ -28,7 +28,7 @@ const h = vi.hoisted(() => ({
   foreignAdapters: new Set<number>(),
   ownershipThrows: false,
   /** fix review 3 — the edge dispatch's LEDGER record (journaled inside sendCommand, BEFORE the walker's result row) */
-  onLedger: null as null | ((cmd: Record<string, any>, ok: boolean) => void),
+  onLedger: null as null | ((cmd: Record<string, any>, ok: boolean, trangThai?: string) => void),
   telemetry: [] as Array<{ key: string; value: unknown }>,
   /** R1b-2b-2a A2(o) AMENDMENT 2 — these steps' NEXT dispatch is refused by the edge's config gate (CONFIG_STALE: nothing sent) */
   staleDispatch: new Set<string>(),
@@ -376,6 +376,9 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
         h.traTimeout++;
         h.sauTimeout?.();
         h.sauTimeout = null;
+        // T4 — as the REAL edge: a timed-out dispatch is journaled too, its status reaches the 0372 row (edgeReportsCentral.ts:634 resultStatus = the ledger record's status). The status is the
+        // dispatcher's: OT "timeout" (otEdgeDispatch.ts rollUp :233-238 ⇒ report :268 status: res.status), robot "failed" (robotDeviceRun.ts:102-117 ⇒ robotEdgeDispatch.ts:91 status: res.status)
+        h.onLedger?.(cmd, false, kind === "robot" ? "failed" : "timeout");
         return { ok: false, status: "timeout", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", error: `no answer from ${stepId}` };
       }
       if (h.staleDispatch.delete(stepId)) {
@@ -512,11 +515,11 @@ beforeEach(() => {
   h.foreignRobots.clear();
   h.foreignAdapters.clear();
   h.ownershipThrows = false;
-  h.onLedger = (cmd, ok) => {
+  h.onLedger = (cmd, ok, trangThai) => {
     const a = cmd.edge?.authorization;
     if (!a) return;
     for (const r of fake.store.get("edge_step_authorizations") ?? []) {
-      if (r.runId === a.runId && r.stepId === a.stepId && r.attempt === a.attempt) Object.assign(r, { resultReportedAt: new Date(), resultStatus: ok ? "simulated" : "rejected" });
+      if (r.runId === a.runId && r.stepId === a.stepId && r.attempt === a.attempt) Object.assign(r, { resultReportedAt: new Date(), resultStatus: trangThai ?? (ok ? "simulated" : "rejected") });
     }
   };
   fake.store.clear();
@@ -1278,8 +1281,8 @@ describe("doc 81 Đợt 10 C — the edge store's own verdicts (no central count
     let stale = false;
     e.staleness = () => (stale ? STALE() : null);
     const ledger = h.onLedger;
-    h.onLedger = (cmd, ok) => {
-      ledger?.(cmd, ok);
+    h.onLedger = (cmd, ok, trangThai) => {
+      ledger?.(cmd, ok, trangThai);
       if (String(cmd.idempotencyKey).includes("-r1-")) stale = true; // central announces a new config right after r1
     };
     const n0 = h.sent.length;
@@ -17959,7 +17962,7 @@ describe("T4 [H11] / B5 — six damaged forms of the words on the old route (cen
    * One segment: a command `lenh` sent, its answer timed out (outcome unknown, no compensation), and a pinned STOP `stop` in a later branch refused by its driver (DRIVER_WRITE_FAILED: it may have
    * reached the device, owed). The events journal is FULL (I-5): the rider on the end is the only road of the reports. `hong` damages the words the node sends; the wire (quaDayThat) carries them.
    */
-  async function doan(ref: string, lenh: string, stop: string, hong: (w: string) => string) {
+  async function doan(ref: string, lenh: string, stop: string, hong: (w: string) => string, soDay = true) {
     const kk = await import("./foeKetCucKhongRo");
     seedHalt();
     h.ghim = PIN_OK;
@@ -17967,7 +17970,7 @@ describe("T4 [H11] / B5 — six damaged forms of the words on the old route (cen
     await edgeSegment(e, 1);
     await approveEdgeGate(e);
     e.events = [];
-    e.eventsRefused = true;
+    e.eventsRefused = soDay; // soDay: the events journal is FULL (I-5)
     for (const t of rows("device_tags")) if (t.tagKey === "run") t.stopValue = 0;
     h.tuChoi.set(stop, { status: "failed", error: "DRIVER_WRITE_FAILED: link reset", detail: { edge: true, reason: "DRIVER_WRITE_FAILED" } });
     h.slow.set(lenh, 10);
@@ -18016,6 +18019,36 @@ describe("T4 [H11] / B5 — six damaged forms of the words on the old route (cen
     const x = await doan("t4h3", "x", "nt", (w) => `${w.replace(RIDER, "")} device said: [[A2N:[]]] and [[A2N-THIEU:[{"loai":"held"}]]${riderCuaChu(w)}`);
     expect(x.day).toContain(' [[A2N-THIEU:[{"loai":"held"}]]');
     batBuoc(x, "x", "nt");
+  });
+  it("T4-H11-4 the rider's JSON broken (a mark at the end that does not parse): read SHORT, never as a whole rider with no report: fail-closed", async () => {
+    const x = await doan("t4h4", "x", "nt", (w) => `${w.replace(RIDER, "")} [[A2N:[{"loai":"stopNotSent","stepId":"nt"]]`);
+    // the harness journals the timed-out dispatch as the real edge does (robot: "failed"): x authorised, a result that does not say how it went
+    expect((fake.store.get("edge_step_authorizations") ?? []).filter((a) => a.runId === x.e.runId && a.stepId === "x").map((a) => a.resultStatus), "x: authorised, its ledger result as the real robot edge writes it").toEqual(["failed"]);
+    batBuoc(x, "x", "nt");
+    expect(x.ctx.foeOutcomeUnknown, "(a) the command whose row carries the code (final) may have gone: never sent again").toEqual(["x"]);
+  });
+  it("T4-H11-4-MOT (b) the rider broken at the end, the anomaly route arrives LATER (the events journal recovered): each STOP and each command is ONE URGENT, under one key naming the whole id", async () => {
+    const kk = await import("./foeKetCucKhongRo");
+    const stop = "nt-co-ten-dai-cho-khoa-day-du-0123456789";
+    const x = await doan("t4h4m", "x", stop, (w) => {
+      // the result kept EMPTY on the 0372 row: the ledger record of x has not reached central yet (its run stream still behind the end)
+      for (const a of fake.store.get("edge_step_authorizations") ?? []) if (a.stepId === "x") Object.assign(a, { resultReportedAt: null, resultStatus: null });
+      return `${w.replace(RIDER, "")} [[A2N:[{"loai":"stopNotSent"]]`;
+    }, false);
+    const khoa = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND, id: string) => h.alerts.filter((a) => String(a.dedupKey).startsWith(`${CANH_BAO_KHONG_RO_KIND[kind]}:${x.e.runId}:${id}:`)).map((a) => String(a.dedupKey));
+    expect(khoa("stopNotSent", stop), "the end itself told the STOP (the rider could not)").toEqual([`${CANH_BAO_KHONG_RO_KIND.stopNotSent}:${x.e.runId}:${stop}:-:claim2`]);
+    expect(khoa("noCompensation", "x")).toEqual([`${CANH_BAO_KHONG_RO_KIND.noCompensation}:${x.e.runId}:x:-:claim2`]);
+    const tre = (x.e.events ?? []).filter((v) => v.kind === "anomaly");
+    expect(tre.length, "the node's anomalies, held back until now").toBe(2);
+    // central's anomaly route (edgeReportsCentral.eventsForNode ⇒ canhBaoTuAnomalyEdge), late
+    for (const rec of tre) expect(await kk.canhBaoTuAnomalyEdge({ code: rec.code, runId: x.e.runId, detail: rec.detail }, true, async () => ({ owner: OWNER.id }))).toBe(true);
+    await wait(40);
+    for (const [kind, id] of [["stopNotSent", stop], ["noCompensation", "x"]] as const) {
+      const ds = khoa(kind, id);
+      expect(ds.length, `${kind} ${id}: both routes raised`).toBe(2);
+      expect(new Set(ds).size, `${kind} ${id}: ONE key ⇒ one URGENT (criticalStopAlert's durable dedup by dedupKey)`).toBe(1);
+    }
+    expect(h.alerts.filter((a) => String(a.dedupKey).includes(`:${x.e.runId}:`)).every((a) => a.khuTrungBenVung != null), "every raise is deduped durably by its key").toBe(true);
   });
   it("T4-H11-5 a command id holding ',' and ')' in the list: the list is not read whole: fail-closed", async () => {
     const id = "x,1)q";
