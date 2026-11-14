@@ -5,7 +5,7 @@
  *   • R-10-al / N6: the sync LISTENs FIRST (bounded — a hung LISTEN does not block it) and only then runs the first reconcile;
  *     a central robot startRobots never tried (moved to central before the first pass) is attached by that first pass.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const H = vi.hoisted(() => ({
   mode: "ok" as "ok" | "hang" | "txfail",
@@ -55,7 +55,7 @@ vi.mock("./robotCommandDispatcher", () => ({
 vi.mock("../ot/otManager", () => ({ isOtGatewayOn: () => false, getActiveAdapter: () => undefined, otAdapterTriedAtStart: () => true }));
 vi.mock("./criticalStopAlert", () => ({ raiseCriticalStopAlert: async (a: { message: string }) => void H.alerts.push(a.message) }));
 
-import { executePendingCentralStops, sendCentralRobotStop, startDeviceOwnershipSync, _resetOwnershipReconcileForTests } from "./deviceOwnershipService";
+import { executePendingCentralStops, sendCentralRobotStop, startDeviceOwnershipSync, _resetOwnershipReconcileForTests, _allowTransientStopOnTestDbForTests } from "./deviceOwnershipService";
 import { STOP_DB_STEP_DEADLINE_MS } from "./stopJob";
 
 beforeEach(() => {
@@ -69,6 +69,10 @@ beforeEach(() => {
   H.alerts.length = 0;
   _resetOwnershipReconcileForTests();
   process.env.ROBOT_CONTROL_ENABLED = "true";
+  _allowTransientStopOnTestDbForTests(true); // D2 — the hung-DB case needs the transient path on the _test DB (no driver is reached)
+});
+afterEach(() => {
+  _allowTransientStopOnTestDbForTests(false);
 });
 
 describe("R-10-ak / N4 — no wait before a STOP longer than the STOP bound", () => {

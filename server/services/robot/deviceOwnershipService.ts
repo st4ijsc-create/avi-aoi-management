@@ -359,6 +359,43 @@ async function sendCentralStop(kind: DeviceKind, deviceId: number): Promise<{ ok
   }
 }
 
+/**
+ * D2 (chủ dự án duyệt 14/11) — the name of the DB this process's pool connects to, read WITHOUT I/O from the same source getDb()
+ * hands postgres.js (`process.env.DATABASE_URL`, server/db/connection.ts) and the way postgres.js 3.4 reads it (src/index.js
+ * parseUrl / parseOptions): a multi-host list is cut to its first host; a `?database=` query parameter overrides the path (it is
+ * sent in the startup message after the path's name); the path is NOT percent-decoded. null = not determinable (no URL, unparsable,
+ * no name — postgres.js would then fall back to PGDATABASE / the user name, which this read does not guess).
+ */
+function centralStopTargetDbName(): string | null {
+  const url = process.env.DATABASE_URL;
+  if (!url) return null;
+  try {
+    const hostPart = url.slice(url.indexOf("://") + 3).split(/[?/]/)[0];
+    const hosts = decodeURIComponent(hostPart.slice(hostPart.indexOf("@") + 1));
+    const u = new URL(url.replace(hosts, hosts.split(",")[0]));
+    const name = u.searchParams.get("database") || u.pathname.slice(1);
+    return name ? name : null;
+  } catch {
+    return null;
+  }
+}
+/** D2 test seam — opens the `_test` guard below. ONLY `*.test.ts` may call it (census in deviceOwnershipService.dbTest.test.ts). */
+let transientStopOnTestDbAllowed = false;
+export function _allowTransientStopOnTestDbForTests(allow: boolean): void {
+  transientStopOnTestDbAllowed = allow;
+}
+/**
+ * D2 — a process whose DB is `_test` (name matches /_test$/) never opens a central STOP session to a device from the DB rows: the
+ * STOP is answered "simulated" (the caller's existing NOT SENT path records it and raises the CRITICAL alert, as for a dry-run).
+ * Name not determinable ⇒ treated as `_test` (fail-closed). No env / flag opens it. Returns the reason, or null when allowed.
+ */
+function testDbStopRefusal(): string | null {
+  if (transientStopOnTestDbAllowed) return null;
+  const name = centralStopTargetDbName();
+  if (name === null) return "DB name unknown — treated as _test (fail-closed)";
+  return /_test$/.test(name) ? `DB _test (${name.slice(0, 63)})` : null;
+}
+
 async function sendRobotStop(robotId: number, prefetched?: Promise<import("./robotStopRow").RobotStopRowRead>): Promise<{ ok: boolean; sent: "sent" | "simulated" | "failed"; detail: string }> {
   const { getActiveRobot } = await import("./robotManager");
   if (getActiveRobot(robotId)) {
@@ -368,6 +405,8 @@ async function sendRobotStop(robotId: number, prefetched?: Promise<import("./rob
   }
   // no session (central skipped the robot while an edge owned it): a transient one, bounded
   if (process.env.ROBOT_CONTROL_ENABLED !== "true") return { ok: true, sent: "simulated", detail: "dry-run (ROBOT_CONTROL_ENABLED off) — nothing sent" };
+  const testDb = testDbStopRefusal(); // D2 — before the robot row read and before any driver
+  if (testDb) return { ok: true, sent: "simulated", detail: `${testDb} — central transient STOP session not opened — nothing sent` };
   // R-10-ak — the row read before the send is bounded by the STOP bound; unreadable ⇒ failed (the caller alerts)
   // NF-2 — one bounded read (prefetched by the console at request entry, in parallel with its owner read)
   const { prefetchRobotStopRow } = await import("./robotStopRow");
@@ -411,6 +450,8 @@ async function sendAdapterStop(adapterId: number): Promise<{ ok: boolean; sent: 
   const pins = await loadStopPins(db, adapterId);
   if (pins.length === 0) return { ok: false, sent: "failed", detail: "the adapter has no pinned stop tag — a software STOP is not possible; use the hardware E-STOP" };
   if (process.env.OT_CONTROL_ENABLED !== "true") return { ok: true, sent: "simulated", detail: "dry-run (OT_CONTROL_ENABLED off) — nothing written" };
+  const testDb = testDbStopRefusal(); // D2 — before the tag rows, the adapter load and any driver (the running one included)
+  if (testDb) return { ok: true, sent: "simulated", detail: `${testDb} — central STOP session not opened, pinned stop not written — nothing sent` };
   const { deviceTags } = await import("../../../drizzle/schema");
   const tagRows = await db.select().from(deviceTags).where(eq(deviceTags.adapterId, adapterId));
   const resolved = pins.map((p) => {

@@ -83,6 +83,7 @@ vi.mock("../services/robot/driverRegistry", async (importOriginal) => ({
 }));
 
 import { robotRouter } from "./robotRouter";
+import { _allowTransientStopOnTestDbForTests } from "../services/robot/deviceOwnershipService";
 
 const engineer = robotRouter.createCaller({ user: { id: 7, role: "engineer", name: "Eng", twoFactorEnabled: true } } as any);
 const saved: Record<string, string | undefined> = {};
@@ -93,8 +94,10 @@ beforeEach(() => {
   process.env.ROBOT_CONTROL_TIMEOUT_MS = "3000";
   Object.assign(H, { mode: "hang", dbCalls: 0, dbCallsAtSend: -1, sent: [], live: true, connectAt: -1, alerts: [] });
   H.t0 = Date.now();
+  _allowTransientStopOnTestDbForTests(true); // D2 — the no-session cases need the transient session on the _test DB (driver is fake)
 });
 afterEach(() => {
+  _allowTransientStopOnTestDbForTests(false);
   for (const [k, v] of Object.entries(saved)) (v === undefined ? delete process.env[k] : (process.env[k] = v));
 });
 

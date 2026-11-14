@@ -10,7 +10,7 @@
  * service. See __edgeE2eHarness.dot10.ts for the instruments; every scenario asserts device counts (the simulators / the
  * edge's counted SIM driver — independent of the product) AND central rows.
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 
 const H = vi.hoisted(() => {
   if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "f1-dot10-e2e-session-secret-0123456789abcdef";
@@ -101,6 +101,12 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — central + edge in two processe
     edge = await c.spawnEdge("a1");
     await c.clearEdgeLock(c.ids.robotA, edge); // the new authority starts LOCKED (fresh journal / ownerChanged) — the operator clears it
   }, 300_000);
+  // D2 — central's transient STOP session to this harness's sim / loopback devices is opened on the _test DB for this suite only:
+  // the cases (beforeEach / afterEach) and the harness teardown's closeOwnStops (afterAll, around c.teardown() — it hands the run's
+  // devices back to central so their owed STOPs are executed). Imported lazily: the harness sets the central env before its imports.
+  const allowTransientStop = async (allow: boolean) => (await import("../robot/deviceOwnershipService"))._allowTransientStopOnTestDbForTests(allow);
+  beforeEach(() => allowTransientStop(true));
+  afterEach(() => allowTransientStop(false));
   afterAll(async () => {
     H.dbMode = "ok";
     try {
@@ -109,7 +115,12 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — central + edge in two processe
     } catch {
       /* not started */
     }
-    await c?.teardown();
+    await allowTransientStop(true);
+    try {
+      await c?.teardown();
+    } finally {
+      await allowTransientStop(false);
+    }
   }, 240_000);
 
   it("★ provisioning by the CLIs: the edge runs on the pinned keyset + its credential file, config verified, devices of ITS node only", async () => {
