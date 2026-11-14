@@ -73,7 +73,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 B — ingest (real _test DB)", () => 
     const trust = await k.sql`SELECT origin FROM safety_event_trust WHERE "eventId" = ${ev.id}`;
     expect(trust.map((t) => t.origin)).toEqual(["edge_robot_telemetry"]);
     // the robot's endpoint changes ⇒ the approved digest no longer matches ⇒ plain
-    await k.sql`UPDATE robots SET endpoint = 'tcp://10.0.0.2' WHERE id = ${k.ids.robotA}`;
+    await k.sql`UPDATE robots SET endpoint = 'tcp://localhost:9' WHERE id = ${k.ids.robotA}`;
     expect((await robotStateForNode(await k.principal("A"), { epoch: ep, stream: "robot_state", records: [st(3, false), st(4, true)] })).http).toBe(200);
     const [ev2] = await k.sql`SELECT id FROM safety_events WHERE "robotId" = ${k.ids.robotA} ORDER BY id DESC LIMIT 1`;
     expect(ev2.id).not.toBe(ev.id);
