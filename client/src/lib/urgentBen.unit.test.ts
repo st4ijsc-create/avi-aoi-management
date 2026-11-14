@@ -131,6 +131,22 @@ describe("lưới 23 kind", () => {
     expect(JSON.stringify((zh as unknown as { urgent: unknown }).urgent)).not.toContain("引脚");
   });
 
+  // Khoá ĐỘNG: VungUrgentBen gọi t(khongTai ? "urgent.khongTai" : "urgent.cu") — i18n:check KHÔNG trích được khoá dạng này,
+  // nên đổi tên/xoá khoá ở en/zh sẽ làm người dùng thấy chuỗi khoá thô đúng ở dải cảnh báo thiếu URGENT. Ghim thẳng ở đây.
+  it.each([["vi", vi], ["en", en], ["zh", zh]] as const)("★ khoá động urgent.khongTai và urgent.cu có mặt, KHÔNG rỗng ở %s (không lộ chuỗi khoá thô)", (ten, loc) => {
+    const u = (loc as unknown as { urgent: Record<string, unknown> }).urgent;
+    for (const k of ["khongTai", "cu"]) {
+      expect(typeof u[k], `${ten}: urgent.${k}`).toBe("string");
+      expect((u[k] as string).trim().length, `${ten}: urgent.${k} rỗng`).toBeGreaterThan(0);
+      expect(u[k], `${ten}: urgent.${k} là chuỗi khoá thô`).not.toBe(`urgent.${k}`);
+    }
+  });
+  it("★ zh: hai khoá động không chứa 引脚", () => {
+    const u = (zh as unknown as { urgent: { khongTai: string; cu: string } }).urgent;
+    expect(u.khongTai).not.toContain("引脚");
+    expect(u.cu).not.toContain("引脚");
+  });
+
   // Lệch với máy chủ: danh sách kind ở CANH_BAO_KHONG_RO_KIND (foeKetCucKhongRo.ts) — chỉ so được khi tệp nằm trong cây (nhánh A2(n) đã gộp).
   const duongServer = resolve(__dirname, "../../../server/services/orchestration/foe/foeKetCucKhongRo.ts");
   it.skipIf(!existsSync(duongServer))("★ tập kind ở client = CANH_BAO_KHONG_RO_KIND của máy chủ (thiếu/thừa ⇒ đỏ)", () => {
