@@ -22,6 +22,7 @@
  */
 import { appError } from "../../../_core/appError";
 import { redactSecretsAndPII } from "../aiSafety";
+import { MAU_TOKEN_CO_TIEN_TO } from "../../../../shared/mauBiMat";
 
 export const THAY = {
   biMat: "[REDACTED_SECRET]",
@@ -201,8 +202,14 @@ const RE_IPV4_NOI_BO = new RegExp(
 const RE_IPV6_NOI_BO = /(?<![0-9A-Fa-f:])(?:fe[89ab][0-9a-f]|f[cd][0-9a-f]{2})(?::[0-9a-f]{0,4}){1,7}(?![0-9A-Fa-f:])/gi;
 const RE_MAC = /(?<![0-9A-Fa-f:-])(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}(?![0-9A-Fa-f:-])/g;
 
-/** Khoá có tiền tố mà `aiSafety` chưa biết (thân có `-`): Anthropic, OpenAI dạng chung. */
-const RE_KHOA_THEM = /(?<![A-Za-z0-9])(?:sk-ant-(?:api|admin)\d{2}-[A-Za-z0-9_-]{20,}|sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,})/g;
+/**
+ * Khoá có tiền tố (thân có `-`): Anthropic, OpenAI dạng chung.
+ * ★ 2026-11-14 (lô mauBiMat, chu-du-an-HST chọn B1): mẫu Anthropic lấy từ MỘT nguồn `shared/mauBiMat.ts`, KHÔNG đòi biên trái —
+ * khoá dính chữ/số phía trước (`esk-ant-…`) trước đây lọt cả bộ này lẫn `aiSafety`. `sk-` chung GIỮ biên trái (`task-v9-probe-…`
+ * không phải khoá). GIỚI HẠN ĐÃ BIẾT: khoá OpenAI/Stripe/AWS dính chữ phía trước vẫn lọt, bằng hiện nay.
+ */
+const NGUON_ANTHROPIC = MAU_TOKEN_CO_TIEN_TO.find((m) => m.ten === "anthropic")!.nguon;
+const RE_KHOA_THEM = new RegExp(`(?:${NGUON_ANTHROPIC})|(?<![A-Za-z0-9])sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}`, "g");
 const RE_BASIC = /(Authorization["']?\s*[:=]\s*["']?Basic\s+)[A-Za-z0-9+/=]{8,}/gi;
 const RE_QUERY = /([?&](?:token|api_key|apikey|access_token|key|password|secret|sig|signature|auth)=)[^&#\s"']+/gi;
 /** URL webhook MANG bí mật trong đường dẫn (rà kiem-dinh E): Slack, Discord, Teams, bot Telegram. */

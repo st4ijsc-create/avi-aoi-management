@@ -15,6 +15,7 @@ import { describe, it, expect } from "vitest";
 import { cheTokenCoTienTo, MAU_TOKEN_CO_TIEN_TO, RE_TOKEN_CO_TIEN_TO_DANG_GO } from "./mauBiMat";
 import { redactSecretsAndPII, redactSecretsOnly, StreamingSecretRedactor } from "../server/services/ai/aiSafety";
 import { cheBiMat } from "../vscode-extension/src/loi/nguCanh";
+import { cheChuoi } from "../server/services/ai/ngoai/cheDuLieu";
 
 const lap = (mau: string, n: number) => mau.repeat(Math.ceil(n / mau.length)).slice(0, n);
 const ALNUM = "Ab3dE5gH7jK9mN1pQ2rS4tU6vW8xY0z";
@@ -32,6 +33,10 @@ const DUONG: Array<[string, string, string]> = [
   ["Stripe rk_live_", "rk_live_" + lap("9Tz8Yx7Wv6Uu5", 24), lap("9Tz8Yx7Wv6Uu5", 24).slice(0, 16)],
   ["npm npm_", "npm_" + lap("Q1w2E3r4T5y6U7i8", 36), lap("Q1w2E3r4T5y6U7i8", 36).slice(0, 16)],
   ["OpenAI sk-proj-", "sk-proj-" + lap("Hj3_Kl9-Mn2Pq", 48), lap("Hj3_Kl9-Mn2Pq", 48).slice(5, 21)],
+  ["Anthropic sk-ant-api03-", "sk-ant-api03-" + lap("Kq7Zx2Wm9Rt4_Lp-", 95), lap("Kq7Zx2Wm9Rt4_Lp-", 95).slice(3, 19)],
+  ["Anthropic sk-ant-admin01-", "sk-ant-admin01-" + lap("Vb8-Nc3_Hd6Jf1", 80), lap("Vb8-Nc3_Hd6Jf1", 80).slice(2, 18)],
+  // Theo chu-du-an-HST 14/11 (B1): tiền tố đặc hiệu DÍNH chữ phía trước vẫn là khoá (trước đây là ca âm của Đợt 4).
+  ["GitHub ghp_ dính chữ (xghp_)", "x" + "ghp_" + lap(ALNUM, 36), lap(ALNUM, 36).slice(4, 20)],
   [
     "JWT eyJ",
     ["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkF2aSJ9", "dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"].join("."),
@@ -48,7 +53,6 @@ const DUONG: Array<[string, string, string]> = [
 const AM: string[] = [
   "Trang ghpages của nhóm và thư mục ghp cũ",
   "biến ghp_short và gho_abc",
-  "x" + "ghp_" + lap(ALNUM, 36),
   "github_pat_ngan",
   "glpat-abc",
   "xoxb-container-large",
@@ -104,9 +108,6 @@ describe("★★★ mẫu token có tiền tố — mỗi dạng bị che ở M�
 describe("★★ chữ thường giống tiền tố — KHÔNG bị che", () => {
   for (const [tenBo, che] of BO_CHE) {
     for (const s of AM) {
-      // ⚠ Bộ che LUỒNG mất ngữ cảnh TRÁI khi đã nhả phần đầu (đuôi giữ bắt đầu NGAY tại `ghp_` ⇒ `\b`/biên trái khớp ở
-      //   đầu bộ đệm) ⇒ `xghp_…` bị che THỪA. Hướng an toàn, có từ trước Đợt 4 (luật `\bghp_` cũ cũng vậy) — không canh ở đây.
-      if (tenBo.includes("Streaming") && s.startsWith("xghp_")) continue;
       it(`${tenBo} — ${s.slice(0, 40)}`, () => expect(che(s)).toBe(s));
     }
   }
@@ -124,5 +125,119 @@ describe("mẫu dùng chung — hình dạng", () => {
     expect(RE_TOKEN_CO_TIEN_TO_DANG_GO.test("x = xoxb-1765367")).toBe(true);
     expect(RE_TOKEN_CO_TIEN_TO_DANG_GO.test('x = "github_pat_11ABC" ')).toBe(false);
     expect(RE_TOKEN_CO_TIEN_TO_DANG_GO.test("trang ghpages")).toBe(false);
+  });
+});
+
+/**
+ * ★★★ 2026-11-14 — lô mauBiMat, chu-du-an-HST chọn phương án B1 (đo trước khi chọn: kho mã repo 1,13M dòng ⇒ 0 khớp mới; bộ
+ * ca âm tổng hợp ⇒ nguyên văn đặc tả cũ che oan "task-admin-…"/"desk-proj-…"/"risk_live_…"/"MAKIAGE…", B1 thì không).
+ *   · Anthropic `sk-ant-(api|admin)NN-` KHÔNG đòi biên trái — dính chữ/số/gạch phía trước vẫn che, ở MỌI bộ che rời máy và
+ *     cả bộ che AI ngoài (`cheDuLieu.cheChuoi`).
+ *   · `sk-` chung, `sk-(proj|svcacct|admin)-`, `[sr]k_live_`, `AKIA` GIỮ biên trái.
+ * GIỚI HẠN ĐÃ BIẾT: khoá OpenAI/Stripe/AWS dính chữ phía trước vẫn lọt, bằng hiện nay.
+ */
+const KHOA_ANT = "sk-ant-api03-" + lap("Kq7Zx2Wm9Rt4_Lp-", 95);
+const LOI_ANT = lap("Kq7Zx2Wm9Rt4_Lp-", 95).slice(30, 46);
+const BO_CHE_CO_AI_NGOAI: Array<[string, (s: string) => string]> = [...BO_CHE, ["AI ngoài cheDuLieu.cheChuoi", (s) => cheChuoi(s).giaTri]];
+
+describe("★★★ B1 — khoá Anthropic ở mọi dạng, kể cả DÍNH liền phía trước", () => {
+  const DANG: Array<[string, string]> = [
+    ["trần", KHOA_ANT],
+    ["dính chữ thường (esk-ant-…)", `e${KHOA_ANT}`],
+    ["dính sau 'task-' (task-sk-ant-…)", `task-${KHOA_ANT}`],
+    ["dính số (9sk-ant-…)", `9${KHOA_ANT}`],
+    ["dính gạch dưới (_sk-ant-…)", `_${KHOA_ANT}`],
+    ["nhãn KEY=", `KEY=${KHOA_ANT}`],
+    ["nhãn ANTHROPIC_API_KEY=", `ANTHROPIC_API_KEY=${KHOA_ANT}`],
+    ['JSON "apiKey":', JSON.stringify({ apiKey: KHOA_ANT }, null, 2)],
+    ["JSON lồng (chuỗi JSON trong JSON)", JSON.stringify({ cauHinh: JSON.stringify({ nhaCungCap: { apiKey: KHOA_ANT } }) })],
+    ["dính chữ trong JSON", `{"x":"abc${KHOA_ANT}"}`],
+  ];
+  for (const [tenBo, che] of BO_CHE_CO_AI_NGOAI) {
+    for (const [nhan, vao] of DANG) {
+      it(`${tenBo} — ${nhan}`, () => {
+        const ra = che(`dau ${vao} cuoi`);
+        expect(ra, `lõi còn trong: ${ra.slice(0, 120)}`).not.toContain(LOI_ANT);
+        expect(ra).not.toContain("sk-ant-api03-Kq7");
+        expect(ra.startsWith("dau ")).toBe(true);
+      });
+    }
+  }
+});
+
+describe("★★★ B1 — ca âm bắt buộc (chu-du-an-HST 14/11): tên tự nhiên dạng gần tiền tố KHÔNG bị che", () => {
+  const AM_B1 = [
+    "task-admin-dashboard-settings-2026-11-14",
+    "desk-proj-booking-calendar-floor-3-west",
+    "risk-svcacct-review-checklist-2026-q4-final",
+    "risk_live_monitoringPanelsOverview",
+    "MAKIAGEPRODUCTIONLINE7",
+    "SLOVAKIAREGIONCODE2026XY",
+    "task-v9-probe-abcdefghijklmnop",
+    "risk-assessment-for-line-12345",
+    "disk-usage-report-2026-11-14",
+    `desk-${"booking-".repeat(6)}2026`,
+    "sk-",
+  ];
+  for (const [tenBo, che] of BO_CHE_CO_AI_NGOAI) {
+    // Bộ che extension có luật RIÊNG từ trước `sk[-_][A-Za-z0-9_-]{16,}` và `AKIA[0-9A-Z]{16}` KHÔNG biên trái (nguCanh.ts) ⇒
+    // che thừa các tên chứa "sk-"/"sk_"/"AKIA" — có từ trước lô này, hướng an toàn, ghi vào báo cáo; không ghim ở đây.
+    const coLuatRieng = (s: string) => tenBo.startsWith("extension") && /sk[-_]|AKIA/.test(s);
+    // Bộ che LUỒNG mất ngữ cảnh TRÁI khi đã nhả phần đầu (đuôi giữ bắt đầu ngay ở "sk-"/"sk_" ⇒ biên trái khớp ở đầu bộ đệm) ⇒
+    // che thừa "task-admin-…", "risk_live_…". Đo trên main a4d3ebf66 (trước lô này): cũng che y vậy — có từ trước, hướng an toàn.
+    const luongMatNguCanh = (s: string) => tenBo.includes("Streaming") && /sk-(?:proj|svcacct|admin)-|k_live_/.test(s);
+    for (const s of AM_B1) {
+      if (coLuatRieng(s) || luongMatNguCanh(s)) continue;
+      it(`${tenBo} — ${s.slice(0, 44)}`, () => expect(che(s)).toBe(s));
+    }
+  }
+});
+
+describe("B1 — bộ ca âm tổng hợp cố định (đối kháng, KHÔNG phải dữ liệu thật)", () => {
+  const DAU = ["task", "risk", "desk", "disk", "mask", "ask", "flask", "kiosk", "dusk", "whisk", "brisk", "tusk", "Task", "Risk", "Desk", "Disk", "TASK", "RISK"];
+  const GIUA_AM = ["-admin-", "-proj-", "-svcacct-", "_live_"];
+  const DUOI = [
+    "dashboard-settings-2026-11-14", "panel-v2-probe-abcdefghijklmnop", "assessment-for-line-12345-final",
+    "usage-report-2026-11-14-weekly", "monitoringPanelsOverview", "checklist_station_07_backup", "Q4-review-meeting-notes-long",
+  ];
+  const am = DAU.flatMap((a) => GIUA_AM.flatMap((g) => DUOI.map((d) => `${a}${g}${d}`)));
+  // Chỉ từ kết thúc bằng "sk" CHỮ THƯỜNG mới ghép thành "sk-ant-…" (TASK-ant-… không phải hình khoá).
+  const duong = DAU.filter((a) => a.endsWith("sk")).flatMap((a) => ["-ant-api03-", "-ant-admin01-"].flatMap((g) => DUOI.map((d) => `${a}${g}${d}`)));
+
+  it("504 tên <từ…sk/rk><-admin-|-proj-|-svcacct-|_live_><slug> ⇒ bộ mẫu chung che 0", () => {
+    expect(am).toHaveLength(18 * 4 * 7);
+    const bi = am.filter((s) => cheTokenCoTienTo(s, "[X]") !== s);
+    expect(bi).toEqual([]);
+  });
+
+  it("224 chuỗi <từ…sk>-ant-(api03|admin01)-<slug ≥ 20> mang ĐÚNG hình khoá Anthropic dính chữ ⇒ che 224 (ca dương, không phải che oan)", () => {
+    expect(duong).toHaveLength(16 * 2 * 7);
+    const sot = duong.filter((s) => !cheTokenCoTienTo(s, "[X]").includes("[X]"));
+    expect(sot).toEqual([]);
+  });
+});
+
+describe("B1 — bộ che LUỒNG giữ khoá Anthropic dính chữ đang mọc (không nhả từng mảnh)", () => {
+  it("mẫu ĐANG GÕ nhận sk-ant- dính chữ ở đuôi, nhả khi có ký tự kết thúc", () => {
+    expect(RE_TOKEN_CO_TIEN_TO_DANG_GO.test("x = esk-ant-api03-Kq7Z")).toBe(true);
+    expect(RE_TOKEN_CO_TIEN_TO_DANG_GO.test("x = esk-ant-api03-Kq7Z ")).toBe(false);
+  });
+
+  it.each([1, 3, 7, 16])("khoá dính chữ đẩy theo khúc %i ký tự ⇒ đầu ra ghép lại không còn lõi", (n) => {
+    const r = new StreamingSecretRedactor();
+    const vao = `cau hinh: abc${KHOA_ANT} xong`;
+    let ra = "";
+    for (let i = 0; i < vao.length; i += n) ra += r.push(vao.slice(i, i + n));
+    ra += r.flush();
+    expect(ra).not.toContain(LOI_ANT);
+    expect(ra.endsWith(" xong")).toBe(true);
+  });
+});
+
+describe("B1 — một nguồn: mỗi mẫu dinhTrai có tiền tố, danh sách dinhTrai đúng quyết định", () => {
+  it("dinhTrai = github, github_pat, gitlab, slack, google, npm, anthropic; giữ biên = aws, stripe, openai", () => {
+    expect(MAU_TOKEN_CO_TIEN_TO.filter((m) => m.dinhTrai).map((m) => m.ten)).toEqual(["github", "github_pat", "gitlab", "slack", "google", "npm", "anthropic"]);
+    expect(MAU_TOKEN_CO_TIEN_TO.filter((m) => !m.dinhTrai).map((m) => m.ten)).toEqual(["aws", "stripe", "openai"]);
+    for (const m of MAU_TOKEN_CO_TIEN_TO) expect(new RegExp(`^(?:${m.tienTo})`).test(m.nguon.replace(/\[([^\]])[^\]]*\]/g, "$1").replace(/\(\?:([^|)]+)[^)]*\)/g, "$1"))).toBe(true);
   });
 });
