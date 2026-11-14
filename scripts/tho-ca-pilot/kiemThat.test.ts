@@ -225,6 +225,20 @@ describe("trần bản chép cây giả — tiêm qua tham số (số tệp / by
     expect(chepCayGia(cay, wt, t2, { tep: 1000, byte: 26 })).toEqual({ ok: false, lyDo: "cay-gia-qua-lon" });
     expect(fs.readdirSync(t2)).toEqual([]);
   });
+  it("★★★ trần TIÊM áp cả ở THƯ MỤC CON (đệ quy truyền trần, không rơi về trần mặc định): 3 tệp chỉ ở tầng con, trần 2 tệp / 29 byte ⇒ cay-gia-qua-lon; đúng bằng (3 / 30) vẫn chép", () => {
+    const cayLong = path.join(goc, "cay-long");
+    fs.mkdirSync(path.join(cayLong, "a", "b"), { recursive: true });
+    for (const ten of ["x.txt", "y.txt", "z.txt"]) fs.writeFileSync(path.join(cayLong, "a", "b", ten), "0123456789"); // 3 tệp × 10 byte, KHÔNG tệp nào ở tầng gốc
+    const t1 = tmpRieng();
+    expect(chepCayGia(cayLong, wt, t1, { tep: 2, byte: 1e9 })).toEqual({ ok: false, lyDo: "cay-gia-qua-lon" });
+    expect(fs.readdirSync(t1)).toEqual([]);
+    const t2 = tmpRieng();
+    expect(chepCayGia(cayLong, wt, t2, { tep: 1e9, byte: 29 })).toEqual({ ok: false, lyDo: "cay-gia-qua-lon" });
+    const t3 = tmpRieng();
+    const vua = chepCayGia(cayLong, wt, t3, { tep: 3, byte: 30 });
+    expect(vua.ok).toBe(true);
+    if (vua.ok) vua.don();
+  });
   it("★★★ chayKiemThat truyền trần xuống: vượt ⇒ dat:false lyDo cay-gia-qua-lon và lệnh KHÔNG được chạy; không vượt ⇒ chạy bình thường", async () => {
     let goi = 0;
     const chayGia = async () => (goi++, kq());
