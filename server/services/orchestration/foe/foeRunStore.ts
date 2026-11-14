@@ -48,7 +48,7 @@ import { toRobotJob } from "../../equipment/robotJobMapping";
 import { readEdgeAssignment } from "../../edge/edgeExecutionSchema"; // A2(n) T8 lượt sửa 1 (CHAN-3) — a run given to an edge node: its claim's progress is its heartbeat; lượt sửa 2 (CHAN-4): through the shared read (0370 missing ⇒ no edge)
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, rutGonGiua, TRAN_TEN_NUT, TRAN_LY_DO, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, rutGonGiua, TRAN_TEN_NUT, TRAN_LY_DO, VI_KHONG_BAO, CAU_TAY_MAY, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
 
@@ -547,6 +547,8 @@ export interface AnhKetThuc {
   daCo?: ReadonlyArray<Promise<boolean>>;
   /** T9 lượt sửa 3 (RA2-2) — an edge segment: how central reads a STOP it leaves owed (cachEdgeTrungTam of the report, the node's adapter): the run's error by the URGENT's rule */
   cachNo?: (stopId: string) => Promise<{ khongStop?: boolean; chuaXacMinh?: boolean; adapterNut?: boolean }>;
+  /** T9 lượt sửa 3c (mục 1) — an edge segment: the code of the node's report of that STOP (structured), before the row's */
+  viNo?: (stopId: string) => ViChuaRa | undefined;
   chotTuBao?: { stepId: string; ma: MaKetCucKhongRo } | null;
   /** a hold or a pause: no end. Waits for what is on its way, raises nothing new */
   chiDoi?: boolean;
@@ -679,7 +681,9 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
     const id0 = no[0] as string;
     // T9 lượt sửa 3 (RA2-2) — an edge segment's end: central's reading of it, the node's adapter (one rule with the URGENT); central's walk: its memory, as before
     const cach = x.cachNo ? await x.cachNo(id0) : x.boNho?.cachCua?.(id0);
-    return { ...out, vi: "no", loi: loiGiuChuaRa(id0, viChuaRaCuaLoi(rows.find((r) => r.stepId === id0)?.error) ?? x.boNho?.viCua?.(id0), cach) };
+    // lượt sửa 3c (mục 1) — an edge segment: the node's report first, then the row's own code; nothing ⇒ NOT_REPORTED (fail-closed: never "did NOT go out")
+    const vi = x.viNo?.(id0) ?? viChuaRaCuaLoi(rows.find((r) => r.stepId === id0)?.error) ?? x.boNho?.viCua?.(id0) ?? (x.cachNo ? VI_KHONG_BAO : undefined);
+    return { ...out, vi: "no", loi: loiGiuChuaRa(id0, vi, cach) };
   }
   if (!ben) return { ...out, vi: "khongBen", loi: loiGiuKhongBen(x.runId, { ma: benChot ? null : (chot?.ma ?? null), khongXacNhan }) };
   return out;
@@ -2006,10 +2010,19 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     const k: CachEdgeTrungTam = i >= 0 ? await (cachBao[i] as Promise<CachEdgeTrungTam>).catch(() => ({ chuaXacMinh: true })) : { chuaXacMinh: true };
     return { ...(k.khongStop ? { khongStop: true } : k.chuaXacMinh ? { chuaXacMinh: true } : {}), adapterNut: true };
   };
-  const viBao = (stopId: string): ViChuaRa | undefined => baoKhongRo.find((b) => b.loai === "stopNotSent" && (b.compId && b.compId !== KHONG_CO_BU_TRU ? b.compId : b.stepId) === stopId)?.vi;
-  const loiNoTrungTam = async (error: string): Promise<string> => {
-    const id = /^FOE_STOP_NOT_SENT: (?:STOP|step) "([^"]{1,200})"/.exec(error)?.[1];
-    if (!id) return `${FOE_STOP_NOT_SENT}: a STOP of this run stays owed (reported by the edge node): check the machine on site and use its direct STOP / E-STOP.`;
+  /** T9 lượt sửa 3c (mục 1) — the node's report of a STOP: its code, or, a report with none, NOT_REPORTED (it may have reached the device: never "did NOT go out" on what central was not told) */
+  const viBao = (stopId: string): ViChuaRa | undefined => {
+    const b = baoKhongRo.find((x) => x.loai === "stopNotSent" && (x.compId && x.compId !== KHONG_CO_BU_TRU ? x.compId : x.stepId) === stopId);
+    return b ? (b.vi ?? VI_KHONG_BAO) : undefined;
+  };
+  /**
+   * T9 lượt sửa 3c (mục 1, dieu-phoi 14/11) — the STOP the run's error names is the node's REPORT's (structured: the whole id), never an id read from the node's text (its words cut long ids, 3b mục 4).
+   * No report rode on this end: fail-closed, no id, "not confirmed out", never "did NOT go out". The node's text is only the sign that this is state C (its code prefix).
+   */
+  const loiNoTrungTam = async (): Promise<string> => {
+    const b = baoKhongRo.find((x) => x.loai === "stopNotSent");
+    if (!b) return `${FOE_STOP_NOT_SENT}: a STOP of this run stays owed and is not confirmed out: the edge node's report of it did not reach central, so it may have reached the device: ${CAU_TAY_MAY}.`;
+    const id = b.compId && b.compId !== KHONG_CO_BU_TRU ? b.compId : b.stepId;
     return loiGiuChuaRa(id, viBao(id), await cachNoEdge(id));
   };
   const ctx = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
@@ -2026,7 +2039,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     const at = new Date().toISOString();
     // RA2-2 — state C: central's own words, whole (never cut: the safe act is their last clause; measured under 800 with the prefix, T9 lượt sửa 3b). T9 lượt sửa 3b (mục 3) — anything else is the
     // node's free text: central's 500 cut, as before lượt sửa 3 (edgeHeldMark.a2n: the mark at the head, the advice whole, the error under 800)
-    const loiHien = error?.startsWith(`${FOE_STOP_NOT_SENT}:`) ? await loiNoTrungTam(error) : error?.slice(0, 500);
+    const loiHien = error?.startsWith(`${FOE_STOP_NOT_SENT}:`) ? await loiNoTrungTam() : error?.slice(0, 500);
     // fix review 1 — a command the edge sent but could not record: never sent again (foeEngine reads the list on the re-walk)
     const unknown = edgeOutcomeUnknownOf(end);
     const prevUnknown = Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : [];
@@ -2060,7 +2073,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
   const congCuoi = async (): Promise<{ giu: EdgeSegmentEndResult } | { patch: Partial<OrchestrationRun> }> => {
     const hang = await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
     const tuBao = chotTuBao[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId: string; ma: MaKetCucKhongRo } | undefined;
-    const q = await quyetDinhKetThucAnh({ runId, ctx, owner: run.startedBy ?? null, rows: hang, def: end.def, daCo, cachNo: cachNoEdge, chotTuBao: tuBao ? { stepId: tuBao.stepId, ma: tuBao.ma } : null, claimSeq: end.claimSeq }, "edgeSegment", undefined, KET_DOAN_EDGE_TONG_MS);
+    const q = await quyetDinhKetThucAnh({ runId, ctx, owner: run.startedBy ?? null, rows: hang, def: end.def, daCo, cachNo: cachNoEdge, viNo: viBao, chotTuBao: tuBao ? { stepId: tuBao.stepId, ma: tuBao.ma } : null, claimSeq: end.claimSeq }, "edgeSegment", undefined, KET_DOAN_EDGE_TONG_MS);
     const daBao = q.moi && q.chot ? { [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: q.chot.stepId, at: new Date().toISOString() } } : {};
     if (q.ghi === "terminal") return { patch: Object.keys(daBao).length ? { contextJson: { ...ctx, ...chotTuBao, ...daBao } } : {} };
     const at = new Date().toISOString();

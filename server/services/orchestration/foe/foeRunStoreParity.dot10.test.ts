@@ -1036,6 +1036,10 @@ const RE_NUT_DU_PHONG = /node unreachable or not queued: central also sends its 
 const RE_NUT_TRA_LOI = /The node's answer is recorded at central when it comes/;
 const RE_TAY_MAY = /check the machine on site and use its direct STOP \/ E-STOP/;
 const RE_NUT_SAI = /only queues|hears nothing back|Abort sends it|press Abort again|no time limit/;
+// T9 lượt sửa 3c (mục 2, ruling of scada-master 14/11) — central answered ADAPTER_OFFLINE on the node's run: routeEdgeOwnedAdapterCommand returned null (the adapter's owner unread, or not the node's):
+// the STOP was NOT routed to the node and central sent no fallback STOP. Never "an alert says so" (that alert has no recipient)
+const RE_KHONG_CHUYEN = /[Cc]entral found no driver for it, did NOT route it to an edge node and sent no fallback STOP/;
+const SAFE_TAY = "check the machine on site and use its direct STOP / E-STOP";
 
 describe("doc 81 Đợt 10 C — one walker, two stores: central and edge produce the same rows and outcomes", () => {
   it("★ gate pause → approval → motion (OT + robot) → completed: identical walker writes, outcomes, commands and final rows", async () => {
@@ -8194,6 +8198,99 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
       }
     });
   }
+  // ── T9 lượt sửa 3c (mục 1, dieu-phoi 14/11, RA3-1) — a step id longer than the words' ceiling: central's run error takes the STOP from the node's REPORT (structured data), never from the node's
+  // text, whose id is cut; the three places say one thing of the device ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  const ID_DAI = "nt_dung_khan_bang_tai_01";
+  for (const L of ["nt", ID_DAI] as const) {
+    for (const k of ["DRIVER_WRITE_FAILED", "ADAPTER_OFFLINE", "nem"] as const) {
+      it(`T9F3C-ID-DAI ${L.length} verified pinned STOP × ${k}: the run's error, the URGENT and the row say one thing of the device; "may have reached" is never "did NOT go out"`, async () => {
+        seedHalt();
+        h.ghim = PIN_OK;
+        const e = await denBuoc(def(`t9f3cid${L.length}${k[0]}${k.length}`, [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [otStop(L)])])])]));
+        for (const t of rows("device_tags")) if (t.tagKey === "run") t.stopValue = 0;
+        if (k === "DRIVER_WRITE_FAILED") h.tuChoi.set(L, { status: "failed", error: "DRIVER_WRITE_FAILED: link reset", detail: { edge: true, reason: "DRIVER_WRITE_FAILED" } });
+        if (k === "ADAPTER_OFFLINE") {
+          h.tuChoi.set(L, { status: "failed", error: "ADAPTER_OFFLINE", detail: { edge: true, reason: "ADAPTER_OFFLINE" } });
+          h.tuChoiKhongGhi.add(L);
+        }
+        if (k === "nem") h.tuChoi.set(L, { nem: "socket hang up" } as never);
+        if (k !== "ADAPTER_OFFLINE") mien.add(L);
+        h.slow.set("x", 10);
+        h.timeoutDispatch.add("x");
+        await edgeSegment(e, 2);
+        await wait(80);
+        const urg = urgentCua("stopNotSent").filter((a) => String(a.dedupKey).split(":")[2] === L).map((a) => `${a.title} ${a.message}`).join(" | ");
+        const run = String(runRow(e.runId).error ?? "");
+        const row = String(hang(e.runId, L)?.error ?? "");
+        expect(urg, "an URGENT names the STOP").not.toBe("");
+        expect(run, "the run's error: no word of a read nobody made").not.toMatch(/nobody could read its pins/);
+        if (k === "ADAPTER_OFFLINE") {
+          for (const [ten, t] of [["URGENT", urg], ["run", run]] as const) expect(t, `${ten}: refused before a driver`).toMatch(/refused before it reached a driver \(ADAPTER_OFFLINE\)/);
+        } else {
+          for (const [ten, t] of [["URGENT", urg], ["run", run], ["row", row]] as const) {
+            expect(t, `${ten}: it may have reached the device`).toMatch(CO_THE);
+            expect(t, `${ten}: never "did NOT go out" where it may have been written`).not.toMatch(/did NOT go out/);
+          }
+          expect(run, "the code of the node's report").toContain(k === "nem" ? "DISPATCH_THREW" : "DRIVER_WRITE_FAILED");
+        }
+        expect(run.length, "under 800").toBeLessThanOrEqual(800);
+        expect(run).toContain(SAFE_TAY);
+      });
+    }
+  }
+  for (const k of ["ADAPTER_OFFLINE", "DRIVER_WRITE_FAILED"] as const) {
+    it(`T9F3C-EE-DAI the unverified edge cell (stopsUnsure), id of ${ID_DAI.length} × ${k}: the run's error says step, could not be verified, the device's word of the node's report`, async () => {
+      const e = await denBuoc(def(`t9f3cee${k.length}`, [gate(), parF("p", [move("x"), box("v", [delay("w", 30), box("c2", [stopTyped(ID_DAI)])])])]));
+      e.laStopNem = true;
+      h.ghim = PIN_BAD;
+      h.dispatcherThat = true;
+      h.duocSauKhoa.add(ID_DAI);
+      e.suaGoi = (p) => ({ ...p, stopsUnsure: [...p.stopsUnsure, ID_DAI] });
+      for (const t of rows("device_tags")) if (t.tagKey === "run") t.stopValue = k === "ADAPTER_OFFLINE" ? null : 0;
+      if (k === "ADAPTER_OFFLINE") {
+        h.tuChoi.set(ID_DAI, { status: "failed", error: "ADAPTER_OFFLINE", detail: { edge: true, reason: "ADAPTER_OFFLINE" } });
+        h.tuChoiKhongGhi.add(ID_DAI);
+      } else {
+        h.tuChoi.set(ID_DAI, { status: "failed", error: "DRIVER_WRITE_FAILED: link reset", detail: { edge: true, reason: "DRIVER_WRITE_FAILED" } });
+        mien.add(ID_DAI);
+      }
+      h.slow.set("x", 10);
+      h.timeoutDispatch.add("x");
+      await edgeSegment(e, 2);
+      await wait(80);
+      const run = String(runRow(e.runId).error ?? "");
+      expect(run, "a step, never a STOP nobody pinned").toMatch(/step "nt_dung…tai_01" could not be verified as a pinned STOP/);
+      expect(run).not.toMatch(/STOP "nt_dung/);
+      expect(run).not.toMatch(/nobody could read its pins/);
+      if (k === "ADAPTER_OFFLINE") expect(run).toMatch(/refused before it reached a driver \(ADAPTER_OFFLINE\)/);
+      else {
+        expect(run).toMatch(/may have reached the device \(DRIVER_WRITE_FAILED\)/);
+        expect(run).not.toMatch(/did NOT go out/);
+      }
+      expect(run).toContain(SAFE_TAY);
+    });
+  }
+  it("T9F3C-VI-KHONG-BAO the code of a STOP central was not told of (a report with no code, the gate's last fallback): it may have reached the device, never 'did NOT go out'", async () => {
+    const { VI_KHONG_BAO } = (await import("./foeKetCucKhongRo")) as unknown as { VI_KHONG_BAO: Parameters<typeof loiGiuChuaRa>[1] };
+    for (const cach of [{ adapterNut: true }, { adapterNut: true, chuaXacMinh: true }] as const) {
+      const loi = loiGiuChuaRa(ID_DAI, VI_KHONG_BAO, cach);
+      expect(loi, JSON.stringify(cach)).toMatch(/not confirmed out|may have reached the device/);
+      expect(loi).not.toMatch(/did NOT go out|nothing was written/);
+      expect(loi).toContain(SAFE_TAY);
+    }
+  });
+  it("T9F3C-KHONG-BAO a held segment end whose text names a STOP central has no report of: the run's error is fail-closed: not confirmed out, never 'did NOT go out', no id read from the node's text, the safe act", async () => {
+    const runId = 99_800;
+    fake.store.set("orchestration_runs", [...rows("orchestration_runs"), { id: runId, status: "running", contextJson: null } as never]);
+    await applyEdgeSegmentEnd(fake as never, runId, { outcome: "held", heldReason: "outcomeUnknown", error: 'FOE_STOP_NOT_SENT: STOP "nt_dung…tai_01" did NOT go out: nobody could read its pins. The run is held: Abort sends it again.', nodeCode: "edge-a", claimSeq: 1, def: { steps: [] } } as never);
+    const loi = String(runRow(runId).error ?? "");
+    expect(runRow(runId).status).toBe("held");
+    expect(loi, "fail-closed").toMatch(/not confirmed out/);
+    expect(loi).not.toMatch(/did NOT go out/);
+    expect(loi).not.toMatch(/Abort sends it/);
+    expect(loi, "nothing taken from the node's text").not.toMatch(/nt_dung/);
+    expect(loi).toContain(SAFE_TAY);
+  });
   it("T9F1-Q2-EDGE the words of Q2-ABORT-T7b edge's hold (the package's stopsUnsure, ADAPTER_OFFLINE): central composes them: not verified, nothing written, the promise a condition", async () => {
     const { e } = await q2Edge("t9q2ed", (e) => {
       goiChuaDoc("nt")(e);
@@ -15203,6 +15300,7 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
       expect(u, "neutral: whose adapter is not known").toMatch(/could not be read/);
       expect(u, "neutral: either way").toMatch(/may send it from central, or hand it to the edge node that holds its adapter/);
       expect(u).toMatch(RE_TAY_MAY);
+      expect(u, "T9 lượt sửa 3c (mục 2): this press was not routed, no fallback STOP").toMatch(RE_KHONG_CHUYEN);
       expect(u).not.toMatch(daGuiChu);
     });
   }
@@ -15218,9 +15316,18 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
     const u = urgentCua("abortStopNotSent").filter((x) => String(x.dedupKey).split(":")[2] === "nt").map((x) => `${x.title} ${x.message}`).join(" | ");
     expect(u, "an URGENT names nt").toContain('"nt"');
     expect(u).not.toMatch(RE_NUT_SAI);
-    expect(u).toMatch(RE_NUT_HUA);
+    // T9 lượt sửa 3c (mục 2, ruling of scada-master 14/11) — was RE_NUT_HUA: this press was not routed (the owner unread or not the node's), so a further press is no plain "hands it to the node":
+    // it does the same while the owner cannot be read; once it can, the node's road, its fallback STOP included
+    expect(u, "a further press: conditional on reading the owner").toMatch(/a further press does the same until central can read its adapter's owner, then goes to that node, or \(node unreachable or not queued\) to central's fallback STOP/);
     expect(u).toMatch(RE_TAY_MAY);
     expect(u).not.toMatch(daGuiChu);
+    // T9 lượt sửa 3c (mục 2) — this press was answered ADAPTER_OFFLINE: not routed to the node, no fallback STOP (never "an alert says so"); the URGENT and the abort:nt row's run words say so
+    expect(u, "not routed, no fallback STOP").toMatch(RE_KHONG_CHUYEN);
+    expect(u).not.toMatch(/an alert says so/);
+    // ruling of scada-master 14/11 (mục 2): the run's error after an Abort is the person's reason ("Aborted by user N: …"): it says nothing of a STOP, so no promise in it
+    const loiRun = String(runRow(c).error ?? "");
+    expect(loiRun, "the run's error: the person's reason").toMatch(/^Aborted by user \d+: /);
+    expect(loiRun, "no promise of a STOP in the run's error").not.toMatch(/hands it to|fallback STOP|\bsent\b/);
   });
 
 
@@ -17226,6 +17333,59 @@ describe("A2(n) T9 — the confirmation of a STOP after an unknown attempt (XAC_
         }
       }
     }
+  });
+  // ── T9 lượt sửa 3c (mục 3, RA3-3) — EVERY kind of URGENT × every branch (NOT_CONFIRMED, ADAPTER_OWNED_BY_EDGE, central and edge runs, every chuAbort) × a short and a 200-character id, a compensation id
+  // of 200, lists of long ids: ≤ 800, and each kind's own advice whole; the sweep must reach the NOT_CONFIRMED branch (a case that is red if it drops from the sweep) ─────────────────────────────────
+  it("T9F3C-DAI-MOI-KIND every kind × every branch × ids of 2 and 200 characters: title and message ≤ 800, the advice whole; the NOT_CONFIRMED branch and the not-routed clause are in the sweep", () => {
+    const idL = `dau${"b".repeat(193)}cuoi`;
+    const vis = [undefined, { nguon: "tuChoi", ma: "ADAPTER_OFFLINE" }, { nguon: "driverLoi", ma: "DRIVER_WRITE_FAILED" }, { nguon: "doc", ma: "NOT_CONFIRMED" }, { nguon: "driverLoi", ma: "ADAPTER_OWNED_BY_EDGE" }, { nguon: "tuChoi", ma: `M${"X".repeat(62)}Z` }];
+    const chuAbort = [undefined, "chuaRaKhongHan", "chuaRa15", "daGiaoKhongHan", "daGiaoKiemMay", "coTheKhongHan", "coThe15", "khongDocKhongHan", "khongDoc15", "khongXacMinhKhongHan", "khongXacMinh15", "daKetThuc", "daKetThucChuaKhoa", "daKetThucKhongXacMinh"];
+    const co = [{}, { biet: true }, { khongStop: true }, { chuaXacMinh: true }, { thayCu: "giu" }, { thayCu: "chuaRa", moPhong: true }, { thayCu: "chuaRa" }, { khongBanGhi: true, stopBuTru: [idL, idL, idL, idL, idL, idL, idL, idL] }, { heldStop: true }, { stopKhongXacMinh: true }, { stopTrongLo: [idL, idL, idL, idL, idL, idL, idL, idL] }, { ketThuc: "failed" }, { ketThuc: "completed", stopKhongXacMinh: true }, { tuTrungTam: true }, { tuTrungTam: true, biet: true }];
+    let dem = 0;
+    let notConfirmed = 0;
+    let khongChuyen = 0;
+    const loi: string[] = [];
+    for (const loai of Object.keys(CANH_BAO_KHONG_RO_KIND)) for (const id of ["nt", idL]) for (const comp of [KHONG_CO_BU_TRU, "cs", idL]) for (const vi of vis) for (const nut of [undefined, true, "khongBiet"]) for (const ca of chuAbort) for (const c of co) {
+      if (ca !== undefined && loai !== "abortStopNotSent") continue;
+      const n = noiDungCanhBaoKhongRo({ loai, runId: 2_147_483_647, stepId: id, compId: comp, error: "FOE_OUTCOME_UNKNOWN", lan: "claim2147483647", ...(vi ? { vi } : {}), ...(nut ? { adapterNut: nut } : {}), ...(ca ? { chuAbort: ca } : {}), ...c } as never);
+      dem++;
+      const nhan = `${loai} id${id.length} comp${comp.length} ${vi?.ma.slice(0, 12) ?? "-"} ${nut ?? "-"} ${ca ?? "-"} ${Object.keys(c).join(",")}`;
+      if (n.message.length > 800 || n.title.length > 800) loi.push(`${n.message.length}/${n.title.length} ${nhan}`);
+      if (!/check (the machine|the device|on site)|check on site|direct STOP \/ E-STOP/i.test(n.message)) loi.push(`advice? ${nhan}`);
+      if (loai === "abortStopNotSent" && vi?.ma === "NOT_CONFIRMED" && /its pins cannot be read/.test(n.message)) notConfirmed++;
+      if (RE_KHONG_CHUYEN.test(n.message)) khongChuyen++;
+    }
+    expect(loi.slice(0, 20), "every message and title ≤ 800 with its advice").toEqual([]);
+    expect(dem, "the sweep ran").toBeGreaterThan(10_000);
+    expect(notConfirmed, "the NOT_CONFIRMED branch is in the sweep").toBeGreaterThan(0);
+    expect(khongChuyen, "the not-routed clause is in the sweep").toBeGreaterThan(0);
+  });
+  // ── T9 lượt sửa 3c (mục 4, RA3-QUET-HAN-KHONG-TRU lived) — the sweep's budget N-3: each run's read of the definition hangs AND its raise never answers: each run takes at most 5·D in all (the read's D
+  // comes out of it), the pass ends, each run raised exactly once ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  // AGENTS.md §4 (dieu-phoi 14/11) — no real clock: FAKE timers, which fake Date too, so the sweep's own measure of the read (Date.now) and its bounds (setTimeout) run on the one clock; h.heSoHan
+  // cannot do that (it scales the bounds, not the time a read took). The clock is given back in afterEach
+  afterEach(() => vi.useRealTimers());
+  it("T9F3C-QUET-NGAN-SACH three runs, each one's definition read hangs and its raise never answers (fake timers): the pass takes ≤ 3 × 5·D within less than one D, each run raised once", async () => {
+    const cs: number[] = [];
+    for (let i = 0; i < 3; i++) cs.push(await p2Giu(`t9f3cns${i}`));
+    h.alertTreo = true;
+    h.treoLan = 0;
+    const D = STOP_DB_STEP_DEADLINE_MS;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    const t0 = Date.now();
+    let xong = false;
+    const p = voiDocDinhNghia(true, () => quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: Date.now() + QUET_URGENT_TUOI_TOI_THIEU_MS + 1 })).then(() => {
+      xong = true;
+    });
+    // the clock in steps of D/100, at most 3 × 7·D: the pass's own bounds end it
+    for (let buoc = 0; buoc < (cs.length * 7 * 100) && !xong; buoc++) await vi.advanceTimersByTimeAsync(D / 100);
+    const ms = Date.now() - t0;
+    if (xong) await p; // the clock comes back in afterEach (AGENTS.md §4)
+    h.alertTreo = false;
+    expect(xong, "the pass ends").toBe(true);
+    expect(h.treoLan, "each run raised once").toBe(cs.length);
+    expect(ms, `the pass within ${cs.length} × 5·D, off by less than one D (6·D a run is the mutation)`).toBeLessThan(cs.length * 5 * D + D);
+    expect(ms, "each run's read and raise did use their bounds").toBeGreaterThanOrEqual(cs.length * 5 * D - D);
   });
   it("T9F2-KHONG-GIAO the rule on 'not handed' (vi doc ADAPTER_UNRESOLVED), pins verified or not: did NOT go out, never 'may have reached', the promise a condition", () => {
     const vi = { nguon: "doc" as const, ma: "ADAPTER_UNRESOLVED" };

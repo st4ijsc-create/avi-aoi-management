@@ -6567,7 +6567,7 @@ async function laRunGiaoEdge(runId: number, run: OrchestrationRun | undefined): 
 async function baoStopChuaRaAbort(runId: number, ds: ReadonlyArray<{ id: string; vi: ViChuaRa; chu: ChuStopAbort | null }>, owner: number | null, adapterNut: boolean | "khongBiet" = false): Promise<void> {
   await Promise.all(
     ds.map((x) =>
-      withDeadline(canhBaoKetCucKhongRo({ loai: "abortStopNotSent", runId, stepId: x.id, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "chot", biet: true, vi: x.vi, ...(x.chu ? { chuAbort: x.chu } : {}), ...(adapterNut === "khongBiet" ? { adapterNut: "khongBiet" as const } : adapterNut ? { adapterNut: true as const } : {}), owner }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} STOP ${x.id} not out URGENT`).catch(
+      withDeadline(canhBaoKetCucKhongRo({ loai: "abortStopNotSent", runId, stepId: x.id, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "chot", biet: true, vi: x.vi, ...(x.chu ? { chuAbort: x.chu } : {}), ...(adapterNut === "khongBiet" ? { adapterNut: "khongBiet" as const, tuTrungTam: true as const } : adapterNut ? { adapterNut: true as const, tuTrungTam: true as const } : {}), owner }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} STOP ${x.id} not out URGENT`).catch(
         (err: unknown) => console.error(`[FOE] abort of run ${runId}: the URGENT of STOP ${x.id} not out failed: ${(err as Error)?.message ?? err}`),
       ),
     ),
