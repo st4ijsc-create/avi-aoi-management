@@ -1347,7 +1347,7 @@ describe("doc 81 Đợt 10 C — the edge store's own verdicts (no central count
     expect(runRow(e.runId).status).toBe("completed");
   });
 
-  it("★ A2(n) N8 (n4): the A2(o) auth_unused report FAILS ⇒ held (configStale, nothing sent); Continue ⇒ central counts the step as possibly sent (EDGE_OUTCOME_UNKNOWN) ⇒ its NON-STOP compensation is HELD for a person — 0 sent (before A2(n): an automatic 'undo' of a command that never left)", async () => {
+  it("★ A2(n) N8 (n4): the A2(o) auth_unused report FAILS ⇒ held (configStale, nothing sent); central counts the step as possibly sent (EDGE_OUTCOME_UNKNOWN) ⇒ its NON-STOP compensation waits for a person — chủ dự án 14/11, R2 (a): a plain Continue is refused (0 sent); c2 is sent ONCE, in segment 3, only AFTER the one Continue by a person with machine-control rights and a reason (never an automatic 'undo' of a command that never left)", async () => {
     const e = await edgeAssignedRun(def("a2n-n8", [gate(), move("r2", { maxAttempts: 3, compensation: ot("c2") })]));
     await edgeSegment(e, 1);
     await approveEdgeGate(e);
@@ -1358,15 +1358,34 @@ describe("doc 81 Đợt 10 C — the edge store's own verdicts (no central count
     const s2 = await edgeSegment(e, 2);
     expect(s2.out).toMatchObject({ outcome: "held", heldReason: "configStale" });
     expect(String(stepRows(e.runId).find((s) => s.stepId === "r2")!.error)).toContain("could NOT be reported unused");
-    await continueHeld(e);
+    // T4 bước 3, chủ dự án 14/11, R2 (a): central's end of segment 2 names r2/c2 (r2 ∈ U: its issued authorisation counts as sent; it has a compensation) ⇒ as on a central run,
+    // ONE Continue by a person with machine-control rights AND a reason approves exactly c2, sent in the next segment (after its interlock). A plain Continue is refused, nothing sent.
+    // Was: a plain Continue, segment 3 held(outcomeUnknown), c2 held (never sent by itself), the marker of the walker, one URGENT of the held compensation.
+    expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toMatchObject({ stepId: "r2", compId: "c2", ds: [{ stepId: "r2", compId: "c2" }] });
+    await expect(continueHeld(e)).rejects.toThrow(/only a person with machine-control rights/);
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r2"]); // ★ a refused Continue sends nothing
+    expect((await continueOutcomeUnknown(e, "checked on site: r2 never moved")).status).toBe("queued");
     expect(runRow(e.runId).contextJson.foeResumeState).toMatchObject({ r2: { state: "outcomeUnknown" } }); // the issued authorisation counts as sent
-    const s3 = await edgeSegment(e, 3);
-    expect(s3.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
-    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r2"]); // the refused dispatch only: r2 never again, ★ c2 NEVER sent
-    expect(stepRows(e.runId).find((s) => s.stepId === "c2")).toMatchObject({ status: "held" });
+    expect(h.sent.slice(n0).map((s) => s.stepId), "after the approval, before segment 3: still nothing more").toEqual(["r2"]);
+    await edgeSegment(e, 3);
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r2", "c2"]); // the refused dispatch, then c2 ONCE, in segment 3, after the person's approval: r2 never again
     expect(String(stepRows(e.runId).find((s) => s.stepId === "r2")!.error)).toMatch(/^EDGE_OUTCOME_UNKNOWN/);
-    expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toMatchObject({ stepId: "r2", compId: "c2" });
-    expect(e.events.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION")).toHaveLength(1);
+  });
+
+  it("T4-B3-R2A-N8-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của N8) the same failed auth_unused report, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r2 never sent again", async () => {
+    const e = await edgeAssignedRun(def("a2n-n8-dc", [gate(), move("r2", { maxAttempts: 3 })]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.unusedFails = true;
+    h.staleDispatch.add("r2");
+    const n0 = h.sent.length;
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "configStale" });
+    expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toBeUndefined();
+    await continueHeld(e); // a plain Continue (no machine-control rights, no reason) is accepted as before
+    expect(runRow(e.runId).contextJson.foeResumeState).toMatchObject({ r2: { state: "outcomeUnknown" } });
+    await edgeSegment(e, 3);
+    expect(h.sent.slice(n0).map((s) => s.stepId)).toEqual(["r2"]); // ★ r2 never sent again
   });
 
   it("★ A2(o) r3 F4: a safety-PLC config MISSING at the edge dispatch (SAFETY_CONFIG_MISSING, before the consume: nothing sent) ⇒ HELD like a stale config: no retry, no compensation, the authorisation reported unused; after the refresh + Continue ⇒ re-authorised and sent exactly once", async () => {
@@ -1906,32 +1925,105 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]); // … but never re-sends it; r2 / c1 never sent
     expect(runRow(e.runId).status).toBe("held");
     expect(runRow(e.runId).contextJson.foeOutcomeUnknown).toEqual(["r1"]);
-    // Continue: r1 is NOT sent again — it is a failure. R1b-2b-2a A2(n) (n4/n5): its compensation c1 is NOT a pinned STOP ⇒ it is NOT sent
-    // automatically on a device whose state is unknown: the segment ends held(outcomeUnknown) + an anomaly central turns into the URGENT alert
+    // Continue: r1 is NOT sent again — it is a failure. Its compensation c1 is NOT a pinned STOP ⇒ never sent by itself on a device whose state is unknown.
+    // T4 bước 3, chủ dự án 14/11, R2 (a): central's end of segment 2 already names r1/c1 in the outcome-unknown mark (r1 ∈ U, it has a compensation) ⇒ as on a
+    // central run, ONE Continue by a person with machine-control rights AND a reason approves exactly c1; it is sent in the NEXT segment (after its interlock).
+    // Was: a plain Continue, segment 3 held(outcomeUnknown) on c1, then a second Continue (person + reason) sent c1 in segment 4.
+    expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toMatchObject({ stepId: "r1", compId: "c1", ds: [{ stepId: "r1", compId: "c1" }] });
     e.refuse = undefined;
     e.events = [];
-    await approveEdgeGate(e);
-    const s3 = await edgeSegment(e, 3);
-    expect(s3.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
-    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]); // ★ c1 not written
-    expect(String(stepRows(e.runId).find((s) => s.stepId === "r1")!.error)).toMatch(/^EDGE_OUTCOME_UNKNOWN/);
-    expect(stepRows(e.runId).find((s) => s.stepId === "c1")).toMatchObject({ status: "held" });
-    expect(runRow(e.runId).status).toBe("held");
-    expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toMatchObject({ stepId: "r1", compId: "c1", ma: "EDGE_OUTCOME_UNKNOWN", lan: "claim3" });
-    // A2(n) T6 (decision 3, H13) — r2 never goes forward on this latched run (the Continue below sends c1 only): a person is told now, nobody would later
-    expect(e.events!.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION").map((x) => JSON.parse(x.detail))).toEqual([expect.objectContaining({ loai: "held", stepId: "r1", compId: "c1", claimSeq: 3 }), expect.objectContaining({ loai: "forwardNotSent", stepId: "r2", claimSeq: 3 })]);
     // n3 — refused (nothing changes) for a supervisor WITHOUT machine-control rights, then without a reason; with both, ONLY c1 is sent
     // (r1 never again), the run fails
     await expect(approveEdgeGate(e)).rejects.toThrow(/only a person with machine-control rights/);
     grantMachineControl();
     await expect(approveEdgeGate(e)).rejects.toThrow(/reason is required/);
     expect(runRow(e.runId).status).toBe("held");
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]); // ★ nothing sent by a refused Continue
+    const soC1 = () => rows("edge_step_authorizations").filter((a) => a.runId === e.runId && a.stepId === "c1");
+    expect(soC1(), "the ledger: c1 never authorised before the approval").toEqual([]);
+    // R2 (a) điều kiện 3 — a SYSTEM caller (auto-resume) is never a person: refused or not taken, the run stays held, nothing sent
+    const v0 = (await getRun(e.runId, { bindingDigest: true }))!;
+    await resumeRun(e.runId, { approved: true, note: "auto-resume (FOE_DURABLE)", expectedStepId: v0.run.currentStepId, expectedDefHash: v0.defHash!, expectedBindingDigest: v0.bindingDigest! }, { id: 0, role: "system", name: "FOE auto-resume" }).catch((err: unknown) => err);
+    expect(runRow(e.runId).status).toBe("held");
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]);
     expect((await continueOutcomeUnknown(e, "checked on site: r1 not applied")).status).toBe("queued");
     expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toBeUndefined(); // the marker is cleared by that Continue
-    const s4 = await edgeSegment(e, 4);
-    expect(s4.out).toMatchObject({ outcome: "failed" });
+    // R2 (a) điều kiện 3 — the approval names EXACTLY the pair r1/c1: it opens no other compensation of the run
+    const duyet = runRow(e.runId).contextJson.foeKetCucKhongRoDuyet as { buTru: unknown; at: string };
+    expect(duyet.buTru).toEqual([{ stepId: "r1", compId: "c1" }]);
+    expect(soC1(), "still nothing authorised: the approval is a record, not a send").toEqual([]);
+    const s3 = await edgeSegment(e, 3);
+    expect(s3.out).toMatchObject({ outcome: "failed" });
+    // chủ dự án 14/11, R2 (a) (HST, điều kiện 1) — c1 REALLY went, EXACTLY ONCE: one hand-over, one step row, one ledger record with its result; and AFTER the approval
     expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1", "c1"]);
-    expect(stepRows(e.runId).find((s) => s.stepId === "c1")).toMatchObject({ status: "compensated" });
+    expect(String(stepRows(e.runId).find((s) => s.stepId === "r1")!.error)).toMatch(/^EDGE_OUTCOME_UNKNOWN/);
+    expect(stepRows(e.runId).filter((s) => s.stepId === "c1")).toEqual([expect.objectContaining({ status: "compensated" })]);
+    expect(soC1(), "the ledger: c1 authorised once, its result recorded").toEqual([expect.objectContaining({ supersededAt: null, resultReportedAt: expect.any(Date) })]);
+    expect((soC1()[0]!.resultReportedAt as Date).getTime(), "the order: the approval first, the send of c1 after it").toBeGreaterThanOrEqual(Date.parse(duyet.at));
+    // A2(n) T6 (decision 3, H13) — r2 never goes forward on this latched run: a person is told
+    expect(e.events!.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION").map((x) => JSON.parse(x.detail))).toEqual([expect.objectContaining({ loai: "forwardNotSent", stepId: "r2", claimSeq: 3 })]);
+    expect(h.sent.map((x) => x.stepId)).not.toContain("r2");
+  });
+
+  it("T4-B3-R2A-KHONG-DUYET (chủ dự án 14/11, R2 (a), đối chứng của ca trên: KHÔNG có duyệt) r1's dispatch answers timeout inside the segment: the walker reaches c1 with no approval ⇒ held for a person, URGENT [held r1/c1, …], c1 NOT sent, the ledger has no c1", async () => {
+    const e = await edgeAssignedRun(def("ja-e-kd", [gate(), move("r1", { compensation: ot("c1") }), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const n0 = h.sent.length;
+    e.events = [];
+    h.timeoutDispatch.add("r1");
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]); // ★ c1 not sent
+    expect(stepRows(e.runId).find((s) => s.stepId === "c1")).toMatchObject({ status: "held" });
+    expect(rows("edge_step_authorizations").filter((a) => a.runId === e.runId && a.stepId === "c1")).toEqual([]);
+    const bao = e.events!.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION").map((x) => JSON.parse(x.detail));
+    expect(bao[0]).toMatchObject({ loai: "held", stepId: "r1", compId: "c1" });
+  });
+
+  it("T4-B3-R2A-INTERLOCK (chủ dự án 14/11, R2 (a), HST điểm 3; chuẩn trung tâm = foeKetCucKhongRo.a2n T4-B3-INTERLOCK-TT) the ONE approval given, but c1's interlock BLOCKS in segment 3: c1 NOT sent, its row failed, the run fails, a person told (approvedNotSent); the interlock opening again sends NOTHING (a failed run is not continued: no second approval)", async () => {
+    const khoa = { precondition: { source: "telemetry", machineId: 1, key: "temp", op: "lt", value: 100 }, onPreconditionFail: "hold" };
+    const e = await edgeAssignedRun(def("ja-e-il", [gate(), move("r1", { maxAttempts: 2, compensation: ot("c1", khoa) }), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const n0 = h.sent.length;
+    h.failPlan.set("r1", 1);
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "journalFull", outcomeUnknown: ["r1"] });
+    e.refuse = undefined;
+    e.events = [];
+    expect((await continueOutcomeUnknown(e, "checked on site: r1 not applied")).status).toBe("queued");
+    h.telemetry = [{ key: "temp", value: 150 }]; // the interlock of c1 blocks
+    const s3 = await edgeSegment(e, 3);
+    expect(s3.out).toMatchObject({ outcome: "failed" });
+    expect(runRow(e.runId).status).toBe("failed");
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]); // ★ c1 not sent
+    expect(stepRows(e.runId).find((s) => s.stepId === "c1")).toMatchObject({ status: "failed" });
+    expect(rows("edge_step_authorizations").filter((a) => a.runId === e.runId && a.stepId === "c1")).toEqual([]);
+    expect(e.events!.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION").map((x) => JSON.parse(x.detail))).toEqual(expect.arrayContaining([expect.objectContaining({ loai: "approvedNotSent", stepId: "r1", compId: "c1" })]));
+    h.telemetry = [{ key: "temp", value: 80 }]; // the interlock opens again
+    const v = (await getRun(e.runId, { bindingDigest: true }))!;
+    await resumeRun(e.runId, { approved: true, note: "interlock clear now", expectedStepId: v.run.currentStepId, expectedDefHash: v.defHash!, expectedBindingDigest: v.bindingDigest! }, OTHER).catch((err: unknown) => err);
+    expect(runRow(e.runId).status).toBe("failed");
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]); // ★ nothing sent: no second approval of a failed run
+  });
+
+  it("T4-B3-R2A-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của ca trên) the same refused POST-SEND result, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never sent again", async () => {
+    const e = await edgeAssignedRun(def("ja-e-dc", [gate(), move("r1", { maxAttempts: 2 }), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const n0 = h.sent.length;
+    h.failPlan.set("r1", 1);
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "journalFull", outcomeUnknown: ["r1"] });
+    expect(runRow(e.runId).contextJson.foeOutcomeUnknown).toEqual(["r1"]);
+    expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toBeUndefined(); // no compensation ⇒ no gate for a person
+    e.refuse = undefined;
+    await approveEdgeGate(e); // a plain Continue (no machine-control rights, no reason) is accepted as before
+    await edgeSegment(e, 3);
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]); // ★ r1 never sent again
   });
 
   it("★ a robot STOP job is a STOP for the edge even when the package does not list it (local classifier): it never asks, also offline", async () => {
@@ -2160,18 +2252,33 @@ describe("doc 81 Đợt 10 C fix review 2 (R-10-ae) — what a Continue must nev
     expect(runRow(e.runId).contextJson.foeOutcomeUnknown).toEqual(["r1"]);
     e.refuse = undefined;
     e.stripEndUnknown = false;
-    await approveEdgeGate(e);
-    expect(runRow(e.runId).contextJson.foeResumeState).toMatchObject({ r1: { state: "outcomeUnknown" } });
-    const s3 = await edgeSegment(e, 3);
-    // R1b-2b-2a A2(n) — r1 once; its (non-STOP) compensation is HELD for a person, never sent by itself after the unknown outcome
-    expect(s3.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
-    expect(h.sent.map((x) => x.stepId)).toEqual(["r1"]);
-    expect(String(stepRows(e.runId).find((s) => s.stepId === "r1")!.error)).toMatch(/^EDGE_OUTCOME_UNKNOWN/);
-    // the Continue (person + reason) ⇒ the resume state derived from the rows carries the unknown flag; c1 sent once
+    // T4 bước 3, chủ dự án 14/11, R2 (a): r1 ∈ U with a compensation ⇒ central's end names r1/c1; ONE Continue (person + reason) approves exactly c1, sent in the next segment (after its
+    // interlock); a plain Continue is refused. Was: a plain Continue, segment 3 held(outcomeUnknown) on c1, then a second Continue (person + reason), c1 sent in segment 4.
+    expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toMatchObject({ stepId: "r1", compId: "c1", ds: [{ stepId: "r1", compId: "c1" }] });
+    await expect(approveEdgeGate(e)).rejects.toThrow(/only a person with machine-control rights/);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1"]); // ★ a refused Continue sends nothing
     await continueOutcomeUnknown(e, "checked: r1 never moved");
-    expect(runRow(e.runId).contextJson.foeResumeState).toMatchObject({ r1: { state: "compensationHeld", khongRo: true } });
-    await edgeSegment(e, 4);
+    expect(runRow(e.runId).contextJson.foeResumeState).toMatchObject({ r1: { state: "outcomeUnknown" } });
+    await edgeSegment(e, 3);
+    // R1b-2b-2a A2(n) — r1 once, never again; c1 once, only after the person's approval
     expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "c1"]);
+    expect(String(stepRows(e.runId).find((s) => s.stepId === "r1")!.error)).toMatch(/^EDGE_OUTCOME_UNKNOWN/);
+  });
+
+  it("T4-B3-R2A-NOPFX-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng) outcome unknown without the prefix, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never re-sent", async () => {
+    const e = await edgeAssignedRun(def("ae-nopfx-dc", [gate(), move("r1"), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
+    e.stripEndUnknown = true;
+    await edgeSegment(e, 2);
+    expect(runRow(e.runId).contextJson.foeOutcomeUnknown).toEqual(["r1"]);
+    expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toBeUndefined();
+    e.refuse = undefined;
+    e.stripEndUnknown = false;
+    await approveEdgeGate(e); // a plain Continue is accepted as before
+    await edgeSegment(e, 3);
+    expect(h.sent.map((x) => x.stepId)).toEqual(["r1"]); // ★ r1 never re-sent
   });
 
   it("★ edgeResumeStateOf: the rows' rule (sent ⇒ unknown, failed + comp held / running / absent ⇒ compensation, comp ended ⇒ done, else ambiguous)", async () => {
