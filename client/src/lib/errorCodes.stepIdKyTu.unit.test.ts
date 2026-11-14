@@ -61,3 +61,43 @@ describe("step id chứa ký tự cấm — câu i18n ở vi/en/zh", () => {
     }
   });
 });
+
+describe("ba luật thêm (độ dài / tiền tố abort: / dấu [[A2N) — câu i18n vi/en/zh", () => {
+  const CA: Array<{ reason: string; params: Record<string, string | number>; chua: string[] }> = [
+    { reason: "stepIdQuaDai", params: { doDai: 150, toiDa: 121 }, chua: ["150", "121"] },
+    { reason: "stepIdTienToAbort", params: {}, chua: ["abort:"] },
+    { reason: "stepIdDauHieuRieng", params: {}, chua: ["[[A2N"] },
+  ];
+  for (const c of CA) {
+    it(`INVALID_VALUE + reason ${c.reason}: có đủ ba ngôn ngữ, nêu đúng số/chuỗi, không fallback, không khoá trần, không {{`, async () => {
+      const cau: Record<string, string> = {};
+      for (const lg of ["vi", "en", "zh"]) {
+        await i18n.changeLanguage(lg);
+        cau[lg] = translateAppError("INVALID_VALUE", { field: "steps[1].id", reason: c.reason, ...c.params }, "__FALLBACK_SERVER__");
+        expect(cau[lg], lg).not.toBe("__FALLBACK_SERVER__");
+        expect(cau[lg], lg).toContain("steps[1].id");
+        for (const s of c.chua) expect(cau[lg], `${lg}/${s}`).toContain(s);
+        expect(cau[lg], lg).not.toContain(c.reason);
+        expect(cau[lg], lg).not.toContain("{{");
+      }
+      expect(new Set(Object.values(cau)).size).toBe(3);
+    });
+  }
+
+  it("câu Studio của từng luật thay đủ {{path}} / {{doDai}} / {{toiDa}} ở ba ngôn ngữ", async () => {
+    const KHOA: Array<[string, Record<string, string | number>, string[]]> = [
+      ["studio.deployStepIdQuaDai", { path: "steps[0].id", doDai: 150, toiDa: 121 }, ["steps[0].id", "150", "121"]],
+      ["studio.deployStepIdTienToAbort", { path: "steps[0].id" }, ["steps[0].id", "abort:"]],
+      ["studio.deployStepIdDauHieuRieng", { path: "steps[0].id" }, ["steps[0].id", "[[A2N"]],
+    ];
+    for (const lg of ["vi", "en", "zh"]) {
+      await i18n.changeLanguage(lg);
+      for (const [k, p, chua] of KHOA) {
+        const s = i18n.t(k, p);
+        for (const x of chua) expect(s, `${lg}/${k}/${x}`).toContain(x);
+        expect(s, `${lg}/${k}`).not.toContain("{{");
+        expect(s, `${lg}/${k}`).not.toBe(k);
+      }
+    }
+  });
+});

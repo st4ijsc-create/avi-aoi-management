@@ -319,6 +319,9 @@ export interface ValidationError {
   code?: string;
   /** For `STEP_ID_FORBIDDEN_CHAR`: the offending characters, readable (e.g. `"," and ")"`). */
   kyTu?: string;
+  /** For `STEP_ID_TOO_LONG`: the actual length of the id / the longest length accepted. */
+  doDai?: number;
+  toiDa?: number;
 }
 
 export interface ValidationResult {
@@ -361,22 +364,70 @@ export const KY_TU_CAM_TRONG_STEP_ID: ReadonlyArray<{ ky: string; ten: string }>
   { ky: "\r", ten: "carriage return (\\r)" },
 ];
 export const STEP_ID_FORBIDDEN_CHAR = "STEP_ID_FORBIDDEN_CHAR";
+export const STEP_ID_TOO_LONG = "STEP_ID_TOO_LONG";
+export const STEP_ID_ABORT_PREFIX = "STEP_ID_ABORT_PREFIX";
+export const STEP_ID_RESERVED_MARKER = "STEP_ID_RESERVED_MARKER";
+/**
+ * Độ dài tối đa của step id MỚI. Cột `orchestration_run_steps.stepId` là varchar(128) và `zStepId` max(128); hàng abort của
+ * trung tâm là `abort:<stepId>` (6 ký tự tiền tố) nên id ≤ 121 giữ hàng abort ≤ 127 ≤ 128 (HST chọn 121, chừa 1 ký tự dự phòng).
+ */
+export const STEP_ID_TOI_DA = 121;
+/** Bằng `ABORT_ROW_PREFIX` của foeRunStore.ts (không import vì foeRunStore import workflowModel; test ghim hai hằng bằng nhau). */
+export const TIEN_TO_HANG_ABORT = "abort:";
+/** Dấu rider nội bộ của luồng kết cục-không-rõ (A2(n)): id không được chứa chuỗi này (so khớp phân biệt hoa thường). */
+export const DAU_HIEU_RIENG_STEP_ID = "[[A2N";
+/** Khoá i18n `errors.reason.*` theo mã lỗi (đường duplicateWorkflow ném INVALID_VALUE với reason này). */
+export const LY_DO_I18N_THEO_MA: Readonly<Record<string, string>> = {
+  [STEP_ID_FORBIDDEN_CHAR]: "stepIdKyTuCam",
+  [STEP_ID_TOO_LONG]: "stepIdQuaDai",
+  [STEP_ID_ABORT_PREFIX]: "stepIdTienToAbort",
+  [STEP_ID_RESERVED_MARKER]: "stepIdDauHieuRieng",
+};
 
-/** Mỗi step có id chứa ký tự cấm ⇒ MỘT lỗi (path `steps[i].id` / `….compensation.id`, nêu đúng ký tự). Không ném lỗi với định nghĩa méo. */
+/**
+ * Luật ĐẦU VÀO step id MỚI (xem `KY_TU_CAM_TRONG_STEP_ID`): ký tự cấm, dài ≤ 121, không bắt đầu "abort:", không chứa "[[A2N".
+ * Mỗi step vi phạm MỖI luật ⇒ MỘT lỗi riêng (path `steps[i].id` / `….compensation.id`, mã + thông báo nêu ĐÚNG lý do).
+ * Không ném lỗi với định nghĩa méo.
+ */
 export function kiemTraKyTuIdBuoc(def: WorkflowDefinition): ValidationError[] {
   const errors: ValidationError[] = [];
   const duyet = (s: unknown, path: string): void => {
     if (!s || typeof s !== "object") return;
     const step = s as Record<string, unknown>;
     if (typeof step.id === "string") {
-      const gap = KY_TU_CAM_TRONG_STEP_ID.filter((k) => (step.id as string).includes(k.ky));
+      const id = step.id;
+      const dau = `Step id ${JSON.stringify(id.length > 40 ? `${id.slice(0, 40)}…` : id)} at ${path}.id`;
+      const gap = KY_TU_CAM_TRONG_STEP_ID.filter((k) => id.includes(k.ky));
       if (gap.length) {
         const ds = gap.map((k) => k.ten).join(" and ");
         errors.push({
           path: `${path}.id`,
           code: STEP_ID_FORBIDDEN_CHAR,
           kyTu: ds,
-          message: `Step id ${JSON.stringify(step.id)} at ${path}.id contains the forbidden character ${ds}: a new step id may not contain "," "(" ")" or a line break.`,
+          message: `${dau} contains the forbidden character ${ds}: a new step id may not contain "," "(" ")" or a line break — rename the step id, then deploy again.`,
+        });
+      }
+      if (id.length > STEP_ID_TOI_DA) {
+        errors.push({
+          path: `${path}.id`,
+          code: STEP_ID_TOO_LONG,
+          doDai: id.length,
+          toiDa: STEP_ID_TOI_DA,
+          message: `${dau} is ${id.length} characters long: a new step id may be at most ${STEP_ID_TOI_DA} — rename the step id, then deploy again.`,
+        });
+      }
+      if (id.startsWith(TIEN_TO_HANG_ABORT)) {
+        errors.push({
+          path: `${path}.id`,
+          code: STEP_ID_ABORT_PREFIX,
+          message: `${dau} starts with "${TIEN_TO_HANG_ABORT}", which is reserved for the central abort rows: a new step id may not start with it — rename the step id, then deploy again.`,
+        });
+      }
+      if (id.includes(DAU_HIEU_RIENG_STEP_ID)) {
+        errors.push({
+          path: `${path}.id`,
+          code: STEP_ID_RESERVED_MARKER,
+          message: `${dau} contains the reserved marker "${DAU_HIEU_RIENG_STEP_ID}": a new step id may not contain it — rename the step id, then deploy again.`,
         });
       }
     }

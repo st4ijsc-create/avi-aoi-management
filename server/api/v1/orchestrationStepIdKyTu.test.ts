@@ -79,3 +79,23 @@ describe("POST /api/v1/orchestration/workflows — id chứa ký tự cấm bị
     expect((await res.json()).error.code).toBe("foe_disabled");
   });
 });
+
+describe("POST /api/v1/orchestration/workflows — ba luật thêm bị từ chối Ở SERVER với đúng mã", () => {
+  const CA: Array<[string, string, string]> = [
+    ["dài 122", "d".repeat(122), "STEP_ID_TOO_LONG"],
+    ['tiền tố "abort:"', "abort:x", "STEP_ID_ABORT_PREFIX"],
+    ['dấu "[[A2N" ở đầu', "[[A2Nx", "STEP_ID_RESERVED_MARKER"],
+  ];
+  for (const [ten, id, code] of CA) {
+    it(`${ten} ⇒ 400 invalid_workflow, errors[0].code ${code}`, async () => {
+      vi.stubEnv("FOE_ENABLED", "true");
+      const res = await post(def(id));
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error.code).toBe("invalid_workflow");
+      const e = body.error.details?.errors ?? body.error.errors ?? body.details?.errors;
+      expect(e?.[0]?.code).toBe(code);
+      expect(e?.[0]?.path).toBe("steps[0].id");
+    });
+  }
+});

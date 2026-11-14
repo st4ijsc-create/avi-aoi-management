@@ -391,6 +391,25 @@ describe("OrchestrationStudio — luật đầu vào step id MỚI: toast khi de
     expect(shown).toMatch(/studio\.deployStepIdKyTu|steps\[3\]\.id[\s\S]*","/);
   });
 
+  const CAC_MA: Array<[string, Record<string, unknown>, RegExp]> = [
+    ["STEP_ID_TOO_LONG", { doDai: 150, toiDa: 121 }, /studio\.deployStepIdQuaDai|steps\[3\]\.id[\s\S]*150[\s\S]*121/],
+    ["STEP_ID_ABORT_PREFIX", {}, /studio\.deployStepIdTienToAbort|steps\[3\]\.id[\s\S]*abort:/],
+    ["STEP_ID_RESERVED_MARKER", {}, /studio\.deployStepIdDauHieuRieng|steps\[3\]\.id[\s\S]*\[\[A2N/],
+  ];
+  for (const [ma, them, mau] of CAC_MA) {
+    it(`deployWorkflow ok:false + ${ma} ⇒ toast câu RIÊNG của luật này (không phải câu ký tự cấm, không 'Deploy failed')`, async () => {
+      const { toast } = await import("sonner");
+      (toast.error as ReturnType<typeof vi.fn>).mockClear();
+      render(<OrchestrationStudio />);
+      mutationOpts["orchestration.deployWorkflow"]!.onSuccess?.({ ok: false, enabled: true, errors: [{ path: "steps[3].id", code: ma, message: "raw server text", ...them }], message: "raw server text" });
+      expect(toast.error).toHaveBeenCalledTimes(1);
+      const shown = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+      expect(shown).not.toBe("raw server text");
+      expect(shown).not.toMatch(/studio\.deployFail|^Deploy failed$|studio\.deployStepIdKyTu/);
+      expect(shown).toMatch(mau);
+    });
+  }
+
   it("deployWorkflow ok:false KHÔNG có mã ký tự id (lỗi cấu trúc khác) ⇒ vẫn hiện message của server (hành vi CŨ giữ nguyên)", async () => {
     const { toast } = await import("sonner");
     (toast.error as ReturnType<typeof vi.fn>).mockClear();

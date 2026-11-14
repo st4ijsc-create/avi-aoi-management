@@ -119,3 +119,42 @@ describe("orchestration.duplicateWorkflow (sao chép = định nghĩa MỚI) —
     expect((fake.store.get("orchestration_workflows") ?? []).some((w) => w.ref === "src-copy")).toBe(true);
   });
 });
+
+// ── ba luật thêm: độ dài ≤ 121, tiền tố "abort:", chuỗi "[[A2N" ──
+const LUAT_THEM: Array<{ ten: string; id: string; code: string; reason: string; params?: Record<string, number> }> = [
+  { ten: "dài 122", id: "d".repeat(122), code: "STEP_ID_TOO_LONG", reason: "stepIdQuaDai", params: { doDai: 122, toiDa: 121 } },
+  { ten: 'tiền tố "abort:x"', id: "abort:x", code: "STEP_ID_ABORT_PREFIX", reason: "stepIdTienToAbort" },
+  { ten: 'dấu "[[A2N" ở giữa', id: "a[[A2Nb", code: "STEP_ID_RESERVED_MARKER", reason: "stepIdDauHieuRieng" },
+];
+
+describe("ba luật thêm — deployWorkflow (tRPC) từ chối đúng mã, KHÔNG ghi bảng workflows", () => {
+  for (const c of LUAT_THEM) {
+    it(`${c.ten} ⇒ ok:false, errors[0].code ${c.code}`, async () => {
+      const r = await orchestrationRouter.createCaller(ctxOf(ENGINEER)).deployWorkflow({ definition: def(c.id), totpCode: "000000" });
+      expect(r.ok).toBe(false);
+      expect(r.errors).toHaveLength(1);
+      expect(r.errors?.[0].code).toBe(c.code);
+      expect(r.errors?.[0].path).toBe("steps[0].id");
+      expect(r.message).toMatch(/rename the step id, then deploy again/);
+      expect(fake.store.get("orchestration_workflows") ?? []).toHaveLength(0);
+    });
+  }
+  it("biên 121 ký tự: qua cổng kiểm đầu vào (không bị từ chối vì luật id)", async () => {
+    const r = await orchestrationRouter.createCaller(ctxOf(ENGINEER)).deployWorkflow({ definition: def("e".repeat(121)), totpCode: "000000" });
+    expect((r.errors ?? []).some((e) => e.code?.startsWith("STEP_ID_"))).toBe(false);
+  });
+});
+
+describe("ba luật thêm — duplicateWorkflow từ chối với reason + tham số đúng", () => {
+  for (const c of LUAT_THEM) {
+    it(`${c.ten} ⇒ BAD_REQUEST INVALID_VALUE reason ${c.reason}${c.params ? ` + doDai/toiDa` : ""}`, async () => {
+      fake.seed(orchestrationWorkflows, [{ id: 1, ref: "src", name: "Src", version: 3, description: null, definitionJson: { ...def(c.id), ref: "src" }, status: "active", createdBy: 10 }]);
+      const err: any = await orchestrationRouter.createCaller(ctxOf(ENGINEER)).duplicateWorkflow({ id: 1, newRef: "src-copy" }).catch((e) => e);
+      expect(err?.code).toBe("BAD_REQUEST");
+      expect(err?.cause?.appCode).toBe("INVALID_VALUE");
+      expect(err?.cause?.appParams?.reason).toBe(c.reason);
+      for (const [k, v] of Object.entries(c.params ?? {})) expect(err?.cause?.appParams?.[k], k).toBe(v);
+      expect((fake.store.get("orchestration_workflows") ?? []).some((w) => w.ref === "src-copy")).toBe(false);
+    });
+  }
+});
