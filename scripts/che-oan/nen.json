@@ -1,0 +1,15 @@
+{
+  "rev": "74770b6451a8ee1d3a017fefbd568aab3e219788",
+  "khop": {
+    "github": 0,
+    "github_pat": 0,
+    "gitlab": 0,
+    "slack": 0,
+    "aws": 2,
+    "google": 0,
+    "stripe": 0,
+    "npm": 0,
+    "openai": 0,
+    "anthropic": 0
+  }
+}
