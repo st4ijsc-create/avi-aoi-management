@@ -112,6 +112,13 @@ describe("orchestration.duplicateWorkflow (sao chép = định nghĩa MỚI) —
     });
   }
 
+  it('nguồn có id chứa "," ⇒ appParams.kyTu mang ĐÚNG ký tự vi phạm (không rỗng; câu i18n cần nó)', async () => {
+    seed("a,b");
+    const err: any = await orchestrationRouter.createCaller(ctxOf(ENGINEER)).duplicateWorkflow({ id: 1, newRef: "src-copy" }).catch((e) => e);
+    expect(err?.cause?.appParams?.kyTu).toBe('","');
+    expect(err?.cause?.appParams?.field).toBe("steps[0].id");
+  });
+
   it("id hợp lệ bình thường ⇒ sao chép được như cũ", async () => {
     seed("buoc-1_ok");
     const res = await orchestrationRouter.createCaller(ctxOf(ENGINEER)).duplicateWorkflow({ id: 1, newRef: "src-copy" });

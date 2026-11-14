@@ -139,3 +139,21 @@ describe("chỉ chặn khi TẠO/SỬA: định nghĩa CŨ có id vi phạm vẫ
     expect(r.message).toMatch(/rename the step id, then deploy again/);
   });
 });
+
+describe("thông báo cắt id dài: đúng 40 ký tự + dấu … (không in nguyên id)", () => {
+  const msgOf = (id: string) => kiemTraKyTuIdBuoc(defOf(delay(id)))[0].message;
+  it("id 70 ký tự (chứa ',' ở đầu) ⇒ thông báo có ĐÚNG 40 ký tự đầu + …, không có ký tự thứ 41", () => {
+    const id = `,${"abcdefghij".repeat(7).slice(0, 69)}`;
+    expect(id).toHaveLength(70);
+    const m = msgOf(id);
+    expect(m).toContain(JSON.stringify(`${id.slice(0, 40)}…`));
+    expect(m).not.toContain(id.slice(0, 41));
+  });
+  it("biên: id đúng 40 ký tự ⇒ in nguyên, KHÔNG có …; id 41 ký tự ⇒ có …", () => {
+    const id40 = `,${"x".repeat(39)}`;
+    const id41 = `,${"x".repeat(40)}`;
+    expect(msgOf(id40)).toContain(JSON.stringify(id40));
+    expect(msgOf(id40)).not.toContain("…");
+    expect(msgOf(id41)).toContain(JSON.stringify(`${id41.slice(0, 40)}…`));
+  });
+});
