@@ -6439,8 +6439,9 @@ describe("A2(n) T5 — a STOP that did not go: the marked route, state C, centra
   });
   it("F-DB1 a STOP in C that went: its row clears; the container around it, carrying the same words, is no debt", () => {
     const loi = 'FOE_STOP_NOT_SENT: STOP "st" did NOT go out (attempt 1): its dispatcher refused it [X].';
-    expect(stopChuaRaTuHang([{ stepId: "b", status: "failed", error: loi }, { stepId: "p", status: "failed", error: `Parallel branch failed: ${loi}` }])).toEqual(new Set());
-    expect(stopChuaRaTuHang([{ stepId: "st", status: "failed", error: loi }, { stepId: "b", status: "failed", error: loi }])).toEqual(new Set(["st"]));
+    // T9 lượt sửa 3d (mục 2) — a container's row says its type (orchestration_run_steps.stepType is NOT NULL, the walk writes step.type: foeEngine.ts failed row): a row that does not say is read as a STOP's own
+    expect(stopChuaRaTuHang([{ stepId: "b", stepType: "sequence", status: "failed", error: loi }, { stepId: "p", stepType: "parallel", status: "failed", error: `Parallel branch failed: ${loi}` }])).toEqual(new Set());
+    expect(stopChuaRaTuHang([{ stepId: "st", stepType: "command", status: "failed", error: loi }, { stepId: "b", stepType: "sequence", status: "failed", error: loi }])).toEqual(new Set(["st"]));
     expect(stopChuaRaTuHang([{ stepId: "st", status: "failed", error: loi }, { stepId: "abort:st", status: "completed", error: null, resultJson: { stepId: "st" } }])).toEqual(new Set());
     expect(stopChuaRaTuHang([{ stepId: "st", status: "failed", error: loi }, { stepId: "abort:st", status: "skipped", error: null, resultJson: { stepId: "st" } }])).toEqual(new Set());
     expect(stopChuaRaTuHang(null)).toEqual(new Set());
@@ -8289,6 +8290,40 @@ describe("A2(n) T6c — a stop-typed step whose pin read did not answer on the e
     expect(loi).not.toMatch(/did NOT go out/);
     expect(loi).not.toMatch(/Abort sends it/);
     expect(loi, "nothing taken from the node's text").not.toMatch(/nt_dung/);
+    expect(loi).toContain(SAFE_TAY);
+  });
+  // ── T9 lượt sửa 3d (mục 1, RA3C-VIBAO-KHONG-VI and RA3C-CONG-BO-VI-KHONG-BAO lived: test holes, not equivalent) — the two fail-closed fallbacks of 3c on the road of an edge segment's end ───────
+  // (a) the node sends a stopNotSent with no code: foeEngine.ts:1768 puts `vi` on the report only when it has one (giuStopChuaRa, :1820-1830: a debt the rows hold whose row carries no code)
+  it("T9F3D-BAO-KHONG-VI a held segment end whose report of its STOP carries no code: the run's error names the report's STOP, not confirmed out (NOT_REPORTED), never 'did NOT go out'", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const runId = 99_801;
+    fake.store.set("orchestration_runs", [...rows("orchestration_runs"), { id: runId, status: "running", contextJson: null } as never]);
+    const { ganBaoCaoKhongRoEdge } = await import("./foeKetCucKhongRo");
+    const d = { steps: [move("x"), otStop("nt")] } as unknown as WorkflowDefinition;
+    const loiNut = ganBaoCaoKhongRoEdge('FOE_STOP_NOT_SENT: STOP "nt" did NOT go out: nobody could read its pins. The run is held: Abort sends it again.', [{ loai: "stopNotSent", stepId: "nt", compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1, biet: true }], 4_000);
+    await applyEdgeSegmentEnd(fake as never, runId, { outcome: "held", heldReason: "outcomeUnknown", error: loiNut, nodeCode: "edge-a", claimSeq: 1, def: d } as never);
+    const loi = String(runRow(runId).error ?? "");
+    expect(runRow(runId).status).toBe("held");
+    expect(loi, "the report's STOP").toMatch(/"nt"/);
+    expect(loi, "fail-closed: central was not told the code").toMatch(/may have reached the device \(NOT_REPORTED\)/);
+    expect(loi).not.toMatch(/did NOT go out/);
+    expect(loi).toContain(SAFE_TAY);
+  });
+  // (b) the end gate, an edge segment with NO report on its end (ganBaoCaoKhongRoEdge leaves the rider off when it is too long: the anomaly is the first route) and a debt on a row that carries no
+  // code (a refused attempt left running on a latched run, laHangChuaRa): neither the report nor the row says how it stands
+  it("T9F3D-CONG-KHONG-BAO an edge segment's end with no report and a STOP owed on a row with no code: the gate holds the run, its error fail-closed (NOT_REPORTED), never 'did NOT go out'", async () => {
+    const runId = 99_802;
+    fake.store.set("orchestration_runs", [...rows("orchestration_runs"), { id: runId, status: "running", contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN", at: "2026-11-14T00:00:00.000Z" } } } as never]);
+    fake.store.set("orchestration_run_steps", [...rows("orchestration_run_steps"), { runId, stepId: "nt", stepType: "command", status: "running", attempt: 1, error: null, resultJson: { routedTo: "ot-dispatcher", status: "failed", accepted: false, detail: { edge: true, reason: "ADAPTER_OFFLINE" } } } as never]);
+    const d = { steps: [move("x"), otStop("nt")] } as unknown as WorkflowDefinition;
+    expect([...stopChuaRaTuHang(stepRows(runId) as never, runRow(runId).contextJson)], "the debt the row holds").toEqual(["nt"]);
+    await applyEdgeSegmentEnd(fake as never, runId, { outcome: "failed", error: "Parallel branch failed", nodeCode: "edge-a", claimSeq: 1, def: d } as never);
+    const loi = String(runRow(runId).error ?? "");
+    expect(runRow(runId).status, "a STOP owed holds the run").toBe("held");
+    expect(loi, "its STOP").toMatch(/"nt"/);
+    expect(loi, "fail-closed: nothing says how it stands").toMatch(/may have reached the device \(NOT_REPORTED\)/);
+    expect(loi).not.toMatch(/did NOT go out/);
     expect(loi).toContain(SAFE_TAY);
   });
   it("T9F1-Q2-EDGE the words of Q2-ABORT-T7b edge's hold (the package's stopsUnsure, ADAPTER_OFFLINE): central composes them: not verified, nothing written, the promise a condition", async () => {
@@ -17345,10 +17380,13 @@ describe("A2(n) T9 — the confirmation of a STOP after an unknown attempt (XAC_
     let notConfirmed = 0;
     let khongChuyen = 0;
     const loi: string[] = [];
+    // lượt sửa 3d (mục 1, RA3C-FWD-DS-DAI-LOC-KIND lived) — the kinds the sweep reached, against the source (CANH_BAO_KHONG_RO_KIND): a kind dropped from the loop is red
+    const daQuet = new Set<string>();
     for (const loai of Object.keys(CANH_BAO_KHONG_RO_KIND)) for (const id of ["nt", idL]) for (const comp of [KHONG_CO_BU_TRU, "cs", idL]) for (const vi of vis) for (const nut of [undefined, true, "khongBiet"]) for (const ca of chuAbort) for (const c of co) {
       if (ca !== undefined && loai !== "abortStopNotSent") continue;
       const n = noiDungCanhBaoKhongRo({ loai, runId: 2_147_483_647, stepId: id, compId: comp, error: "FOE_OUTCOME_UNKNOWN", lan: "claim2147483647", ...(vi ? { vi } : {}), ...(nut ? { adapterNut: nut } : {}), ...(ca ? { chuAbort: ca } : {}), ...c } as never);
       dem++;
+      daQuet.add(loai);
       const nhan = `${loai} id${id.length} comp${comp.length} ${vi?.ma.slice(0, 12) ?? "-"} ${nut ?? "-"} ${ca ?? "-"} ${Object.keys(c).join(",")}`;
       if (n.message.length > 800 || n.title.length > 800) loi.push(`${n.message.length}/${n.title.length} ${nhan}`);
       if (!/check (the machine|the device|on site)|check on site|direct STOP \/ E-STOP/i.test(n.message)) loi.push(`advice? ${nhan}`);
@@ -17357,8 +17395,124 @@ describe("A2(n) T9 — the confirmation of a STOP after an unknown attempt (XAC_
     }
     expect(loi.slice(0, 20), "every message and title ≤ 800 with its advice").toEqual([]);
     expect(dem, "the sweep ran").toBeGreaterThan(10_000);
+    const nguon = Object.keys(CANH_BAO_KHONG_RO_KIND);
+    expect(nguon.length, "the source lists the kinds").toBeGreaterThan(20);
+    expect(daQuet.size, "every kind of the source was swept").toBe(nguon.length);
+    expect([...daQuet].sort(), "the kinds swept are the source's").toEqual([...nguon].sort());
     expect(notConfirmed, "the NOT_CONFIRMED branch is in the sweep").toBeGreaterThan(0);
     expect(khongChuyen, "the not-routed clause is in the sweep").toBeGreaterThan(0);
+  });
+  // ── T9 lượt sửa 3d (mục 2, điều kiện (3) của 3c: foeRunStore.ts laHangChuaRa / stopChuaRaTuHang read the id from the row's WORDS, the one place 3c's sweep missed) — the row's own STOP from structured
+  // data (its step, an `abort:` row's result), the code at the head; a container's row (it carries the same words, F-DB1: foeEngine.ts failed row of a sequence / parallel / branch, edgeReportsCentral.ts
+  // `stepType: step.type` from central's definition) is no STOP's own ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  const KHOA_T9F3D = { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN" } };
+  const VI_T9F3D = [{ nguon: "tuChoi", ma: "ADAPTER_OFFLINE" }, { nguon: "driverLoi", ma: "DRIVER_WRITE_FAILED" }, { nguon: "doc", ma: "NOT_CONFIRMED" }] as const;
+  const KQ_TU_CHOI = (ma: string) => ({ routedTo: "ot-dispatcher", status: "failed", accepted: false, detail: { edge: true, reason: ma } });
+  it("T9F3D-HANG-ID the STOP's own failed row of state C, the id in its words whole, cut, another or none: the debt stays, latched or not, the step is not settled", async () => {
+    const { laHangChuaRa } = await import("./foeRunStore");
+    const { loiChuaRaStop, rutGonGiua } = await import("./foeKetCucKhongRo");
+    const ID = "nt_dung_khan_bang_tai_01";
+    for (const vi of VI_T9F3D) {
+      for (const [ten, chu] of [["whole", loiChuaRaStop(ID, 3, vi)], ["cut", loiChuaRaStop(rutGonGiua(ID, 14), 3, vi)], ["other", loiChuaRaStop("nt_khac", 3, vi)], ["none", `FOE_STOP_NOT_SENT: a STOP is not confirmed out [${vi.ma}].`]] as const) {
+        const r = { stepId: ID, stepType: "command", status: "failed", attempt: 3, error: chu, resultJson: KQ_TU_CHOI(vi.ma) };
+        const nhan = `${vi.nguon} ${ten}`;
+        expect(laHangChuaRa(r), `${nhan}: its own row of state C`).toBe(true);
+        expect([...stopChuaRaTuHang([r], KHOA_T9F3D)], `${nhan}: owed, latched`).toEqual([ID]);
+        expect([...stopChuaRaTuHang([r], {})], `${nhan}: owed, its code says so`).toEqual([ID]);
+        expect(priorStepsOf([r]).settled.has(ID), `${nhan}: no last word`).toBe(false);
+        expect(phanLoaiStopAbort(ID, { hang: [r], ctx: KHOA_T9F3D }).lop, `${nhan}: an Abort reads it owed`).toBe("no");
+        // dauVetCuaHang (foeRunStore.ts, the trace an Abort reads) with no dispatcher's answer on the row: state C is "did not go", whatever its words cut
+        expect(phanLoaiStopAbort(ID, { hang: [{ ...r, resultJson: null }], ctx: KHOA_T9F3D }), `${nhan}: no answer on the row`).toMatchObject({ lop: "no" });
+      }
+    }
+  });
+  it("T9F3D-HANG-KHOI a container's row carrying its STOP's words (sequence, parallel, branch): no debt of the container, the STOP's own row decides; a running row and an abort: row as before", async () => {
+    const { laHangChuaRa } = await import("./foeRunStore");
+    const { loiChuaRaStop } = await import("./foeKetCucKhongRo");
+    for (const vi of VI_T9F3D) {
+      for (const loai of ["sequence", "parallel", "branch"] as const) {
+        const khoi = { stepId: "c2", stepType: loai, status: "failed", attempt: 1, error: loiChuaRaStop("c2", 3, vi), resultJson: null };
+        const khoiNt = { ...khoi, error: loiChuaRaStop("nt", 3, vi) };
+        const nhan = `${vi.nguon} ${loai}`;
+        expect(laHangChuaRa(khoi), `${nhan}: no STOP's own row, even naming itself`).toBe(false);
+        expect([...stopChuaRaTuHang([khoi, khoiNt], KHOA_T9F3D)], `${nhan}: no false debt`).toEqual([]);
+        expect(priorStepsOf([khoi]).settled.has("c2"), `${nhan}: a container's failure is its last word`).toBe(true);
+        const nt = { stepId: "nt", stepType: "command", status: "failed", attempt: 3, error: loiChuaRaStop("nt", 3, vi), resultJson: KQ_TU_CHOI(vi.ma) };
+        expect([...stopChuaRaTuHang([khoiNt, nt], KHOA_T9F3D)], `${nhan}: the STOP's own row`).toEqual(["nt"]);
+      }
+    }
+    // running: a refused attempt left running owes on a latched run only (H1), its words or none
+    const chay = { stepId: "nt", stepType: "command", status: "running", attempt: 1, error: null, resultJson: KQ_TU_CHOI("ADAPTER_OFFLINE") };
+    expect([...stopChuaRaTuHang([chay], KHOA_T9F3D)]).toEqual(["nt"]);
+    expect([...stopChuaRaTuHang([chay], {})]).toEqual([]);
+    // abort: the id is the row's result's (or its name after the prefix), never its words
+    const ab = (error: string | null, kq: Record<string, unknown> | null, status = "failed") => ({ stepId: "abort:nt", stepType: "command", status, attempt: 0, error, resultJson: kq });
+    const tc = { nguon: "tuChoi", ma: "ADAPTER_OFFLINE" } as const;
+    expect([...stopChuaRaTuHang([ab(loiChuaRaStop("nt", "abort", tc), { abortStop: "failed", stepId: "nt" })], {})], "an Abort's row in state C, its code").toEqual(["nt"]);
+    expect([...stopChuaRaTuHang([ab(loiChuaRaStop("n…t", "abort", tc), { abortStop: "failed", stepId: "nt" })], {})], "its words cut: its result names it").toEqual(["nt"]);
+    expect([...stopChuaRaTuHang([ab(null, { abortStop: "failed", stepId: "nt" })], KHOA_T9F3D)], "no code, latched").toEqual(["nt"]);
+    expect([...stopChuaRaTuHang([ab(null, { abortStop: "failed", stepId: "nt" })], {})], "no code, not latched").toEqual([]);
+    expect([...stopChuaRaTuHang([ab(loiChuaRaStop("nt", 3, tc), null, "failed"), ab(null, { abortStop: "sent", stepId: "nt" }, "completed")], KHOA_T9F3D)], "an Abort that went settles it").toEqual([]);
+    expect(laHangChuaRa(ab(loiChuaRaStop("nt", "abort", tc), { abortStop: "failed", stepId: "nt" })), "read under its own name, an abort: row is no STOP's own").toBe(false);
+  });
+  it("T9F3D-FDB1-KHONG-KIEU the input F-DB1 had (a container's row with NO stepType carrying its STOP's words): a row that does not say its type is read as a STOP's own: owed (missing stepType ⇒ debt)", () => {
+    const loi = 'FOE_STOP_NOT_SENT: STOP "st" did NOT go out (attempt 1): its dispatcher refused it [X].';
+    // the rows exactly as F-DB1 wrote them before lượt sửa 3d: no stepType
+    expect([...stopChuaRaTuHang([{ stepId: "b", status: "failed", error: loi }, { stepId: "p", status: "failed", error: `Parallel branch failed: ${loi}` }])], "missing stepType ⇒ debt (b); no code at the head ⇒ none (p)").toEqual(["b"]);
+    expect([...stopChuaRaTuHang([{ stepId: "st", status: "failed", error: loi }, { stepId: "b", status: "failed", error: loi }])].sort(), "missing stepType ⇒ debt, beside the STOP's own").toEqual(["b", "st"]);
+    expect(priorStepsOf([{ stepId: "b", status: "failed", error: loi }]).settled.has("b"), "missing stepType ⇒ not settled").toBe(false);
+  });
+  it("T9F3D-ABORT-KQ-HONG an abort: row of state C whose result is missing or broken (none, a string, no stepId, stepId of another type, empty): read by its name, the debt stays", async () => {
+    const { laHangChuaRa } = await import("./foeRunStore");
+    const { loiChuaRaStop } = await import("./foeKetCucKhongRo");
+    const { abortRowId } = await import("./foeEngine");
+    const tc = { nguon: "tuChoi", ma: "ADAPTER_OFFLINE" } as const;
+    const DAI = `dai${"q".repeat(150)}cuoi`;
+    for (const id of ["nt", DAI]) {
+      for (const [ten, kq] of [["none", null], ["undefined", undefined], ["string", '{"stepId":"' + id], ["no stepId", { abortStop: "failed" }], ["number", { abortStop: "failed", stepId: 5 }], ["empty", { abortStop: "failed", stepId: "" }], ["null", { abortStop: "failed", stepId: null }], ["array", [id]]] as const) {
+        const nhan = `${id.length} ${ten}`;
+        const ab = { stepId: abortRowId(id), stepType: "command", status: "failed", attempt: 0, error: loiChuaRaStop(id, "abort", tc), resultJson: kq };
+        expect(laHangChuaRa(ab, id), `${nhan}: the row of its STOP`).toBe(true);
+        const no = [...stopChuaRaTuHang([ab], {})];
+        expect(no.length, `${nhan}: the debt stays, its code says so`).toBe(1);
+        expect([...stopChuaRaTuHang([{ ...ab, error: null }], KHOA_T9F3D)].length, `${nhan}: no code, latched: the debt stays`).toBe(1);
+        if (id === "nt") expect(no, `${nhan}: under its STOP's id`).toEqual(["nt"]);
+      }
+    }
+    // a whole result still names its STOP, and only it
+    const ab = { stepId: "abort:nt", stepType: "command", status: "failed", error: loiChuaRaStop("nt", "abort", tc), resultJson: { abortStop: "failed", stepId: "nt" } };
+    expect(laHangChuaRa(ab, "nt")).toBe(true);
+    expect(laHangChuaRa(ab, "nt2")).toBe(false);
+  });
+  it("T9F3D-ABORT-EDGE-KHONG-MA the one row of an unsent STOP ever written WITHOUT the code (edgeReportsCentral.ts: an edge's failed abort_stop with no closed value, 'STOP not confirmed by the edge node', since T5): owed on a latched run, a press's debt on any run", () => {
+    const r = { stepId: "abort:nt", stepType: "command", status: "failed", attempt: 0, error: "STOP not confirmed by the edge node", resultJson: { abortStop: "failed", stepId: "nt", source: "edge:7", approvalSource: "edge" } };
+    expect([...stopChuaRaTuHang([r], KHOA_T9F3D)], "latched: owed, by its status (C4), never by its words").toEqual(["nt"]);
+    expect(phanLoaiStopAbort("nt", { hang: [r], ctx: {} }).lop, "not latched: the Abort's trace (H22): a press owes it").toBe("no");
+    expect(phanLoaiStopAbort("nt", { hang: [r], ctx: KHOA_T9F3D }).lop, "latched: a press owes it").toBe("no");
+  });
+  it("T9F3D-HANG-CU rows written before this change: the words of state C as 0f8875f0e stored them, a row with no type, a row with no code: the debt stays, the step is not settled", async () => {
+    const { laHangChuaRa } = await import("./foeRunStore");
+    // the words exactly as stored (loiChuaRaStop at 0f8875f0e, foeKetCucKhongRo.ts:906-911), whole id
+    const cu = [
+      'FOE_STOP_NOT_SENT: STOP "nt" did NOT go out (attempt 3): refused before a driver [ADAPTER_OFFLINE].',
+      'FOE_STOP_NOT_SENT: STOP "nt" is not confirmed out (attempt 3): may have gone out [DRIVER_WRITE_FAILED].',
+      'FOE_STOP_NOT_SENT: STOP "nt" did NOT go out (attempt 2): nobody could decide it [NOT_CONFIRMED].',
+    ];
+    for (const error of cu) {
+      for (const r of [{ stepId: "nt", stepType: "command", status: "failed", attempt: 3, error, resultJson: KQ_TU_CHOI("X") }, { stepId: "nt", status: "failed", error, resultJson: null }]) {
+        const nhan = `${error.slice(29, 60)} ${"stepType" in r ? "typed" : "no type"}`;
+        expect(laHangChuaRa(r), nhan).toBe(true);
+        expect([...stopChuaRaTuHang([r], {})], `${nhan}: owed`).toEqual(["nt"]);
+        expect([...stopChuaRaTuHang([r], KHOA_T9F3D)], `${nhan}: owed, latched`).toEqual(["nt"]);
+        expect(priorStepsOf([r]).settled.has("nt"), `${nhan}: not settled`).toBe(false);
+      }
+    }
+    // no code: a refused attempt left running (T7b-1), its row's last word, on a latched run
+    const r = { stepId: "nt", stepType: "command", status: "running", attempt: 1, error: null, resultJson: KQ_TU_CHOI("ADAPTER_OFFLINE") };
+    expect([...stopChuaRaTuHang([r], KHOA_T9F3D)], "no code: owed on a latched run").toEqual(["nt"]);
+    expect(priorStepsOf([r]).settled.has("nt"), "no code: not settled").toBe(false);
+    // an abort: row with no stepId in its result: its name after the prefix
+    expect([...stopChuaRaTuHang([{ stepId: "abort:nt", stepType: "command", status: "failed", error: 'FOE_STOP_NOT_SENT: STOP "nt" did NOT go out (on the Abort): refused before a driver [ADAPTER_OFFLINE].', resultJson: { abortStop: "failed" } }], {})], "an abort: row, no stepId in its result").toEqual(["nt"]);
   });
   // ── T9 lượt sửa 3c (mục 4, RA3-QUET-HAN-KHONG-TRU lived) — the sweep's budget N-3: each run's read of the definition hangs AND its raise never answers: each run takes at most 5·D in all (the read's D
   // comes out of it), the pass ends, each run raised exactly once ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

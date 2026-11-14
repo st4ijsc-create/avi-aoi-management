@@ -380,13 +380,37 @@ export { FOE_STOP_NOT_SENT };
 /** A2(n) T5 (C-2) — "chuaDoc" is NOT "khong": unreadable is never "not pinned" (decision 2, A). Only a stop-typed step can answer it. */
 export type LaStop = "stop" | "khong" | "chuaDoc";
 /**
+ * T9 lượt sửa 3d (mục 2, điều kiện (3) của 3c) — the row's own STOP, from structured data only: the step the row is of (`stepId`; an `abort:` row's is its result's `stepId`, else its name after
+ * the prefix, as stopChuaRaTuHang reads it), never an id read from the words (a cut or other id there loses no debt). A CONTAINER's row carries the same words (F-DB1: the walk writes the failed
+ * row of a sequence / parallel / branch with the error that rose from inside it, `upsertStep(…, step.type, { status: "failed", error: loiHang })`, foeEngine.ts:1213; an edge's row gets its type
+ * from central's definition, edgeReportsCentral.ts:359): its type says it is no STOP's own row. A row of no type (data that does not say) is read as the STOP's own: in doubt it is owed.
+ */
+const LOAI_KHOI_CHUA: ReadonlySet<string> = new Set(["sequence", "parallel", "branch"]);
+/** an `abort:` row's result names its STOP: a non-empty string; anything else (no result, no stepId, another type) says nothing */
+const idKetQuaAbort = (r: { resultJson?: unknown }): string | null => {
+  const v = (r.resultJson as { stepId?: unknown } | null | undefined)?.stepId;
+  return typeof v === "string" && v !== "" ? v : null;
+};
+/** THE id of an `abort:` row (stopChuaRaTuHang's key): its result's, else its name after the prefix (abortRowId: whole, or cut + `~` + 10 hex when long) */
+const idCuaHangAbort = (r: { stepId: string; resultJson?: unknown }): string => idKetQuaAbort(r) ?? r.stepId.slice(ABORT_ROW_PREFIX.length);
+/** is the row the one of `id`: its step; an `abort:` row by its result, else (in doubt: owed) by its name, a long id's cut head before `~` + hash included */
+const laHangCuaBuoc = (r: { stepId: string; resultJson?: unknown }, id: string): boolean => {
+  if (!r.stepId.startsWith(ABORT_ROW_PREFIX)) return r.stepId === id;
+  const kq = idKetQuaAbort(r);
+  if (kq !== null) return kq === id;
+  const ten = r.stepId.slice(ABORT_ROW_PREFIX.length);
+  return ten === id || (/~[0-9a-f]{10}$/.test(ten) && ten.length > 11 && id.startsWith(ten.slice(0, -11)));
+};
+const laHangMaChuaRa = (r: { stepId: string; stepType?: string; error?: string | null; resultJson?: unknown }, id: string): boolean =>
+  typeof r.error === "string" && r.error.startsWith(`${FOE_STOP_NOT_SENT}:`) && laHangCuaBuoc(r, id) && !(typeof r.stepType === "string" && LOAI_KHOI_CHUA.has(r.stepType));
+/**
  * THE row of a STOP not out (ONE source: priorStepsOf, stopChuaRaTuHang): the STOP's own row of state C (a container around it carries the same words, F-DB1), or — A2(n) T7b-1 — a row whose LAST
  * word is its dispatcher's "no" to the attempt it records: handed over (routedTo), not taken (accepted false), an answer (not a timeout, not "may already have flown"), and nothing written after it
  * (the row is still `running`: the row of state C that should have followed, or the known failure, is the write that was lost). A row whose walk wrote its end is read by that end. `id` the step's
  * id: an `abort:` row's is shortened when long, its result has the whole one.
  */
-export const laHangChuaRa = (r: { stepId: string; status?: string; error?: string | null; resultJson?: unknown }, id = r.stepId): boolean => {
-  if (typeof r.error === "string" && r.error.startsWith(`${FOE_STOP_NOT_SENT}: STOP "${id}"`)) return true;
+export const laHangChuaRa = (r: { stepId: string; stepType?: string; status?: string; error?: string | null; resultJson?: unknown }, id = r.stepId): boolean => {
+  if (laHangMaChuaRa(r, id)) return true;
   const kq = (r.resultJson ?? null) as { routedTo?: unknown; accepted?: unknown; status?: unknown; detail?: unknown } | null;
   return r.stepId === id && r.status === "running" && typeof kq?.routedTo === "string" && kq.accepted === false && kq.status !== "timeout" && coTheDaBayCua({ ok: false, detail: (kq.detail ?? undefined) as Record<string, unknown> | undefined }) === null;
 };
@@ -409,15 +433,15 @@ export function dauKhongXacNhan(result: unknown): DangKhongXacNhan | null {
  * word (laHangChuaRa) is owed, and so is an `abort:` row that failed, with the code or without it (C4: read when read, not when the sweep ran). Unlatched, a refused attempt is no debt: state C is a
  * latched run's (H1).
  */
-export function stopChuaRaTuHang(rows: ReadonlyArray<{ stepId: string; status?: string; error?: string | null; resultJson?: unknown }> | null | undefined, ctx?: Record<string, unknown> | null): Set<string> {
+export function stopChuaRaTuHang(rows: ReadonlyArray<{ stepId: string; stepType?: string; status?: string; error?: string | null; resultJson?: unknown }> | null | undefined, ctx?: Record<string, unknown> | null): Set<string> {
   const no = new Set<string>();
   const xong = new Set<string>();
   const daXong = new Set<string>();
   const khoa = chotTuHang(rows ?? []) !== null || runDaChotKhongRo(ctx);
   for (const r of rows ?? []) {
     const abort = r.stepId.startsWith(ABORT_ROW_PREFIX);
-    const id = abort ? String((r.resultJson as { stepId?: unknown } | null | undefined)?.stepId ?? r.stepId.slice(ABORT_ROW_PREFIX.length)) : r.stepId;
-    const coMa = typeof r.error === "string" && r.error.startsWith(`${FOE_STOP_NOT_SENT}: STOP "${id}"`);
+    const id = abort ? idCuaHangAbort(r) : r.stepId; // lượt sửa 3d (mục 2) — a result with no string stepId says nothing: the row's name (was String(stepId): a number named another STOP)
+    const coMa = laHangMaChuaRa(r, id); // lượt sửa 3d (mục 2) — the code and the row's own step (structured), never the id in its words
     if (laHangChuaRa(r, id) && (coMa || khoa)) no.add(id);
     if (abort && khoa && r.status === "failed") no.add(id);
     if (abort && (r.status === "completed" || r.status === "skipped")) xong.add(id);
