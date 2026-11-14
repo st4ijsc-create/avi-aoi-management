@@ -3,7 +3,7 @@
  * Bổ sung cho `xuatNhapBiMatBienThe.test.ts` (của người kiểm định — KHÔNG sửa) — gồm ca token ĐỘC LẬP (không có tên khoá) và ca KHÔNG báo nhầm.
  */
 import { describe, expect, it } from "vitest";
-import { laTenBiMat, lamSachChuoiBiMat, lamSachUrl } from "./xuatNhap";
+import { laTenBiMat, lamSachChuoiBiMat, lamSachUrl, quetBiMat } from "./xuatNhap";
 
 describe("laTenBiMat", () => {
   it("bắt: key / token / password / mật_khẩu / pwd / pass / otp / sid / sessionId / credentials / signature / Authorization / X-Api-Key", () => {
@@ -70,5 +70,36 @@ describe("thẻ XML · full-width · giới hạn đã biết (lô nhỏ kiem-di
     expect(lamSachUrl("https://h.example.com/items/3f2504e04f8911d39a0c0305e82c3301/x").url).toBe("https://h.example.com/items/DIEN-LAI-DOAN-DUONG-DAN/x"); // UUID liền (quá tay có chủ ý)
     expect(lamSachChuoiBiMat("keyboard=azerty&ok=1")).toBe("keyboard=&ok=1"); // quá tay có chủ ý
     expect(laTenBiMat("authorName")).toBe(true); // quá tay có chủ ý
+  });
+});
+
+// ★ 2026-11-14 (lô "một nguồn mẫu", chu-du-an-HST) — token có tiền tố lấy từ shared/mauBiMat. Trước lô: khoá NGẮN hơn 40 ký tự
+// của tiền tố mà luật riêng không biết (glpat-, AIza, rk_live_, xoxs-) đi nguyên qua XUẤT. Khoá GIẢ, ghép lúc chạy.
+describe("lamSachChuoiBiMat / quetBiMat — một nguồn mẫu token (shared/mauBiMat)", () => {
+  const C = "Kq7Zx2Wm9Rt4Lp8N".repeat(4);
+  const NGAN: Array<[string, string]> = [
+    ["gitlab 26", `glp${"at"}-${C.slice(0, 20)}`],
+    ["google 39", `AI${"za"}${C.slice(0, 35)}`],
+    ["stripe rk_live_ 32", `rk${"_live"}_${C.slice(0, 24)}`],
+    ["slack xoxs 22", `xo${"xs"}-123456-${C.slice(0, 10)}`],
+  ];
+  it.each(NGAN)("%s: trần ⇒ gỡ sạch", (_n, k) => {
+    expect(k.length).toBeLessThan(40);
+    expect(lamSachChuoiBiMat(`x ${k} y`)).toBe("x  y");
+  });
+  it("gitlab DÍNH chữ (27 ký tự, dưới ngưỡng chuỗi ≥ 40) ⇒ gỡ phần khoá, giữ chữ dính", () => {
+    expect(lamSachChuoiBiMat(`x x${NGAN[0]![1]} y`)).toBe("x x y");
+  });
+  it("ca âm B1 giữ nguyên (risk_live_…, MAKIAGE…, câu thường)", () => {
+    for (const s of ["risk_live_monitoringPanelsOverview", "MAKIAGEPRODUCTIONLINE7", "đây là câu thường"]) expect(lamSachChuoiBiMat(s)).toBe(s);
+  });
+  it("quetBiMat báo khoá ngắn ở tham số tên vô hại, chỉ lộ 4 ký tự đầu", () => {
+    const def = { nodes: NGAN.map(([, k], i) => ({ id: `n${i}`, parameters: { ghiChu: `dung ${k}` } })) } as unknown as Parameters<typeof quetBiMat>[0];
+    const ra = quetBiMat(def);
+    expect(ra.map((c) => [c.nodeId, c.loai, c.khop])).toEqual(NGAN.map(([, k], i) => [`n${i}`, "bi-mat", `${k.slice(0, 4)}…`]));
+  });
+  it("quetBiMat KHÔNG báo ca âm B1", () => {
+    const def = { nodes: [{ id: "a", parameters: { ghiChu: "risk_live_monitoringPanelsOverview MAKIAGEPRODUCTIONLINE7" } }] } as unknown as Parameters<typeof quetBiMat>[0];
+    expect(quetBiMat(def)).toEqual([]);
   });
 });

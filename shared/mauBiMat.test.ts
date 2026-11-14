@@ -165,6 +165,14 @@ describe("★★★ B1 — khoá Anthropic ở mọi dạng, kể cả DÍNH li�
   }
 });
 
+describe("B1 — ngưỡng thân khoá Anthropic {20,} (rà kiem-dinh 14/11: mutant {20,}→{2,} sống)", () => {
+  const dau = `sk-${"ant"}-api03-`;
+  it("thân 19 ký tự ⇒ GIỮ nguyên; thân 20 ký tự ⇒ che", () => {
+    expect(cheTokenCoTienTo(`x ${dau}${"Ab3_-".repeat(4).slice(0, 19)} y`, "[X]")).toBe(`x ${dau}${"Ab3_-".repeat(4).slice(0, 19)} y`);
+    expect(cheTokenCoTienTo(`x ${dau}${"Ab3_-".repeat(4)} y`, "[X]")).toBe("x [X] y");
+  });
+});
+
 describe("★★★ B1 — ca âm bắt buộc (chu-du-an-HST 14/11): tên tự nhiên dạng gần tiền tố KHÔNG bị che", () => {
   const AM_B1 = [
     "task-admin-dashboard-settings-2026-11-14",
