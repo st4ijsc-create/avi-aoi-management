@@ -53,7 +53,7 @@ describe.skipIf(!DB_URL || !/_test\b/.test(DB_URL ?? ""))("R1b-2b-1 T2 fix round
     sql = postgres(DB_URL!, { max: 1, onnotice: () => {} });
     for (const gt of ["modbus", "s7"]) {
       const [a] = await sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled")
-        VALUES (${DAU + "-" + gt}, ${DAU}, ${gt}::otprotocolenum, 'tcp://192.0.2.1:502', true) RETURNING id`;
+        VALUES (${DAU + "-" + gt}, ${DAU}, ${gt}::otprotocolenum, 'tcp://127.0.0.1:9', true) RETURNING id`;
       ad[gt] = Number(a.id);
     }
     const tag = (gt: string, k: string, dc: string, dt: string) =>
