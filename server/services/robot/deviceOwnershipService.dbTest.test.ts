@@ -113,6 +113,8 @@ function datEnv(k: (typeof ENV_KEYS)[number], v: string | undefined): void {
   if (v === undefined) delete process.env[k];
   else process.env[k] = v;
 }
+/** các dòng console.error mang mã D2_DB_NAME_UNKNOWN (console.error được spy trong beforeEach) */
+const dongLogD2 = () => vi.mocked(console.error).mock.calls.map((c) => c.map(String).join(" ")).filter((l) => l.includes("D2_DB_NAME_UNKNOWN"));
 const choBaoDong = () => new Promise<void>((r) => setTimeout(r, 20)); // báo động là `void import(...).then(...)`
 const pendingMotRobotMotAdapter = () => {
   H.pendingDevices = [
@@ -282,6 +284,16 @@ describe("D2 — vòng quét khi KHÔNG xác định được tên CSDL: gửi n
     expect(canhBao[0].message).toContain("STOPs owed are sent as before");
     expect(H.alerts).toHaveLength(1);
   });
+
+  it("★ dòng log lỗi mã cố định D2_DB_NAME_UNKNOWN xuất hiện ĐÚNG MỘT lần mỗi tiến trình (3 lượt quét), console.error", async () => {
+    // cũng là tổ hợp giả lập như ca trên (URL hỏng + DB giả); ca kiểm dòng log grep được — kênh còn lại khi không có pool
+    datEnv("DATABASE_URL", URL_KXD);
+    pendingMotRobotMotAdapter();
+    for (let i = 0; i < 3; i++) await sweepPendingCentralStops();
+    const dong = dongLogD2();
+    expect(dong).toHaveLength(1);
+    expect(dong[0]).toMatch(/^\[DeviceOwner\] D2_DB_NAME_UNKNOWN — the name of this server's DB could not be determined \(DATABASE_URL could not be parsed \(TypeError\)\)/);
+  });
 });
 
 describe("D2 — cờ TẮT: chữ dry-run cũ nguyên văn (không hồi quy)", () => {
@@ -315,6 +327,7 @@ describe("D2 — NGOÀI vòng quét trên _test (cờ bật): giống main 46a47
     expect(await sendCentralRobotStop(28438)).toEqual({ ok: true, sent: "sent", detail: "abort sent on a transient session" });
     await choBaoDong();
     expect(H.alerts).toEqual([]);
+    expect(dongLogD2()).toEqual([]);
   });
 
   it("★ dự phòng dispatcher (sendCentralAdapterStop) ⇒ như main: nạp adapter, createDriver 1 lần, chữ không đổi", async () => {

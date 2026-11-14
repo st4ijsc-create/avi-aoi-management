@@ -373,6 +373,8 @@ function sweepTestDbStop(what: string): { ok: true; sent: "simulated"; detail: s
   if (d.trangThai === "chac-la-test") return { ok: true, sent: "simulated", detail: `this server's DB is a _test DB (${d.ten}) — the central transient STOP session was not opened — ${what}`, testDb: true };
   if (d.trangThai === "khong-xac-dinh" && !dbNameUnknownAlerted) {
     dbNameUnknownAlerted = true;
+    // fixed grep code D2_DB_NAME_UNKNOWN, once per process: without a pool the alert below reaches no inbox (log + alert stream only)
+    console.error(`[DeviceOwner] D2_DB_NAME_UNKNOWN — the name of this server's DB could not be determined (${d.lyDo}): the STOP sweep cannot tell a _test DB, transient STOP sessions are opened as before`);
     void raiseDbNameUnknownAlert(d.lyDo ?? "unknown").catch(() => undefined);
   }
   return null;
