@@ -118,6 +118,16 @@ describe("cheLoiNgoai — chi tiết lỗi đã che, ≤ 500 ký tự, thông đ
     }
   });
 
+  it("nhãn ghim (rà kiem-dinh p8/p10): LoiNgoai NCC không chiTiet ⇒ ''; ném null/undefined ⇒ không ném, nhãn 'null'/'undefined'", () => {
+    const khongChiTiet = cheLoiNgoai(new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI"), TU_DIEN_RONG);
+    expect(khongChiTiet.ma).toBe("NGOAI_NHA_CUNG_CAP_LOI");
+    expect(khongChiTiet.chiTiet).toBe("");
+    const nemNull = cheLoiNgoai(null, TU_DIEN_RONG);
+    expect(nemNull.ma).toBe("NGOAI_NHA_CUNG_CAP_LOI");
+    expect(nemNull.chiTiet).toBe("null");
+    expect(cheLoiNgoai(undefined, TU_DIEN_RONG).chiTiet).toBe("undefined");
+  });
+
   it("giữ phanLoai của lỗi nhà cung cấp, không mang requestId; lỗi cổng khác giữ nguyên", () => {
     const k = cheLoiNgoai(new LoiNgoai("NGOAI_NHA_CUNG_CAP_LOI", "het quota", { phanLoai: "QUOTA", requestId: "req_123" }), TU_DIEN_RONG);
     expect(k.phanLoai).toBe("QUOTA");
