@@ -375,6 +375,58 @@ describe("OrchestrationStudio — Task 11: toast từ chối 'draft' dùng t() t
   });
 });
 
+describe("OrchestrationStudio — luật đầu vào step id MỚI: toast khi deploy bị từ chối vì ký tự id", () => {
+  const ERR = [{ path: "steps[3].id", code: "STEP_ID_FORBIDDEN_CHAR", kyTu: '"," and ")"', message: "Step id \"a,b)\" at steps[3].id contains the forbidden character ..." }];
+
+  it("deployWorkflow ok:false + errors[STEP_ID_FORBIDDEN_CHAR] ⇒ toast qua khoá studio.deployStepIdKyTu nêu path + ký tự; KHÔNG rơi về 'Deploy failed' hay message thô", async () => {
+    const { toast } = await import("sonner");
+    (toast.error as ReturnType<typeof vi.fn>).mockClear();
+    render(<OrchestrationStudio />);
+    mutationOpts["orchestration.deployWorkflow"]!.onSuccess?.({ ok: false, enabled: true, errors: ERR, message: ERR[0].message });
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    const shown = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+    expect(shown).not.toBe(ERR[0].message);
+    expect(shown).not.toMatch(/studio\.deployFail|^Deploy failed$/);
+    // môi trường test chưa nạp resource: hoặc khoá thô, hoặc câu mặc định đã nội suy {{path}} / {{kyTu}}
+    expect(shown).toMatch(/studio\.deployStepIdKyTu|steps\[3\]\.id[\s\S]*","/);
+  });
+
+  const CAC_MA: Array<[string, Record<string, unknown>, RegExp]> = [
+    ["STEP_ID_TOO_LONG", { doDai: 150, toiDa: 128 }, /studio\.deployStepIdQuaDai|steps\[3\]\.id[\s\S]*150[\s\S]*128/],
+    ["STEP_ID_ABORT_PREFIX", {}, /studio\.deployStepIdTienToAbort|steps\[3\]\.id[\s\S]*abort:/],
+    ["STEP_ID_RESERVED_MARKER", {}, /studio\.deployStepIdDauHieuRieng|steps\[3\]\.id[\s\S]*\[\[A2N/],
+  ];
+  for (const [ma, them, mau] of CAC_MA) {
+    it(`deployWorkflow ok:false + ${ma} ⇒ toast câu RIÊNG của luật này (không phải câu ký tự cấm, không 'Deploy failed')`, async () => {
+      const { toast } = await import("sonner");
+      (toast.error as ReturnType<typeof vi.fn>).mockClear();
+      render(<OrchestrationStudio />);
+      mutationOpts["orchestration.deployWorkflow"]!.onSuccess?.({ ok: false, enabled: true, errors: [{ path: "steps[3].id", code: ma, message: "raw server text", ...them }], message: "raw server text" });
+      expect(toast.error).toHaveBeenCalledTimes(1);
+      const shown = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+      expect(shown).not.toBe("raw server text");
+      expect(shown).not.toMatch(/studio\.deployFail|^Deploy failed$|studio\.deployStepIdKyTu/);
+      expect(shown).toMatch(mau);
+    });
+  }
+
+  it("deployWorkflow ok:false KHÔNG có mã ký tự id (lỗi cấu trúc khác) ⇒ vẫn hiện message của server (hành vi CŨ giữ nguyên)", async () => {
+    const { toast } = await import("sonner");
+    (toast.error as ReturnType<typeof vi.fn>).mockClear();
+    render(<OrchestrationStudio />);
+    mutationOpts["orchestration.deployWorkflow"]!.onSuccess?.({ ok: false, enabled: true, errors: [{ path: "steps", message: "Workflow needs a non-empty steps[]." }], message: "Workflow needs a non-empty steps[]." });
+    expect(toast.error).toHaveBeenCalledWith("Workflow needs a non-empty steps[].");
+  });
+
+  it("deployWorkflow ok:true ⇒ toast thành công, không toast lỗi", async () => {
+    const { toast } = await import("sonner");
+    (toast.error as ReturnType<typeof vi.fn>).mockClear();
+    render(<OrchestrationStudio />);
+    mutationOpts["orchestration.deployWorkflow"]!.onSuccess?.({ ok: true, enabled: true, workflowId: 1, ref: "r", version: 2 });
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+});
+
 // ════════════════ doc 81 Đợt 8 task O3 — the approval screen lists, per adapter / robot, whether its program is verified ════════════════
 describe("OrchestrationStudio — doc 81 Đợt 8 O3: controller program check per adapter on the approval screen", () => {
   const AWAITING = { ...run(40, "prog-flow", {}, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }), status: "awaiting_confirm", currentStepId: "g1" };

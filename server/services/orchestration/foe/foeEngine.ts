@@ -94,6 +94,7 @@ import {
 } from "../../../../drizzle/schema";
 import {
   validateWorkflow,
+  kiemTraKyTuIdBuoc,
   evaluateCondition,
   type WorkflowDefinition,
   type WorkflowStep,
@@ -2309,6 +2310,9 @@ export async function deployWorkflow(
     // structural validation first (no machines)
     const structural = validateWorkflow(def, null);
     if (!structural.ok) return { ok: false, enabled: true, errors: structural.errors };
+    // luật đầu vào step id MỚI (chỉ đường GHI; validateWorkflow không đổi nên đọc/chạy định nghĩa cũ vẫn được)
+    const kyTuId = kiemTraKyTuIdBuoc(def);
+    if (kyTuId.length) return { ok: false, enabled: true, errors: kyTuId, message: kyTuId[0].message };
 
     // semantic validation against the referenced machines
     const machineMap = await loadMachines(structural.referencedMachineIds);
