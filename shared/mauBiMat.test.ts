@@ -217,6 +217,26 @@ describe("B1 — bộ ca âm tổng hợp cố định (đối kháng, KHÔNG ph
   });
 });
 
+// ★ CHE THỪA ĐÃ CHẤP NHẬN — chu-du-an-HST xác nhận 14/11 (sau commit 8112aa94a): giữ dinhTrai cho gh?_/github_pat_/glpat-/xox/
+// AIza/npm_ dù tên thường dính chữ dạng đó bị che, vì hướng sai là hướng an toàn và kho repo thật (K1) có 0 khớp mới.
+// 18 ca CỐ ĐỊNH lấy từ bộ đối kháng K2: 6 ca trần đã bị che từ trước B1 (5 gh?_ + glpat-), 12 ca dính chữ bị che DO B1.
+// Siết lại mẫu sau này ⇒ danh sách dưới đổi ⇒ ca này đỏ, phải cập nhật CÓ CHỦ Ý.
+// LUẬT HST: mỗi lần đổi MAU_TOKEN_CO_TIEN_TO phải chạy lại K1 (quét `git archive` của main bằng RE_TOKEN_CO_TIEN_TO trước/sau);
+// K1 > 0 khớp mới ⇒ DỪNG, báo chủ dự án trước khi gộp.
+describe("B1 — che thừa ĐÃ CHẤP NHẬN (chu-du-an-HST 14/11): 18 ca cố định", () => {
+  const CHE_THUA_DA_CHAP_NHAN: Array<[string, string]> = [
+    ...["p_", "o_", "u_", "s_", "r_"].map((x): [string, string] => [`gh${x}settingsPanelOverview2026`, "[X]"]),
+    ["glpat-like-name-for-a-doc-section", "[X]"],
+    ...["l", "w"].flatMap((d) => ["p_", "o_", "u_", "s_", "r_"].map((x): [string, string] => [`${d}gh${x}settingsPanelOverview2026`, `${d}[X]`])),
+    ["xnpm_registryMirrorConfigurationDefaults2026", "x[X]"],
+    ["zAIzaSyVeryLongIdentifierNameThatIsNotAKey123", "z[X]ey123"],
+  ];
+  it("đúng 18 ca, mỗi ca ra ĐÚNG chuỗi ghi sẵn (6 trần che từ trước + 12 dính chữ che do B1)", () => {
+    expect(CHE_THUA_DA_CHAP_NHAN).toHaveLength(18);
+    expect(CHE_THUA_DA_CHAP_NHAN.map(([vao]) => [vao, cheTokenCoTienTo(vao, "[X]")])).toEqual(CHE_THUA_DA_CHAP_NHAN);
+  });
+});
+
 describe("B1 — bộ che LUỒNG giữ khoá Anthropic dính chữ đang mọc (không nhả từng mảnh)", () => {
   it("mẫu ĐANG GÕ nhận sk-ant- dính chữ ở đuôi, nhả khi có ký tự kết thúc", () => {
     expect(RE_TOKEN_CO_TIEN_TO_DANG_GO.test("x = esk-ant-api03-Kq7Z")).toBe(true);
