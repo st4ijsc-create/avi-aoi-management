@@ -15,7 +15,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 // D2 — this suite drives the STOP sweep's transient session to its OWN fake / sim / loopback devices on the _test DB: the DB-name
 // read (csdlDichStop) is replaced HERE (vitest only — the production module has no switch, no env, no export) so the sweep takes
 // its normal path. Without it the sweep simulates on _test (D2) and the owed STOPs of this suite stay pending.
-vi.mock("./csdlDichStop", () => ({ docCsdlDichStop: () => ({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null }) }));
+vi.mock("./csdlDichStop", () => ({ docCsdlDichStop: vi.fn(() => ({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null })) }));
+import { docCsdlDichStop } from "./csdlDichStop";
 import postgres from "postgres";
 import { taoNguoiDungTest } from "../../testing/nguoiDungTest";
 
@@ -51,6 +52,15 @@ const env: Record<string, string | undefined> = {};
 let actor = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const codeOf = (p: Promise<unknown>) => p.then(() => null, (e: { code?: string; message?: string }) => e?.code ?? String(e?.message ?? e));
+
+// D2 canary — chạy TRƯỚC mọi ca DB, không chạm DB: vi.mock("./csdlDichStop") ở đầu tệp phải có hiệu lực (deviceOwnershipService import đúng
+// mô-đun đó). Không ăn ⇒ vòng quét trên _test mô phỏng (D2) và các ca STOP bên dưới đỏ vì lý do KHÁC — ca này đỏ trước, nói rõ.
+describe("D2 canary — vi.mock(csdlDichStop) có hiệu lực", () => {
+  it("docCsdlDichStop là hàm mock và trả chac-khong-phai-test", () => {
+    expect(vi.isMockFunction(docCsdlDichStop), "D2: vi.mock('./csdlDichStop') KHÔNG có hiệu lực — vòng quét sẽ mô phỏng trên _test; các ca STOP của tệp này không còn nghĩa").toBe(true);
+    expect(docCsdlDichStop(), "D2: mock csdlDichStop trả sai giá trị").toEqual({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null });
+  });
+});
 
 describe.skipIf(!onTest)("0377 — the central STOP sweep follows the one lock order (device row first)", () => {
   beforeAll(async () => {
