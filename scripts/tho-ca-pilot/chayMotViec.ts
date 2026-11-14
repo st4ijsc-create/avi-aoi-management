@@ -822,6 +822,13 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     lyDoKiem = `ketCuc ${ketCuc} giữ nguyên; lệnh kiểm chạy bổ sung: exit ${kiem.exit}${kiem.vitest.ca ? `, Tests ${kiem.vitest.ca.dat} passed / ${kiem.vitest.ca.tong}` : ""}${tsc ? `; tsc exit ${tsc.exit}, ${tsc.tongLoi} lỗi` : ""}`;
   }
 
+  // HA-6c: kết cục ĐÃ đỏ từ bước trước (tsc, kiểm, phủ…) nên đếm hậu quả ở trên không chạy — vẫn ĐẾM SAU để ghi số đo (lệnh kiểm có thể đã rò hàng dù test xanh/đỏ). KẾT CỤC GIỮ NGUYÊN: chỉ thêm trường `hauQua` (có `ghiKhiDo`).
+  if (mucDem.length > 0 && dbCho && hauQua === null) {
+    nhatKy(`lượt ${ketCuc} — vẫn đếm hàng CSDL để ghi số đo hậu quả (HA-6c; kết cục giữ nguyên)`);
+    const sau = await demLan();
+    hauQua = { ...tinhHauQua({ muc: mucDem, coDb: dbCho, truoc: demTruoc, sau }), ghiKhiDo: true };
+    if (hauQua.ketCuc === "hau-qua-xau") luuY.push(`HA-6c: kết cục ${ketCuc} giữ nguyên, nhưng hậu quả CSDL cũng xấu: ${hauQua.lyDo ?? "không rõ"}`);
+  }
   // `--cho-phep-db`: đầu ra ĐẦY ĐỦ của lần chạy lệnh kiểm cuối (đã lọc URL + bí mật) ra TỆP cho người duyệt; không vào JSON, không vào lời nhắc model
   if (dbCho && kiem?.dauRaDayDu !== undefined) {
     try {

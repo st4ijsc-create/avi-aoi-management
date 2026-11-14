@@ -163,3 +163,75 @@ describe("HA-6b — kiểm hậu quả bằng đếm hàng", () => {
     for (const x of ["SS_FAC_", "product_inspections", "BẢNG ĐẾM", "factories"]) expect(lenh).not.toContain(x);
   });
 });
+
+describe("HA-6c — kết cục đã đỏ vẫn ĐẾM và ghi hậu quả (kết cục giữ nguyên)", () => {
+  const kiemDo: ChayKiem = async (lenh) => ({ lenh, exit: 1, hetGio: false, giay: 1, duoi: "FAIL", vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 0, hong: 1, boQua: 0, tong: 1 } } });
+  const DOI = { ...BAN_DAU, machines: 12, "factories WHERE code LIKE 'SS_FAC_%'": 5 };
+
+  it("★★★ lệnh kiểm ĐỎ + hàng ĐỔI: ketCuc vẫn kiem-do (không thành hau-qua-xau), hauQua ghi số đo thật + ghiKhiDo; đếm 2 lần, đóng 2 lần; lưu ý nêu hậu quả xấu", async () => {
+    const g = moGia([BAN_DAU, DOI]);
+    const r = await chay(THE(BANG), { moMayDem: g.moMayDem, chayKiem: kiemDo });
+    expect(r.ketCuc).toBe("kiem-do");
+    expect(r.ok).toBe(false);
+    expect(r.hauQua).toMatchObject({ ketCuc: "hau-qua-xau", db: "co", ghiKhiDo: true });
+    expect(r.hauQua!.bang).toEqual([
+      { muc: "factories WHERE code LIKE 'SS_FAC_%'", ghi: false, truoc: 4, sau: 5, chenh: 1 },
+      { muc: "machines", ghi: false, truoc: 10, sau: 12, chenh: 2 },
+      { muc: "product_inspections", ghi: true, truoc: 100, sau: 100, chenh: 0 },
+    ]);
+    expect(g.nk).toMatchObject({ mo: 2, dong: 2, dem: 6 });
+    expect(r.luuY?.join(" ")).toMatch(/HA-6c: kết cục kiem-do giữ nguyên, nhưng hậu quả CSDL cũng xấu/);
+    expect(JSON.stringify(r)).not.toContain(DAU);
+  });
+  it("★★★ lệnh kiểm ĐỎ + hàng KHÔNG đổi: kiem-do, hauQua ok + ghiKhiDo, không có lưu ý HA-6c", async () => {
+    const g = moGia([BAN_DAU, BAN_DAU]);
+    const r = await chay(THE(BANG), { moMayDem: g.moMayDem, chayKiem: kiemDo });
+    expect(r.ketCuc).toBe("kiem-do");
+    expect(r.hauQua).toMatchObject({ ketCuc: "ok", db: "co", ghiKhiDo: true });
+    expect(r.hauQua!.bang.map((d) => d.chenh)).toEqual([0, 0, 0]);
+    expect(r.luuY?.join(" ") ?? "").not.toContain("HA-6c");
+  });
+  it("★★★ kết cục ĐỎ khác (vi-pham: ghi tệp ngoài TỆP ĐƯỢC PHÉP; khong-lam: không đổi tệp nào) cũng được đếm và giữ nguyên kết cục", async () => {
+    const g1 = moGia([BAN_DAU, DOI]);
+    const r1 = await chay(THE(BANG), { moMayDem: g1.moMayDem, khoGhi: { [TEP]: NGUON, "docs/ngoai-pham-vi.md": "x\n" } });
+    expect(r1.ketCuc).toBe("vi-pham");
+    expect(r1.hauQua).toMatchObject({ ketCuc: "hau-qua-xau", ghiKhiDo: true });
+    expect(r1.hauQua!.bang.find((d) => d.muc === "machines")).toMatchObject({ truoc: 10, sau: 12, chenh: 2 });
+    expect(g1.nk.mo).toBe(2);
+  });
+  it("★★★ khong-lam (không tệp nào đổi): vẫn đếm hai lần, hauQua ok + ghiKhiDo", async () => {
+    const g = moGia([BAN_DAU, BAN_DAU]);
+    const r = await chay(THE(BANG), { moMayDem: g.moMayDem, khoGhi: {} });
+    expect(r.ketCuc).toBe("khong-lam");
+    expect(r.hauQua).toMatchObject({ ketCuc: "ok", ghiKhiDo: true });
+    expect(g.nk.mo).toBe(2);
+  });
+  it("★★★ kết cục ĐỎ + đếm SAU lỗi quyền: kết cục giữ nguyên, hauQua db=khong-dem-duoc + ghiKhiDo, KHÔNG ném, lỗi không lộ mật khẩu", async () => {
+    const g = moGia([BAN_DAU, "loi"]);
+    const r = await chay(THE(BANG), { moMayDem: g.moMayDem, chayKiem: kiemDo });
+    expect(r.ketCuc).toBe("kiem-do");
+    expect(r.hauQua).toMatchObject({ ketCuc: "hau-qua-xau", db: "khong-dem-duoc", ghiKhiDo: true });
+    expect(JSON.stringify(r)).not.toContain(DAU);
+  });
+  it("★★★ kết cục XONG + hàng đổi: vẫn là hau-qua-xau như HA-6b và KHÔNG mang ghiKhiDo (không đếm lần thứ ba)", async () => {
+    const g = moGia([BAN_DAU, DOI]);
+    const r = await chay(THE(BANG), { moMayDem: g.moMayDem });
+    expect(r.ketCuc).toBe("hau-qua-xau");
+    expect("ghiKhiDo" in r.hauQua!).toBe(false);
+    expect(g.nk.mo).toBe(2);
+  });
+  it("★★ kết cục đỏ nhưng KHÔNG có cờ DB hoặc KHÔNG có BẢNG ĐẾM ⇒ không đếm, không mở kết nối, không có trường hauQua", async () => {
+    const g1 = moGia([BAN_DAU, DOI]);
+    const TEP2 = "server/x/a.test.ts";
+    const van1 = THE(BANG).replace(/^CSDL:.*\n/m, "").split(TEP).join(TEP2); // không khai CSDL ⇒ không cần cờ DB
+    const r1 = await chayMotViec({ van: van1, wt, base: "HEAD", driver: "kho", ra, choPhepKhoRieng: true, luat: "# l\n", chayKiem: kiemDo, khoGhi: { [TEP2]: `import { it } from "vitest";\nit("x", () => { void 1; });\n` }, moMayDem: g1.moMayDem });
+    expect(r1.ketCuc).toBe("kiem-do");
+    expect("hauQua" in r1).toBe(false);
+    expect(g1.nk.mo).toBe(0);
+    const g2 = moGia([BAN_DAU, DOI]);
+    const r2 = await chay(THE(""), { moMayDem: g2.moMayDem, chayKiem: kiemDo });
+    expect(r2.ketCuc).toBe("kiem-do");
+    expect("hauQua" in r2).toBe(false);
+    expect(g2.nk.mo).toBe(0);
+  });
+});

@@ -110,6 +110,8 @@ export interface KetQuaHauQua {
   db: "co" | "khong-do-db" | "khong-dem-duoc";
   lyDo: string | null;
   bang: DongHauQua[];
+  /** HA-6c: đếm được GHI LẠI khi kết cục của lượt ĐÃ đỏ từ bước trước (không đổi kết cục) — `ketCuc` ở đây là phán quyết RIÊNG của phép đếm. */
+  ghiKhiDo?: true;
 }
 export interface DauVaoHauQua {
   muc: readonly MucDem[];
