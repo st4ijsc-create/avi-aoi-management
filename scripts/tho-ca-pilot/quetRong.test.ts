@@ -192,6 +192,7 @@ describe("HA-6d (b) — RLS ở bộ quét", () => {
     const k = soSanhQuet({ ok: true, dem: { a: 1, b: 1 }, rls: ["b"] }, { ok: true, dem: { a: 1, b: 1 }, rls: ["a", "b"] }, trongThe);
     expect(k.rls).toEqual(["a", "b"]);
     expect(soSanhQuet(ok({ a: 1 }), { ok: true, dem: { a: 1 }, rls: ["a"] }, trongThe).rls).toEqual(["a"]);
+    expect(soSanhQuet({ ok: true, dem: { a: 1 }, rls: ["a"] }, ok({ a: 1 }), trongThe).rls).toEqual(["a"]); // RLS chỉ ở lần quét TRƯỚC cũng tính
   });
   it("★★★ canhBaoQuetRong: có bảng RLS ⇒ dòng 'chỗ mù RLS: <bảng>' (đứng SAU dòng chỗ MÙ không đếm được); không RLS ⇒ không dòng", () => {
     expect(canhBaoQuetRong(soSanhQuet({ ok: true, dem: { a: 1, b: 1 }, rls: [] }, { ok: true, dem: { a: 1, b: 1 }, rls: [] }, trongThe))).toEqual([]);
