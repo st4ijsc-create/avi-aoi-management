@@ -315,6 +315,10 @@ export interface ValidationError {
   /** Dotted path to the offending node (e.g. "steps[1].machineId"). */
   path: string;
   message: string;
+  /** Machine-readable code (optional) so a client can show its own translated sentence. Only set by `kiemTraKyTuIdBuoc`. */
+  code?: string;
+  /** For `STEP_ID_FORBIDDEN_CHAR`: the offending characters, readable (e.g. `"," and ")"`). */
+  kyTu?: string;
 }
 
 export interface ValidationResult {
@@ -342,6 +346,49 @@ function pushIdUnique(seen: Set<string>, id: string, path: string, errors: Valid
     errors.push({ path: `${path}.id`, message: `Duplicate step id "${id}".` });
   }
   seen.add(id);
+}
+
+/**
+ * Luật ĐẦU VÀO cho step id MỚI (chỉ đường GHI định nghĩa gọi hàm này; `validateWorkflow` KHÔNG đổi hành vi nên đường đọc / chạy /
+ * mô phỏng / advisor vẫn nhận định nghĩa cũ). Lý do: trung tâm đọc danh sách id từ chữ `EDGE_OUTCOME_UNKNOWN(a,b,…)`; id chứa
+ * "," hoặc ")" làm regex tách sai hoặc cắt danh sách ⇒ đọc thiếu. "(" và xuống dòng bị cấm cùng lý do (làm vỡ khuôn dòng).
+ */
+export const KY_TU_CAM_TRONG_STEP_ID: ReadonlyArray<{ ky: string; ten: string }> = [
+  { ky: ",", ten: '","' },
+  { ky: "(", ten: '"("' },
+  { ky: ")", ten: '")"' },
+  { ky: "\n", ten: "line feed (\\n)" },
+  { ky: "\r", ten: "carriage return (\\r)" },
+];
+export const STEP_ID_FORBIDDEN_CHAR = "STEP_ID_FORBIDDEN_CHAR";
+
+/** Mỗi step có id chứa ký tự cấm ⇒ MỘT lỗi (path `steps[i].id` / `….compensation.id`, nêu đúng ký tự). Không ném lỗi với định nghĩa méo. */
+export function kiemTraKyTuIdBuoc(def: WorkflowDefinition): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const duyet = (s: unknown, path: string): void => {
+    if (!s || typeof s !== "object") return;
+    const step = s as Record<string, unknown>;
+    if (typeof step.id === "string") {
+      const gap = KY_TU_CAM_TRONG_STEP_ID.filter((k) => (step.id as string).includes(k.ky));
+      if (gap.length) {
+        const ds = gap.map((k) => k.ten).join(" and ");
+        errors.push({
+          path: `${path}.id`,
+          code: STEP_ID_FORBIDDEN_CHAR,
+          kyTu: ds,
+          message: `Step id ${JSON.stringify(step.id)} at ${path}.id contains the forbidden character ${ds}: a new step id may not contain "," "(" ")" or a line break.`,
+        });
+      }
+    }
+    if (step.compensation) duyet(step.compensation, `${path}.compensation`);
+    for (const k of ["steps", "then", "else"] as const) {
+      const con = step[k];
+      if (Array.isArray(con)) con.forEach((c, i) => duyet(c, `${path}.${k}[${i}]`));
+    }
+  };
+  const goc = def && typeof def === "object" ? (def as { steps?: unknown }).steps : undefined;
+  if (Array.isArray(goc)) goc.forEach((s, i) => duyet(s, `steps[${i}]`));
+  return errors;
 }
 
 /**

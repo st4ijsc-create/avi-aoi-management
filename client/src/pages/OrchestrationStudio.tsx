@@ -1614,7 +1614,13 @@ export default function OrchestrationStudio() {
   const deployM = trpc.orchestration.deployWorkflow.useMutation({
     onSuccess: (r) => {
       if (r?.ok) { toast.success(t("studio.deployed", "Workflow saved / deployed")); void workflowsQ.refetch(); }
-      else toast.error(definitionRefusalText(r) ?? r?.message ?? t("studio.deployFail", "Deploy failed"));
+      else {
+        // luật đầu vào step id MỚI: server trả errors[] có code STEP_ID_FORBIDDEN_CHAR + path + kyTu ⇒ câu i18n nêu đúng ký tự và vị trí step.
+        const kyTuId = r?.errors?.find((e) => e.code === "STEP_ID_FORBIDDEN_CHAR");
+        toast.error(kyTuId
+          ? t("studio.deployStepIdKyTu", "Not deployed: the step id at {{path}} contains {{kyTu}}. A step id may not contain \",\" \"(\" \")\" or a line break — rename the step, then deploy again.", { path: kyTuId.path, kyTu: kyTuId.kyTu ?? "" })
+          : definitionRefusalText(r) ?? r?.message ?? t("studio.deployFail", "Deploy failed"));
+      }
     },
     onError: (e) => toastTrpcError(e),
   });
