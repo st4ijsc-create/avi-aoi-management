@@ -11,7 +11,11 @@
  * change can hit). Committed rows (the race needs two sessions); cleanup through the legitimate path; WORM rows stay (R-10-aa).
  * DOT11_H_OWNERSVC (mutation runs only): the module path of deviceOwnershipService to import (an untracked copy).
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+// D2 — this suite drives the STOP sweep's transient session to its OWN fake / sim / loopback devices on the _test DB: the DB-name
+// read (csdlDichStop) is replaced HERE (vitest only — the production module has no switch, no env, no export) so the sweep takes
+// its normal path. Without it the sweep simulates on _test (D2) and the owed STOPs of this suite stay pending.
+vi.mock("./csdlDichStop", () => ({ docCsdlDichStop: () => ({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null }) }));
 import postgres from "postgres";
 import { taoNguoiDungTest } from "../../testing/nguoiDungTest";
 
@@ -57,15 +61,6 @@ describe.skipIf(!onTest)("0377 — the central STOP sweep follows the one lock o
     for (const k of ["ROBOT_CONTROL_ENABLED", "ROBOT_COMMISSIONING_REQUIRED"]) env[k] = process.env[k];
     process.env.ROBOT_CONTROL_ENABLED = "true";
     process.env.ROBOT_COMMISSIONING_REQUIRED = "false";
-  });
-  // D2 — both cases drive the TRANSIENT session on the _test DB (the robot driver is the fake above, no network). Same module
-  // instance as the cases' `svc` (DOT11_H_OWNERSVC: a copy without D2 has no seam — and needs none)
-  const ownerSvc = async () => (await import(process.env.DOT11_H_OWNERSVC || "./deviceOwnershipService")) as typeof import("./deviceOwnershipService");
-  beforeEach(async () => {
-    (await ownerSvc())._allowTransientStopOnTestDbForTests?.(true);
-  });
-  afterEach(async () => {
-    (await ownerSvc())._allowTransientStopOnTestDbForTests?.(false);
   });
   afterAll(async () => {
     for (const [k, v] of Object.entries(env)) (v === undefined ? delete process.env[k] : (process.env[k] = v));

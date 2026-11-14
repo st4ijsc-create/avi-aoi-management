@@ -10,7 +10,11 @@
  *     a later sweep finds nothing (idempotent).
  * Test rows are removed afterwards as far as the guards allow (edge nodes, adapters, robots; WORM history and acked requests stay).
  */
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
+// D2 — this suite drives the STOP sweep's transient session to its OWN fake / sim / loopback devices on the _test DB: the DB-name
+// read (csdlDichStop) is replaced HERE (vitest only — the production module has no switch, no env, no export) so the sweep takes
+// its normal path. Without it the sweep simulates on _test (D2) and the owed STOPs of this suite stay pending.
+vi.mock("./csdlDichStop", () => ({ docCsdlDichStop: () => ({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null }) }));
 import postgres from "postgres";
 
 const H = vi.hoisted(() => ({
@@ -67,7 +71,7 @@ vi.mock("./driverRegistry", () => ({
 vi.mock("../ecosystem/ecosystemEvents", () => ({ publishAnomalyDetected: (p: { message: string }) => H.alerts.push(p.message) }));
 vi.mock("../notificationService", () => ({ sendNotification: async () => undefined }));
 
-import { changeDeviceOwner, sweepPendingCentralStops, checkEdgeOwnedFactoryDrift, _resetFactoryDriftAlertsForTests, _resetSweepRateLimitsForTests, _factoryDriftAlertedKeysForTests, _setCentralStopSessionDeadlineMsForTests, DEVICE_OWNER_CHANNEL, _allowTransientStopOnTestDbForTests } from "./deviceOwnershipService";
+import { changeDeviceOwner, sweepPendingCentralStops, checkEdgeOwnedFactoryDrift, _resetFactoryDriftAlertsForTests, _resetSweepRateLimitsForTests, _factoryDriftAlertedKeysForTests, _setCentralStopSessionDeadlineMsForTests, DEVICE_OWNER_CHANNEL } from "./deviceOwnershipService";
 
 const DB_URL = process.env.DATABASE_URL ?? "";
 const onTest = /_test\b/.test(DB_URL);
@@ -163,11 +167,6 @@ describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transf
     H.delayMs = 0;
     H.transient = { connects: 0, disconnects: 0, hang: false };
     _resetSweepRateLimitsForTests();
-    // D2 — the I-4 / R-10-ay cases drive the TRANSIENT session on the _test DB; its robot driver is the fake above (no network)
-    _allowTransientStopOnTestDbForTests(true);
-  });
-  afterEach(() => {
-    _allowTransientStopOnTestDbForTests(false);
   });
 
   it("★ edge → central with an unacked (even overdue) STOP request ⇒ the abort is SENT right after the transfer, acked done by the actor; the session is attached live", async () => {

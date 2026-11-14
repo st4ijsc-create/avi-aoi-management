@@ -23,7 +23,11 @@
  *                                                                     and the edge never touched the DB.
  *   The old v1 child (edgeE2eChild.dot9.test.ts) is retired with this adaptation (replaced by edgeE2eChild.dot10.test.ts).
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+// D2 — this suite drives the STOP sweep's transient session to its OWN fake / sim / loopback devices on the _test DB: the DB-name
+// read (csdlDichStop) is replaced HERE (vitest only — the production module has no switch, no env, no export) so the sweep takes
+// its normal path. Without it the sweep simulates on _test (D2) and the owed STOPs of this suite stay pending.
+vi.mock("../robot/csdlDichStop", () => ({ docCsdlDichStop: () => ({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null }) }));
 
 vi.hoisted(() => {
   if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "f1-dot9-s4-v2-session-secret-0123456789abcdef";
@@ -60,20 +64,9 @@ describe.skipIf(!onTest)("doc 81 Đợt 9 S4 (v2) — central + edge in two proc
     edge = await c.spawnEdge("s4");
     await c.clearEdgeLock(c.ids.robotA, edge);
   }, 300_000);
-  // D2 — central's transient STOP session to this harness's sim / loopback devices is opened on the _test DB for this suite only:
-  // the cases (beforeEach / afterEach) and the harness teardown's closeOwnStops (afterAll, around c.teardown() — it hands the run's
-  // devices back to central so their owed STOPs are executed). Imported lazily: the harness sets the central env before its imports.
-  const allowTransientStop = async (allow: boolean) => (await import("../robot/deviceOwnershipService"))._allowTransientStopOnTestDbForTests(allow);
-  beforeEach(() => allowTransientStop(true));
-  afterEach(() => allowTransientStop(false));
   afterAll(async () => {
     c?.setMode("up");
-    await allowTransientStop(true);
-    try {
-      await c?.teardown();
-    } finally {
-      await allowTransientStop(false);
-    }
+    await c?.teardown();
   }, 240_000);
 
   it("★ assign → pull → claim (signed package) → run → complete: the EDGE process walks the run (gate approved centrally), its robot gets the motion and the STOP", async () => {

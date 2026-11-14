@@ -11,7 +11,11 @@
  * signed copy (R-10-ar S-1), an ack forged for another target (R-10-o), config rollback, cross-factory device, seq reuse with
  * different content (R-10-ag), unsigned non-STOP, and the seeded global safety-PLC row (B fix 2 G5 / R-10-aw, owner question).
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+// D2 — this suite drives the STOP sweep's transient session to its OWN fake / sim / loopback devices on the _test DB: the DB-name
+// read (csdlDichStop) is replaced HERE (vitest only — the production module has no switch, no env, no export) so the sweep takes
+// its normal path. Without it the sweep simulates on _test (D2) and the owed STOPs of this suite stay pending.
+vi.mock("../robot/csdlDichStop", () => ({ docCsdlDichStop: () => ({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null }) }));
 
 vi.hoisted(() => {
   if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "f1-dot10-attack-session-secret-0123456789abcd";
@@ -137,20 +141,9 @@ describe.skipIf(!onTest)("doc 81 Đợt 10 F1 — attack suite through the real 
     await c.clearEdgeLock(c.ids.robotA, edge);
     await clearRobotBLock();
   }, 300_000);
-  // D2 — central's transient STOP session to this harness's sim / loopback devices is opened on the _test DB for this suite only:
-  // the cases (beforeEach / afterEach) and the harness teardown's closeOwnStops (afterAll, around c.teardown() — it hands the run's
-  // devices back to central so their owed STOPs are executed). Imported lazily: the harness sets the central env before its imports.
-  const allowTransientStop = async (allow: boolean) => (await import("../robot/deviceOwnershipService"))._allowTransientStopOnTestDbForTests(allow);
-  beforeEach(() => allowTransientStop(true));
-  afterEach(() => allowTransientStop(false));
   afterAll(async () => {
     if (plcB && c) await c.sql`DELETE FROM safety_plc_configs WHERE id = ${plcB}`.catch(() => undefined);
-    await allowTransientStop(true);
-    try {
-      await c?.teardown();
-    } finally {
-      await allowTransientStop(false);
-    }
+    await c?.teardown();
   }, 240_000);
 
   // ── hostile node (central-side) ──────────────────────────────────────────────────────────────────────────────────────

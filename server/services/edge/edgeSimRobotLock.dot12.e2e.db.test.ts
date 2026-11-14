@@ -14,7 +14,11 @@
  * Before Đợt 12 the edge answered the signed clear `refused:no_driver` and central's clear `motionLockUnsupported`.
  * Oracles: the edge's counted SIM driver (motions / stops / lock state), central's counted SIM driver, central rows.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+// D2 — this suite drives the STOP sweep's transient session to its OWN fake / sim / loopback devices on the _test DB: the DB-name
+// read (csdlDichStop) is replaced HERE (vitest only — the production module has no switch, no env, no export) so the sweep takes
+// its normal path. Without it the sweep simulates on _test (D2) and the owed STOPs of this suite stay pending.
+vi.mock("../robot/csdlDichStop", () => ({ docCsdlDichStop: () => ({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null }) }));
 
 const H = vi.hoisted(() => {
   if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "n12-dot12-e2e-session-secret-0123456789abcdef";
@@ -81,12 +85,6 @@ describe.skipIf(!onTest)("doc 81 Đợt 12 N — the SIM robot's motion lock acr
     };
     edge = await c.spawnEdge("n12", { waitRobot: true });
   }, 300_000);
-  // D2 — central's transient STOP session to this harness's sim / loopback devices is opened on the _test DB for this suite only:
-  // the cases (beforeEach / afterEach) and the harness teardown's closeOwnStops (afterAll, around c.teardown() — it hands the run's
-  // devices back to central so their owed STOPs are executed). Imported lazily: the harness sets the central env before its imports.
-  const allowTransientStop = async (allow: boolean) => (await import("../robot/deviceOwnershipService"))._allowTransientStopOnTestDbForTests(allow);
-  beforeEach(() => allowTransientStop(true));
-  afterEach(() => allowTransientStop(false));
   afterAll(async () => {
     try {
       const { stopRobots } = await import("../robot/robotManager");
@@ -99,12 +97,7 @@ describe.skipIf(!onTest)("doc 81 Đợt 12 N — the SIM robot's motion lock acr
     } catch {
       /* already gone */
     }
-    await allowTransientStop(true);
-    try {
-      await c?.teardown();
-    } finally {
-      await allowTransientStop(false);
-    }
+    await c?.teardown();
   }, 240_000);
 
   it("★ assign → signed clear → move → STOP → release → central row locked → audited clear → central move allowed", async () => {
