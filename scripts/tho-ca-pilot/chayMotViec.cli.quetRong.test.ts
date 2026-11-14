@@ -133,3 +133,15 @@ describe("main() — cờ quét rộng (HA-6d)", () => {
     expect(gia.lan).toBe(0);
   });
 });
+
+describe("main() — dòng tổng kết cuối nhật ký (HA-6d F)", () => {
+  const dongCuoi = (err: string) => err.trim().split("\n").pop()!;
+  it("★★★ có cảnh báo quét ⇒ DÒNG CUỐI của stderr là dòng tổng kết có 'CẢNH BÁO QUÉT' và tên bảng; không cờ quét ⇒ dòng cuối là dòng tổng kết ngắn", async () => {
+    const co = await chayCli([...CO_DB(), "--quet-rong"]);
+    expect(dongCuoi(co.err)).toBe(`[tho-ca-pilot] TỔNG KẾT TC-91: ketCuc=xong ok=true | CẢNH BÁO QUÉT: ${co.json!.canhBaoQuet[0]}`);
+    expect(dongCuoi(co.err)).toContain("b 5→9 (+4)");
+    gia.lan = 0;
+    const khong = await chayCli(CO_DB());
+    expect(dongCuoi(khong.err)).toBe("[tho-ca-pilot] TỔNG KẾT TC-91: ketCuc=xong ok=true");
+  });
+});

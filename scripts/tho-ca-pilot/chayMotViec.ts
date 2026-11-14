@@ -871,15 +871,22 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   let canhBaoQuet: string[] = [];
   if (quetTruoc !== null) {
     nhatKy("quét rộng count(*) mọi bảng SAU lượt (HA-6d)");
-    quetRong = soSanhQuet(quetTruoc, await quetLan(), new Set(mucDem.map((m) => m.bang)));
+    const bangCuaThe = new Set(mucDem.map((m) => m.bang));
+    quetRong = soSanhQuet(quetTruoc, await quetLan(), bangCuaThe);
     canhBaoQuet = canhBaoQuetRong(quetRong);
     luuY.unshift(...canhBaoQuet);
     // `--quet-rong-cham`: bảng NGOÀI thẻ đổi (hoặc quét không xong ⇒ fail-closed) ⇒ hau-qua-xau; chỉ nâng khi kết cục đang `xong` (kết cục đỏ giữ nguyên)
     if (p.quetRongCham) {
       quetRong = { ...quetRong, cham: true };
-      if (ketCuc === "xong" && (!quetRong.ok || quetRong.ngoaiThe.length > 0)) {
+      // bảng CỦA THẺ (đã khai trong BẢNG ĐẾM) mà quét không đếm được (quá hạn / lỗi) ⇒ thẻ cần số đó nhưng không có ⇒ CHẤM (khác bảng mù ngoài thẻ: chỉ cảnh báo)
+      const bangTheMu = quetRong.ok ? quetRong.khongDem.filter((x) => bangCuaThe.has(x)) : [];
+      if (ketCuc === "xong" && (!quetRong.ok || quetRong.ngoaiThe.length > 0 || bangTheMu.length > 0)) {
         ketCuc = "hau-qua-xau";
-        lyDoKiem = quetRong.ok ? `HA-6d (chấm): bảng NGOÀI thẻ BẢNG ĐẾM đổi: ${quetRong.ngoaiThe.join(", ")}` : `HA-6d (chấm): quét rộng không xong (${quetRong.lyDo ?? "không rõ"}) — fail-closed`;
+        const phan: string[] = [];
+        if (!quetRong.ok) phan.push(`HA-6d (chấm): quét rộng không xong (${quetRong.lyDo ?? "không rõ"}) — fail-closed`);
+        if (quetRong.ok && quetRong.ngoaiThe.length > 0) phan.push(`HA-6d (chấm): bảng NGOÀI thẻ BẢNG ĐẾM đổi: ${quetRong.ngoaiThe.join(", ")}`);
+        if (bangTheMu.length > 0) phan.push(`HA-6d (chấm): bảng CỦA THẺ không đếm được (quá hạn hoặc lỗi): ${bangTheMu.join(", ")}`);
+        lyDoKiem = phan.join(" | ");
       }
     }
   }
@@ -949,6 +956,15 @@ function docThamSo(argv: string[]): Record<string, string> {
     if (argv[i].startsWith("--")) o[argv[i].slice(2)] = argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[++i] : "1";
   }
   return o;
+}
+
+/**
+ * DÒNG TỔNG KẾT cuối lượt (một dòng, ra stderr SAU dòng JSON ở stdout): `TỔNG KẾT <mã>: ketCuc=… ok=…` và, khi `canhBaoQuet` khác rỗng, ` | CẢNH BÁO QUÉT: <các dòng nối bằng ' ‖ '>`.
+ * Người duyệt đọc dòng cuối của nhật ký trước nên cảnh báo quét rộng (bảng ngoài thẻ đổi / chỗ mù / quét không xong) phải có mặt ở đây, không chỉ trong JSON. Thuần.
+ */
+export function dongTongKet(kq: Pick<KetQuaViec, "ma" | "ketCuc" | "ok" | "canhBaoQuet">): string {
+  const co = kq.canhBaoQuet && kq.canhBaoQuet.length > 0 ? ` | CẢNH BÁO QUÉT: ${kq.canhBaoQuet.join(" ‖ ")}` : "";
+  return `TỔNG KẾT ${kq.ma}: ketCuc=${kq.ketCuc} ok=${kq.ok}${co}`;
 }
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
@@ -1040,6 +1056,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     nhatKy: (s) => process.stderr.write(`[tho-ca-pilot] ${s}\n`),
   });
   process.stdout.write(`${JSON.stringify(kq)}\n`);
+  process.stderr.write(`[tho-ca-pilot] ${dongTongKet(kq)}\n`);
   return kq.ok ? 0 : 1;
 }
 

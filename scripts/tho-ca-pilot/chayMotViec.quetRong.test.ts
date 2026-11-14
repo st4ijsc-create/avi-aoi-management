@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { chayMotViec, main, thamSoQuetRongTuDongLenh } from "./chayMotViec";
+import { chayMotViec, dongTongKet, main, thamSoQuetRongTuDongLenh } from "./chayMotViec";
 import type { MayDem } from "./hauQua";
 import type { ChayKiem } from "./kiemChung";
 import type { MayQuet } from "./quetRong";
@@ -281,5 +281,48 @@ describe("HA-6d — thamSoQuetRongTuDongLenh (thuần)", () => {
     expect(thamSoQuetRongTuDongLenh({ "quet-rong-cham": "1" }, false).loi).toBe("--quet-rong-cham cần --cho-phep-db");
     expect(thamSoQuetRongTuDongLenh({ "quet-rong": "1", "quet-rong-cham": "1" }, false).loi).toBe("--quet-rong-cham cần --cho-phep-db");
     expect(thamSoQuetRongTuDongLenh({}, false)).toEqual({ quetRong: false, quetRongCham: false });
+  });
+});
+
+describe("HA-6d (E) — -cham: bảng CỦA THẺ không đếm được ⇒ chấm; bảng mù NGOÀI thẻ ⇒ chỉ cảnh báo", () => {
+  it("★★★ -cham: bảng nằm trong BẢNG ĐẾM của thẻ (machines) quá hạn ở lần quét SAU ⇒ hau-qua-xau, lý do nêu 'bảng CỦA THẺ không đếm được' + tên", async () => {
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetGia([{ machines: 10, a: 1 }, { machines: null, a: 1 }]).moMayQuet });
+    expect(r.ketCuc).toBe("hau-qua-xau");
+    expect(r.ok).toBe(false);
+    expect(r.luuY?.join(" ")).toContain("HA-6d (chấm): bảng CỦA THẺ không đếm được (quá hạn hoặc lỗi): machines");
+    expect(r.quetRong).toMatchObject({ ok: true, cham: true, khongDem: ["machines"] });
+  });
+  it("★★★ -cham: bảng thẻ không đếm được ở lần quét TRƯỚC (null) cũng chấm", async () => {
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetGia([{ machines: null, a: 1 }, { machines: 10, a: 1 }]).moMayQuet });
+    expect(r.ketCuc).toBe("hau-qua-xau");
+    expect(r.luuY?.join(" ")).toContain("bảng CỦA THẺ không đếm được (quá hạn hoặc lỗi): machines");
+  });
+  it("★★★ -cham: bảng mù NGOÀI thẻ ⇒ KHÔNG chấm (ketCuc xong), vẫn có cảnh báo 'chỗ MÙ' ở đầu", async () => {
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetGia([{ machines: 10, lon: null }, { machines: 10, lon: null }]).moMayQuet });
+    expect(r.ketCuc).toBe("xong");
+    expect(r.canhBaoQuet).toEqual(["HA-6d: 1 bảng KHÔNG đếm được (quá hạn hoặc lỗi) — chỗ MÙ của phép quét: lon"]);
+  });
+  it("★★★ -cham: vừa bảng ngoài thẻ đổi, vừa bảng thẻ mù ⇒ lý do có CẢ HAI phần nối bằng ' | '", async () => {
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetGia([{ machines: 10, ngoai: 1 }, { machines: null, ngoai: 4 }]).moMayQuet });
+    expect(r.ketCuc).toBe("hau-qua-xau");
+    const ly = r.luuY!.find((x) => x.startsWith("L3a: HA-6d (chấm)"))!;
+    expect(ly).toBe("L3a: HA-6d (chấm): bảng NGOÀI thẻ BẢNG ĐẾM đổi: ngoai | HA-6d (chấm): bảng CỦA THẺ không đếm được (quá hạn hoặc lỗi): machines");
+  });
+  it("★★★ KHÔNG -cham (chỉ --quet-rong): bảng thẻ mù ⇒ chỉ cảnh báo, ketCuc xong", async () => {
+    const r = await chay(THE(BANG), { quetRong: true, moMayQuet: moQuetGia([{ machines: 10 }, { machines: null }]).moMayQuet });
+    expect(r.ketCuc).toBe("xong");
+    expect(r.quetRong).toMatchObject({ ok: true, khongDem: ["machines"] });
+  });
+  it("★★★ -cham: kết cục đã đỏ + bảng thẻ mù ⇒ kết cục giữ nguyên (kiem-do)", async () => {
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetGia([{ machines: 10 }, { machines: null }]).moMayQuet, chayKiem: kiemDo });
+    expect(r.ketCuc).toBe("kiem-do");
+  });
+});
+
+describe("HA-6d (F) — dongTongKet: dòng tổng kết cuối lượt mang cảnh báo quét", () => {
+  it("★★★ không cảnh báo ⇒ dòng ngắn không có 'CẢNH BÁO'; có cảnh báo ⇒ nối vào cuối bằng ' | CẢNH BÁO QUÉT: ' và ' ‖ ' giữa các dòng", () => {
+    expect(dongTongKet({ ma: "TC-1", ketCuc: "xong", ok: true })).toBe("TỔNG KẾT TC-1: ketCuc=xong ok=true");
+    expect(dongTongKet({ ma: "TC-1", ketCuc: "xong", ok: true, canhBaoQuet: [] })).toBe("TỔNG KẾT TC-1: ketCuc=xong ok=true");
+    expect(dongTongKet({ ma: "TC-2", ketCuc: "hau-qua-xau", ok: false, canhBaoQuet: ["A: x", "B: y"] })).toBe("TỔNG KẾT TC-2: ketCuc=hau-qua-xau ok=false | CẢNH BÁO QUÉT: A: x ‖ B: y");
   });
 });
