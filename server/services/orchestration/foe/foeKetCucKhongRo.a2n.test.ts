@@ -1603,6 +1603,19 @@ describe("A2(n) fix round 4 — THE sink at the dispatch, the durable fact, the 
     await tiep(ok.runId);
     expect(sent("reset")).toHaveLength(1);
   });
+  // T4 bước 3 (chủ dự án 14/11, R2 (a)) — ĐO chuẩn TRUNG TÂM trước khi viết ca edge: duyệt có người + lý do nhưng interlock chặn; rồi interlock mở lại
+  it("T4-B3-INTERLOCK-TT an approved compensation whose interlock BLOCKS: not sent, its row failed, the run fails, a person told; the interlock opening again sends NOTHING (a failed run is not continued: no second approval)", async () => {
+    const { runId } = await giuKhongRo([main({ ...resetComp("c1"), ...dk } as WorkflowStep)]);
+    otDispatchMock.mockClear();
+    expect((await tiep(runId)).status).toBe("failed");
+    expect(sent("reset")).toHaveLength(0);
+    await vi.waitFor(() => expect(alertsOf("approvedNotSent")).toHaveLength(1));
+    expect(rows("orchestration_run_steps").find((r) => r.runId === runId && r.stepId === "c1")).toMatchObject({ status: "failed" });
+    runRow(runId).paramsJson = { ...((runRow(runId).paramsJson as Record<string, unknown> | null) ?? {}), doorClosed: true }; // the interlock opens again
+    await resumeRun(runId, { approved: true, note: "door closed now" }, ADMIN, {}, { scope: null }).catch((err: unknown) => err);
+    expect(runRow(runId).status).toBe("failed");
+    expect(sent("reset")).toHaveLength(0);
+  });
 
   // ── I-I, I-J, I-L ──
   it("★ I-I (U3) a compensation's own unknown with nothing above it: failed, latched, URGENT", async () => {
