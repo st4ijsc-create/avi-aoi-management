@@ -16,6 +16,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { loiNhacPhu, tinhPhu } from "./kiemPhu";
 import { quetHoSo, thuMucTamMacDinh, tomTatCanhBao, type CanhBao } from "./quetTinh";
 import { chuanDuong, kiemDiffTheoThe, vungCamCua, type TheViec } from "./theViec";
 import { chayLenhKiem, loaiUrlCsdl, xoaGiaTriBiMat, type ChayKiem, type KetQuaKiem } from "./kiemChung";
@@ -263,6 +264,7 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
     const nhanTuChoi = new Map<string, string>();
 
     let soTuChay = 0;
+    let soNhacPhu = 0;
     let soLanBaoHan = 0;
     const xuLyDuyet = async (id: string, de: { ten: string; thamSo: Record<string, unknown>; moTa?: string; xemTruoc?: unknown; nguonDangNgo?: string[] }, actionId: string) => {
       const loc = locTruocKhiCho(de, v.the, v.wt);
@@ -284,7 +286,18 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
         const k = await (v.chayKiem ?? dep.chayKiem ?? chayLenhKiem)(loc.lenh, v.wt, 300);
         ghiChu.push(`tự chạy lệnh kiểm lần ${soTuChay}: exit ${k.exit}${k.vitest.ca ? `, Tests ${k.vitest.ca.dat} passed / ${k.vitest.ca.tong}` : ""}`);
         // tóm tắt cho model được TÍNH và GỬI trước; tệp đầy đủ chỉ được ghi SAU đó (không có đường nào từ nội dung tệp vào lời nhắc)
-        const loiNhac = v.cheDoKiem === "chi-so" ? tomTatChiSoChoModel(k, soTuChay, v.giaTriBiMat ?? []) : tomTatKiemChoModel(k, soTuChay);
+        let loiNhac = v.cheDoKiem === "chi-so" ? tomTatChiSoChoModel(k, soTuChay, v.giaTriBiMat ?? []) : tomTatKiemChoModel(k, soTuChay);
+        // HA-10: dòng PHỦ do HOST sinh từ quét TĨNH tệp test (số dòng + tag, KHÔNG từ đầu ra test) ⇒ được kèm cả ở chế độ chi-so (không mở kênh lộ dữ liệu). Nhắc dòng THIẾU tối đa 2 lần/lượt.
+        if (v.phu) {
+          const nguon = v.phu.tepTest.map((t) => { try { return fs.readFileSync(path.join(v.wt, t), "utf8"); } catch { return ""; } }).join("\n");
+          const ph = tinhPhu(v.phu.dongDuyet, nguon, { tenCaCu: v.phu.tenCaCu });
+          const msg = loiNhacPhu(ph);
+          if (msg !== "" && (ph.dongThieu.length === 0 || soNhacPhu < 2)) {
+            loiNhac = `${loiNhac}\n${msg}`;
+            if (ph.dongThieu.length > 0) soNhacPhu++;
+            ghiChu.push(`PHỦ lần ${soTuChay}: thiếu dòng ${ph.dongThieu.join(",") || "(không)"}`);
+          }
+        }
         await dep.bac(actionId, loiNhac);
         if (v.cheDoKiem === "chi-so") {
           // đầu ra ĐẦY ĐỦ (đã lọc URL + bí mật) chỉ cho NGƯỜI duyệt đọc — tệp kết quả, không bao giờ đi vào lời nhắc của model
@@ -456,6 +469,7 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
     }
     if (lyDoDung !== null) kq.lyDoDung = lyDoDung;
     kq.loiCongCu = loiCongCu;
+    if (v.phu) kq.soLanNhacPhu = soNhacPhu;
     if (luuY.length > 0) kq.luuY = luuY;
     return kq;
   };
