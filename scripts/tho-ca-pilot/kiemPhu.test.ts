@@ -204,3 +204,40 @@ describe("boTienToTag (bo-the-phu)", () => {
     expect(quetCaTest(r.nguon).ca.map((c) => c.ten)).toEqual(["a", "b", "c"]);
   });
 });
+
+describe("HA-10 bổ sung (kiem-dinh: k7/k8/k9 hằng; k17/k20 bộ đếm loaiBo và dòng GIỮ)", () => {
+  const ca = (than: string) => quetCaTest(`it("[D1] x", () => { ${than} });`).ca[0]!;
+
+  it("★★★ NaN / Infinity / -Infinity / undefined là HẰNG: expect(NaN).toBe(NaN) không được tính là ca thật", () => {
+    for (const hang of ["expect(NaN).toBe(NaN);", "expect(NaN).toBeNaN();", "expect(Infinity).toBe(Infinity);", "expect(-Infinity).toBe(-Infinity);", "expect(undefined).toBe(undefined);"]) {
+      const c = ca(hang);
+      expect(c.assertThat, hang).toBe(false);
+      expect(c.chiHangSo, hang).toBe(true);
+    }
+  });
+  it("★★★ nhị phân hằng-với-BIẾN (cả hai thứ tự) và mảng / đối tượng có BIẾN KHÔNG phải hằng ⇒ ca thật", () => {
+    for (const that of ["expect(x + 1).toBe(2);", "expect(1 + x).toBe(2);", "expect(x + y).toBe(2);", "expect([1, x]).toEqual([1, 2]);", "expect([x]).toEqual([1]);", "expect({ a: x }).toEqual({ a: 1 });", "expect(f(1) === 1).toBe(true);"]) {
+      const c = ca(that);
+      expect(c.assertThat, that).toBe(true);
+      expect(c.chiHangSo, that).toBe(false);
+    }
+    // đối chứng: cả hai vế đều hằng ⇒ vẫn là hằng
+    expect(ca("expect(1 + 2).toBe(3);").chiHangSo).toBe(true);
+    expect(ca("expect([1, 2]).toEqual([1, 2]);").chiHangSo).toBe(true);
+  });
+  it("★★★ bộ đếm loaiBo: ca RỖNG đếm vào `rong`, ca toàn hằng đếm vào `hangSoHang` (không lẫn nhau; số lượng khác nhau để bắt đổi chỗ)", () => {
+    const nguon = [`it("[D1] a", () => {});`, `it("[D2] b", () => { expect(true).toBe(true); });`, `it("[D4] c", () => { expect(1).toBe(1); });`, `it("[D5] d", () => { expect(NaN).toBe(NaN); });`].join("\n");
+    const p = tinhPhu(dong(), nguon);
+    expect(p.loaiBo).toEqual({ rong: 1, hangSoHang: 3, caCuDoiTen: 0, khongPassed: 0, tenDong: 0 });
+    expect(p.dongThieu).toEqual([1, 2, 4, 5]);
+  });
+  it("★★★ ca mang tag của dòng GIỮ không phủ gì: dongDaPhu và caMoi KHÔNG chứa dòng GIỮ, không phải tag lạ, không vào loaiBo", () => {
+    const p = tinhPhu(dong(), [caXanh(3, "giữ"), caXanh(1)].join("\n"));
+    expect(p.dongDaPhu).toEqual([1]);
+    expect(p.caMoi).toEqual(["[D1] nội dung"]);
+    expect(p.dongGiu).toEqual([3]);
+    expect(p.tagLa).toEqual([]);
+    expect(p.loaiBo).toEqual({ rong: 0, hangSoHang: 0, caCuDoiTen: 0, khongPassed: 0, tenDong: 0 });
+    expect(p.dongThieu).toEqual([2, 4, 5]);
+  });
+});

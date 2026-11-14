@@ -146,3 +146,22 @@ describe("driverHost — dòng PHỦ trong lời nhắc tự chạy lệnh kiể
     expect(bac[1]).toContain("PHỦ: đủ 2/2");
   });
 });
+
+describe("driverHost — HA-10 bổ sung (kiem-dinh d2)", () => {
+  it("★★★ đã nhắc THIẾU đủ 2 lần mà lần 3 model đã phủ đủ ⇒ dòng `PHỦ: đủ 2/2` VẪN được gửi (trần 2 lần chỉ áp cho dòng thiếu); soLanNhacPhu vẫn 2", async () => {
+    fs.writeFileSync(path.join(wt, "a.test.ts"), CA1);
+    const { dep, bac } = taoDep(3);
+    const goc = dep.chayKiem!;
+    let lan = 0;
+    dep.chayKiem = async (...a) => {
+      if (++lan === 3) fs.writeFileSync(path.join(wt, "a.test.ts"), CA1 + CA2);
+      return goc(...a);
+    };
+    const kq = await driverHost(dep)(dauVao());
+    expect(bac).toHaveLength(3);
+    expect(bac[0]).toContain("PHỦ: dòng 2 chưa có ca");
+    expect(bac[1]).toContain("PHỦ: dòng 2 chưa có ca");
+    expect(bac[2]).toContain("PHỦ: đủ 2/2");
+    expect(kq.soLanNhacPhu).toBe(2);
+  });
+});

@@ -167,3 +167,37 @@ describe("HA-10 — thẻ + lời nhắc + quyết kết cục", () => {
     expect(quyetKetCuc({ truoc: "xong", ...co, kiem: { ...xanh("x"), exit: 1, vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 0, hong: 1, boQua: 0, tong: 1 } } }, phu: { dongThieu: [2] } })).toMatchObject({ ketCuc: "kiem-do" });
   });
 });
+
+describe("HA-10 bổ sung (kiem-dinh: t1 KIỂM PHỦ: KHÔNG; c3 lệnh kiểm không phải vitest)", () => {
+  it("★★★ `KIỂM PHỦ: KHÔNG` (và `không` thường) PARSE ĐƯỢC (ok=true) và không bật kiemPhu; giá trị lạ mới là lỗi", () => {
+    const d = (them: string) => docTheViec(`MÃ: TC-86\nMỤC TIÊU: m\nTỆP ĐƯỢC PHÉP SỬA/TẠO: ${TEP}\nLỆNH KIỂM: npx vitest run ${TEP}\n${them}`);
+    for (const v of ["KIỂM PHỦ: KHÔNG", "KIỂM PHỦ: không", "kiem phu: khong"]) {
+      const r = d(v);
+      expect(r.ok, v).toBe(true);
+      if (r.ok) expect("kiemPhu" in r.the, v).toBe(false);
+    }
+    expect(d("KIỂM PHỦ: KHÔNG_RÕ").ok).toBe(false);
+  });
+  it("★★★ thẻ `KIỂM PHỦ: KHÔNG` chạy cả lượt: bài làm thiếu ca ⇒ vẫn xong, không khoá phu, không --reporter=json", async () => {
+    const ck = chayKiemGia();
+    const r = await chay(theViec("KHÔNG"), { [TEP]: tepTest(ca("không tag")) }, ck.fn);
+    expect(r.ketCuc).toBe("xong");
+    expect("phu" in r).toBe(false);
+    expect(ck.goi.some((g) => g.includes("--reporter=json"))).toBe(false);
+  });
+  const khacVitest = (van: string) => van.replace(`LỆNH KIỂM: npx vitest run ${TEP}`, `LỆNH KIỂM: node ${TEP}`);
+  it("★★★ LỆNH KIỂM không phải vitest: phủ tĩnh đủ ⇒ xong, KHÔNG nối --reporter=json, xacNhanPassed=false", async () => {
+    const ck = chayKiemGia();
+    const r = await chay(khacVitest(theViec("CÓ")), { [TEP]: tepTest(ca(1), ca(2)) }, ck.fn);
+    expect(r.ketCuc).toBe("xong");
+    expect(r.phu).toMatchObject({ dongCanPhu: [1, 2], dongDaPhu: [1, 2], dongThieu: [], xacNhanPassed: false });
+    expect(r.phu!.loi).toBeUndefined();
+    expect(ck.goi.filter((g) => g.includes("--reporter=json"))).toHaveLength(0);
+  });
+  it("★★★ LỆNH KIỂM không phải vitest, phủ tĩnh THIẾU ⇒ vẫn thieu-phu (không vì không phải vitest mà bỏ kiểm)", async () => {
+    const ck2 = chayKiemGia();
+    const r2 = await chay(khacVitest(theViec("CÓ")), { [TEP]: tepTest(ca(1)) }, ck2.fn);
+    expect(r2.ketCuc).toBe("thieu-phu");
+    expect(r2.phu).toMatchObject({ dongThieu: [2], xacNhanPassed: false });
+  });
+});
