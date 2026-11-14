@@ -112,6 +112,7 @@ const reqRow = async (id: number) => (await sql`SELECT "ackedAt", outcome, "cent
 // mô-đun đó). Không ăn ⇒ vòng quét trên _test mô phỏng (D2) và các ca STOP bên dưới đỏ vì lý do KHÁC — ca này đỏ trước, nói rõ.
 describe("D2 canary — vi.mock(csdlDichStop) có hiệu lực", () => {
   it("docCsdlDichStop là hàm mock và trả chac-khong-phai-test", () => {
+    console.log("[D2 canary]", import.meta.url, "— docCsdlDichStop là mock:", vi.isMockFunction(docCsdlDichStop)); // không có đường thuần (không DB) nào trong deviceOwnershipService tới csdlDichStop / driverRegistry khi DB sống
     expect(vi.isMockFunction(docCsdlDichStop), "D2: vi.mock('./csdlDichStop') KHÔNG có hiệu lực — vòng quét sẽ mô phỏng trên _test; các ca STOP của tệp này không còn nghĩa").toBe(true);
     expect(docCsdlDichStop(), "D2: mock csdlDichStop trả sai giá trị").toEqual({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null });
   });
