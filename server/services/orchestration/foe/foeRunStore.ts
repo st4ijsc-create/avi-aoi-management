@@ -48,7 +48,7 @@ import { toRobotJob } from "../../equipment/robotJobMapping";
 import { readEdgeAssignment } from "../../edge/edgeExecutionSchema"; // A2(n) T8 lượt sửa 1 (CHAN-3) — a run given to an edge node: its claim's progress is its heartbeat; lượt sửa 2 (CHAN-4): through the shared read (0370 missing ⇒ no edge)
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, rutGonGiua, TRAN_TEN_NUT, TRAN_LY_DO, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
 
@@ -1967,6 +1967,14 @@ function heldAdvice(error: string | undefined): string {
 }
 
 /**
+ * T9 lượt sửa 3b (mục 4) — the held error of an edge segment, as central shows it: the node's name and the hold's reason cut in the middle at their ceilings (rutGonGiua), the text after them as
+ * given (the node's free text is cut at 500 by the caller; central's own words of state C are whole and short). ≤ 800 with every input, the advice after it included. Pure.
+ */
+export function chuGiuEdge(nodeCode: string, runId: number, reason: string, loi: string | undefined): string {
+  return `Edge node ${rutGonGiua(nodeCode, TRAN_TEN_NUT)} held run ${runId} (${rutGonGiua(reason, TRAN_LY_DO)})${loi ? `: ${loi}` : ""}`;
+}
+
+/**
  * The end of an edge walk segment, with finishWalk's / setRunStatusUnlessAborted's semantics (design §2.6), on `db` (B's
  * transaction). Never from 'aborted' or a centrally STOPPED run (a rejection's claim token) — only from 'running' /
  * 'compensating' (the bound write P-E2 uses), so a late report never regresses a run. The run row decides, never the report:
@@ -2001,7 +2009,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
   const viBao = (stopId: string): ViChuaRa | undefined => baoKhongRo.find((b) => b.loai === "stopNotSent" && (b.compId && b.compId !== KHONG_CO_BU_TRU ? b.compId : b.stepId) === stopId)?.vi;
   const loiNoTrungTam = async (error: string): Promise<string> => {
     const id = /^FOE_STOP_NOT_SENT: (?:STOP|step) "([^"]{1,200})"/.exec(error)?.[1];
-    if (!id) return `${FOE_STOP_NOT_SENT}: a STOP of this run stays owed (reported by the edge node). Check the machine on site and use its direct STOP / E-STOP.`;
+    if (!id) return `${FOE_STOP_NOT_SENT}: a STOP of this run stays owed (reported by the edge node): check the machine on site and use its direct STOP / E-STOP.`;
     return loiGiuChuaRa(id, viBao(id), await cachNoEdge(id));
   };
   const ctx = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
@@ -2016,14 +2024,16 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
   const chotTuBao = ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] == null && baoKhongRo[0] ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: baoKhongRo[0].stepId, ma: baoKhongRo[0].ma, at: new Date().toISOString() } } : {};
   const held = async (reason: string, error: string | undefined) => {
     const at = new Date().toISOString();
-    const loiHien = error?.startsWith(`${FOE_STOP_NOT_SENT}:`) ? await loiNoTrungTam(error) : error; // RA2-2 — state C: central's words
+    // RA2-2 — state C: central's own words, whole (never cut: the safe act is their last clause; measured under 800 with the prefix, T9 lượt sửa 3b). T9 lượt sửa 3b (mục 3) — anything else is the
+    // node's free text: central's 500 cut, as before lượt sửa 3 (edgeHeldMark.a2n: the mark at the head, the advice whole, the error under 800)
+    const loiHien = error?.startsWith(`${FOE_STOP_NOT_SENT}:`) ? await loiNoTrungTam(error) : error?.slice(0, 500);
     // fix review 1 — a command the edge sent but could not record: never sent again (foeEngine reads the list on the re-walk)
     const unknown = edgeOutcomeUnknownOf(end);
     const prevUnknown = Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : [];
     return write("held", {
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
-      error: `Edge node ${end.nodeCode} held run ${runId} (${reason})${loiHien ? `: ${loiHien.slice(0, 1500)}` : ""}${heldAdvice(loiHien)}`,
+      error: `${chuGiuEdge(end.nodeCode, runId, reason, loiHien)}${heldAdvice(loiHien)}`,
       contextJson: {
         ...ctx,
         [EDGE_HELD_CTX_KEY]: reason,
