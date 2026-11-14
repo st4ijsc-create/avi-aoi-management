@@ -68,6 +68,14 @@ const MAU_CO_BIEN = MAU_TOKEN_CO_TIEN_TO.filter((m) => !m.dinhTrai);
 const gop = (ds: readonly MauToken[], lay: (m: MauToken) => string) => ds.map(lay).join("|");
 
 /**
+ * Nguồn regex của MỘT mẫu, ĐÃ kèm quy tắc biên trái (`dinhTrai` ⇒ không biên). Cho bộ DÒ cần biết mẫu NÀO khớp (vd bộ quét
+ * rò fixture `server/testing/phatLaiLuot.ts`) — dựng regex riêng từng mẫu từ đây, ĐỪNG chép lại mẫu hay quy tắc biên.
+ */
+export function nguonCoBien(m: MauToken): string {
+  return m.dinhTrai ? `(?:${m.nguon})` : `${BIEN_TRAI}(?:${m.nguon})`;
+}
+
+/**
  * Regex GỘP (cờ `g`) mọi mẫu trên. Dùng với `String.replace` (tự đặt lại `lastIndex`); ĐỪNG dùng `.test()`/`.exec()`
  * trên hằng `g` này (có trạng thái) — gọi `cheTokenCoTienTo` hoặc dựng regex riêng từ `MAU_TOKEN_CO_TIEN_TO`.
  */

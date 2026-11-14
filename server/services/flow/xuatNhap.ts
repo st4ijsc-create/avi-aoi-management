@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import { FlowDefinitionSchema, type FlowDefinition, type NodeInstance } from "../../../shared/flow/model";
 import { THAM_SO_THEO_NHA_MAY, type ThamSoNhaMay } from "./phamViNut";
+import { RE_TOKEN_CO_TIEN_TO } from "../../../shared/mauBiMat";
 
 export const DINH_DANG_GOI = "luong-ai/1";
 export const TRAN_BYTE_GOI = 256 * 1024;
@@ -76,6 +77,14 @@ const RE_DONG_XAC_THUC = /((?:proxy-)?authorization|set-cookie|cookie)(["']?\s*[
 const RE_CAP_BI_MAT = new RegExp(String.raw`((?:${NGUON_KHOA_DAI}|\b(?:pwd|pass|otp|sid)\b)[\w-]*["']?\s*[:=]\s*["']?)([^&\s"',}]+)`, "gi");
 /** Giá trị trông như token độc lập (không có tên khoá): sk-…, ghp_…, AKIA…, JWT, chuỗi ≥ 40 ký tự base64/hex. */
 const RE_TOKEN_DOC_LAP = /(?:^|[^A-Za-z0-9_-])((?:sk|pk|ghp|gho|xox[bp])[-_][A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}|[A-Za-z0-9_-]{40,})(?![A-Za-z0-9_-])/g;
+/**
+ * ★ 2026-11-14 (lô "một nguồn mẫu", chu-du-an-HST): token có TIỀN TỐ nhà cung cấp lấy từ MỘT nguồn `shared/mauBiMat.ts` — luật
+ * `RE_TOKEN_DOC_LAP` ở trên chỉ biết sk/pk/ghp/gho/xox[bp]/AKIA theo tiền tố; khoá DÀI (≥ 40, kể cả dính chữ) đã bị luật chuỗi ≥ 40
+ * gỡ, nhưng khoá NGẮN hơn 40 ký tự của tiền tố nó không biết thì lọt: gitlab `glpat-` (26), google `AIza` (39), stripe `rk_live_`,
+ * slack xoxa/xoxr/xoxs thân ngắn. Bộ làm sạch chạy CẢ HAI; bộ quét (`quetBiMat`) cũng vậy. GIỮ `RE_TOKEN_DOC_LAP` (JWT, chuỗi ≥ 40,
+ * `pk_`… không có trong mẫu chung).
+ */
+const RE_TOKEN_CHUNG_MOT = new RegExp(RE_TOKEN_CO_TIEN_TO.source);
 
 /** Xoá giá trị bí mật khỏi MỘT chuỗi (thân dạng chuỗi / giá trị tiêu đề). */
 /** Thẻ XML mang bí mật: <password>…</password>, <api-key attr="x">…</api-key>, <token>… — xoá NỘI DUNG thẻ (giữ thẻ). */
@@ -88,7 +97,8 @@ export function lamSachChuoiBiMat(x: string): string {
     .replace(RE_THE_XML_BI_MAT, (_m, a: string, _b: string, c: string) => `${a}${c}`)
     .replace(RE_DONG_XAC_THUC, (_m, a: string, b: string) => `${a}${b}`)
     .replace(RE_CAP_BI_MAT, (_m, a: string) => a)
-    .replace(RE_TOKEN_DOC_LAP, (m, t: string) => m.replace(t, ""));
+    .replace(RE_TOKEN_DOC_LAP, (m, t: string) => m.replace(t, ""))
+    .replace(RE_TOKEN_CO_TIEN_TO, "");
   return sach === nx ? x : sach;
 }
 
@@ -365,7 +375,8 @@ export function quetIdSo(def: FlowDefinition, idSo: number[], tran = 200): CanhB
 }
 
 /** Mẫu BÍ MẬT còn sót trong tham số của gói: khoá tên giống bí mật mà giá trị là chuỗi không rỗng không phải biểu thức, hoặc giá trị dạng token dài / JWT / sk- / ghp_ / AKIA / "Bearer …". Không in giá trị đầy đủ. */
-const RE_GIA_TRI_TOKEN = /(?:^|[^A-Za-z0-9_-])((?:sk|pk|ghp|gho|xox[bp])[-_][A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}|[A-Za-z0-9_-]{40,})(?![A-Za-z0-9_-])/;
+// Cùng luật với bộ làm sạch (MỘT nguồn: `RE_TOKEN_DOC_LAP` + mẫu chung), bản KHÔNG cờ `g` để `exec` không mang trạng thái.
+const RE_GIA_TRI_TOKEN = new RegExp(RE_TOKEN_DOC_LAP.source);
 export function quetBiMat(def: FlowDefinition, tran = 200): CanhBaoVanBan[] {
   const ra: CanhBaoVanBan[] = [];
   const rutGon = (s: string) => `${s.slice(0, 4)}…`;
@@ -378,8 +389,8 @@ export function quetBiMat(def: FlowDefinition, tran = 200): CanhBaoVanBan[] {
         ra.push({ nodeId: n.id, truong: duong, loai: "bi-mat", khop: khoa });
         continue;
       }
-      const mt = RE_GIA_TRI_TOKEN.exec(g) ?? /\bBearer\s+(\S{8,})/i.exec(g);
-      if (mt) ra.push({ nodeId: n.id, truong: duong, loai: "bi-mat", khop: rutGon(mt[1]) });
+      const mt = RE_GIA_TRI_TOKEN.exec(g)?.[1] ?? RE_TOKEN_CHUNG_MOT.exec(g)?.[0] ?? /\bBearer\s+(\S{8,})/i.exec(g)?.[1];
+      if (mt) ra.push({ nodeId: n.id, truong: duong, loai: "bi-mat", khop: rutGon(mt) });
     }
   }
   return ra;
