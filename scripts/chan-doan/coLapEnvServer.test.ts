@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as url from "node:url";
 // @ts-expect-error — mô-đun .mjs không có khai báo kiểu
-import { dungEnvCoLap, docAlwaysOff, NAM_CO_TAT, BIEN_HE_DIEU_HANH, KHOA_CAM_GHI_DE, KHOA_CAM_MOI_GIA_TRI } from "./boot-lap.mjs";
+import { dungEnvCoLap, docAlwaysOff, NAM_CO_TAT, BIEN_HE_DIEU_HANH, KHOA_CAM_GHI_DE, KHOA_CAM_MOI_GIA_TRI, KHOA_TAT_DUOC } from "./boot-lap.mjs";
 
 const REPO = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), "..", "..");
 const doc = (p: string) => fs.readFileSync(path.join(REPO, p), "utf8");
@@ -110,13 +110,35 @@ describe("boot-lap.mjs — dungEnvCoLap", () => {
     expect(() => dung({ SAFETY_PLC_POLLER_ENABLED: "true" })).toThrow(/SAFETY_PLC_POLLER_ENABLED/);
     expect(() => dung({ SMTP_HOST: "x" })).toThrow(/SMTP_HOST/);
     expect(() => dung({ PORT: "1", SMTP_HOST: "x" })).toThrow(/SMTP_HOST/);
-    expect(dung({ FOO: "off" }).FOO).toBe("off");
-    expect(dung({ FOO: "FALSE" }).FOO).toBe("FALSE");
-    expect(dung({ FOO: "0" }).FOO).toBe("0");
+    // giá trị "tắt" chỉ được nhận cho khoá trong danh sách tường minh
+    expect(dung({ EDGE_FACTORY_DRIFT_ALERT: "off" }).EDGE_FACTORY_DRIFT_ALERT).toBe("off");
+    expect(dung({ edge_factory_drift_alert: "FALSE" }).edge_factory_drift_alert).toBe("FALSE");
+    expect(dung({ AI_KB_WARM_ON_BOOT: "false" }).AI_KB_WARM_ON_BOOT).toBe("false");
+    expect(() => dung({ FOO: "off" })).toThrow(/FOO/);
+    expect(() => dung({ FOO: "0" })).toThrow(/FOO/);
     expect(dung({ PORT: "3016" }).PORT).toBe("3016");
     expect(dung({ LOG_JSON: "1", DIAG_X: "yes", BOOT_Y: "z" }).LOG_JSON).toBe("1");
     expect(() => dung({ FOO: "on" })).toThrow(/FOO/);
     expect(() => dung({ XLOG_JSON: "1" })).toThrow(/XLOG_JSON/);
+  });
+
+  it("cờ cực tính ngược: tắt KHÔNG an toàn ⇒ ném (RBAC_SCOPED_ADMIN, AUDIT_ALL_MUTATIONS, RATE_LIMIT_REDIS)", () => {
+    for (const k of ["RBAC_SCOPED_ADMIN", "AUDIT_ALL_MUTATIONS", "RATE_LIMIT_REDIS"]) {
+      for (const v of ["false", "off", "0"]) expect(() => dung({ [k]: v }), `${k}=${v}`).toThrow(new RegExp(k));
+    }
+  });
+
+  it("PORT khớp ĐỦ tên (PORTAL, PORT2 ⇒ ném); tên biến chẩn đoán viết thường vẫn được", () => {
+    expect(() => dung({ PORTAL: "1" })).toThrow(/PORTAL/);
+    expect(() => dung({ PORT2: "1" })).toThrow(/PORT2/);
+    expect(dung({ log_json: "1" }).log_json).toBe("1");
+    expect(dung({ port: "3018" }).port).toBe("3018");
+  });
+
+  it("KHOA_TAT_DUOC ⊆ những cờ boot-lap tự tắt mặc định (+ EDGE_FACTORY_DRIFT_ALERT)", () => {
+    expect([...KHOA_TAT_DUOC].sort()).toEqual(["AI_KB_WARM_ON_BOOT", "AI_ORCHESTRATION_ENABLED", "EDGE_FACTORY_DRIFT_ALERT", "GGUF_WARM_DEEP_MODEL_ON_BOOT", "LLAMA_SERVER_ENABLED", "LLAMA_WATCHDOG_ENABLED"]);
+    const env = dung();
+    for (const k of KHOA_TAT_DUOC) if (k !== "EDGE_FACTORY_DRIFT_ALERT") expect(env[k], k).toBe("false");
   });
 
   it("lệnh chẩn đoán 23/10 chạy được nguyên văn", () => {

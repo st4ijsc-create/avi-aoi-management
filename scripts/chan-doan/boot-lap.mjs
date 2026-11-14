@@ -1,5 +1,6 @@
 // Chẩn đoán 2026-10-23 — khởi động server app lặp lại N lần (spawn node TRỰC TIẾP để bắt đúng exit code, vd 3221226356 = 0xC0000374).
-// usage: node scripts/chan-doan/boot-lap.mjs <N> [KEY=VAL…]   (KEY=VAL CHỈ nhận: PORT, LOG_*, DIAG_*, BOOT_*, hoặc giá trị TẮT false/off/0 — không mở đường ra thiết bị:
+// usage: node scripts/chan-doan/boot-lap.mjs <N> [KEY=VAL…]   (KEY=VAL CHỈ nhận: PORT (đủ tên), LOG_*, DIAG_*, BOOT_*, hoặc khoá trong KHOA_TAT_DUOC (cờ boot-lap tự tắt + EDGE_FACTORY_DRIFT_ALERT) với giá trị TẮT false/off/0;
+//   KHÔNG có quy tắc chung "giá trị tắt luôn an toàn" (cờ cực tính ngược như RBAC_SCOPED_ADMIN=false làm yếu an toàn) — không mở đường ra thiết bị:
 //   5 cờ an toàn, DATABASE_URL, DOTENV_CONFIG_PATH, ROLE, NODE_OPTIONS bị từ chối mọi giá trị; khoá thuộc ALWAYS_OFF chỉ nhận giá trị trùng; còn lại ⇒ ném lỗi, không khởi server.
 //   Ví dụ lệnh chẩn đoán 23/10: DIAG_NO_KB_WARM=1 AI_ORCHESTRATION_ENABLED=false EDGE_FACTORY_DRIFT_ALERT=off LOG_JSON=1)
 // Biến điều khiển: BOOT_DIR(.boot20) BOOT_GIU_MS(25000) BOOT_TRAN_MS(180000) BOOT_NODE(node hệ thống) BOOT_SAVE_LOG=1 BOOT_CLEAN_EVERY=N.
@@ -33,9 +34,12 @@ export function docAlwaysOff(nguon = fs.readFileSync(NGUON_ALWAYS_OFF, "utf8")) 
 
 /** Khoá KEY=VAL bị TỪ CHỐI (không phân biệt hoa thường): năm cờ an toàn + nơi trỏ DB/.env/vai trò — lệnh của người chạy bị chặn chứ không bị âm thầm sửa. */
 export const KHOA_CAM_GHI_DE = [...NAM_CO_TAT, "DATABASE_URL", "DOTENV_CONFIG_PATH", "ROLE"];
-/** KEY=VAL chỉ được nhận khi: khoá là PORT hoặc bắt đầu bằng LOG_/DIAG_/BOOT_ (biến chẩn đoán), HOẶC giá trị là "tắt" (false/off/0 — tắt thêm một thứ luôn an toàn). */
+/** KEY=VAL chỉ được nhận khi: khoá là PORT (khớp ĐỦ tên) hoặc bắt đầu bằng LOG_/DIAG_/BOOT_ (biến chẩn đoán), HOẶC khoá nằm trong KHOA_TAT_DUOC và giá trị là "tắt".
+ *  KHÔNG có quy tắc chung "giá trị tắt luôn an toàn": nhiều cờ có cực tính ngược (RBAC_SCOPED_ADMIN=false, AUDIT_ALL_MUTATIONS=false… làm yếu an toàn). */
 export const KHOA_CHAN_DOAN = ["PORT"];
 export const TIEN_TO_CHAN_DOAN = ["LOG_", "DIAG_", "BOOT_"];
+/** Danh sách TƯỜNG MINH: đúng các cờ boot-lap tự tắt mặc định (xem dungEnvCoLap) + EDGE_FACTORY_DRIFT_ALERT; tắt thêm các cờ này an toàn. */
+export const KHOA_TAT_DUOC = ["GGUF_WARM_DEEP_MODEL_ON_BOOT", "LLAMA_SERVER_ENABLED", "LLAMA_WATCHDOG_ENABLED", "AI_ORCHESTRATION_ENABLED", "AI_KB_WARM_ON_BOOT", "EDGE_FACTORY_DRIFT_ALERT"];
 export const GIA_TRI_TAT = ["false", "off", "0"];
 /** Cấm MỌI giá trị (mở đường nạp mã/đổi hành vi tiến trình con). Ngoài ra: khoá thuộc ALWAYS_OFF chỉ nhận giá trị TRÙNG ALWAYS_OFF (no-op). */
 export const KHOA_CAM_MOI_GIA_TRI = ["NODE_OPTIONS"];
@@ -48,9 +52,10 @@ export function dungEnvCoLap(envCha, { port, dbUrl, logDir, ghiDe = {}, alwaysOf
     const K = k.toUpperCase();
     if (cam.includes(K)) throw new Error(`KEY=VAL "${k}" bị từ chối: khoá này do boot-lap tự đặt (cờ an toàn / DB / .env / ROLE / NODE_OPTIONS), không ghi đè được`);
     if (K in tatCa && tatCa[K] !== v) throw new Error(`KEY=VAL "${k}=${v}" bị từ chối: khoá thuộc ALWAYS_OFF (chỉ nhận giá trị trùng "${tatCa[K]}")`);
+    if (K in tatCa) continue; // trùng ALWAYS_OFF (đã qua kiểm trên) = no-op, không đổi env
     const laChanDoan = KHOA_CHAN_DOAN.includes(K) || TIEN_TO_CHAN_DOAN.some((t) => K.startsWith(t));
-    const laTat = GIA_TRI_TAT.includes(String(v).trim().toLowerCase());
-    if (!laChanDoan && !laTat) throw new Error(`KEY=VAL "${k}=${v}" bị từ chối: chỉ nhận PORT, LOG_*, DIAG_*, BOOT_* hoặc giá trị tắt (false/off/0)`);
+    const laTat = KHOA_TAT_DUOC.includes(K) && GIA_TRI_TAT.includes(String(v).trim().toLowerCase());
+    if (!laChanDoan && !laTat) throw new Error(`KEY=VAL "${k}=${v}" bị từ chối: chỉ nhận PORT, LOG_*, DIAG_*, BOOT_*, hoặc khoá trong KHOA_TAT_DUOC với giá trị tắt (false/off/0)`);
   }
   const env = {};
   for (const k of BIEN_HE_DIEU_HANH) if (envCha[k] != null) env[k] = envCha[k];
