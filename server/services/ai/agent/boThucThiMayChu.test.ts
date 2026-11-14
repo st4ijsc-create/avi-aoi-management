@@ -515,14 +515,6 @@ describe("§G — lệnh ở tu-dong qua ĐÚNG cổng vòng cũ (AUTOLOOP + t�
     expect(r.kq.choModel).toMatch(/do not (create|write).*project\.assets\.json/i);
   });
 
-  /** HA-4 (lệnh): điểm gọi thật `executeur` truyền `args.command` vào lời từ chối — ca thuần ở boThucThiMayChu.goiYLenh.test.ts không thấy dây này. */
-  it("★★ HA-4: `python -m pytest <đường> -v` ở tu-dong ⇒ LENH_CAN_DUYET_TAY + choModel nêu dạng đúng `python -m pytest <path>`", async () => {
-    const r = await chay(taoBo(), "run_command", { command: "python -m pytest tests/test_x.py -v" }, "tu-dong");
-    expect(r.kq.ok).toBe(false);
-    expect(r.kq.ma).toBe("LENH_CAN_DUYET_TAY");
-    expect(r.kq.choModel).toContain("The only accepted form is exactly `python -m pytest <path>`");
-  });
-
   it("★★ chế độ sua: lệnh ngoài tập kiểm chứng VẪN được đề xuất cho người duyệt (cổng chỉ của tu-dong)", async () => {
     const ac = new AbortController();
     const r = await chay(taoBo(), "run_command", { command: "git status" }, "sua", {

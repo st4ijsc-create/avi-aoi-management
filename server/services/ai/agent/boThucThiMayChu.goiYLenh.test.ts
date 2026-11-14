@@ -4,8 +4,9 @@
  * ĐỘT BIẾN PHẢI BẮT: không truyền lệnh vào lời từ chối · gợi ý thay mất danh sách chung · gợi ý lọt vào AUTOLOOP_TAT · lệnh được phép bị gắn gợi ý.
  */
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cauTuChoiLenhTuDong, phanQuyetLenhTuDong } from "./boThucThiMayChu";
+import { kiemThamSo } from "@shared/agentCore";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cauTuChoiLenhTuDong, phanQuyetLenhTuDong, taoBoThucThiMayChu } from "./boThucThiMayChu";
 
 const goc = path.resolve(process.cwd());
 let cu: string | undefined;
@@ -77,5 +78,43 @@ describe("lời từ chối lệnh tu-dong có gợi ý dạng được phép", 
     const c = cauTuChoiLenhTuDong("LENH_CAN_DUYET_TAY", "CMD_NOT_ALLOWED: x");
     expect(c).toContain("needs manual approval");
     expect(c).not.toContain("accepted form");
+  });
+});
+
+describe("điểm gọi thật: bộ thực thi tu-dong truyền `args.command` vào lời từ chối (bản GIẢ, không CSDL)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  function dung() {
+    vi.stubEnv("AI_CODING_TU_TRI_GHI", "1");
+    vi.stubEnv("AI_CODING_AUTOLOOP", "1");
+    const executeDecision = vi.fn(async () => ({ error: "không được tới đây khi lệnh bị từ chối" }));
+    const nguoi = { id: 1, role: "admin", name: "Ky su" };
+    const bo = taoBoThucThiMayChu({
+      execCtx: { user: nguoi, lang: "vi", projectRoot: goc },
+      gocDuAn: goc,
+      user: nguoi,
+      coQuyenThucThi: true,
+      checkpoint: null,
+      phuThuoc: { executeDecision: executeDecision as never, kiemKillSwitch: async () => false, laGhiVaoRepoChinh: () => false },
+    });
+    const chay = (command: string) => {
+      const kt = kiemThamSo("run_command", { command });
+      if (!kt.ok) throw new Error(kt.loiChoModel);
+      return bo.chay({ id: "c1", ten: "run_command", thamSo: kt.thamSo }, { cheDo: "tu-dong", runId: "11111111-1111-4111-8111-111111111111", luot: 1, signal: new AbortController().signal, phat: () => undefined });
+    };
+    return { chay, executeDecision };
+  }
+  it("★★★ `python -m pytest <đường> -v` ở tu-dong ⇒ LENH_CAN_DUYET_TAY, choModel có gợi ý dạng đúng; executeDecision KHÔNG được gọi", async () => {
+    const { chay, executeDecision } = dung();
+    const kq = await chay("python -m pytest tests/test_x.py -v");
+    expect(kq.ok).toBe(false);
+    expect(kq.ma).toBe("LENH_CAN_DUYET_TAY");
+    expect(kq.choModel).toContain("The only accepted form is exactly `python -m pytest <path>`");
+    expect(executeDecision).not.toHaveBeenCalled();
+  });
+  it("★★★ glob (chết ở tachArgv, chi tiết không có lệnh) ⇒ vẫn có gợi ý nhờ điểm gọi truyền lệnh", async () => {
+    const { chay } = dung();
+    const kq = await chay("node --test js-loi-3-lop/test/*.test.mjs");
+    expect(kq.ma).toBe("LENH_CAN_DUYET_TAY");
+    expect(kq.choModel).toContain("`node --test <directory>`");
   });
 });
