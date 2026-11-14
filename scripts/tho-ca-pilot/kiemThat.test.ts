@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { KetQuaKiem } from "./kiemChung";
-import { chayKiemThat, chepCayGia, chupWt, docKiemThat, TRAN_TEP_CAY } from "./kiemThat";
+import { chayKiemThat, chepCayGia, chupWt, docKiemThat, TRAN_BYTE_CAY, TRAN_CAY_MAC_DINH, TRAN_TEP_CAY } from "./kiemThat";
 
 const gitThat = (cwd: string, a: string[]): string | null => {
   const r = spawnSync("git", a, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -193,5 +193,60 @@ describe("chayKiemThat", () => {
     const r = await chayKiemThat({ lenh: "x {CAY}", cay: path.join(wt) }, wt, async () => (goi++, kq()), 30, chupGit, tmpRieng());
     expect(r).toMatchObject({ dat: false, lyDo: "cay-gia-long-voi-worktree" });
     expect(goi).toBe(0);
+  });
+});
+
+describe("trần bản chép cây giả — tiêm qua tham số (số tệp / byte)", () => {
+  // cây của beforeEach: index.html (13 byte) + assets/app-abc123.js (14 byte) = 2 tệp, 27 byte
+  it("★★★ trần mặc định = hằng đã công bố (5 000 tệp, 100 MiB); không truyền tham số ⇒ dùng mặc định", () => {
+    expect(TRAN_CAY_MAC_DINH).toEqual({ tep: TRAN_TEP_CAY, byte: TRAN_BYTE_CAY });
+    expect(TRAN_TEP_CAY).toBe(5000);
+    expect(TRAN_BYTE_CAY).toBe(100 * 1024 * 1024);
+    const t = tmpRieng();
+    const r = chepCayGia(cay, wt, t);
+    expect(r.ok).toBe(true);
+    if (r.ok) r.don();
+  });
+  it("★★★ trần SỐ TỆP: đúng bằng (2) vẫn chép; thấp hơn một (1) ⇒ cay-gia-qua-lon và KHÔNG để lại thư mục tạm", () => {
+    const t = tmpRieng();
+    const bang = chepCayGia(cay, wt, t, { tep: 2, byte: 1e9 });
+    expect(bang.ok).toBe(true);
+    if (bang.ok) bang.don();
+    const t2 = tmpRieng();
+    expect(chepCayGia(cay, wt, t2, { tep: 1, byte: 1e9 })).toEqual({ ok: false, lyDo: "cay-gia-qua-lon" });
+    expect(fs.readdirSync(t2)).toEqual([]);
+  });
+  it("★★★ trần BYTE: đúng bằng (27) vẫn chép; thấp hơn một (26) ⇒ cay-gia-qua-lon và KHÔNG để lại thư mục tạm", () => {
+    const t = tmpRieng();
+    const bang = chepCayGia(cay, wt, t, { tep: 1000, byte: 27 });
+    expect(bang.ok).toBe(true);
+    if (bang.ok) bang.don();
+    const t2 = tmpRieng();
+    expect(chepCayGia(cay, wt, t2, { tep: 1000, byte: 26 })).toEqual({ ok: false, lyDo: "cay-gia-qua-lon" });
+    expect(fs.readdirSync(t2)).toEqual([]);
+  });
+  it("★★★ trần TIÊM áp cả ở THƯ MỤC CON (đệ quy truyền trần, không rơi về trần mặc định): 3 tệp chỉ ở tầng con, trần 2 tệp / 29 byte ⇒ cay-gia-qua-lon; đúng bằng (3 / 30) vẫn chép", () => {
+    const cayLong = path.join(goc, "cay-long");
+    fs.mkdirSync(path.join(cayLong, "a", "b"), { recursive: true });
+    for (const ten of ["x.txt", "y.txt", "z.txt"]) fs.writeFileSync(path.join(cayLong, "a", "b", ten), "0123456789"); // 3 tệp × 10 byte, KHÔNG tệp nào ở tầng gốc
+    const t1 = tmpRieng();
+    expect(chepCayGia(cayLong, wt, t1, { tep: 2, byte: 1e9 })).toEqual({ ok: false, lyDo: "cay-gia-qua-lon" });
+    expect(fs.readdirSync(t1)).toEqual([]);
+    const t2 = tmpRieng();
+    expect(chepCayGia(cayLong, wt, t2, { tep: 1e9, byte: 29 })).toEqual({ ok: false, lyDo: "cay-gia-qua-lon" });
+    const t3 = tmpRieng();
+    const vua = chepCayGia(cayLong, wt, t3, { tep: 3, byte: 30 });
+    expect(vua.ok).toBe(true);
+    if (vua.ok) vua.don();
+  });
+  it("★★★ chayKiemThat truyền trần xuống: vượt ⇒ dat:false lyDo cay-gia-qua-lon và lệnh KHÔNG được chạy; không vượt ⇒ chạy bình thường", async () => {
+    let goi = 0;
+    const chayGia = async () => (goi++, kq());
+    const r1 = await chayKiemThat({ lenh: "node x {CAY}", cay }, wt, chayGia, 30, chupGit, tmpRieng(), { tep: 1, byte: 1e9 });
+    expect(r1).toEqual({ dat: false, exit: null, hetGio: false, giay: 0, lyDo: "cay-gia-qua-lon" });
+    expect(goi).toBe(0);
+    const r2 = await chayKiemThat({ lenh: "node x {CAY}", cay }, wt, chayGia, 30, chupGit, tmpRieng(), { tep: 2, byte: 27 });
+    expect(r2).toEqual({ dat: true, exit: 0, hetGio: false, giay: 2, lyDo: null });
+    expect(goi).toBe(1);
   });
 });

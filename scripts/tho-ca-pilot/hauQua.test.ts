@@ -134,7 +134,7 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
     const n = await mayDemPostgres(sql).dem({ bang: "factories", cot: "code", toanTu: "LIKE", giaTri: "SS_FAC_%", ghi: false });
     expect(n).toBe(4);
     expect(goi).toHaveLength(1);
-    expect(goi[0]!.cau).toBe("select count(*)::int as n from <id:factories> where <id:code>::text like $1 escape '\\'");
+    expect(goi[0]!.cau).toBe("select count(*)::int as n from <id:public>.<id:factories> where <id:code>::text like $1 escape '\\'");
     expect(goi[0]!.giaTri).toEqual(["SS\\_FAC\\_%"]);
     expect(goi[0]!.cau).not.toContain("SS_FAC_");
   });
@@ -145,8 +145,8 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
     await may.dem({ bang: "machines", cot: "tag", toanTu: "=", giaTri: "x", ghi: false });
     expect(await may.kiemDinhDanh({ bang: "machines", cot: "tag", toanTu: "=", giaTri: "x", ghi: false })).toBeNull();
     expect(goi.map((g) => g.cau)).toEqual([
-      "select count(*)::int as n from <id:machines>",
-      "select count(*)::int as n from <id:machines> where <id:tag>::text = $1",
+      "select count(*)::int as n from <id:public>.<id:machines>",
+      "select count(*)::int as n from <id:public>.<id:machines> where <id:tag>::text = $1",
       "select table_type from information_schema.tables where table_schema = 'public' and table_name = $1",
       "select 1 as ok from information_schema.columns where table_schema = 'public' and table_name = $1 and column_name = $2",
     ]);
@@ -163,7 +163,7 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
     const dem = mayDemPostgres(sql);
     await expect(dem.dem({ bang: "a; drop", ghi: false })).rejects.toThrow("định danh");
     await expect(dem.kiemDinhDanh({ bang: "a", cot: "B", toanTu: "=", giaTri: "x", ghi: false })).rejects.toThrow("định danh");
-    expect(goi).toHaveLength(1); // chỉ lần kiemDinhDanh hợp lệ đầu tiên chạm
+    expect(goi).toHaveLength(2); // chỉ lần kiemDinhDanh hợp lệ đầu tiên chạm: information_schema.tables rỗng + pg_matviews rỗng (2 câu SELECT)
   });
   it("★★★ VIEW được đếm như bảng (vd device_pending_stops): kiemDinhDanh null, dem dùng cùng câu count(*), mọi câu chỉ là SELECT, demTatCa ok", async () => {
     const { sql, goi } = sqlGia((c) => (c.includes("information_schema.tables") ? [{ table_type: "VIEW" }] : [{ n: 5 }]));
@@ -172,7 +172,7 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
     expect(await may.kiemDinhDanh(muc)).toBeNull();
     expect(await demTatCa(may, [muc])).toEqual({ ok: true, dem: { device_pending_stops: 5 } });
     expect(goi.every((g) => /^select /.test(g.cau))).toBe(true);
-    expect(goi.map((g) => g.cau)).toContain("select count(*)::int as n from <id:device_pending_stops>");
+    expect(goi.map((g) => g.cau)).toContain("select count(*)::int as n from <id:public>.<id:device_pending_stops>");
   });
   it("★★★ loại KHÁC bảng/VIEW (FOREIGN, LOCAL TEMPORARY) ⇒ lý do nêu ĐÚNG loại; KHÔNG nói 'không có trong schema'; demTatCa fail-closed mang lý do đó", async () => {
     for (const loai of ["FOREIGN", "LOCAL TEMPORARY"]) {
@@ -187,6 +187,19 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
   it("★★★ không thấy đối tượng ⇒ lý do nói rõ 'không có trong schema public (hoặc vai không có quyền trên nó)' (information_schema ẩn đối tượng không có quyền)", async () => {
     const { sql } = sqlGia(() => []);
     expect(await mayDemPostgres(sql).kiemDinhDanh({ bang: "khong_co", ghi: false })).toBe('bảng "khong_co" không có trong schema public (hoặc vai không có quyền trên nó)');
+  });
+  it("★★★ MATERIALIZED VIEW (không có trong information_schema.tables, có ở pg_matviews) ⇒ lý do nêu ĐÚNG loại; chỉ SELECT; không đếm", async () => {
+    const { sql, goi } = sqlGia((c) => (c.includes("pg_matviews") ? [{ ok: 1 }] : []));
+    const may = mayDemPostgres(sql);
+    expect(await may.kiemDinhDanh({ bang: "mv_thong_ke", ghi: false })).toBe('"mv_thong_ke" là MATERIALIZED VIEW, bộ đếm chỉ nhận BASE TABLE hoặc VIEW');
+    expect(goi.map((g) => g.cau)).toEqual([
+      "select table_type from information_schema.tables where table_schema = 'public' and table_name = $1",
+      "select 1 as ok from pg_matviews where schemaname = 'public' and matviewname = $1",
+    ]);
+    expect(goi[1]!.giaTri).toEqual(["mv_thong_ke"]);
+    expect(goi.every((g) => /^select /.test(g.cau) && !g.cau.includes("count(*)"))).toBe(true);
+    const r = await demTatCa(may, [{ bang: "mv_thong_ke", ghi: false }]);
+    expect(r).toEqual({ ok: false, lyDo: 'mv_thong_ke: "mv_thong_ke" là MATERIALIZED VIEW, bộ đếm chỉ nhận BASE TABLE hoặc VIEW' });
   });
   it("★★★ bảng thường (BASE TABLE) vẫn được nhận như cũ", async () => {
     const { sql } = sqlGia((c) => (c.includes("information_schema.tables") ? [{ table_type: "BASE TABLE" }] : [{ n: 3 }]));

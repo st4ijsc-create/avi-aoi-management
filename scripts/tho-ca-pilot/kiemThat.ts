@@ -21,6 +21,13 @@ export const TRAN_DO_DAI_LENH_THAT = 400;
 export const TRAN_TEP_CAY = 5000;
 export const TRAN_BYTE_CAY = 100 * 1024 * 1024;
 
+/** Trần của bản chép cây giả: số tệp và tổng byte. Tiêm qua tham số (mặc định = hằng ở trên) để test ghim được mà không phải tạo 5 000 tệp / 100 MB. */
+export interface TranCay {
+  tep: number;
+  byte: number;
+}
+export const TRAN_CAY_MAC_DINH: TranCay = { tep: TRAN_TEP_CAY, byte: TRAN_BYTE_CAY };
+
 export interface KiemThat {
   lenh: string;
   cay: string;
@@ -43,24 +50,24 @@ export function docKiemThat(lenhTho: string | undefined, cayTho: string | undefi
 
 export type KetQuaChep = { ok: true; dir: string; don: () => void } | { ok: false; lyDo: string };
 
-function dem(dir: string, so: { tep: number; byte: number }): string | null {
+function dem(dir: string, so: { tep: number; byte: number }, tran: TranCay): string | null {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
     if (e.isSymbolicLink()) return "cay-gia-co-lien-ket-tuong-trung";
     if (e.isDirectory()) {
-      const r = dem(p, so);
+      const r = dem(p, so, tran);
       if (r) return r;
     } else if (e.isFile()) {
       so.tep++;
       so.byte += fs.statSync(p).size;
-      if (so.tep > TRAN_TEP_CAY || so.byte > TRAN_BYTE_CAY) return "cay-gia-qua-lon";
+      if (so.tep > tran.tep || so.byte > tran.byte) return "cay-gia-qua-lon";
     } else return "cay-gia-co-tep-dac-biet";
   }
   return null;
 }
 
 /** Chép fixture vào thư mục tạm mới. Fixture phải là thư mục NGOÀI worktree (cả hai chiều), không liên kết tượng trưng, không quá trần. */
-export function chepCayGia(cay: string, wt: string, thuMucTam: string = os.tmpdir()): KetQuaChep {
+export function chepCayGia(cay: string, wt: string, thuMucTam: string = os.tmpdir(), tran: TranCay = TRAN_CAY_MAC_DINH): KetQuaChep {
   let cayThat: string;
   let wtThat: string;
   try {
@@ -77,7 +84,7 @@ export function chepCayGia(cay: string, wt: string, thuMucTam: string = os.tmpdi
   if (trong(wtThat, cayThat) || trong(cayThat, wtThat)) return { ok: false, lyDo: "cay-gia-long-voi-worktree" };
   let tong: string | null;
   try {
-    tong = dem(cayThat, { tep: 0, byte: 0 });
+    tong = dem(cayThat, { tep: 0, byte: 0 }, tran);
   } catch {
     return { ok: false, lyDo: "cay-gia-khong-doc-duoc" };
   }
@@ -127,8 +134,8 @@ export interface KetQuaKiemThat {
 }
 
 /** Chạy LỆNH KIỂM THẬT (fail-closed: mọi lỗi ⇒ dat:false). `chay` là hàm chạy lệnh kiểm của bộ chạy (cùng cách ly / env sạch). */
-export async function chayKiemThat(kt: KiemThat, wt: string, chay: ChayKiem, hanGiay: number, chup: (wt: string) => string | null, thuMucTam?: string): Promise<KetQuaKiemThat> {
-  const chep = chepCayGia(kt.cay, wt, thuMucTam);
+export async function chayKiemThat(kt: KiemThat, wt: string, chay: ChayKiem, hanGiay: number, chup: (wt: string) => string | null, thuMucTam?: string, tran: TranCay = TRAN_CAY_MAC_DINH): Promise<KetQuaKiemThat> {
+  const chep = chepCayGia(kt.cay, wt, thuMucTam, tran);
   if (!chep.ok) return { dat: false, exit: null, hetGio: false, giay: 0, lyDo: chep.lyDo };
   try {
     const truoc = chup(wt);

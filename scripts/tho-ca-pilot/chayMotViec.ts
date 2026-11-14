@@ -27,7 +27,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chuanDuong, docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
 import { demTatCa, tinhHauQua, type KetQuaDem, type KetQuaHauQua, type MayDem } from "./hauQua";
-import { moMayDemTuUrl } from "./mayDemPg";
+import { moMayDemTuUrl, moMayQuetTuUrl } from "./mayDemPg";
+import { canhBaoQuetRong, quetTatCa, soSanhQuet, type KetQuaQuet, type KetQuaQuetRong, type MayQuet } from "./quetRong";
 import { chayKiemThat, chupWt, type KetQuaKiemThat } from "./kiemThat";
 import { CAU_LUAT_PHU, docDongDaDuyet, docVitestJson, tenMoiCa, tinhPhu, type DongDuyet, type KetQuaPhu } from "./kiemPhu";
 import { dongBaoTran, dongCanhBaoKep, gioiHanChoLuot, tinhTranLuot, type GioiHanLuotChoDriver, type TranLuotKetQua } from "./tranLuot";
@@ -191,6 +192,10 @@ export interface KetQuaViec {
   phu?: PhuJson;
   /** HA-6b: kiểm hậu quả (đếm hàng CSDL trước/sau; chỉ khi thẻ có BẢNG ĐẾM) */
   hauQua?: KetQuaHauQua;
+  /** HA-6d: quét rộng count(*) mọi bảng trước/sau (chỉ khi `--quet-rong` + `--cho-phep-db`); CHỈ GHI, không đổi ketCuc */
+  quetRong?: KetQuaQuetRong;
+  /** HA-6d: cảnh báo quét rộng (bảng NGOÀI thẻ đổi / không đếm được / quét không xong) — đặt NGAY SAU ketCuc để người duyệt thấy ở đầu; vắng khi không có gì */
+  canhBaoQuet?: string[];
   /** HA-6b phần 2: kết quả LỆNH KIỂM THẬT (KHÔNG có lệnh / đường / đầu ra) */
   kiemThat?: KetQuaKiemThat;
   /** HA-3: trần lượt đã áp (chỉ khi thẻ có khoá TRẦN …): khoá thẻ, biến env, trần cứng, số thực dùng. "vòng" = một lần gọi model */
@@ -232,6 +237,15 @@ export function docUrlTuTep(duong: string, cacThuMucCam: readonly string[] = [])
   if (dong.length === 0) throw new Error("--tep-url-csdl: tệp rỗng");
   if (dong.length > 1) throw new Error("--tep-url-csdl: tệp phải có đúng MỘT dòng");
   return dong[0];
+}
+
+/** HA-6d: cờ quét rộng của dòng lệnh. `--quet-rong` / `--quet-rong-cham` đều cần `--cho-phep-db` (không có cờ DB thì không có gì để quét). Thuần. */
+export function thamSoQuetRongTuDongLenh(a: Record<string, string>, choPhepDb: boolean): { quetRong: boolean; quetRongCham: boolean; loi?: string } {
+  const quetRong = a["quet-rong"] !== undefined;
+  const quetRongCham = a["quet-rong-cham"] !== undefined;
+  if (quetRongCham && !choPhepDb) return { quetRong, quetRongCham, loi: "--quet-rong-cham cần --cho-phep-db" };
+  if (quetRong && !choPhepDb) return { quetRong, quetRongCham, loi: "--quet-rong cần --cho-phep-db" };
+  return { quetRong, quetRongCham };
 }
 
 /** Tham số DB của dòng lệnh: cờ `--cho-phep-db` và URL CSDL đọc từ `--tep-url-csdl <tệp>` (không còn lấy DATABASE_URL của tiến trình). `docTep` được tiêm để test không đọc tệp thật. Thuần. */
@@ -561,6 +575,12 @@ export interface ThamSoViec {
   taoChayKiem?: typeof taoChayLenhKiem;
   /** HA-6b: mở bộ đếm hàng từ URL CSDL (mặc định postgres.js; ca kiểm tiêm bản giả). Chỉ gọi khi có `--cho-phep-db` và thẻ có BẢNG ĐẾM. */
   moMayDem?: (url: string) => Promise<{ may: MayDem; dong: () => Promise<void> }>;
+  /** HA-6d: bật quét rộng mọi bảng trước/sau (cờ `--quet-rong`); cần `choPhepDb`. Mặc định TẮT. */
+  quetRong?: boolean;
+  /** HA-6d: `--quet-rong-cham` = quét rộng + CHẤM: bảng NGOÀI thẻ đổi (hoặc quét không xong) ⇒ ketCuc hau-qua-xau. Hàm ý bật quét rộng; cần `choPhepDb`. Mặc định TẮT. */
+  quetRongCham?: boolean;
+  /** HA-6d: mở bộ quét rộng từ URL CSDL (mặc định postgres.js; ca kiểm tiêm bản giả) */
+  moMayQuet?: (url: string) => Promise<{ may: MayQuet; dong: () => Promise<void> }>;
   /** commit bộ chạy (dòng lệnh tính bằng `commitBoChay`); vắng ⇒ không ghi */
   boChay?: BoChay;
   nhatKy?: (s: string) => void;
@@ -596,6 +616,8 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     const lyDoDb = kiemChoPhepDb(the, p.testDbUrl);
     if (lyDoDb) return tuChoi(lyDoDb, the.ma);
   }
+  if (p.quetRongCham && !dbCho) return tuChoi("--quet-rong-cham cần --cho-phep-db (không có cờ DB thì không có gì để quét)", the.ma);
+  if (p.quetRong && !dbCho) return tuChoi("--quet-rong cần --cho-phep-db (không có cờ DB thì không có gì để quét)", the.ma);
   const chayKiemDung: ChayKiem = p.chayKiem ?? (p.taoChayKiem ?? taoChayLenhKiem)(dbCho ? { testDbUrl: p.testDbUrl } : {});
 
   const wt = path.resolve(p.wt);
@@ -701,6 +723,21 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     }
   };
   const demTruoc: KetQuaDem | null = mucDem.length > 0 && dbCho ? await demLan() : null;
+  // HA-6d: quét rộng TRƯỚC lượt (chỉ khi `--quet-rong` + cờ DB). Lỗi ⇒ ghi lại (ok:false), KHÔNG ném, KHÔNG đổi kết cục.
+  const quetLan = async (): Promise<KetQuaQuet> => {
+    let m: { may: MayQuet; dong: () => Promise<void> };
+    try {
+      m = await (p.moMayQuet ?? moMayQuetTuUrl)(p.testDbUrl ?? "");
+    } catch {
+      return { ok: false, lyDo: "không mở được kết nối quét" };
+    }
+    try {
+      return await quetTatCa(m.may);
+    } finally {
+      await m.dong().catch(() => undefined);
+    }
+  };
+  const quetTruoc: KetQuaQuet | null = (p.quetRong || p.quetRongCham) && dbCho ? await quetLan() : null;
   // HA-10: tên ca có sẵn ở BASE của các tệp test trong LỆNH KIỂM (ca MỚI phải khác) — đọc bằng `git show`, không chạm worktree
   const tepTestPhu = the.kiemPhu ? tepTestTrongLenh(the.lenhKiem).map(chuanDuong).filter((x): x is string => x !== null) : [];
   const tenCaCuPhu = new Set<string>();
@@ -829,6 +866,35 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     hauQua = { ...tinhHauQua({ muc: mucDem, coDb: dbCho, truoc: demTruoc, sau }), ghiKhiDo: true };
     if (hauQua.ketCuc === "hau-qua-xau") luuY.push(`HA-6c: kết cục ${ketCuc} giữ nguyên, nhưng hậu quả CSDL cũng xấu: ${hauQua.lyDo ?? "không rõ"}`);
   }
+  // HA-6d: quét rộng SAU (luôn, kể cả khi kết cục đã đỏ) rồi so với lần quét trước; bảng ngoài thẻ đổi ⇒ chỉ ghi `quetRong` + lưu ý, KHÔNG đổi kết cục
+  let quetRong: KetQuaQuetRong | null = null;
+  let canhBaoQuet: string[] = [];
+  if (quetTruoc !== null) {
+    nhatKy("quét rộng count(*) mọi bảng SAU lượt (HA-6d)");
+    const bangCuaThe = new Set(mucDem.map((m) => m.bang));
+    quetRong = soSanhQuet(quetTruoc, await quetLan(), bangCuaThe);
+    canhBaoQuet = canhBaoQuetRong(quetRong);
+    luuY.unshift(...canhBaoQuet);
+    // `--quet-rong-cham`: bảng NGOÀI thẻ đổi (hoặc quét không xong ⇒ fail-closed) ⇒ hau-qua-xau; chỉ nâng khi kết cục đang `xong` (kết cục đỏ giữ nguyên)
+    if (p.quetRongCham) {
+      quetRong = { ...quetRong, cham: true };
+      // bảng CỦA THẺ (đã khai trong BẢNG ĐẾM) mà quét không đếm được (quá hạn / lỗi) ⇒ thẻ cần số đó nhưng không có ⇒ CHẤM (khác bảng mù ngoài thẻ: chỉ cảnh báo)
+      const bangTheMu = quetRong.ok ? quetRong.khongDem.filter((x) => bangCuaThe.has(x)) : [];
+      // bảng CỦA THẺ có RLS che đối với vai quét ⇒ số đếm chỉ là phần hàng vai được thấy ⇒ cùng luật với bảng của thẻ không đếm được
+      const bangTheRls = quetRong.ok ? quetRong.rls.filter((x) => bangCuaThe.has(x)) : [];
+      // MỌI lượt -cham: hai lần quét là hai ảnh chụp riêng (không cùng giao dịch) — ghi để người duyệt biết giới hạn
+      luuY.push("HA-6d (chấm): trước/sau không cùng ảnh chụp — hai lần quét riêng, tiến trình khác ghi bảng ngoài thẻ giữa hai lần có thể bị chấm oan");
+      if (ketCuc === "xong" && (!quetRong.ok || quetRong.ngoaiThe.length > 0 || bangTheMu.length > 0 || bangTheRls.length > 0)) {
+        ketCuc = "hau-qua-xau";
+        const phan: string[] = [];
+        if (!quetRong.ok) phan.push(`HA-6d (chấm): quét rộng không xong (${quetRong.lyDo ?? "không rõ"}) — fail-closed`);
+        if (quetRong.ok && quetRong.ngoaiThe.length > 0) phan.push(`HA-6d (chấm): bảng NGOÀI thẻ BẢNG ĐẾM đổi: ${quetRong.ngoaiThe.join(", ")}`);
+        if (bangTheMu.length > 0) phan.push(`HA-6d (chấm): bảng CỦA THẺ không đếm được (quá hạn hoặc lỗi): ${bangTheMu.join(", ")}`);
+        if (bangTheRls.length > 0) phan.push(`HA-6d (chấm): bảng CỦA THẺ có RLS che đối với vai quét (số đếm không đầy đủ): ${bangTheRls.join(", ")}`);
+        lyDoKiem = phan.join(" | ");
+      }
+    }
+  }
   // `--cho-phep-db`: đầu ra ĐẦY ĐỦ của lần chạy lệnh kiểm cuối (đã lọc URL + bí mật) ra TỆP cho người duyệt; không vào JSON, không vào lời nhắc model
   if (dbCho && kiem?.dauRaDayDu !== undefined) {
     try {
@@ -837,10 +903,13 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
       /* tệp phụ */
     }
   }
+  // HA-6d: cảnh báo quét rộng cũng ra nhật ký (dòng cuối của lượt cho người chạy), không chỉ trong JSON
+  for (const c of canhBaoQuet) nhatKy(`CẢNH BÁO ${c}`);
   return {
     ma: the.ma,
     ok: ketCuc === "xong",
     ketCuc,
+    ...(canhBaoQuet.length > 0 ? { canhBaoQuet } : {}),
     ...(kq.loi ? { loi: kq.loi } : {}),
     nhanh,
     baseSha,
@@ -864,6 +933,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     ...(tran ? { tran } : {}),
     ...(phu ? { phu } : {}),
     ...(hauQua ? { hauQua } : {}),
+    ...(quetRong ? { quetRong } : {}),
     ...(kiemThat ? { kiemThat } : {}),
     ...(dbCho ? { choPhepDb: true as const, vaiCsdl: VAI_DUOC_PHEP } : {}),
     luat: { sha256: sha256Hex(luat), nguon: luatNguon, byte: Buffer.byteLength(luat, "utf8") },
@@ -893,6 +963,15 @@ function docThamSo(argv: string[]): Record<string, string> {
   return o;
 }
 
+/**
+ * DÒNG TỔNG KẾT cuối lượt (một dòng, ra stderr SAU dòng JSON ở stdout): `TỔNG KẾT <mã>: ketCuc=… ok=…` và, khi `canhBaoQuet` khác rỗng, ` | CẢNH BÁO QUÉT: <các dòng nối bằng ' ‖ '>`.
+ * Người duyệt đọc dòng cuối của nhật ký trước nên cảnh báo quét rộng (bảng ngoài thẻ đổi / chỗ mù / quét không xong) phải có mặt ở đây, không chỉ trong JSON. Thuần.
+ */
+export function dongTongKet(kq: Pick<KetQuaViec, "ma" | "ketCuc" | "ok" | "canhBaoQuet">): string {
+  const co = kq.canhBaoQuet && kq.canhBaoQuet.length > 0 ? ` | CẢNH BÁO QUÉT: ${kq.canhBaoQuet.join(" ‖ ")}` : "";
+  return `TỔNG KẾT ${kq.ma}: ketCuc=${kq.ketCuc} ok=${kq.ok}${co}`;
+}
+
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   const a = docThamSo(argv);
   if (!a.the) {
@@ -908,6 +987,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   const thamDb = thamSoDbTuDongLenh(a, (d) => docUrlTuTep(d, [process.cwd(), ...(a.wt ? [a.wt] : [])]));
   if (thamDb.loi) {
     process.stderr.write(`${thamDb.loi}\n`);
+    return 2;
+  }
+  const thamQuet = thamSoQuetRongTuDongLenh(a, thamDb.choPhepDb);
+  if (thamQuet.loi) {
+    process.stderr.write(`${thamQuet.loi}\n`);
     return 2;
   }
   if (thamDb.choPhepDb) {
@@ -967,6 +1051,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     ...(a.luat ? (({ luat, nguon }) => ({ luat, luatNguon: nguon }))(docLuatTuTep(a.luat)) : {}),
     boChay: commitBoChay(),
     ...(({ choPhepDb, testDbUrl }) => ({ choPhepDb, testDbUrl }))(thamDb),
+    quetRong: thamQuet.quetRong,
+    quetRongCham: thamQuet.quetRongCham,
     driver,
     tenDriver: drv,
     ra: a.ra ?? path.join(os.tmpdir(), "tho-ca-pilot"),
@@ -975,6 +1061,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     nhatKy: (s) => process.stderr.write(`[tho-ca-pilot] ${s}\n`),
   });
   process.stdout.write(`${JSON.stringify(kq)}\n`);
+  process.stderr.write(`[tho-ca-pilot] ${dongTongKet(kq)}\n`);
   return kq.ok ? 0 : 1;
 }
 
