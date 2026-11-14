@@ -42,9 +42,9 @@ export function mayDemPostgres(sql: SqlDem): MayDem {
     async dem(m: MucDem) {
       chiDinhDanhHopLe(m.bang, m.cot);
       let hang: Array<Record<string, unknown>>;
-      if (!m.cot) hang = await sql`select count(*)::int as n from ${sql(m.bang)}`;
-      else if (m.toanTu === "LIKE") hang = await sql`select count(*)::int as n from ${sql(m.bang)} where ${sql(m.cot)}::text like ${escapeLike(m.giaTri ?? "")} escape '\\'`;
-      else hang = await sql`select count(*)::int as n from ${sql(m.bang)} where ${sql(m.cot)}::text = ${m.giaTri ?? ""}`;
+      if (!m.cot) hang = await sql`select count(*)::int as n from ${sql("public")}.${sql(m.bang)}`;
+      else if (m.toanTu === "LIKE") hang = await sql`select count(*)::int as n from ${sql("public")}.${sql(m.bang)} where ${sql(m.cot)}::text like ${escapeLike(m.giaTri ?? "")} escape '\\'`;
+      else hang = await sql`select count(*)::int as n from ${sql("public")}.${sql(m.bang)} where ${sql(m.cot)}::text = ${m.giaTri ?? ""}`;
       return Number(hang[0]?.n);
     },
   };
@@ -77,10 +77,16 @@ export function mayQuetRongPostgres(sql: SqlDem, hanMs: number = HAN_MOI_BANG_QU
       const hang = await sql`select table_name from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE' order by table_name`;
       return hang.map((h) => String(h.table_name));
     },
+    /** bảng public có RLS bật đối với vai hiện tại: relrowsecurity, vai không phải superuser / BYPASSRLS, và (bảng ép RLS cả chủ HOẶC vai không thuộc vai chủ bảng) */
+    async bangRls() {
+      await datPhien();
+      const hang = await sql`select c.relname as table_name from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r', 'p') and c.relrowsecurity and not exists (select 1 from pg_roles r where r.rolname = current_user and (r.rolsuper or r.rolbypassrls)) and (c.relforcerowsecurity or not pg_has_role(current_user, c.relowner, 'MEMBER')) order by c.relname`;
+      return hang.map((h) => String(h.table_name));
+    },
     async dem(bang: string) {
       await datPhien();
       try {
-        const hang = await sql`select count(*)::text as n from ${sql(bang)}`;
+        const hang = await sql`select count(*)::text as n from ${sql("public")}.${sql(bang)}`;
         return Number(hang[0]?.n);
       } catch (e) {
         if ((e as { code?: unknown } | null)?.code === "57014") return null; // query_canceled (statement_timeout)

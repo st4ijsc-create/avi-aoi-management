@@ -113,4 +113,64 @@ describe.skipIf(!co)("mayQuetRongPostgres trên PG thật (giao dịch ROLLBACK)
     expect(docChiDoc).toBe("on");
     expect(docTran).toBe("15s");
   }, 120_000);
+
+  it("★★★ đếm kèm schema: bảng TẠM cùng tên `factories` đứng trước public trong search_path (giao dịch ROLLBACK, bảng tạm ON COMMIT DROP) ⇒ dem('factories') vẫn là số hàng của public.factories, KHÔNG phải của bảng tạm", async () => {
+    let thucPublic = -1;
+    let bangTam = -1;
+    let quet = -1;
+    try {
+      await sql.begin("read write", async (tx) => {
+        thucPublic = Number((await tx`select count(*)::text as n from public.factories`)[0]!.n);
+        await tx`set local search_path to pg_temp, public`;
+        await tx`create temp table factories (id int) on commit drop`;
+        await tx`insert into factories select g from generate_series(1, ${String(thucPublic + 1)}::int) g`;
+        bangTam = Number((await tx`select count(*)::text as n from factories`)[0]!.n); // điều kiện đầu: tên trần đã bị bảng tạm che
+        quet = (await mayQuetRongPostgres(tx as unknown as SqlDem).dem("factories")) ?? -2;
+        throw new HoanTac();
+      });
+    } catch (e) {
+      if (!(e instanceof HoanTac)) throw e;
+    }
+    expect(bangTam).toBe(thucPublic + 1);
+    expect(quet).toBe(thucPublic);
+  }, 60_000);
+
+  it("★★★ phiên quét CHỈ-ĐỌC THẬT: sau khi bộ quét đặt phiên, một giao dịch mới INSERT vào bảng thật ⇒ lỗi 25006 (read_only_sql_transaction), không để lại hàng; luôn ROLLBACK; phiên được trả về như cũ", async () => {
+    const truoc = await demThang("factories");
+    let ma: unknown = null;
+    try {
+      await mayQuetRongPostgres(sql as unknown as SqlDem).lietKe(); // đặt default_transaction_read_only = on cho PHIÊN này
+      await sql.begin(async (tx) => {
+        await tx`insert into factories (code, name) values (${`SQRO_${ts}`}, 'phien chi doc')`;
+        throw new HoanTac(); // nếu INSERT không bị chặn thì vẫn ROLLBACK, và ca đỏ vì không có mã 25006
+      });
+    } catch (e) {
+      ma = (e as { code?: unknown }).code ?? (e instanceof HoanTac ? "KHONG-BI-CHAN" : String(e));
+    } finally {
+      await sql`reset default_transaction_read_only`;
+      await sql`reset statement_timeout`;
+    }
+    expect(ma).toBe("25006");
+    expect(await demThang("factories")).toBe(truoc);
+  }, 60_000);
+
+  it("★★ bangRls trên PG thật: câu truy vấn chạy được; mỗi bảng trả về QUẢ CÓ relrowsecurity bật và nằm trong danh sách bảng thường (không có VIEW)", async () => {
+    let ds: string[] = [];
+    let rls: string[] = [];
+    let bat: boolean[] = [];
+    try {
+      await sql.begin("read write", async (tx) => {
+        const may = mayQuetRongPostgres(tx as unknown as SqlDem);
+        ds = await may.lietKe();
+        rls = await may.bangRls!();
+        for (const b of rls) bat.push(Boolean((await tx`select relrowsecurity from pg_class where relnamespace = 'public'::regnamespace and relname = ${b}`)[0]?.relrowsecurity));
+        throw new HoanTac();
+      });
+    } catch (e) {
+      if (!(e instanceof HoanTac)) throw e;
+    }
+    expect(rls.every((b) => ds.includes(b))).toBe(true);
+    expect(bat.every((x) => x === true)).toBe(true);
+    expect(bat).toHaveLength(rls.length);
+  }, 60_000);
 });

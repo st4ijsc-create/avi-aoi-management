@@ -134,7 +134,7 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
     const n = await mayDemPostgres(sql).dem({ bang: "factories", cot: "code", toanTu: "LIKE", giaTri: "SS_FAC_%", ghi: false });
     expect(n).toBe(4);
     expect(goi).toHaveLength(1);
-    expect(goi[0]!.cau).toBe("select count(*)::int as n from <id:factories> where <id:code>::text like $1 escape '\\'");
+    expect(goi[0]!.cau).toBe("select count(*)::int as n from <id:public>.<id:factories> where <id:code>::text like $1 escape '\\'");
     expect(goi[0]!.giaTri).toEqual(["SS\\_FAC\\_%"]);
     expect(goi[0]!.cau).not.toContain("SS_FAC_");
   });
@@ -145,8 +145,8 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
     await may.dem({ bang: "machines", cot: "tag", toanTu: "=", giaTri: "x", ghi: false });
     expect(await may.kiemDinhDanh({ bang: "machines", cot: "tag", toanTu: "=", giaTri: "x", ghi: false })).toBeNull();
     expect(goi.map((g) => g.cau)).toEqual([
-      "select count(*)::int as n from <id:machines>",
-      "select count(*)::int as n from <id:machines> where <id:tag>::text = $1",
+      "select count(*)::int as n from <id:public>.<id:machines>",
+      "select count(*)::int as n from <id:public>.<id:machines> where <id:tag>::text = $1",
       "select table_type from information_schema.tables where table_schema = 'public' and table_name = $1",
       "select 1 as ok from information_schema.columns where table_schema = 'public' and table_name = $1 and column_name = $2",
     ]);
@@ -172,7 +172,7 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
     expect(await may.kiemDinhDanh(muc)).toBeNull();
     expect(await demTatCa(may, [muc])).toEqual({ ok: true, dem: { device_pending_stops: 5 } });
     expect(goi.every((g) => /^select /.test(g.cau))).toBe(true);
-    expect(goi.map((g) => g.cau)).toContain("select count(*)::int as n from <id:device_pending_stops>");
+    expect(goi.map((g) => g.cau)).toContain("select count(*)::int as n from <id:public>.<id:device_pending_stops>");
   });
   it("★★★ loại KHÁC bảng/VIEW (FOREIGN, LOCAL TEMPORARY) ⇒ lý do nêu ĐÚNG loại; KHÔNG nói 'không có trong schema'; demTatCa fail-closed mang lý do đó", async () => {
     for (const loai of ["FOREIGN", "LOCAL TEMPORARY"]) {

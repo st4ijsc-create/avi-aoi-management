@@ -87,7 +87,7 @@ describe("HA-6d — quét rộng count(*) mọi bảng trước/sau", () => {
     const r = await chay(THE(BANG), { quetRong: true, moMayQuet: q.moMayQuet });
     expect(r.ketCuc).toBe("xong");
     expect(r.ok).toBe(true);
-    expect(r.quetRong).toEqual({ ok: true, lyDo: null, soBang: 4, doi: [{ bang: "user_corporate_assignments", truoc: 5, sau: 7, chenh: 2 }], ngoaiThe: ["user_corporate_assignments"], khongDem: [], tongChenh: 2 });
+    expect(r.quetRong).toEqual({ ok: true, lyDo: null, soBang: 4, doi: [{ bang: "user_corporate_assignments", truoc: 5, sau: 7, chenh: 2 }], ngoaiThe: ["user_corporate_assignments"], khongDem: [], rls: [], tongChenh: 2 });
     expect(q.nk).toMatchObject({ mo: 2, dong: 2 });
     expect(q.nk.url).toEqual([URL_GIA, URL_GIA]);
     expect(r.luuY?.join(" ")).toContain("HA-6d: bảng NGOÀI thẻ BẢNG ĐẾM đổi");
@@ -324,5 +324,81 @@ describe("HA-6d (F) — dongTongKet: dòng tổng kết cuối lượt mang cả
     expect(dongTongKet({ ma: "TC-1", ketCuc: "xong", ok: true })).toBe("TỔNG KẾT TC-1: ketCuc=xong ok=true");
     expect(dongTongKet({ ma: "TC-1", ketCuc: "xong", ok: true, canhBaoQuet: [] })).toBe("TỔNG KẾT TC-1: ketCuc=xong ok=true");
     expect(dongTongKet({ ma: "TC-2", ketCuc: "hau-qua-xau", ok: false, canhBaoQuet: ["A: x", "B: y"] })).toBe("TỔNG KẾT TC-2: ketCuc=hau-qua-xau ok=false | CẢNH BÁO QUÉT: A: x ‖ B: y");
+  });
+});
+
+describe("HA-6d (b)(c) — RLS che bảng + ghi chú 'không cùng ảnh chụp' ở -cham", () => {
+  /** như moQuetGia nhưng bộ quét có `bangRls` trả `rls[n]` (mỗi lần mở một danh sách) */
+  function moQuetRls(lan: Array<Record<string, number | null>>, rls: Array<string[] | "loi">) {
+    const nk = { mo: 0 };
+    const moMayQuet = async () => {
+      const n = nk.mo++;
+      const kq = lan[n]!;
+      const may: MayQuet = {
+        lietKe: async () => Object.keys(kq),
+        dem: async (b) => kq[b] ?? null,
+        bangRls: async () => {
+          const r = rls[n]!;
+          if (r === "loi") throw Object.assign(new Error(`permission denied ${DAU}`), { code: "42501" });
+          return r;
+        },
+      };
+      return { may, dong: async () => undefined };
+    };
+    return { nk, moMayQuet };
+  }
+  const KHONG_DOI = [{ machines: 10, a: 1 }, { machines: 10, a: 1 }];
+  it("★★★ chế độ thường: bảng NGOÀI thẻ có RLS ⇒ canhBaoQuet 'chỗ mù RLS: <bảng>'; ketCuc VẪN xong; quetRong.rls nêu bảng", async () => {
+    const r = await chay(THE(BANG), { quetRong: true, moMayQuet: moQuetRls(KHONG_DOI, [["a"], ["a"]]).moMayQuet });
+    expect(r.ketCuc).toBe("xong");
+    expect(r.canhBaoQuet).toHaveLength(1);
+    expect(r.canhBaoQuet![0]).toContain("chỗ mù RLS: a");
+    expect(r.quetRong).toMatchObject({ ok: true, rls: ["a"] });
+  });
+  it("★★★ -cham: bảng NGOÀI thẻ có RLS ⇒ chỉ cảnh báo, KHÔNG chấm (ketCuc xong)", async () => {
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetRls(KHONG_DOI, [["a"], ["a"]]).moMayQuet });
+    expect(r.ketCuc).toBe("xong");
+    expect(r.canhBaoQuet![0]).toContain("chỗ mù RLS: a");
+  });
+  it("★★★ -cham: bảng TRONG thẻ (machines) có RLS ⇒ hau-qua-xau, lý do nêu 'RLS che' + tên; RLS chỉ ở lần quét SAU cũng chấm", async () => {
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetRls(KHONG_DOI, [[], ["machines"]]).moMayQuet });
+    expect(r.ketCuc).toBe("hau-qua-xau");
+    expect(r.ok).toBe(false);
+    expect(r.luuY?.join(" ")).toContain("HA-6d (chấm): bảng CỦA THẺ có RLS che đối với vai quét (số đếm không đầy đủ): machines");
+    expect(r.canhBaoQuet![0]).toContain("chỗ mù RLS: machines");
+  });
+  it("★★★ KHÔNG -cham: bảng trong thẻ có RLS ⇒ chỉ cảnh báo, ketCuc xong", async () => {
+    const a = await chay(THE(BANG), { quetRong: true, moMayQuet: moQuetRls(KHONG_DOI, [["machines"], ["machines"]]).moMayQuet });
+    expect(a.ketCuc).toBe("xong");
+  });
+  it("★★★ -cham + bảng trong thẻ có RLS nhưng kết cục đã đỏ ⇒ giữ nguyên kiem-do", async () => {
+    const b = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetRls(KHONG_DOI, [["machines"], ["machines"]]).moMayQuet, chayKiem: kiemDo });
+    expect(b.ketCuc).toBe("kiem-do");
+  });
+  it("★★★ không bảng nào có RLS ⇒ không có dòng chỗ mù RLS, -cham xong", async () => {
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetRls(KHONG_DOI, [[], []]).moMayQuet });
+    expect(r.ketCuc).toBe("xong");
+    expect("canhBaoQuet" in r).toBe(false);
+  });
+  it("★★★ không kiểm được RLS (lỗi quyền) ⇒ quét ok:false; -cham fail-closed hau-qua-xau, lý do chỉ tên lớp + mã, không lộ mật khẩu", async () => {
+    const r = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetRls(KHONG_DOI, ["loi", "loi"]).moMayQuet });
+    expect(r.ketCuc).toBe("hau-qua-xau");
+    expect(r.luuY?.join(" ")).toContain("không kiểm được RLS: Error 42501");
+    expect(JSON.stringify(r)).not.toContain(DAU);
+  });
+  it("★★★ (c) MỌI lượt -cham ghi 'trước/sau không cùng ảnh chụp' vào luuY (kể cả khi xong, kể cả kết cục đỏ); không -cham thì KHÔNG có dòng đó", async () => {
+    const dong = (r: { luuY?: string[] }) => (r.luuY ?? []).filter((x) => x.includes("không cùng ảnh chụp"));
+    const xong = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetRls(KHONG_DOI, [[], []]).moMayQuet });
+    expect(xong.ketCuc).toBe("xong");
+    expect(dong(xong)).toHaveLength(1);
+  });
+  it("★★★ (c) cũng khi kết cục đỏ (kiem-do) ghi dòng 'không cùng ảnh chụp'", async () => {
+    const do_ = await chay(THE(BANG), { quetRongCham: true, moMayQuet: moQuetRls(KHONG_DOI, [[], []]).moMayQuet, chayKiem: kiemDo });
+    expect(do_.ketCuc).toBe("kiem-do");
+    expect((do_.luuY ?? []).filter((x) => x.includes("không cùng ảnh chụp"))).toHaveLength(1);
+  });
+  it("★★★ (c) KHÔNG -cham thì KHÔNG có dòng 'không cùng ảnh chụp'", async () => {
+    const thuong = await chay(THE(BANG), { quetRong: true, moMayQuet: moQuetRls(KHONG_DOI, [[], []]).moMayQuet });
+    expect((thuong.luuY ?? []).filter((x) => x.includes("không cùng ảnh chụp"))).toHaveLength(0);
   });
 });

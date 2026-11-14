@@ -13,12 +13,14 @@ export interface MayQuet {
   lietKe(): Promise<string[]>;
   /** số hàng; `null` = quá hạn (bảng quá lớn so với trần thời gian) */
   dem(bang: string): Promise<number | null>;
+  /** tên bảng có RLS BẬT đối với vai đang quét (vai không bỏ qua RLS và không phải chủ bảng, hoặc bảng ép RLS cả chủ) ⇒ `count(*)` chỉ thấy phần hàng RLS cho phép. Không có ⇒ không kiểm RLS. */
+  bangRls?(): Promise<string[]>;
 }
 
 /** Trần số bảng một lần quét (schema thật ~440 bảng) — vượt ⇒ không quét (fail-closed về số đo, không treo). */
 export const TRAN_SO_BANG_QUET = 2000;
 
-export type KetQuaQuet = { ok: true; dem: Record<string, number | null> } | { ok: false; lyDo: string };
+export type KetQuaQuet = { ok: true; dem: Record<string, number | null>; rls?: string[] } | { ok: false; lyDo: string };
 
 /** Lý do ngắn từ một lỗi: CHỈ tên lớp + mã 5 ký tự của postgres (không chép thông điệp — có thể chứa URL / tên vai). */
 function lyDoTuLoi(e: unknown): string {
@@ -36,6 +38,15 @@ export async function quetTatCa(may: MayQuet): Promise<KetQuaQuet> {
     return { ok: false, lyDo: `không liệt kê được bảng: ${lyDoTuLoi(e)}` };
   }
   if (ds.length > TRAN_SO_BANG_QUET) return { ok: false, lyDo: `quá nhiều bảng (${ds.length} > ${TRAN_SO_BANG_QUET})` };
+  let rls: string[] | null = null;
+  if (may.bangRls) {
+    try {
+      const co = new Set(ds);
+      rls = [...new Set(await may.bangRls())].filter((b) => co.has(b)).sort();
+    } catch (e) {
+      return { ok: false, lyDo: `không kiểm được RLS: ${lyDoTuLoi(e)}` };
+    }
+  }
   const dem: Record<string, number | null> = {};
   for (const b of ds) {
     try {
@@ -45,7 +56,7 @@ export async function quetTatCa(may: MayQuet): Promise<KetQuaQuet> {
       dem[b] = null;
     }
   }
-  return { ok: true, dem };
+  return { ok: true, dem, ...(rls !== null ? { rls } : {}) };
 }
 
 export interface DongQuet {
@@ -66,6 +77,8 @@ export interface KetQuaQuetRong {
   ngoaiThe: string[];
   /** bảng không đếm được (quá hạn / lỗi) ở ít nhất một lần quét */
   khongDem: string[];
+  /** bảng có RLS bật đối với vai quét (ở ít nhất một lần quét) — số đếm của nó chỉ là phần hàng vai được thấy: CHỖ MÙ */
+  rls: string[];
   /** tổng chênh của mọi bảng đếm được ở cả hai lần */
   tongChenh: number;
   /** lượt chạy với `--quet-rong-cham`: bảng ngoài thẻ đổi (hoặc quét không xong) ⇒ hau-qua-xau */
@@ -75,7 +88,7 @@ export interface KetQuaQuetRong {
 /** THUẦN. `bangTrongThe` = tên bảng có trong BẢNG ĐẾM của thẻ. Một lần quét hỏng ⇒ ok:false, mọi số rỗng. */
 export function soSanhQuet(truoc: KetQuaQuet | null, sau: KetQuaQuet | null, bangTrongThe: ReadonlySet<string>): KetQuaQuetRong {
   const hong = (truoc && !truoc.ok ? `trước: ${truoc.lyDo}` : null) ?? (sau && !sau.ok ? `sau: ${sau.lyDo}` : null) ?? (!truoc || !sau ? "chưa quét lần nào" : null);
-  if (hong !== null || !truoc || !sau || !truoc.ok || !sau.ok) return { ok: false, lyDo: hong ?? "không quét được", soBang: 0, doi: [], ngoaiThe: [], khongDem: [], tongChenh: 0 };
+  if (hong !== null || !truoc || !sau || !truoc.ok || !sau.ok) return { ok: false, lyDo: hong ?? "không quét được", soBang: 0, doi: [], ngoaiThe: [], khongDem: [], rls: [], tongChenh: 0 };
   const ten = [...new Set([...Object.keys(truoc.dem), ...Object.keys(sau.dem)])].sort();
   const doi: DongQuet[] = [];
   const khongDem: string[] = [];
@@ -95,7 +108,7 @@ export function soSanhQuet(truoc: KetQuaQuet | null, sau: KetQuaQuet | null, ban
       doi.push({ bang: b, truoc: a, sau: c, chenh: null }); // bảng xuất hiện / biến mất giữa hai lần quét
     }
   }
-  return { ok: true, lyDo: null, soBang: ten.length, doi, ngoaiThe: doi.filter((d) => !bangTrongThe.has(d.bang)).map((d) => d.bang), khongDem, tongChenh: tong };
+  return { ok: true, lyDo: null, soBang: ten.length, doi, ngoaiThe: doi.filter((d) => !bangTrongThe.has(d.bang)).map((d) => d.bang), khongDem, rls: [...new Set([...(truoc.rls ?? []), ...(sau.rls ?? [])])].sort(), tongChenh: tong };
 }
 
 /** Dòng lưu ý cho người duyệt khi có bảng NGOÀI thẻ đổi; "" nếu không. Chỉ tên bảng + số (không nội dung hàng). */
@@ -115,5 +128,6 @@ export function canhBaoQuetRong(k: KetQuaQuetRong): string[] {
   const ngoai = luuYQuetRong(k);
   if (ngoai !== "") ra.push(ngoai);
   if (k.ok && k.khongDem.length > 0) ra.push(`HA-6d: ${k.khongDem.length} bảng KHÔNG đếm được (quá hạn hoặc lỗi) — chỗ MÙ của phép quét: ${k.khongDem.join(", ")}`);
+  if (k.ok && k.rls.length > 0) ra.push(`HA-6d: chỗ mù RLS: ${k.rls.join(", ")} — vai quét chỉ thấy phần hàng RLS cho phép nên số đếm có thể thiếu`);
   return ra;
 }

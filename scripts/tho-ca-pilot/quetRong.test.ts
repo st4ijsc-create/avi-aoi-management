@@ -53,7 +53,7 @@ describe("soSanhQuet", () => {
   const trongThe = new Set(["a"]);
   it("★★★ không bảng nào đổi ⇒ doi rỗng, tongChenh 0, soBang đúng; luuY rỗng", () => {
     const k = soSanhQuet(ok({ a: 1, b: 2 }), ok({ a: 1, b: 2 }), trongThe);
-    expect(k).toEqual({ ok: true, lyDo: null, soBang: 2, doi: [], ngoaiThe: [], khongDem: [], tongChenh: 0 });
+    expect(k).toEqual({ ok: true, lyDo: null, soBang: 2, doi: [], ngoaiThe: [], khongDem: [], rls: [], tongChenh: 0 });
     expect(luuYQuetRong(k)).toBe("");
   });
   it("★★★ bảng TRONG thẻ đổi ⇒ vào `doi` nhưng KHÔNG vào `ngoaiThe`; bảng NGOÀI thẻ đổi ⇒ vào cả hai; tổng cộng đúng; doi theo tên", () => {
@@ -122,8 +122,8 @@ describe("mayQuetRongPostgres — bản giả của thẻ mẫu", () => {
     expect(goi.map((g) => g.cau)).toEqual([
       "select set_config('default_transaction_read_only', 'on', false), set_config('statement_timeout', $1, false)",
       "select table_name from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE' order by table_name",
-      "select count(*)::text as n from <id:a>",
-      "select count(*)::text as n from <id:b>",
+      "select count(*)::text as n from <id:public>.<id:a>",
+      "select count(*)::text as n from <id:public>.<id:b>",
     ]);
     expect(goi[0]!.giaTri).toEqual([String(HAN_MOI_BANG_QUET_MS)]);
     expect(goi.every((g) => /^select /.test(g.cau))).toBe(true);
@@ -143,7 +143,7 @@ describe("mayQuetRongPostgres — bản giả của thẻ mẫu", () => {
     const { sql: sql2 } = sqlGia((c) => (c.includes("set_config") ? [{}] : quyen));
     await expect(mayQuetRongPostgres(sql2).dem("kin")).rejects.toThrow("permission denied");
     const r = await quetTatCa(mayQuetRongPostgres(sqlGia((c) => (c.includes("set_config") ? [{}] : c.includes("information_schema") ? [{ table_name: "kin" }, { table_name: "ok" }] : c.includes("<id:kin>") ? quyen : [{ n: "4" }])).sql));
-    expect(r).toEqual({ ok: true, dem: { kin: null, ok: 4 } });
+    expect(r).toEqual({ ok: true, dem: { kin: null, ok: 4 }, rls: [] });
   });
 });
 
@@ -171,5 +171,42 @@ describe("canhBaoQuetRong — dòng cảnh báo đưa lên đầu", () => {
   it("★★★ quét không xong ⇒ MỘT dòng 'quét rộng không xong' (không thêm dòng chỗ mù)", () => {
     const k = soSanhQuet({ ok: false, lyDo: "không mở được kết nối quét" }, ok({}), trongThe);
     expect(canhBaoQuetRong(k)).toEqual(["HA-6d: quét rộng không xong (trước: không mở được kết nối quét) — không có số đo ngoài thẻ"]);
+  });
+});
+
+describe("HA-6d (b) — RLS ở bộ quét", () => {
+  const trongThe = new Set(["a"]);
+  const mayRls = (ds: string[], rls: () => Promise<string[]>): MayQuet => ({ lietKe: async () => ds, dem: async () => 1, bangRls: rls });
+  it("★★★ quetTatCa: bangRls được gọi, kết quả lọc theo bảng đã liệt kê, khử trùng, sắp xếp; không có bangRls ⇒ không có khoá rls", async () => {
+    const r = await quetTatCa(mayRls(["a", "b", "c"], async () => ["c", "a", "c", "khong-co"]));
+    expect(r).toEqual({ ok: true, dem: { a: 1, b: 1, c: 1 }, rls: ["a", "c"] });
+    expect("rls" in ((await quetTatCa(may(["a"], () => 1))) as object)).toBe(false);
+  });
+  it("★★★ quetTatCa: bangRls lỗi ⇒ ok:false, lý do CHỈ tên lớp + mã (không chép thông điệp)", async () => {
+    const loi = Object.assign(new Error("permission denied MK_BI_MAT"), { code: "42501" });
+    const r = await quetTatCa(mayRls(["a"], async () => Promise.reject(loi)));
+    expect(r).toEqual({ ok: false, lyDo: "không kiểm được RLS: Error 42501" });
+    expect(JSON.stringify(r)).not.toContain("MK_BI_MAT");
+  });
+  it("★★★ soSanhQuet: rls = hợp của hai lần quét, sắp xếp; thiếu khoá rls ở một phía vẫn được", () => {
+    const k = soSanhQuet({ ok: true, dem: { a: 1, b: 1 }, rls: ["b"] }, { ok: true, dem: { a: 1, b: 1 }, rls: ["a", "b"] }, trongThe);
+    expect(k.rls).toEqual(["a", "b"]);
+    expect(soSanhQuet(ok({ a: 1 }), { ok: true, dem: { a: 1 }, rls: ["a"] }, trongThe).rls).toEqual(["a"]);
+  });
+  it("★★★ canhBaoQuetRong: có bảng RLS ⇒ dòng 'chỗ mù RLS: <bảng>' (đứng SAU dòng chỗ MÙ không đếm được); không RLS ⇒ không dòng", () => {
+    expect(canhBaoQuetRong(soSanhQuet({ ok: true, dem: { a: 1, b: 1 }, rls: [] }, { ok: true, dem: { a: 1, b: 1 }, rls: [] }, trongThe))).toEqual([]);
+    const cb = canhBaoQuetRong(soSanhQuet({ ok: true, dem: { a: 1, b: null }, rls: ["a", "b"] }, { ok: true, dem: { a: 1, b: null }, rls: ["a", "b"] }, trongThe));
+    expect(cb).toHaveLength(2);
+    expect(cb[0]).toContain("chỗ MÙ của phép quét: b");
+    expect(cb[1]).toContain("chỗ mù RLS: a, b");
+  });
+  it("★★★ mayQuetRongPostgres.bangRls: chỉ SELECT trên pg_class của schema public, loại vai bỏ qua RLS và chủ bảng không ép; đặt phiên chỉ-đọc trước", async () => {
+    const goi: string[] = [];
+    const sql = ((a: TemplateStringsArray | string) => (typeof a === "string" ? { dinhDanh: a } : (goi.push(a.join("?")), Promise.resolve(a.join("?").includes("pg_class") ? [{ table_name: "x" }, { table_name: "y" }] : [{}])))) as unknown as SqlDem;
+    expect(await mayQuetRongPostgres(sql).bangRls!()).toEqual(["x", "y"]);
+    expect(goi[0]).toContain("set_config");
+    const c = goi[1]!;
+    expect(c).toMatch(/^select /);
+    for (const mau of ["n.nspname = 'public'", "c.relrowsecurity", "rolbypassrls", "rolsuper", "c.relforcerowsecurity", "pg_has_role(current_user, c.relowner, 'MEMBER')"]) expect(c, mau).toContain(mau);
   });
 });

@@ -880,12 +880,17 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
       quetRong = { ...quetRong, cham: true };
       // bảng CỦA THẺ (đã khai trong BẢNG ĐẾM) mà quét không đếm được (quá hạn / lỗi) ⇒ thẻ cần số đó nhưng không có ⇒ CHẤM (khác bảng mù ngoài thẻ: chỉ cảnh báo)
       const bangTheMu = quetRong.ok ? quetRong.khongDem.filter((x) => bangCuaThe.has(x)) : [];
-      if (ketCuc === "xong" && (!quetRong.ok || quetRong.ngoaiThe.length > 0 || bangTheMu.length > 0)) {
+      // bảng CỦA THẺ có RLS che đối với vai quét ⇒ số đếm chỉ là phần hàng vai được thấy ⇒ cùng luật với bảng của thẻ không đếm được
+      const bangTheRls = quetRong.ok ? quetRong.rls.filter((x) => bangCuaThe.has(x)) : [];
+      // MỌI lượt -cham: hai lần quét là hai ảnh chụp riêng (không cùng giao dịch) — ghi để người duyệt biết giới hạn
+      luuY.push("HA-6d (chấm): trước/sau không cùng ảnh chụp — hai lần quét riêng, tiến trình khác ghi bảng ngoài thẻ giữa hai lần có thể bị chấm oan");
+      if (ketCuc === "xong" && (!quetRong.ok || quetRong.ngoaiThe.length > 0 || bangTheMu.length > 0 || bangTheRls.length > 0)) {
         ketCuc = "hau-qua-xau";
         const phan: string[] = [];
         if (!quetRong.ok) phan.push(`HA-6d (chấm): quét rộng không xong (${quetRong.lyDo ?? "không rõ"}) — fail-closed`);
         if (quetRong.ok && quetRong.ngoaiThe.length > 0) phan.push(`HA-6d (chấm): bảng NGOÀI thẻ BẢNG ĐẾM đổi: ${quetRong.ngoaiThe.join(", ")}`);
         if (bangTheMu.length > 0) phan.push(`HA-6d (chấm): bảng CỦA THẺ không đếm được (quá hạn hoặc lỗi): ${bangTheMu.join(", ")}`);
+        if (bangTheRls.length > 0) phan.push(`HA-6d (chấm): bảng CỦA THẺ có RLS che đối với vai quét (số đếm không đầy đủ): ${bangTheRls.join(", ")}`);
         lyDoKiem = phan.join(" | ");
       }
     }
