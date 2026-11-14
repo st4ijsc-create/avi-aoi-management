@@ -56,6 +56,7 @@ const held: net.Socket[] = [];
 afterAll(async () => {
   held.splice(0).forEach((s) => s.destroy());
   await Promise.all(servers.splice(0).map((s) => new Promise<void>((r) => s.close(() => r()))));
+  expect(net.Socket.prototype.connect, "lỗ đen phải trả lại net.Socket.prototype.connect gốc").toBe(connectGoc);
 });
 
 /**
@@ -74,6 +75,9 @@ function recordNetConnect(): { sockets: net.Socket[]; restore: () => void } {
   };
   return { sockets, restore: () => (mod.connect = orig) };
 }
+
+/** `connect` GỐC của socket, chụp trước mọi bản vá: afterAll khẳng định lỗ đen đã trả lại đúng nó (không rò sang tệp khác cùng worker). */
+const connectGoc = net.Socket.prototype.connect;
 
 /**
  * Lỗ đen giả trong tiến trình: thay `net.Socket.prototype.connect` (khuôn của edgeGatewayBoot.dot10.test.ts). Lời connect tới

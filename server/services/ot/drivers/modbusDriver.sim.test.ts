@@ -14,7 +14,7 @@
  * Mọi khẳng định "không treo" đo bằng `settleWithin` (hạn giờ tường minh), KHÔNG dựa vào
  * vitest timeout.
  */
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, afterAll } from "vitest";
 import net from "node:net";
 import { ModbusDriver } from "./modbusDriver";
 import { ConnectionSupervisor } from "../connectionSupervisor";
@@ -56,6 +56,9 @@ async function settleWithin<T>(
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** `connect` GỐC của socket, chụp trước mọi bản vá: afterAll khẳng định lỗ đen đã trả lại đúng nó (không rò sang tệp khác cùng worker). */
+const connectGoc = net.Socket.prototype.connect;
 
 /**
  * Lỗ đen giả trong tiến trình: thay `net.Socket.prototype.connect` (khuôn của edgeGatewayBoot.dot10.test.ts). Lời connect tới
@@ -148,6 +151,10 @@ afterEach(async () => {
       /* ignore */
     }
   }
+});
+
+afterAll(() => {
+  expect(net.Socket.prototype.connect, "lỗ đen phải trả lại net.Socket.prototype.connect gốc").toBe(connectGoc);
 });
 
 describe("ModbusDriver × ServerTCP thật (doc 81 Đợt 1B Task 1)", () => {
