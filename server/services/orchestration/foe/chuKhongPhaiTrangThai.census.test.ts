@@ -224,6 +224,8 @@ export const HAM_TRUNG_GIAN: readonly { ten: string; nguon: string; lyDo: string
   { ten: "buTruBiChanKhongRo", nguon: "T4 (MOI)", lyDo: "bù trừ bị chặn vì kết cục không rõ: đọc chữ hàng / resume state (loiLaKetCucKhongRo) ⇒ /authorize từ chối outcome_unknown_held" },
   { ten: "baoCaoKhongRoTuHang", nguon: "T4 (MOI), A1-36", lyDo: "báo cáo không rõ của đoạn edge chết từ hàng + sổ (edgeResumeStateOf, chữ hàng) ⇒ dấu + URGENT" },
   { ten: "priorStepsOf", nguon: "T4 (MOI), A1-2", lyDo: "settled / attempted từ hàng (laHangChuaRa: chữ FOE_STOP_NOT_SENT) ⇒ bước đã xong hay phải gửi lại" },
+  // T4 bước 3 (HST 14/11, mục 4) — hàm thuần tách từ held(): đọc chữ hàng qua stopChuaRaTuHang (nợ STOP) ⇒ U / C / N / S / dấu cần người
+  { ten: "quyetDinhKetDoanEdge", nguon: "T4 bước 3 (MOI), A1-3", lyDo: "quyết định cuối đoạn edge: nợ STOP đọc từ chữ hàng (stopChuaRaTuHang) ⇒ URGENT stopNotSent / chốt / dấu cần người" },
 ];
 const TEN_TRUNG_GIAN = new Set(HAM_TRUNG_GIAN.map((h) => h.ten));
 
@@ -621,6 +623,8 @@ const DONG_BANG: readonly DongDongBang[] = [
   { tep: "server/services/orchestration/foe/foeKetCucKhongRo.ts", ham: "riderCua", dang: ".replace", chu: "JSON.stringify(bao).replace(/\\[\\[A2N/g,\"\\\\u005b[A2N\")", ma: "R-i", lyDo: "riderCua: soạn rider, thoát mọi [[A2N trong JSON (id có dấu rider) ⇒ tachBaoCaoKhongRoEdge chỉ thấy dấu của nút; không đọc chữ", nhan: "tuyen-cu-chi" },
   // T4 dạng 4, hướng (2) (chu-du-an-HST 14/11) — dòng do sửa: nợ STOP ở held() khi rider thiếu / không đọc được (tập "có thể đã đi" lấy từ sổ 0372, không từ chữ)
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "quyetDinhKetDoanEdge", dang: "goi:stopChuaRaTuHang", chu: "stopChuaRaTuHang(v.hang,sauChot)", ma: "A1-3", lyDo: "quyetDinhKetDoanEdge (T4 bước 3, hàm thuần tách từ held(); rider đủ hay thiếu, R1): nợ STOP từ chữ hàng, đọc SAU khi đã chốt (I-1) ⇒ URGENT stopNotSent theo đúng khoá của rider / anomaly (fail-closed, không chặn STOP); cùng dòng, chuyển hàm, giữ 180", nhan: "tuyen-cu-chi" },
+  // T4 bước 3 (HST 14/11, mục 4) — dòng lộ ra khi đưa quyetDinhKetDoanEdge vào HAM_TRUNG_GIAN (mốc TẠM, chờ QUYET_DINH_MOC)
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "held", dang: "goi:quyetDinhKetDoanEdge", chu: "quyetDinhKetDoanEdge({runId,claimSeq:end.claimSeq,def:end.def,hang,so:au?{doc:\"duoc\",muc:au}:{doc:\"loi\"},stops,rider:riderThieu===true?\"thieu\":\"du\",bao:baoKhongRo,ctx:{...ctx,[OUTCOME_UNKNOWN_KEY]:[...prevUnknown,...unknown]}})", ma: "MOI-37", lyDo: "held: gọi hàm thuần quyết định cuối đoạn edge (đọc chữ hàng qua stopChuaRaTuHang, A1-3) ⇒ U / C / N / S / dấu cần người (tuyến cũ, giữ tới T1)", nhan: "tuyen-cu-chi" },
   // T4 (chu-du-an-HST 14/11, hướng (2): vá lỗ census) — dòng lộ ra khi đưa quyetDinhKetThucAnh và edgeResumeStateOf vào HAM_TRUNG_GIAN (mã MOI, ô gốc trong lý do)
   { tep: "server/services/orchestration/foe/foeEngine.ts", ham: "quyetDinhKetThuc", dang: "goi:quyetDinhKetThucAnh", chu: "quyetDinhKetThucAnh(x,lyDo,hanMs)", ma: "MOI-19", lyDo: "cổng kết thúc của walker trung tâm (ảnh có sẵn), ô gốc A1-14 / A1-3: chốt / nợ STOP từ chữ hàng ⇒ held hoặc URGENT run_end; ĐÓNG (nợ ⇒ held)" },
   { tep: "server/services/orchestration/foe/foeEngine.ts", ham: "quyetDinhKetThuc", dang: "goi:quyetDinhKetThucAnh", chu: "quyetDinhKetThucAnh({runId:rc.runId,ctx:rc.context,owner:rc.runOwner,rows:src?.hang??null,def:rc.def,boNho:boNhoCua(rc),chiDoi:x.chiDoi},lyDo,hanMs)", ma: "MOI-20", lyDo: "cổng kết thúc của walker trung tâm (từ rc + hàng), ô gốc A1-14 / A1-3 / A1-8; hàng không đọc được ⇒ held; ĐÓNG" },
@@ -672,7 +676,7 @@ const DONG_BANG: readonly DongDongBang[] = [
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "khongRoCuaDoan", dang: "goi:tapKhongRoEdge", chu: "tapKhongRoEdge({def:end.def,error:end.error,outcomeUnknown:end.outcomeUnknown,catDay:endTho.error?.length??0>=TRAN_LOI_EDGE,thieu:riderThieu===true,rows:hangKr,uyQuyen,stops})", ma: "B-1", lyDo: "khongRoCuaDoan: nguồn foeOutcomeUnknown của ctx (tapKhongRoEdge, vế chữ = A1-22)", nhan: "tuyen-cu-chi" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "held", dang: ".startsWith", chu: "error?.startsWith(`${FOE_STOP_NOT_SENT}:`)", ma: "A1-26", lyDo: "held (loiHien): tiền tố ⇒ chữ trung tâm hay chữ nút", nhan: "tuyen-cu-chi" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "held", dang: ".startsWith", chu: "error?.startsWith(`${FOE_STOP_NOT_SENT}:`)", ma: "A1-27", lyDo: "held: tiền tố ⇒ dấu KET_CUC_KHONG_RO (Continue cần người)", nhan: "tuyen-cu-chi" },
-  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "held", dang: "goi:dauKhongRoTuEdge", chu: "dauKhongRoTuEdge(end,at,baoKhongRo)", ma: "A1-19", lyDo: "held: dấu không rõ từ chữ end", nhan: "tuyen-cu-chi" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "held", dang: "goi:dauKhongRoTuEdge", chu: "dauKhongRoTuEdge(end,at,dauCu?baoKhongRo:[...baoKhongRo,...dauBu])", ma: "A1-19", lyDo: "held: dấu không rõ từ chữ end; T4 bước 3, R2 (a) (chủ dự án 14/11): cùng dòng, đối số thêm cặp lệnh / bù trừ của U (dauBu)", nhan: "tuyen-cu-chi" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "edgeResumeStateOf", dang: "goi:loiLaKetCucKhongRo", chu: "loiLaKetCucKhongRo(r.error)", ma: "A1-15", lyDo: "edgeResumeStateOf (:2225 ở 2500736bc): cờ khongRo từ chữ hàng" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "edgeResumeStateOf", dang: "goi:loiLaKetCucKhongRo", chu: "loiLaKetCucKhongRo(error)", ma: "A1-15", lyDo: "edgeResumeStateOf (:2246): cờ khongRo từ chữ lỗi" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "edgeResumeStateOf", dang: "goi:loiLaKetCucKhongRo", chu: "loiLaKetCucKhongRo(c?.error)", ma: "A1-15", lyDo: "edgeResumeStateOf: cờ khongRo từ chữ bù trừ" },
@@ -729,10 +733,10 @@ const DONG_BANG: readonly DongDongBang[] = [
 // T4 (chu-du-an-HST, 2026-11-14, lần 2) — mốc đặt lại 161: thêm dòng SOẠN rider ở riderCua (thoát dấu [[A2N, R-i, tuyen-cu-chi); ghim lại phần tử đầu, không ghi [160, 161].
 // QUYET_DINH_MOC lần 3 (chu-du-an-HST, 2026-11-14): mốc LICH_SU_MOC = 180 = 161 + 1 (A1-3, held() dạng 4) + 7 (MOI-19…25) + 11 (MOI-26…36); số chạy thật của kiem-dinh trên
 // df934d38e + dung-yen-b.patch. Ghim lại phần tử đầu. Từ đây chỉ được GIẢM.
-const MOC_GOC = 180;
-const LICH_SU_MOC: readonly number[] = [180];
+const MOC_GOC = 181; // TẠM (T4 bước 3, MOI-37): chờ QUYET_DINH_MOC của HST — KHÔNG commit
+const LICH_SU_MOC: readonly number[] = [181]; // TẠM: chờ QUYET_DINH_MOC
 /** Mốc số dòng đóng băng: bằng phần tử cuối của `LICH_SU_MOC`, chỉ được GIẢM. */
-const SO_DONG_MOC = 180;
+const SO_DONG_MOC = 181; // TẠM: chờ QUYET_DINH_MOC
 
 /**
  * HST 14/11 T2-DK1 — "ngoài tầm" không được thành "ngoài sổ". 21 ô của bảng kiểm kê mà census KHÔNG bắt được (không có phép so chữ để bắt:
