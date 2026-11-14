@@ -264,6 +264,9 @@ describe("D2 — vòng quét trên CSDL chắc KHÔNG phải _test: như cũ, kh
 
 describe("D2 — vòng quét khi KHÔNG xác định được tên CSDL: gửi như cũ + MỘT cảnh báo mỗi tiến trình", () => {
   it("★ URL hỏng ⇒ driver được gọi (gửi như cũ); đúng MỘT cảnh báo CRITICAL central_stop_db_name_unknown tới quản trị, qua hai lượt quét", async () => {
+    // TỔ HỢP GIẢ LẬP, KHÔNG xảy ra thật: "URL hỏng" + "DB giả vẫn trả hàng chờ và danh sách admin". Thật ra khong-xac-dinh chỉ có khi
+    // getDb() KHÔNG dựng được pool ⇒ không đọc được hàng chờ / người nhận ⇒ cảnh báo không vào hộp thư (chỉ log + luồng cảnh báo).
+    // Ca này CHỈ kiểm logic: D2 không chặn (gửi như cũ) và cảnh báo phát MỘT lần mỗi tiến trình — KHÔNG chứng minh cảnh báo bền.
     datEnv("DATABASE_URL", URL_KXD);
     pendingMotRobotMotAdapter();
     const lan1 = await sweepPendingCentralStops();
