@@ -139,7 +139,7 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
     expect(goi[0]!.cau).not.toContain("SS_FAC_");
   });
   it("★★★ dem: `=` và bảng trần dùng đúng câu; kiemDinhDanh hỏi information_schema bằng bind (bảng, cột)", async () => {
-    const { sql, goi } = sqlGia((c) => (c.includes("information_schema") ? [{ ok: 1 }] : [{ n: 0 }]));
+    const { sql, goi } = sqlGia((c) => (c.includes("information_schema.tables") ? [{ table_type: "BASE TABLE" }] : c.includes("information_schema") ? [{ ok: 1 }] : [{ n: 0 }]));
     const may = mayDemPostgres(sql);
     expect(await may.dem({ bang: "machines", ghi: false })).toBe(0);
     await may.dem({ bang: "machines", cot: "tag", toanTu: "=", giaTri: "x", ghi: false });
@@ -147,7 +147,7 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
     expect(goi.map((g) => g.cau)).toEqual([
       "select count(*)::int as n from <id:machines>",
       "select count(*)::int as n from <id:machines> where <id:tag>::text = $1",
-      "select 1 as ok from information_schema.tables where table_schema = 'public' and table_name = $1 and table_type = 'BASE TABLE'",
+      "select table_type from information_schema.tables where table_schema = 'public' and table_name = $1",
       "select 1 as ok from information_schema.columns where table_schema = 'public' and table_name = $1 and column_name = $2",
     ]);
     expect(goi[2]!.giaTri).toEqual(["machines"]);
@@ -157,13 +157,40 @@ describe("mayDemPostgres — bind + định danh (bản giả của thẻ mẫu)
     const { sql, goi } = sqlGia(() => []);
     const may = mayDemPostgres(sql);
     expect(await may.kiemDinhDanh({ bang: "khong_co", ghi: false })).toContain("không có trong schema public");
-    const { sql: sql2, goi: goi2 } = sqlGia((c) => (c.includes("information_schema.tables") ? [{ ok: 1 }] : []));
+    const { sql: sql2, goi: goi2 } = sqlGia((c) => (c.includes("information_schema.tables") ? [{ table_type: "BASE TABLE" }] : []));
     expect(await mayDemPostgres(sql2).kiemDinhDanh({ bang: "a", cot: "b", toanTu: "=", giaTri: "x", ghi: false })).toContain('cột "a.b"');
     expect(goi2).toHaveLength(2);
     const dem = mayDemPostgres(sql);
     await expect(dem.dem({ bang: "a; drop", ghi: false })).rejects.toThrow("định danh");
     await expect(dem.kiemDinhDanh({ bang: "a", cot: "B", toanTu: "=", giaTri: "x", ghi: false })).rejects.toThrow("định danh");
     expect(goi).toHaveLength(1); // chỉ lần kiemDinhDanh hợp lệ đầu tiên chạm
+  });
+  it("★★★ VIEW được đếm như bảng (vd device_pending_stops): kiemDinhDanh null, dem dùng cùng câu count(*), mọi câu chỉ là SELECT, demTatCa ok", async () => {
+    const { sql, goi } = sqlGia((c) => (c.includes("information_schema.tables") ? [{ table_type: "VIEW" }] : [{ n: 5 }]));
+    const may = mayDemPostgres(sql);
+    const muc = { bang: "device_pending_stops", ghi: true };
+    expect(await may.kiemDinhDanh(muc)).toBeNull();
+    expect(await demTatCa(may, [muc])).toEqual({ ok: true, dem: { device_pending_stops: 5 } });
+    expect(goi.every((g) => /^select /.test(g.cau))).toBe(true);
+    expect(goi.map((g) => g.cau)).toContain("select count(*)::int as n from <id:device_pending_stops>");
+  });
+  it("★★★ loại KHÁC bảng/VIEW (FOREIGN, LOCAL TEMPORARY) ⇒ lý do nêu ĐÚNG loại; KHÔNG nói 'không có trong schema'; demTatCa fail-closed mang lý do đó", async () => {
+    for (const loai of ["FOREIGN", "LOCAL TEMPORARY"]) {
+      const { sql, goi } = sqlGia(() => [{ table_type: loai }]);
+      const may = mayDemPostgres(sql);
+      expect(await may.kiemDinhDanh({ bang: "x_y", ghi: false })).toBe(`"x_y" là ${loai}, bộ đếm chỉ nhận BASE TABLE hoặc VIEW`);
+      const r = await demTatCa(may, [{ bang: "x_y", ghi: false }]);
+      expect(r).toEqual({ ok: false, lyDo: `x_y: "x_y" là ${loai}, bộ đếm chỉ nhận BASE TABLE hoặc VIEW` });
+      expect(goi.some((g) => g.cau.includes("count(*)"))).toBe(false); // không đếm khi loại không hợp lệ
+    }
+  });
+  it("★★★ không thấy đối tượng ⇒ lý do nói rõ 'không có trong schema public (hoặc vai không có quyền trên nó)' (information_schema ẩn đối tượng không có quyền)", async () => {
+    const { sql } = sqlGia(() => []);
+    expect(await mayDemPostgres(sql).kiemDinhDanh({ bang: "khong_co", ghi: false })).toBe('bảng "khong_co" không có trong schema public (hoặc vai không có quyền trên nó)');
+  });
+  it("★★★ bảng thường (BASE TABLE) vẫn được nhận như cũ", async () => {
+    const { sql } = sqlGia((c) => (c.includes("information_schema.tables") ? [{ table_type: "BASE TABLE" }] : [{ n: 3 }]));
+    expect(await demTatCa(mayDemPostgres(sql), [{ bang: "machines", ghi: false }])).toEqual({ ok: true, dem: { machines: 3 } });
   });
   it("★★★ `_` trong giá trị LIKE là CHỮ: 'SS_FAC_%' đếm 'SS_FAC_01' mà KHÔNG đếm 'SSxFACy01' (mô phỏng LIKE ... ESCAPE '\\')", () => {
     // mô phỏng ngữ nghĩa Postgres: `\x` = chữ x, `%` = dãy bất kỳ, `_` trần = một ký tự bất kỳ

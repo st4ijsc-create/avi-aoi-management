@@ -1,6 +1,6 @@
 /**
  * HA-6b (phần 1) — bộ đếm hàng bằng postgres.js cho `hauQua.ts`. CHỈ SELECT count(*) / information_schema; định danh (bảng, cột) phải khớp
- * ^[a-z_][a-z0-9_]{0,62}$ VÀ có trong information_schema.columns / tables của schema public, rồi mới trích dẫn bằng sql(…); GIÁ TRỊ LIKE/= là tham số BIND
+ * ^[a-z_][a-z0-9_]{0,62}$ VÀ có trong information_schema.columns / tables của schema public (bảng thường HOẶC VIEW; loại khác ⇒ lý do nêu đúng loại), rồi mới trích dẫn bằng sql(…); GIÁ TRỊ LIKE/= là tham số BIND
  * (không bao giờ nội suy vào chuỗi SQL). Vai kết nối do bộ chạy quyết (tho_ca_test, đã kiểm ở kiemChoPhepDb) — module này không tự chọn URL.
  */
 import { escapeLike, RE_DINH_DANH_HOP_LE, type MayDem, type MucDem } from "./hauQua";
@@ -11,6 +11,9 @@ export interface SqlDem {
   (dinhDanh: string): unknown;
 }
 
+/** Loại đối tượng bộ đếm đếm được bằng SELECT count(*): bảng thường và VIEW (vd `device_pending_stops` là VIEW). Vẫn CHỈ SELECT. */
+const LOAI_DEM_DUOC: ReadonlySet<string> = new Set(["BASE TABLE", "VIEW"]);
+
 function chiDinhDanhHopLe(...ds: Array<string | undefined>): void {
   for (const d of ds) if (d !== undefined && !RE_DINH_DANH_HOP_LE.test(d)) throw new Error("định danh không hợp lệ");
 }
@@ -19,8 +22,11 @@ export function mayDemPostgres(sql: SqlDem): MayDem {
   return {
     async kiemDinhDanh(m: MucDem) {
       chiDinhDanhHopLe(m.bang, m.cot);
-      const bang = await sql`select 1 as ok from information_schema.tables where table_schema = 'public' and table_name = ${m.bang} and table_type = 'BASE TABLE'`;
-      if (bang.length === 0) return `bảng "${m.bang}" không có trong schema public`;
+      const bang = await sql`select table_type from information_schema.tables where table_schema = 'public' and table_name = ${m.bang}`;
+      // information_schema.tables chỉ liệt kê đối tượng mà vai hiện tại có quyền ⇒ rỗng = không có HOẶC không có quyền
+      if (bang.length === 0) return `bảng "${m.bang}" không có trong schema public (hoặc vai không có quyền trên nó)`;
+      const loai = String(bang[0]?.table_type);
+      if (!LOAI_DEM_DUOC.has(loai)) return `"${m.bang}" là ${loai}, bộ đếm chỉ nhận BASE TABLE hoặc VIEW`;
       if (m.cot) {
         const cot = await sql`select 1 as ok from information_schema.columns where table_schema = 'public' and table_name = ${m.bang} and column_name = ${m.cot}`;
         if (cot.length === 0) return `cột "${m.bang}.${m.cot}" không có trong schema public`;
