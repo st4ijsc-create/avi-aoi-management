@@ -392,7 +392,7 @@ describe("OrchestrationStudio — luật đầu vào step id MỚI: toast khi de
   });
 
   const CAC_MA: Array<[string, Record<string, unknown>, RegExp]> = [
-    ["STEP_ID_TOO_LONG", { doDai: 150, toiDa: 121 }, /studio\.deployStepIdQuaDai|steps\[3\]\.id[\s\S]*150[\s\S]*121/],
+    ["STEP_ID_TOO_LONG", { doDai: 150, toiDa: 128 }, /studio\.deployStepIdQuaDai|steps\[3\]\.id[\s\S]*150[\s\S]*128/],
     ["STEP_ID_ABORT_PREFIX", {}, /studio\.deployStepIdTienToAbort|steps\[3\]\.id[\s\S]*abort:/],
     ["STEP_ID_RESERVED_MARKER", {}, /studio\.deployStepIdDauHieuRieng|steps\[3\]\.id[\s\S]*\[\[A2N/],
   ];

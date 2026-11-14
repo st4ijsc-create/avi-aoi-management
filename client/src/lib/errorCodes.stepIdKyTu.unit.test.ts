@@ -64,7 +64,7 @@ describe("step id chứa ký tự cấm — câu i18n ở vi/en/zh", () => {
 
 describe("ba luật thêm (độ dài / tiền tố abort: / dấu [[A2N) — câu i18n vi/en/zh", () => {
   const CA: Array<{ reason: string; params: Record<string, string | number>; chua: string[] }> = [
-    { reason: "stepIdQuaDai", params: { doDai: 150, toiDa: 121 }, chua: ["150", "121"] },
+    { reason: "stepIdQuaDai", params: { doDai: 150, toiDa: 128 }, chua: ["150", "128"] },
     { reason: "stepIdTienToAbort", params: {}, chua: ["abort:"] },
     { reason: "stepIdDauHieuRieng", params: {}, chua: ["[[A2N"] },
   ];
@@ -86,7 +86,7 @@ describe("ba luật thêm (độ dài / tiền tố abort: / dấu [[A2N) — c�
 
   it("câu Studio của từng luật thay đủ {{path}} / {{doDai}} / {{toiDa}} ở ba ngôn ngữ", async () => {
     const KHOA: Array<[string, Record<string, string | number>, string[]]> = [
-      ["studio.deployStepIdQuaDai", { path: "steps[0].id", doDai: 150, toiDa: 121 }, ["steps[0].id", "150", "121"]],
+      ["studio.deployStepIdQuaDai", { path: "steps[0].id", doDai: 150, toiDa: 128 }, ["steps[0].id", "150", "128"]],
       ["studio.deployStepIdTienToAbort", { path: "steps[0].id" }, ["steps[0].id", "abort:"]],
       ["studio.deployStepIdDauHieuRieng", { path: "steps[0].id" }, ["steps[0].id", "[[A2N"]],
     ];

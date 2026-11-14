@@ -368,10 +368,11 @@ export const STEP_ID_TOO_LONG = "STEP_ID_TOO_LONG";
 export const STEP_ID_ABORT_PREFIX = "STEP_ID_ABORT_PREFIX";
 export const STEP_ID_RESERVED_MARKER = "STEP_ID_RESERVED_MARKER";
 /**
- * Độ dài tối đa của step id MỚI. Cột `orchestration_run_steps.stepId` là varchar(128) và `zStepId` max(128); hàng abort của
- * trung tâm là `abort:<stepId>` (6 ký tự tiền tố) nên id ≤ 121 giữ hàng abort ≤ 127 ≤ 128 (HST chọn 121, chừa 1 ký tự dự phòng).
+ * Độ dài tối đa của step id MỚI = giới hạn thật: cột `orchestration_run_steps.stepId` là varchar(128) và `zStepId` max(128).
+ * Hàng abort `abort:<stepId>` KHÔNG cần chừa tiền tố: `abortRowId` (foeEngine.ts) băm id dài (cắt + "~" + 10 hex sha256 của cả id)
+ * nên hàng abort luôn ≤ 128. (Bản đầu đặt 121 dựa trên tiền đề sai "abort:" + id ≤ 128; HST sửa thành 128.)
  */
-export const STEP_ID_TOI_DA = 121;
+export const STEP_ID_TOI_DA = 128;
 /** Bằng `ABORT_ROW_PREFIX` của foeRunStore.ts (không import vì foeRunStore import workflowModel; test ghim hai hằng bằng nhau). */
 export const TIEN_TO_HANG_ABORT = "abort:";
 /** Dấu rider nội bộ của luồng kết cục-không-rõ (A2(n)): id không được chứa chuỗi này (so khớp phân biệt hoa thường). */
@@ -385,7 +386,7 @@ export const LY_DO_I18N_THEO_MA: Readonly<Record<string, string>> = {
 };
 
 /**
- * Luật ĐẦU VÀO step id MỚI (xem `KY_TU_CAM_TRONG_STEP_ID`): ký tự cấm, dài ≤ 121, không bắt đầu "abort:", không chứa "[[A2N".
+ * Luật ĐẦU VÀO step id MỚI (xem `KY_TU_CAM_TRONG_STEP_ID`): ký tự cấm, dài ≤ 128, không bắt đầu "abort:", không chứa "[[A2N".
  * Mỗi step vi phạm MỖI luật ⇒ MỘT lỗi riêng (path `steps[i].id` / `….compensation.id`, mã + thông báo nêu ĐÚNG lý do).
  * Không ném lỗi với định nghĩa méo.
  */

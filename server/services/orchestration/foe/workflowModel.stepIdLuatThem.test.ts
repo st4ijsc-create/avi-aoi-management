@@ -1,5 +1,5 @@
-// Luật ĐẦU VÀO step id MỚI — ba luật thêm: độ dài ≤ 121, cấm tiền tố "abort:", cấm chuỗi "[[A2N". Hàm thuần `kiemTraKyTuIdBuoc`.
-// Test thuần: không DB, không mạng. Biên độ dài tính tay từ varchar(128) − "abort:"(6) − 1 dự phòng = 121.
+// Luật ĐẦU VÀO step id MỚI — ba luật thêm: độ dài ≤ 128, cấm tiền tố "abort:", cấm chuỗi "[[A2N". Hàm thuần `kiemTraKyTuIdBuoc`.
+// Test thuần: không DB, không mạng. Biên độ dài = giới hạn thật của cột orchestration_run_steps.stepId varchar(128) và zStepId max(128).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   kiemTraKyTuIdBuoc,
@@ -16,7 +16,7 @@ import {
 } from "./workflowModel";
 import { ABORT_ROW_PREFIX } from "./foeRunStore";
 import { simulateWorkflow } from "./foeSimulator";
-import { deployWorkflow } from "./foeEngine";
+import { deployWorkflow, abortRowId } from "./foeEngine";
 
 const delay = (id: string) => ({ id, type: "delay" as const, ms: 1 });
 const defOf = (...steps: unknown[]): WorkflowDefinition => ({ ref: "r", name: "n", steps } as unknown as WorkflowDefinition);
@@ -29,28 +29,33 @@ describe("hằng số khớp mã nguồn thật", () => {
     expect(TIEN_TO_HANG_ABORT).toBe(ABORT_ROW_PREFIX);
     expect(TIEN_TO_HANG_ABORT).toBe("abort:");
   });
-  it("giới hạn 121 + tiền tố abort: (6) = 127 ≤ 128 (cột varchar(128))", () => {
-    expect(STEP_ID_TOI_DA).toBe(121);
-    expect(STEP_ID_TOI_DA + TIEN_TO_HANG_ABORT.length).toBeLessThanOrEqual(128);
+  it("giới hạn = 128 = độ dài cột varchar(128) / zStepId max(128) (hàng abort được băm nên không chừa tiền tố)", () => {
+    expect(STEP_ID_TOI_DA).toBe(128);
+  });
+  it("abortRowId luôn ≤ 128 kể cả với id dài nhất còn deploy được (128) và id cũ 200 ký tự — hai id dài khác nhau không đụng hàng", () => {
+    for (const n of [1, 100, 122, 128, 200]) expect(abortRowId("k".repeat(n)).length, `n=${n}`).toBeLessThanOrEqual(128);
+    expect(abortRowId("k".repeat(128))).not.toBe(abortRowId("k".repeat(127) + "m"));
+    expect(abortRowId("short")).toBe("abort:short");
   });
   it("dấu rider là đúng chuỗi [[A2N", () => {
     expect(DAU_HIEU_RIENG_STEP_ID).toBe("[[A2N");
   });
 });
 
-describe("độ dài: biên 121 qua, 122 bị từ chối", () => {
-  it("121 ký tự ⇒ không lỗi", () => {
-    expect(maOf("a".repeat(121))).toEqual([]);
+describe("độ dài: biên 128 qua, 129 bị từ chối", () => {
+  it("127 và 128 ký tự ⇒ không lỗi", () => {
+    expect(maOf("a".repeat(127))).toEqual([]);
+    expect(maOf("a".repeat(128))).toEqual([]);
   });
-  it("122 ký tự ⇒ đúng một lỗi STEP_ID_TOO_LONG nêu độ dài thực 122 và giới hạn 121", () => {
-    const e = kiemTraKyTuIdBuoc(defOf(delay("a".repeat(122))));
+  it("129 ký tự ⇒ đúng một lỗi STEP_ID_TOO_LONG nêu độ dài thực 129 và giới hạn 128", () => {
+    const e = kiemTraKyTuIdBuoc(defOf(delay("a".repeat(129))));
     expect(e).toHaveLength(1);
     expect(e[0].code).toBe(STEP_ID_TOO_LONG);
-    expect(e[0].doDai).toBe(122);
-    expect(e[0].toiDa).toBe(121);
+    expect(e[0].doDai).toBe(129);
+    expect(e[0].toiDa).toBe(128);
     expect(e[0].path).toBe("steps[0].id");
-    expect(e[0].message).toContain("122");
-    expect(e[0].message).toContain("121");
+    expect(e[0].message).toContain("129");
+    expect(e[0].message).toContain("128");
   });
   it("id rất dài (300) ⇒ thông báo nêu 300, không in nguyên 300 ký tự", () => {
     const e = kiemTraKyTuIdBuoc(defOf(delay("b".repeat(300))));
@@ -107,7 +112,7 @@ describe("vị trí: compensation và bước lồng cũng bị kiểm ba luật
       type: "sequence",
       steps: [
         { id: "abort:con", type: "delay", ms: 1, compensation: delay("[[A2N-bu") },
-        { id: "br", type: "branch", condition: {}, then: [delay("t".repeat(122))], else: [delay("[[A2N")] },
+        { id: "br", type: "branch", condition: {}, then: [delay("t".repeat(129))], else: [delay("[[A2N")] },
       ],
     });
     const e = kiemTraKyTuIdBuoc(def);
@@ -130,6 +135,14 @@ describe("chỉ chặn khi TẠO/SỬA: định nghĩa CŨ có id vi phạm vẫ
   });
   it("mô phỏng vẫn chạy được", () => {
     expect(simulateWorkflow(cu, {}, {}).ok).toBe(true);
+  });
+  it("định nghĩa CŨ có id > 128 (nếu còn đường nào nhận được): validate/mô phỏng không đổi, và đường chạy abort vẫn xử lý được id đó (abortRowId băm, ≤ 128) — lô này không đổi đường chạy", () => {
+    const dai = "q".repeat(200);
+    const cuDai = defOf(delay(dai));
+    expect(validateWorkflow(cuDai, null).ok).toBe(true);
+    expect(simulateWorkflow(cuDai, {}, {}).ok).toBe(true);
+    expect(kiemTraKyTuIdBuoc(cuDai).map((e) => e.code)).toEqual([STEP_ID_TOO_LONG]); // chỉ đường GHI mới từ chối
+    expect(abortRowId(dai).length).toBeLessThanOrEqual(128);
   });
   it("deployWorkflow (đường ghi) từ chối, thông báo chỉ cách sửa ('rename … deploy again')", async () => {
     vi.stubEnv("FOE_ENABLED", "true");

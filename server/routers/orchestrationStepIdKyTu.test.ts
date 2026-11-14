@@ -127,9 +127,9 @@ describe("orchestration.duplicateWorkflow (sao chép = định nghĩa MỚI) —
   });
 });
 
-// ── ba luật thêm: độ dài ≤ 121, tiền tố "abort:", chuỗi "[[A2N" ──
+// ── ba luật thêm: độ dài ≤ 128, tiền tố "abort:", chuỗi "[[A2N" ──
 const LUAT_THEM: Array<{ ten: string; id: string; code: string; reason: string; params?: Record<string, number> }> = [
-  { ten: "dài 122", id: "d".repeat(122), code: "STEP_ID_TOO_LONG", reason: "stepIdQuaDai", params: { doDai: 122, toiDa: 121 } },
+  { ten: "dài 129", id: "d".repeat(129), code: "STEP_ID_TOO_LONG", reason: "stepIdQuaDai", params: { doDai: 129, toiDa: 128 } },
   { ten: 'tiền tố "abort:x"', id: "abort:x", code: "STEP_ID_ABORT_PREFIX", reason: "stepIdTienToAbort" },
   { ten: 'dấu "[[A2N" ở giữa', id: "a[[A2Nb", code: "STEP_ID_RESERVED_MARKER", reason: "stepIdDauHieuRieng" },
 ];
@@ -146,8 +146,8 @@ describe("ba luật thêm — deployWorkflow (tRPC) từ chối đúng mã, KHÔ
       expect(fake.store.get("orchestration_workflows") ?? []).toHaveLength(0);
     });
   }
-  it("biên 121 ký tự: qua cổng kiểm đầu vào (không bị từ chối vì luật id)", async () => {
-    const r = await orchestrationRouter.createCaller(ctxOf(ENGINEER)).deployWorkflow({ definition: def("e".repeat(121)), totpCode: "000000" });
+  it("biên 128 ký tự: qua cổng kiểm đầu vào (không bị từ chối vì luật id)", async () => {
+    const r = await orchestrationRouter.createCaller(ctxOf(ENGINEER)).deployWorkflow({ definition: def("e".repeat(128)), totpCode: "000000" });
     expect((r.errors ?? []).some((e) => e.code?.startsWith("STEP_ID_"))).toBe(false);
   });
 });

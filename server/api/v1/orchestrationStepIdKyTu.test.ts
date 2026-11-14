@@ -82,7 +82,7 @@ describe("POST /api/v1/orchestration/workflows — id chứa ký tự cấm bị
 
 describe("POST /api/v1/orchestration/workflows — ba luật thêm bị từ chối Ở SERVER với đúng mã", () => {
   const CA: Array<[string, string, string]> = [
-    ["dài 122", "d".repeat(122), "STEP_ID_TOO_LONG"],
+    ["dài 129", "d".repeat(129), "STEP_ID_TOO_LONG"],
     ['tiền tố "abort:"', "abort:x", "STEP_ID_ABORT_PREFIX"],
     ['dấu "[[A2N" ở đầu', "[[A2Nx", "STEP_ID_RESERVED_MARKER"],
   ];
