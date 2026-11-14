@@ -375,6 +375,39 @@ describe("OrchestrationStudio — Task 11: toast từ chối 'draft' dùng t() t
   });
 });
 
+describe("OrchestrationStudio — luật đầu vào step id MỚI: toast khi deploy bị từ chối vì ký tự id", () => {
+  const ERR = [{ path: "steps[3].id", code: "STEP_ID_FORBIDDEN_CHAR", kyTu: '"," and ")"', message: "Step id \"a,b)\" at steps[3].id contains the forbidden character ..." }];
+
+  it("deployWorkflow ok:false + errors[STEP_ID_FORBIDDEN_CHAR] ⇒ toast qua khoá studio.deployStepIdKyTu nêu path + ký tự; KHÔNG rơi về 'Deploy failed' hay message thô", async () => {
+    const { toast } = await import("sonner");
+    (toast.error as ReturnType<typeof vi.fn>).mockClear();
+    render(<OrchestrationStudio />);
+    mutationOpts["orchestration.deployWorkflow"]!.onSuccess?.({ ok: false, enabled: true, errors: ERR, message: ERR[0].message });
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    const shown = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+    expect(shown).not.toBe(ERR[0].message);
+    expect(shown).not.toMatch(/studio\.deployFail|^Deploy failed$/);
+    // môi trường test chưa nạp resource: hoặc khoá thô, hoặc câu mặc định đã nội suy {{path}} / {{kyTu}}
+    expect(shown).toMatch(/studio\.deployStepIdKyTu|steps\[3\]\.id[\s\S]*","/);
+  });
+
+  it("deployWorkflow ok:false KHÔNG có mã ký tự id (lỗi cấu trúc khác) ⇒ vẫn hiện message của server (hành vi CŨ giữ nguyên)", async () => {
+    const { toast } = await import("sonner");
+    (toast.error as ReturnType<typeof vi.fn>).mockClear();
+    render(<OrchestrationStudio />);
+    mutationOpts["orchestration.deployWorkflow"]!.onSuccess?.({ ok: false, enabled: true, errors: [{ path: "steps", message: "Workflow needs a non-empty steps[]." }], message: "Workflow needs a non-empty steps[]." });
+    expect(toast.error).toHaveBeenCalledWith("Workflow needs a non-empty steps[].");
+  });
+
+  it("deployWorkflow ok:true ⇒ toast thành công, không toast lỗi", async () => {
+    const { toast } = await import("sonner");
+    (toast.error as ReturnType<typeof vi.fn>).mockClear();
+    render(<OrchestrationStudio />);
+    mutationOpts["orchestration.deployWorkflow"]!.onSuccess?.({ ok: true, enabled: true, workflowId: 1, ref: "r", version: 2 });
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+});
+
 // ════════════════ doc 81 Đợt 8 task O3 — the approval screen lists, per adapter / robot, whether its program is verified ════════════════
 describe("OrchestrationStudio — doc 81 Đợt 8 O3: controller program check per adapter on the approval screen", () => {
   const AWAITING = { ...run(40, "prog-flow", {}, { mode: "none", simulated: 0, live: 0, unconfirmed: 0 }), status: "awaiting_confirm", currentStepId: "g1" };
