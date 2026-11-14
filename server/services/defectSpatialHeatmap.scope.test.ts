@@ -33,17 +33,112 @@
  *
  * Lưới chạy trên CSDL test thật (vitest.setup.ts) với `_core/accessControl` THẬT — không mock
  * bộ phân giải phạm vi, vì thứ cần chứng minh chính là SQL sinh ra từ nó có tới nơi hay không.
+ *
+ * ⚠ Chạm `_test` (GIỮ tên tệp vì `nguoiDungTest.census.test.ts` trỏ tới nó): fixture (nhà máy … bản ghi kiểm, measurement_results, người dùng, gán nhà máy) nằm trong MỘT giao dịch drizzle mở suốt tệp
+ *   và kết thúc bằng ROLLBACK (không DELETE, không TRUNCATE, không owner `aoi`). `_core/accessControl` đọc cùng `getDb` (mock) nên thấy người dùng / gán chưa commit.
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { inArray } from "drizzle-orm";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
-import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
 import { computeSpatialHeatmap } from "./defectSpatialHeatmap";
 import * as db from "../db";
 import { getDb } from "../db/connection";
 import { clearAssignmentCache } from "../_core/accessControl";
-import { users, type InsertMeasurementResult, type InsertUser } from "../../drizzle/schema";
+import {
+  factories,
+  machines,
+  productModels,
+  productInspections,
+  measurementResults,
+  userFactoryAssignments,
+  users,
+  type InsertMeasurementResult,
+  type InsertUser,
+} from "../../drizzle/schema";
 
 const ts = Date.now();
+
+// ═════════════════════════════════════════════════════════════════
+// GIAO DỊCH HOÀN TÁC — mẫu server/db/statisticsScope.test.ts + aiAnalyticsMachineType.db.test.ts
+// ═════════════════════════════════════════════════════════════════
+// `getDb` (mock) trả về `tx` của MỘT giao dịch drizzle mở suốt tệp; hàm `db.create*` / `createProductInspection` tự mở `transaction(...)`:
+// trên `tx` việc đó thành SAVEPOINT (không COMMIT giao dịch ngoài) nên ROLLBACK cuối cùng hoàn tác TẤT CẢ hàng đã chèn.
+// Không DELETE, không TRUNCATE, không owner `aoi`. Không có DATABASE_URL ⇒ cả nhóm bị bỏ qua (skipIf).
+const DB_URL = process.env.DATABASE_URL;
+class HoanTacCuoiTep extends Error {}
+const holder: { db: unknown } = { db: null };
+vi.mock("../db/connection", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getDb: async () => holder.db,
+}));
+/** id các hàng đã chèn — để chứng minh (a) ca THẬT SỰ ghi trong giao dịch, (b) sau ROLLBACK không còn hàng nào. */
+const daChen: Record<string, number[]> = {};
+const ghiNho = (khoa: string, id: number): number => {
+  (daChen[khoa] ??= []).push(id);
+  return id;
+};
+let phienGiaoDich: ReturnType<typeof postgres> | null = null;
+let moKhoaHoanTac: () => void = () => undefined;
+let giaoDichXong: Promise<void> = Promise.resolve();
+
+async function moGiaoDichHoanTac(): Promise<void> {
+  phienGiaoDich = postgres(DB_URL!, { max: 1, onnotice: () => undefined });
+  const choHoanTac = new Promise<void>((xong) => {
+    moKhoaHoanTac = xong;
+  });
+  await new Promise<void>((sanSang, thatBai) => {
+    giaoDichXong = drizzle(phienGiaoDich!)
+      .transaction(async (tx) => {
+        holder.db = tx;
+        sanSang();
+        await choHoanTac;
+        throw new HoanTacCuoiTep();
+      })
+      .then(
+        () => undefined,
+        (e: unknown) => {
+          if (!(e instanceof HoanTacCuoiTep)) thatBai(e);
+        },
+      );
+  });
+}
+
+beforeAll(async () => {
+  if (!DB_URL) return;
+  await moGiaoDichHoanTac();
+}, 120_000);
+
+afterAll(async () => {
+  holder.db = null;
+  moKhoaHoanTac();
+  await giaoDichXong;
+  if (phienGiaoDich) await phienGiaoDich.end({ timeout: 5 });
+  // (b) NGOÀI giao dịch, bằng kết nối RIÊNG sau ROLLBACK: mọi hàng của chính lượt này KHÔNG còn. Đếm theo id đã chèn
+  // (id từ sequence không tái dùng) nên không nhiễu bởi tệp khác chạy song song.
+  if (DB_URL) {
+    const ngoai = postgres(DB_URL, { max: 1, onnotice: () => undefined });
+    try {
+      for (const [bang, cot, ids] of [
+        ["user_factory_assignments", "userId", daChen.userIds],
+        ["users", "id", daChen.userIds],
+        ["measurement_results", "inspectionId", daChen.inspectionIds],
+        ["product_inspections", "id", daChen.inspectionIds],
+        ["machines", "id", daChen.machineIds],
+        ["product_models", "id", daChen.modelIds],
+        ["factories", "id", daChen.factoryIds],
+      ] as Array<[string, string, number[] | undefined]>) {
+        if (!ids || ids.length === 0) continue;
+        const n = Number((await ngoai.unsafe(`SELECT count(*)::int AS n FROM ${bang} WHERE "${cot}" = ANY($1::bigint[])`, [ids as never]))[0].n);
+        expect(n, `${bang} sau ROLLBACK`).toBe(0);
+      }
+    } finally {
+      await ngoai.end({ timeout: 5 });
+    }
+  }
+}, 60_000);
+
 const FAC_A = `SCP_FAC_A_${ts}`;
 const FAC_B = `SCP_FAC_B_${ts}`;
 const CORP_A = `SCP_CORP_A_${ts}`;
@@ -63,7 +158,7 @@ let userNoneId: number;
 async function mkUser(role: NonNullable<InsertUser["role"]>, tag: string): Promise<number> {
   // Dùng helper chung: TỰ dọn người dùng ở afterAll (xem server/testing/nguoiDungTest.ts) — trước đây tệp này không xoá ⇒ chất người dùng admin ở CSDL _test.
   const u = await taoNguoiDungTest(tag, role as NonNullable<InsertUser["role"]>, { tienTo: "scp_hm", ten: `scope heatmap ${tag}`, ts });
-  return u.id;
+  return ghiNho("userIds", u.id);
 }
 
 /** Đối số chung: chỉ `scope` đổi giữa các ca. */
@@ -80,18 +175,19 @@ function q(scope: { userId: number; userRole: string }, mode: "bbox" | "pointDef
 }
 
 beforeAll(async () => {
-  const factoryId = await db.createFactory({ code: `SCPF_${ts}`, name: "Scope fac" });
+  if (!DB_URL) return;
+  const factoryId = ghiNho("factoryIds", await db.createFactory({ code: `SCPF_${ts}`, name: "Scope fac" }));
   const workshopId = await db.createWorkshop({ factoryId, code: `SCPW_${ts}`, name: "Scope ws" });
   const lineId = await db.createProductionLine({ workshopId, code: `SCPL_${ts}`, name: "Scope line" });
   const stationId = await db.createStation({ lineId, code: `SCPS_${ts}`, name: "Scope st", orderIndex: 1 });
-  const machineId = await db.createMachine({
+  const machineId = ghiNho("machineIds", await db.createMachine({
     stationId,
     code: `SCPM_${ts}`,
     name: "Scope machine",
     machineType: "AOI",
     apiKey: `scope_hm_${ts}`,
-  });
-  productModelId = dangKyModelSanPhamTest(await db.createProductModel({
+  }));
+  productModelId = ghiNho("modelIds", await db.createProductModel({
     code: `SCPP_${ts}`,
     name: "Scope product",
     imageWidth: 1000,
@@ -107,7 +203,7 @@ beforeAll(async () => {
   });
 
   // ── Nhà máy A: 2 NG CÓ bbox (ô (0,0) và (5,5)) + 1 NG KHÔNG bbox ──────────────
-  const inspA = await db.createProductInspection({
+  const inspA = ghiNho("inspectionIds", await db.createProductInspection({
     machineId,
     productModelId,
     serialNumber: `SN_SCP_A_${ts}`,
@@ -116,7 +212,7 @@ beforeAll(async () => {
     inspectionTime: INSPECTED_AT,
     corporateCode: CORP_A,
     factoryCode: FAC_A,
-  });
+  }));
   await db.createMeasurementResults([
     { inspectionId: inspA, pointDefId, result: "NG", defectBboxX: 40, defectBboxY: 30, defectBboxW: 20, defectBboxH: 20 },
     { inspectionId: inspA, pointDefId, result: "NG", defectBboxX: 540, defectBboxY: 430, defectBboxW: 20, defectBboxH: 20 },
@@ -124,7 +220,7 @@ beforeAll(async () => {
   ] satisfies InsertMeasurementResult[]);
 
   // ── Nhà máy B: 3 NG CÓ bbox (ô (9,9)) + 2 NG KHÔNG bbox ───────────────────────
-  const inspB = await db.createProductInspection({
+  const inspB = ghiNho("inspectionIds", await db.createProductInspection({
     machineId,
     productModelId,
     serialNumber: `SN_SCP_B_${ts}`,
@@ -133,7 +229,7 @@ beforeAll(async () => {
     inspectionTime: INSPECTED_AT,
     corporateCode: CORP_B,
     factoryCode: FAC_B,
-  });
+  }));
   await db.createMeasurementResults([
     { inspectionId: inspB, pointDefId, result: "NG", defectBboxX: 950, defectBboxY: 760, defectBboxW: 0, defectBboxH: 0 },
     { inspectionId: inspB, pointDefId, result: "NG", defectBboxX: 955, defectBboxY: 765, defectBboxW: 0, defectBboxH: 0 },
@@ -151,7 +247,22 @@ beforeAll(async () => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════════════════
-describe("★★★ heatmap ① truy vấn hàng NG CÓ bbox — lọc theo phạm vi", () => {
+describe.skipIf(!DB_URL)("(a) ca THẬT SỰ ghi trong giao dịch (đếm qua tx, trước ROLLBACK)", () => {
+  it("1 nhà máy, 1 máy, 1 model, 2 bản ghi kiểm, 8 measurement_results, 3 người dùng, 1 gán nhà máy", async () => {
+    const raw = (await getDb())!;
+    const dem = async (bang: any, cot: any, ids: number[]) => (await raw.select().from(bang).where(inArray(cot, ids))).length;
+    expect(await dem(factories, factories.id, daChen.factoryIds)).toBe(1);
+    expect(await dem(machines, machines.id, daChen.machineIds)).toBe(1);
+    expect(await dem(productModels, productModels.id, daChen.modelIds)).toBe(1);
+    expect(await dem(productInspections, productInspections.id, daChen.inspectionIds)).toBe(2);
+    expect(await dem(measurementResults, measurementResults.inspectionId, daChen.inspectionIds)).toBe(8);
+    expect(await dem(users, users.id, daChen.userIds)).toBe(3);
+    expect(await dem(userFactoryAssignments, userFactoryAssignments.userId, daChen.userIds)).toBe(1);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+describe.skipIf(!DB_URL)("★★★ heatmap ① truy vấn hàng NG CÓ bbox — lọc theo phạm vi", () => {
   it("CHIỀU DƯƠNG: admin vẫn thấy TOÀN BỘ (A + B), không bị bản vá chặn nhầm", async () => {
     const conn = await getDb();
     const r = await computeSpatialHeatmap(conn!, q({ userId: adminId, userRole: "admin" }));
@@ -201,7 +312,7 @@ describe("★★★ heatmap ① truy vấn hàng NG CÓ bbox — lọc theo ph�
 });
 
 // ══════════════════════════════════════════════════════════════════════════════════════════
-describe("★★★ heatmap ② COUNT hàng NG KHÔNG bbox (`excludedNoBbox`) — lọc theo phạm vi", () => {
+describe.skipIf(!DB_URL)("★★★ heatmap ② COUNT hàng NG KHÔNG bbox (`excludedNoBbox`) — lọc theo phạm vi", () => {
   it("admin đếm cả A lẫn B; người gán A chỉ đếm A; người 0 gán đếm 0", async () => {
     const conn = await getDb();
     const rAdmin = await computeSpatialHeatmap(conn!, q({ userId: adminId, userRole: "admin" }));
@@ -218,7 +329,7 @@ describe("★★★ heatmap ② COUNT hàng NG KHÔNG bbox (`excludedNoBbox`) �
 });
 
 // ══════════════════════════════════════════════════════════════════════════════════════════
-describe("★★★ heatmap ③ GROUP BY pointDefId (chế độ logic `pointDef`) — lọc theo phạm vi", () => {
+describe.skipIf(!DB_URL)("★★★ heatmap ③ GROUP BY pointDefId (chế độ logic `pointDef`) — lọc theo phạm vi", () => {
   it("admin thấy cả 8 NG; người gán A thấy 3; người 0 gán thấy 0 + câu trung thực", async () => {
     const conn = await getDb();
     const rAdmin = await computeSpatialHeatmap(conn!, q({ userId: adminId, userRole: "admin" }, "pointDef"));
@@ -235,7 +346,7 @@ describe("★★★ heatmap ③ GROUP BY pointDefId (chế độ logic `pointDef
 });
 
 // ══════════════════════════════════════════════════════════════════════════════════════════
-describe("★★ chế độ panelBoard đi qua CÙNG hai truy vấn ① ② nên cũng phải bị lọc", () => {
+describe.skipIf(!DB_URL)("★★ chế độ panelBoard đi qua CÙNG hai truy vấn ① ② nên cũng phải bị lọc", () => {
   it("không có panel def ⇒ hạ về bbox — và phần hạ về ấy vẫn bị lọc theo phạm vi", async () => {
     const conn = await getDb();
     const rAdmin = await computeSpatialHeatmap(conn!, { ...q({ userId: adminId, userRole: "admin" }), mode: "panelBoard" });
