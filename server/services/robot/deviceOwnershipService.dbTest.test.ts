@@ -243,6 +243,23 @@ describe("D2 — vòng quét trên CSDL chắc KHÔNG phải _test: như cũ, kh
     expect(createDriver).toHaveBeenCalledTimes(1);
     expect(H.alerts).toEqual([]);
   });
+
+  it("★ …/AOI_MANAGEMENT_TEST (_TEST viết HOA) ⇒ chac-khong-phai-test ⇒ GỬI như cũ, 0 báo động", async () => {
+    // ruling dieu-phoi 14/11: Postgres so tên CSDL nguyên văn (phân biệt hoa thường) và (x) chỉ mô phỏng khi CHẮC là _test ⇒
+    // "_TEST" hoa không phải _test. Đột biến so không phân biệt hoa thường (/_test$/i) phải làm ca này đỏ.
+    // CSDL thử phải đặt tên chữ thường kết thúc _test thì D2 mới nhận ra.
+    datEnv("DATABASE_URL", "postgres://app:pw@127.0.0.1:9/AOI_MANAGEMENT_TEST");
+    pendingMotRobotMotAdapter();
+    const out = await sweepPendingCentralStops();
+    await choBaoDong();
+    expect(createRobotDriver).toHaveBeenCalledTimes(1);
+    expect(createDriver).toHaveBeenCalledTimes(1);
+    expect(out.map((o) => [o.outcome, o.sent])).toEqual([
+      ["done", "sent"],
+      ["done", "sent"],
+    ]);
+    expect(H.alerts).toEqual([]);
+  });
 });
 
 describe("D2 — vòng quét khi KHÔNG xác định được tên CSDL: gửi như cũ + MỘT cảnh báo mỗi tiến trình", () => {

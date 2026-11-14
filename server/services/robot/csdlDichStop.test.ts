@@ -57,8 +57,13 @@ const CA: Ca[] = [
   { ten: "x_test?sslmode=require", url: "postgres://u:p@h:5432/x_test?sslmode=require", mong: LA },
   { ten: "%5F trong path (tên nguyên văn, CSDL khác)", url: "postgres://u:p@h/aoi_management%5Ftest", mong: KHONG },
   { ten: "%5F trong ?database= (giải mã)", url: "postgres://u:p@h/x?database=aoi_management%5Ftest", mong: LA },
+  // _TEST viết HOA ⇒ chac-khong-phai-test ⇒ gửi như cũ, không thêm cảnh báo (ruling dieu-phoi 14/11): Postgres so tên CSDL trong gói
+  // khởi động NGUYÊN VĂN (phân biệt hoa thường — "AOI_MANAGEMENT_TEST" là CSDL khác "aoi_management_test"), và (x) chỉ mô phỏng khi
+  // CHẮC là _test. Phép so là /_test$/ KHÔNG cờ i; đột biến /_test$/i phải làm ba ca này đỏ.
+  // CSDL thử phải đặt tên chữ thường kết thúc _test thì D2 mới nhận ra.
   { ten: "x_TEST (PG phân biệt hoa thường)", url: "postgres://u:p@h/x_TEST", mong: KHONG },
   { ten: "AOI_TEST", url: "postgres://u:p@h/AOI_TEST", mong: KHONG },
+  { ten: "AOI_MANAGEMENT_TEST", url: "postgres://u:p@h/AOI_MANAGEMENT_TEST", mong: KHONG },
   { ten: "x_testing", url: "postgres://u:p@h/x_testing", mong: KHONG },
   { ten: "x_test2", url: "postgres://u:p@h/x_test2", mong: KHONG },
   { ten: "test", url: "postgres://u:p@h/test", mong: KHONG },
@@ -70,6 +75,9 @@ const CA: Ca[] = [
   { ten: "không path + PGDATABASE _test", url: "postgres://u:p@h:5432", env: { PGDATABASE: "aoi_management_test" }, mong: LA },
   { ten: "path '/' + PGDATABASE prod", url: "postgres://u:p@db.prod:5432/", env: { PGDATABASE: "aoi_management" }, mong: KHONG },
   { ten: "path '/' + PGDATABASE _test", url: "postgres://u:p@db.prod:5432/", env: { PGDATABASE: "aoi_management_test" }, mong: LA },
+  { ten: "path prod THẮNG PGDATABASE _test (thứ tự lùi :469)", url: "postgres://u:p@db.prod:5432/aoi_management", env: { PGDATABASE: "aoi_management_test" }, mong: KHONG },
+  { ten: "path _test THẮNG PGDATABASE prod", url: "postgres://u:p@db.prod:5432/aoi_management_test", env: { PGDATABASE: "aoi_management" }, mong: LA },
+  { ten: "PGDATABASE prod THẮNG user _test (thứ tự lùi :469)", url: "postgres://svc_test@db.prod:5432", env: { PGDATABASE: "aoi_management" }, mong: KHONG },
   // chuỗi lùi :469 → user (:440)
   { ten: "không path, user URL prod", url: "postgres://aoi_management@db.prod:5432", mong: KHONG },
   { ten: "không path, user URL _test", url: "postgres://aoi_management_test@db.prod:5432", mong: LA },
