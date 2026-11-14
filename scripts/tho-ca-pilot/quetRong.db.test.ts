@@ -158,11 +158,13 @@ describe.skipIf(!co)("mayQuetRongPostgres trên PG thật (giao dịch ROLLBACK)
     let ds: string[] = [];
     let rls: string[] = [];
     let bat: boolean[] = [];
+    let loai: string[] = [];
     try {
       await sql.begin("read write", async (tx) => {
         const may = mayQuetRongPostgres(tx as unknown as SqlDem);
         ds = await may.lietKe();
         rls = await may.bangRls!();
+        for (const b of rls) loai.push(String((await tx`select table_type from information_schema.tables where table_schema = 'public' and table_name = ${b}`)[0]?.table_type));
         for (const b of rls) bat.push(Boolean((await tx`select relrowsecurity from pg_class where relnamespace = 'public'::regnamespace and relname = ${b}`)[0]?.relrowsecurity));
         throw new HoanTac();
       });
@@ -172,5 +174,7 @@ describe.skipIf(!co)("mayQuetRongPostgres trên PG thật (giao dịch ROLLBACK)
     expect(rls.every((b) => ds.includes(b))).toBe(true);
     expect(bat.every((x) => x === true)).toBe(true);
     expect(bat).toHaveLength(rls.length);
+    expect(loai.every((x) => x === "BASE TABLE")).toBe(true); // n2b: không VIEW / bảng ngoài lưới
+    expect(loai).toHaveLength(rls.length);
   }, 60_000);
 });
