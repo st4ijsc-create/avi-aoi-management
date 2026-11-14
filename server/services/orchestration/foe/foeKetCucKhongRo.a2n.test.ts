@@ -732,6 +732,29 @@ describe("A2(n) — pure parts, the edge mirror (n5) and source pins", () => {
     expect(docAnomalyKhongRo(events[0]!.detail)).toMatchObject({ loai: "held", stepId: "m", compId: "c", claimSeq: 2 });
   });
 
+  // T4 bước 3, bổ sung B (MOI-29, HST 14/11): edgeRunStore.sweepSource đọc `attempted` của hàng cục bộ (priorStepsOf). Hướng rơi khi mất phần đọc đó: "STOP không gửi"
+  // (mayHaveActuated sai ⇒ runHasActuated sai ⇒ R-6-b: run "chưa bao giờ tác động" không gửi STOP nào). Ca chỉ test; đỏ dưới đột biến "bỏ phần đọc attempted".
+  it("T4-B3-MOI-29 the edge store's abort picture: the walker's own `attempted` and its prior picture EMPTY, a command row of this segment handed over ⇒ that command may have actuated (its STOPs are sent); a step with no row may not", async () => {
+    const pkg = { runId: 5, claimSeq: 2, verifiedStops: [{ kind: "ot", stepId: "nt", adapterId: 501, pins: [] }], stopsUnsure: [], resolvedAdapters: [], prior: { abortSentBefore: [] }, definition: { steps: [] }, machines: [] } as unknown as EdgeRunPackage;
+    const s = createEdgeRunStore(pkg, { runId: 5, claimSeq: 2, claimToken: "t", sink: { run: async () => ({ seq: 1 }), event: async () => ({ seq: 1 }) }, authorize: { authorize: async () => ({ ok: false, verdict: "unavailable", code: null }) } });
+    await s.upsertStep(5, "x", "command", { status: "running", attempt: 1, result: { routedTo: "robot-dispatcher" }, error: null, startedAt: new Date(0) });
+    const rc = {
+      def: { ref: "m29", name: "m29", steps: [] },
+      machineById: new Map(),
+      context: {},
+      completed: new Set<string>(),
+      settled: new Set<string>(),
+      dispatched: new Set<string>(),
+      attempted: new Set<string>(),
+      startOrder: [] as string[],
+      prior: { settled: new Set<string>(), branches: new Map(), startOrder: [] as string[], attempted: new Set<string>(), unknown: false },
+    };
+    const src = await s.sweepSource({ live: rc as never });
+    expect(src, "a live walker: a picture").not.toBeNull();
+    expect(src!.mayHaveActuated("x"), "the row of this segment says x was handed over: it may have actuated").toBe(true);
+    expect(src!.mayHaveActuated("y"), "no row, nothing in memory: not").toBe(false);
+  });
+
   it("N8/N9 central's resume state from an EDGE run's rows carries the unknown flag (by the code in the step error) — a known failure does not", () => {
     const d = { ref: "x", name: "x", steps: [main(resetComp())] } as WorkflowDefinition;
     const r = (stepId: string, status: string, error: string | null = null) => ({ stepId, status, resultJson: null, error });
