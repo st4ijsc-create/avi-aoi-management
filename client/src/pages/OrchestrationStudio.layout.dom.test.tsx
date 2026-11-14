@@ -843,6 +843,15 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
     expect(String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.abortUnconfirmed.replace("{{sent}}", "0"));
   });
 
+  it("P3 T12b(a): abortUnconfirmed + 3 id gửi, 2 trong đó MÔ PHỎNG ⇒ chữ nói 1 (số giao THẬT), không nói 3", async () => {
+    const user = userEvent.setup();
+    srv.results["orchestration.abortRun"] = { ok: false, enabled: true, runId: 3, reason: "abortUnconfirmed", message: "x", abortStops: { ...ABORT_STOPS, sent: ["a", "b", "c"], moPhong: ["a", "b"] } };
+    render(<OrchestrationStudio />);
+    await user.click(within(rowOf(3)).getByRole("button", { name: S.abort }));
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    expect(String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.abortUnconfirmed.replace("{{sent}}", "1"));
+  });
+
   // ── T12b — toast theo BÁO CÁO THẬT của abortStops (hợp đồng scada-master 13/11) ──
   it("T12b ★ abort, sent = 0 và khongDocDuoc ⇒ cảnh báo 'chưa đầy đủ' + câu server ở mô tả, KHÔNG toast.success", async () => {
     const user = userEvent.setup();
@@ -933,6 +942,19 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
     await user.click(within(rowOf(30)).getByRole("button", { name: S.confirmReject }));
     await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
     expect(String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.rejectUnconfirmed.replace("{{sent}}", "0"));
+  });
+
+  it("P3 T12b(a) nhánh REJECT: rejectUnconfirmed + 3 id gửi, 2 MÔ PHỎNG ⇒ chữ nói 1 (số giao THẬT), không nói 3", async () => {
+    const user = userEvent.setup();
+    srv.runs = [...RUNS_PLAIN, AWAITING].map((r) => ({ ...r }));
+    srv.getRun = { run: { ...AWAITING }, defHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", bindingDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", steps: [] };
+    srv.results["orchestration.resumeRun"] = { ok: false, enabled: true, runId: 30, reason: "abortUnconfirmed", message: "x", abortStops: { ...ABORT_STOPS, sent: ["a", "b", "c"], moPhong: ["a", "b"] } };
+    render(<OrchestrationStudio />);
+    await user.click(within(bottomPanel()).getByRole("tab", { name: new RegExp(S.awaitingTab) }));
+    await user.click(within(rowOf(30)).getByRole("button", { name: S.reject }));
+    await user.click(within(rowOf(30)).getByRole("button", { name: S.confirmReject }));
+    await waitFor(() => expect(toastSpy.error).toHaveBeenCalled());
+    expect(String((toastSpy.error as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0])).toBe(S.rejectUnconfirmed.replace("{{sent}}", "1"));
   });
 
   it("doc 81 Đợt 6 fix 2 (N1): an ABORTED run offers 'Send STOP steps again' (abortRun once, no dialog) and shows the outcome", async () => {

@@ -37,6 +37,14 @@ describe("laUrgentA2n", () => {
   ])("★ %s ⇒ KHÔNG phải URGENT A2(n)", (_t, x) => {
     expect(laUrgentA2n(hang(1, x as Partial<HangThongBao>))).toBe(false);
   });
+  it.each([
+    ["tiền tố ở GIỮA", `x_${TIEN_TO_KIND}edge_stream_stuck`],
+    ["tiền tố ở CUỐI", `edge_${TIEN_TO_KIND}`],
+    ["tiền tố viết hoa", TIEN_TO_KIND.toUpperCase() + "x"],
+    ["tiền tố thiếu dấu _ cuối", "foe_outcome_unknown"],
+  ])("★ P3 u3: kind %s ⇒ KHÔNG phải URGENT A2(n) (chỉ startsWith, không includes)", (_t, kind) => {
+    expect(laUrgentA2n(hang(1, { metadata: { kind } }))).toBe(false);
+  });
   it("kind LẠ nhưng đúng tiền tố ⇒ vẫn là URGENT (hiện bằng title, không bao giờ ẩn), khoaNhan = null", () => {
     const g = phanNhomUrgent([hang(1, { metadata: { kind: `${TIEN_TO_KIND}kind_moi_chua_co_nhan` } })]);
     expect(g.chuaDoc).toHaveLength(1);
@@ -121,6 +129,22 @@ describe("lưới 23 kind", () => {
   });
   it("★ zh không dùng 引脚 (= chân linh kiện phần cứng) cho 'ghim' ở BẤT KỲ khoá urgent nào", () => {
     expect(JSON.stringify((zh as unknown as { urgent: unknown }).urgent)).not.toContain("引脚");
+  });
+
+  // Khoá ĐỘNG: VungUrgentBen gọi t(khongTai ? "urgent.khongTai" : "urgent.cu") — i18n:check KHÔNG trích được khoá dạng này,
+  // nên đổi tên/xoá khoá ở en/zh sẽ làm người dùng thấy chuỗi khoá thô đúng ở dải cảnh báo thiếu URGENT. Ghim thẳng ở đây.
+  it.each([["vi", vi], ["en", en], ["zh", zh]] as const)("★ khoá động urgent.khongTai và urgent.cu có mặt, KHÔNG rỗng ở %s (không lộ chuỗi khoá thô)", (ten, loc) => {
+    const u = (loc as unknown as { urgent: Record<string, unknown> }).urgent;
+    for (const k of ["khongTai", "cu"]) {
+      expect(typeof u[k], `${ten}: urgent.${k}`).toBe("string");
+      expect((u[k] as string).trim().length, `${ten}: urgent.${k} rỗng`).toBeGreaterThan(0);
+      expect(u[k], `${ten}: urgent.${k} là chuỗi khoá thô`).not.toBe(`urgent.${k}`);
+    }
+  });
+  it("★ zh: hai khoá động không chứa 引脚", () => {
+    const u = (zh as unknown as { urgent: { khongTai: string; cu: string } }).urgent;
+    expect(u.khongTai).not.toContain("引脚");
+    expect(u.cu).not.toContain("引脚");
   });
 
   // Lệch với máy chủ: danh sách kind ở CANH_BAO_KHONG_RO_KIND (foeKetCucKhongRo.ts) — chỉ so được khi tệp nằm trong cây (nhánh A2(n) đã gộp).

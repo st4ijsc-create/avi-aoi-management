@@ -74,9 +74,10 @@ export function VungUrgentBen() {
 
   const nhom = React.useMemo(() => phanNhomUrgent((q.data ?? []) as HangThongBao[]), [q.data]);
   const { hien, conLai } = catTheHien(nhom.chuaDoc, moHet);
+  const khongTai = q.isError && q.data == null; // lần tải ĐẦU lỗi, chưa có gì ⇒ KHÔNG im lặng (P3): có thể đang thiếu URGENT
   const cu = q.isError && q.data != null; // ĐÃ có danh sách của lần trước mà lần này lỗi ⇒ giữ thẻ, nói rõ có thể thiếu URGENT mới
   const coThe = nhom.chuaDoc.length + nhom.daDoc.length > 0;
-  if (!signedIn || (!coThe && !cu)) return null;
+  if (!signedIn || (!coThe && !cu && !khongTai)) return null;
   const nhacGhim = [...nhom.chuaDoc, ...nhom.daDoc].some((x) => x.nhacGhim);
   const gio = (ms: number | null) => (ms == null ? "—" : new Date(ms).toLocaleTimeString(i18n.language, { hour: "2-digit", minute: "2-digit" }));
 
@@ -89,15 +90,15 @@ export function VungUrgentBen() {
 
   return (
     <section aria-label={t("urgent.vung.tieuDe")} data-testid="vung-urgent-ben" className="mb-3 flex flex-col gap-2">
-      {cu ? (
+      {cu || khongTai ? (
         <div
           role="status"
-          data-testid="urgent-cu"
+          data-testid={khongTai ? "urgent-khong-tai" : "urgent-cu"}
           className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold"
           style={{ borderColor: `var(${BIEN_MAU_GACH_TIM})`, color: `var(${BIEN_MAU_GACH_TIM})`, backgroundImage: "repeating-linear-gradient(45deg, transparent 0 6px, color-mix(in oklch, currentColor 14%, transparent) 6px 8px)" }}
         >
           <span aria-hidden="true">◆</span>
-          {t("urgent.cu")}
+          {t(khongTai ? "urgent.khongTai" : "urgent.cu")}
         </div>
       ) : null}
 

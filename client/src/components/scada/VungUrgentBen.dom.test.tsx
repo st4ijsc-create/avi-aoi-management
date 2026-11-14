@@ -17,8 +17,9 @@ const srv = vi.hoisted(() => ({
   isError: false,
   signedIn: true,
   marks: [] as Array<{ id: number }>,
-  mutOpts: undefined as { onError?: () => void; onMutate?: () => void } | undefined,
+  mutOpts: undefined as { onError?: () => void; onMutate?: () => void; onSettled?: () => void } | undefined,
   invalidated: 0,
+  invalList: 0,
   queryInput: undefined as unknown,
 }));
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: srv.signedIn ? { id: 7 } : null }) }));
@@ -26,13 +27,13 @@ vi.mock("@/hooks/usePollingInterval", () => ({ usePollingInterval: (ms: number |
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
-      notification: { list: { invalidate: () => { srv.invalidated++; } }, unreadCount: { invalidate: () => { srv.invalidated++; } } },
+      notification: { list: { invalidate: () => { srv.invalidated++; srv.invalList++; } }, unreadCount: { invalidate: () => { srv.invalidated++; } } },
     }),
     notification: {
       // CỐ Ý không khai báo `delete`, `deleteOld`, `markAllAsRead`: thẻ mà đụng tới chúng sẽ ném ⇒ test đỏ.
       list: { useQuery: (input: unknown) => { srv.queryInput = input; return { data: srv.data, isError: srv.isError }; } },
       markAsRead: {
-        useMutation: (o: { onError?: () => void; onMutate?: () => void }) => {
+        useMutation: (o: { onError?: () => void; onMutate?: () => void; onSettled?: () => void }) => {
           srv.mutOpts = o;
           return { mutate: (v: { id: number }) => { srv.marks.push(v); o.onMutate?.(); }, isPending: false };
         },
@@ -69,6 +70,7 @@ afterEach(() => {
   srv.marks = [];
   srv.mutOpts = undefined;
   srv.invalidated = 0;
+  srv.invalList = 0;
   srv.queryInput = undefined;
 });
 
@@ -203,6 +205,22 @@ describe("VungUrgentBen", () => {
     expect(screen.getByTestId("urgent-the")).toBeInTheDocument();
     srv.data = undefined;
     rerender(<VungUrgentBen />);
+    // P3: lần tải ĐẦU lỗi + chưa có gì ⇒ KHÔNG im lặng: dải 'không tải được' (khác dải 'cũ'), không thẻ nào
+    expect(container).not.toBeEmptyDOMElement();
+    expect(screen.queryByTestId("urgent-cu")).toBeNull();
+    expect(screen.getByTestId("urgent-khong-tai")).toHaveTextContent(VI.urgent.khongTai);
+    expect(screen.queryByTestId("urgent-the")).toBeNull();
+  });
+
+  it("★ P3: chưa đăng nhập + lỗi tải ⇒ không hiện gì; đang tải (không lỗi, chưa có dữ liệu) ⇒ không hiện dải", () => {
+    srv.data = undefined;
+    srv.isError = true;
+    srv.signedIn = false;
+    const { container, rerender } = render(<VungUrgentBen />);
+    expect(container).toBeEmptyDOMElement();
+    srv.signedIn = true;
+    srv.isError = false;
+    rerender(<VungUrgentBen />);
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -212,6 +230,15 @@ describe("VungUrgentBen", () => {
     render(<VungUrgentBen />);
     expect(screen.getByTestId("urgent-cu")).toBeInTheDocument();
     expect(screen.queryByTestId("urgent-the")).toBeNull();
+  });
+
+  it("★ P3 c12: markAsRead xong (onSettled) ⇒ làm mới notification.list (và unreadCount) — thẻ chuyển sang nhóm đã đọc, không đứng ở chưa đọc", () => {
+    srv.data = [hang(1)];
+    render(<VungUrgentBen />);
+    expect(srv.invalList).toBe(0);
+    act(() => { srv.mutOpts!.onSettled!(); });
+    expect(srv.invalList).toBe(1);
+    expect(srv.invalidated).toBe(2);
   });
 
   it("ghi 'đã đọc' lỗi ⇒ hiện câu lỗi (không im lặng), thẻ vẫn ở chưa đọc", () => {

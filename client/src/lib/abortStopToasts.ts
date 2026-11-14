@@ -14,7 +14,10 @@ export type AbortStopsBaoCao = {
   quetChuaXong?: boolean;
   nhapQuet?: boolean;
   phanLoai?: Record<string, { lop: string; truoc?: string; khoaThu?: number }>;
-  /** H38: các id trong `sent` mà lần giao chỉ MÔ PHỎNG (không tới thiết bị). Trường tuỳ chọn — thiếu thì nhánh này không chạy. */
+  /**
+   * H38: các id trong `sent` mà lần giao chỉ MÔ PHỎNG (không tới thiết bị). Trường tuỳ chọn — thiếu thì nhánh này không chạy.
+   * LƯU Ý: đây là mở rộng PHÍA CLIENT; máy chủ hiện CHƯA phát trường này (dieu-phoi 13/11). Khi vắng, `soGiaoThat` = `sent.length`.
+   */
   moPhong?: string[];
   chuaKhoa?: boolean;
   khongBen?: string[];

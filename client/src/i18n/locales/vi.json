@@ -24933,6 +24933,7 @@
     "xemTatCa": "Xem tất cả URGENT",
     "thuGon": "Thu gọn",
     "cu": "Không cập nhật được danh sách URGENT — có thể có URGENT mới chưa tới.",
+    "khongTai": "Không tải được danh sách URGENT — có thể đang thiếu cảnh báo. Kiểm tra trực tiếp trang điều phối.",
     "chiTiet": "Bản gốc của máy chủ (tiếng Anh)",
     "loiDanhDau": "Không ghi được việc đã đọc — thử lại.",
     "chuGiaiGhim": "Ghim = dấu khoá phiên bản của bước DỪNG, để biết thứ đã gửi đúng là bước DỪNG đã duyệt.",
