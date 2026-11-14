@@ -609,6 +609,8 @@ const DONG_BANG: readonly DongDongBang[] = [
   { tep: "server/services/orchestration/foe/foeKetCucKhongRo.ts", ham: "tachBaoCaoKhongRoEdge", dang: ".endsWith", chu: "error.endsWith(BAO_CAO_CUOI)", ma: "A1-24", lyDo: "tachBaoCaoKhongRoEdge: đuôi rider ]]", nhan: "tuyen-cu-chi" },
   { tep: "server/services/orchestration/foe/foeKetCucKhongRo.ts", ham: "tachBaoCaoKhongRoEdge", dang: "JSON.parse", chu: "JSON.parse(error.slice(i+thieu?BAO_CAO_DAU_THIEU:BAO_CAO_DAU.length,-BAO_CAO_CUOI.length))", ma: "R-i", lyDo: "tachBaoCaoKhongRoEdge: JSON.parse rider sau lastIndexOf dấu ⇒ id STOP chứa dấu làm hỏng (R-i)", nhan: "tuyen-cu-chi" },
   { tep: "server/services/orchestration/foe/foeKetCucKhongRo.ts", ham: "tachBaoCaoKhongRoEdge", dang: "goi:docAnomalyKhongRo", chu: "docAnomalyKhongRo(JSON.stringify(x))", ma: "A1-24", lyDo: "tachBaoCaoKhongRoEdge: lọc báo cáo qua docAnomalyKhongRo", nhan: "tuyen-cu-chi" },
+  // T4 (chu-du-an-HST 14/11, lần 2) — nơi SOẠN rider, không suy trạng thái: thoát dấu [[A2N trong JSON để dấu của nút là dấu duy nhất (R-i)
+  { tep: "server/services/orchestration/foe/foeKetCucKhongRo.ts", ham: "riderCua", dang: ".replace", chu: "JSON.stringify(bao).replace(/\\[\\[A2N/g,\"\\\\u005b[A2N\")", ma: "R-i", lyDo: "riderCua: soạn rider, thoát mọi [[A2N trong JSON (id có dấu rider) ⇒ tachBaoCaoKhongRoEdge chỉ thấy dấu của nút; không đọc chữ", nhan: "tuyen-cu-chi" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "priorStepsOf", dang: "goi:laHangChuaRa", chu: "laHangChuaRa(r)", ma: "A1-2", lyDo: "priorStepsOf: hàng trạng thái C ⇒ không settled" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "laLoiKhongGuiChot", dang: ".startsWith", chu: "error.startsWith(`${FOE_NOT_SENT_RUN_LATCHED}:`)", ma: "A1-13", lyDo: "thân laLoiKhongGuiChot: tiền tố FOE_NOT_SENT_RUN_LATCHED:" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "laHangMaChuaRa", dang: ".startsWith", chu: "r.error.startsWith(`${FOE_STOP_NOT_SENT}:`)", ma: "A1-1", lyDo: "thân laHangMaChuaRa: tiền tố FOE_STOP_NOT_SENT: ⇒ nợ STOP" },
@@ -694,10 +696,11 @@ const DONG_BANG: readonly DongDongBang[] = [
  * phải bắt: mọi thay đổi `LICH_SU_MOC` / `MOC_GOC` cần số quyết định (QUYET_DINH_MOC) trong commit.
  * Mỗi bước của T1 bỏ dòng: xoá dòng, THÊM một phần tử mới (nhỏ hơn) vào cuối `LICH_SU_MOC`, hạ `SO_DONG_MOC` bằng nó, cùng commit.
  */
-const MOC_GOC = 160;
-const LICH_SU_MOC: readonly number[] = [160];
+// T4 (chu-du-an-HST, 2026-11-14, lần 2) — mốc đặt lại 161: thêm dòng SOẠN rider ở riderCua (thoát dấu [[A2N, R-i, tuyen-cu-chi); ghim lại phần tử đầu, không ghi [160, 161]. Từ đây chỉ được GIẢM.
+const MOC_GOC = 161;
+const LICH_SU_MOC: readonly number[] = [161];
 /** Mốc số dòng đóng băng: bằng phần tử cuối của `LICH_SU_MOC`, chỉ được GIẢM. */
-const SO_DONG_MOC = 160;
+const SO_DONG_MOC = 161;
 
 /**
  * HST 14/11 T2-DK1 — "ngoài tầm" không được thành "ngoài sổ". 21 ô của bảng kiểm kê mà census KHÔNG bắt được (không có phép so chữ để bắt:

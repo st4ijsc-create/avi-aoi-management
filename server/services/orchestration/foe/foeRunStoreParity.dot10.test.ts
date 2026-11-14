@@ -452,7 +452,7 @@ import { docRunAbortCanGuiLaiStop } from "../../edge/edgeExecutionCentral"; // A
 import { EdgeStreamShipper } from "../../edge/edgeStreams";
 import { hashEdgeSecret } from "../../edge/edgeNodeCredentials";
 import { edgeNodeProtocol } from "../../edge/edgeControlSchema";
-import { edgeRunStream } from "../../edge/edgeProtocol";
+import { edgeCompleteRequestSchema, edgeRunStream } from "../../edge/edgeProtocol";
 import { dangChuaRa, loiGiuChuaDocHang as loiGiuChuaDocHangT9, noiDungCanhBaoKhongRo, CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, buTruBiChanKhongRo, canhBaoKetCucKhongRo, chotTuHang, chuStopAbort, loiGiuChuaRa, nhanBuocSauChot, viChuaRaCuaLoi } from "./foeKetCucKhongRo";
 import { getDb } from "../../../db/connection";
 import { raiseCriticalStopAlert } from "../../robot/criticalStopAlert";
@@ -870,6 +870,27 @@ function fakeAuthorize(x: EdgeHarness, d: WorkflowDefinition, primed?: Awaited<R
       };
     },
   };
+}
+
+/**
+ * T4 (lượt sửa gốc A2(n), dây thật) — the segment end AS THE WIRE CARRIES IT: the body edgeExecutionAgent.ts builds for POST complete (outcome; gateStepId only when paused; heldReason
+ * only when held; `error` only on failed / held / aborted / paused, cut by `error.slice(0, 4_000)`), parsed by the protocol's own strict schema (edgeCompleteRequestSchema: a field the wire
+ * does not carry — outcomeUnknown — never reaches central), then the fields completeForNodeV2 hands to applyEdgeSegmentEnd. A schema refusal throws (the node's 400).
+ */
+async function quaDayThat(out: Record<string, any>, claimSeq: number): Promise<Record<string, any>> {
+  const o = out.outcome as string;
+  const req = edgeCompleteRequestSchema.parse({
+    claimSeq,
+    claimToken: "ect_" + "a".repeat(43),
+    seq: 1,
+    outcome: o,
+    ...(o === "paused" ? { gateStepId: out.gateStepId } : {}),
+    ...(o === "held" ? { heldReason: out.heldReason } : {}),
+    ...((o === "failed" || o === "held" || o === "aborted" || o === "paused") && out.error ? { error: String(out.error).slice(0, 4_000) } : {}),
+    epoch: "0".repeat(32),
+    reportedThrough: 0,
+  });
+  return { outcome: req.outcome, gateStepId: req.gateStepId, heldReason: req.heldReason, error: req.error };
 }
 
 /** one segment on the edge, then central applies its records + its end (group B's endpoints call exactly these) */
@@ -17923,5 +17944,101 @@ describe("T9 lượt sửa 3e — an edge end whose list of outcome-unknown step
     expect(await chot(e.runId)).toBe(true);
     expect(dsKhongRo(e.runId)).toEqual(ids);
     expect(dsKhongRo(e.runId)).not.toContain("s");
+  });
+});
+
+describe("T4 [H11] / B5 — six damaged forms of the words on the old route (central new × a node on the old complete route): each fails CLOSED — the run held and latched, every URGENT, the STOP still owed", () => {
+  const box = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "sequence", steps }) as never;
+  const parF = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  /** the node's own rider at the end of its words (ganBaoCaoKhongRoEdge) */
+  const RIDER = / \[\[A2N(?:-THIEU)?:.*\]\]$/s;
+  const riderCuaChu = (w: string) => RIDER.exec(w)?.[0] ?? "";
+  /**
+   * One segment: a command `lenh` sent, its answer timed out (outcome unknown, no compensation), and a pinned STOP `stop` in a later branch refused by its driver (DRIVER_WRITE_FAILED: it may have
+   * reached the device, owed). The events journal is FULL (I-5): the rider on the end is the only road of the reports. `hong` damages the words the node sends; the wire (quaDayThat) carries them.
+   */
+  async function doan(ref: string, lenh: string, stop: string, hong: (w: string) => string) {
+    const kk = await import("./foeKetCucKhongRo");
+    seedHalt();
+    h.ghim = PIN_OK;
+    const e = await edgeAssignedRun(def(ref, [gate(), parF("p", [move(lenh), box("v", [delay("w", 30), box("c2", [otStop(stop)])])])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.events = [];
+    e.eventsRefused = true;
+    for (const t of rows("device_tags")) if (t.tagKey === "run") t.stopValue = 0;
+    h.tuChoi.set(stop, { status: "failed", error: "DRIVER_WRITE_FAILED: link reset", detail: { edge: true, reason: "DRIVER_WRITE_FAILED" } });
+    h.slow.set(lenh, 10);
+    h.timeoutDispatch.add(lenh);
+    let day = "";
+    e.quaDay = async (out) => {
+      day = hong(String(out.error ?? ""));
+      return quaDayThat({ ...out, error: day }, 2);
+    };
+    try {
+      await edgeSegment(e, 2);
+    } finally {
+      e.quaDay = undefined;
+      h.slow.clear();
+    }
+    await wait(80);
+    const ctx = (runRow(e.runId).contextJson as Record<string, unknown> | null) ?? {};
+    const urgent = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND, id: string) => h.alerts.filter((a) => String(a.dedupKey).startsWith(`${CANH_BAO_KHONG_RO_KIND[kind]}:${e.runId}:${id}:`)).length;
+    return { e, day, ctx, chot: kk.runDaChotKhongRo(ctx), no: [...stopChuaRaTuHang(stepRows(e.runId) as never, ctx)], urgent };
+  }
+  /** the three facts of [H11], for each form */
+  function batBuoc(x: Awaited<ReturnType<typeof doan>>, lenh: string, stop: string) {
+    expect(runRow(x.e.runId).status, `held (the words on the wire: ${x.day.slice(0, 160)})`).toBe("held");
+    expect(x.chot, "latched in central's context (runDaChotKhongRo): a Continue needs a person and a reason, nothing is re-sent").toBe(true);
+    expect(x.urgent("stopNotSent", stop), `the URGENT of STOP ${JSON.stringify(stop)}: ${h.alerts.map((a) => a.dedupKey).join(" ; ")}`).toBe(1);
+    expect(x.urgent("noCompensation", lenh), `the URGENT of command ${JSON.stringify(lenh)} whose outcome is unknown`).toBe(1);
+    expect(x.no, "the STOP is still owed on the rows (an Abort sends it)").toEqual([stop]);
+    expect(stepRows(x.e.runId).filter((r) => String(r.stepId).startsWith("abort:")), "nothing paid the debt").toEqual([]);
+  }
+
+  it("T4-H11-GOC the words undamaged (the reference): held, latched, both URGENTs, the STOP owed", async () => {
+    const x = await doan("t4h0", "x", "nt", (w) => w);
+    expect(x.day, "the node's words: state C + its rider").toMatch(/^FOE_STOP_NOT_SENT: STOP "nt" .* \[\[A2N:\[.*\]\]$/s);
+    batBuoc(x, "x", "nt");
+  });
+  it("T4-H11-1 the list EDGE_OUTCOME_UNKNOWN( cut in its middle (no end of the list), the rider whole after it: fail-closed", async () => {
+    const x = await doan("t4h1", "x", "nt", (w) => `EDGE_OUTCOME_UNKNOWN(x${riderCuaChu(w)}`);
+    batBuoc(x, "x", "nt");
+    expect(x.ctx.foeOutcomeUnknown, "a list not read whole: every command that may have gone").toEqual(["x"]);
+  });
+  it("T4-H11-2 the prefix FOE_STOP_NOT_SENT: cut (FOE_STOP_NOT_SE), the rider whole after it: fail-closed", async () => {
+    const x = await doan("t4h2", "x", "nt", (w) => `FOE_STOP_NOT_SE${riderCuaChu(w)}`);
+    batBuoc(x, "x", "nt");
+  });
+  it("T4-H11-3 fake rider marks in the words before the node's own rider ( [[A2N: and [[A2N-THIEU:): the node's own, the LAST, is read: fail-closed", async () => {
+    const x = await doan("t4h3", "x", "nt", (w) => `${w.replace(RIDER, "")} device said: [[A2N:[]]] and [[A2N-THIEU:[{"loai":"held"}]]${riderCuaChu(w)}`);
+    expect(x.day).toContain(' [[A2N-THIEU:[{"loai":"held"}]]');
+    batBuoc(x, "x", "nt");
+  });
+  it("T4-H11-5 a command id holding ',' and ')' in the list: the list is not read whole: fail-closed", async () => {
+    const id = "x,1)q";
+    const x = await doan("t4h5", id, "nt", (w) => `EDGE_OUTCOME_UNKNOWN(${id}): sent, but the result could not be recorded (journal: journal_full) — never sent again; the run is held.${riderCuaChu(w)}`);
+    batBuoc(x, id, "nt");
+  });
+  for (const stop of ["nt [[A2N:a", "nt [[A2N-THIEU:a"] as const) {
+    it(`T4-H11-6 (R-i) a STOP id holding a rider's mark ${JSON.stringify(stop)}, the words undamaged: the rider is read whole: fail-closed`, async () => {
+      const x = await doan(`t4h6${stop.length}`, "x", stop, (w) => w);
+      batBuoc(x, "x", stop);
+    });
+  }
+  it("T4-R11-THUAN (R-i, pure) an id holding ' [[A2N:' / ' [[A2N-THIEU:' / ']] [[A2N:[]]': the rider is read whole, every report back, the id whole; a mark at the end that does not parse, or JSON that is not a list, is read SHORT; no mark: nothing rode", async () => {
+    const { ganBaoCaoKhongRoEdge, tachBaoCaoKhongRoEdge } = await import("./foeKetCucKhongRo");
+    for (const id of ["nt [[A2N:a", "nt [[A2N-THIEU:a", "x]] [[A2N:[]]"]) {
+      const bao = [{ loai: "stopNotSent", stepId: id, compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }] as never[];
+      const w = ganBaoCaoKhongRoEdge("FOE_STOP_NOT_SENT: STOP (test)", bao, 4_000)!;
+      expect(w.split("[[A2N").length - 1, `${id}: the node's own mark is the only one in the words`).toBe(1);
+      expect(tachBaoCaoKhongRoEdge(w), id).toEqual({ error: "FOE_STOP_NOT_SENT: STOP (test)", bao });
+    }
+    expect(tachBaoCaoKhongRoEdge("text [[A2N:[{not json]]"), "a mark at the end, no JSON").toEqual({ error: "text [[A2N:[{not json]]", bao: [], thieu: true });
+    expect(tachBaoCaoKhongRoEdge("text [[A2N:{}]]"), "JSON, not a list").toEqual({ error: "text", bao: [], thieu: true });
+    expect(tachBaoCaoKhongRoEdge("text [[A2N:[]]]"), "a whole empty rider: nothing rode, not short").toEqual({ error: "text", bao: [] });
+    expect(tachBaoCaoKhongRoEdge("plain text"), "no mark: nothing rode").toEqual({ error: "plain text", bao: [] });
   });
 });
