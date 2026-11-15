@@ -67,10 +67,11 @@ describe("mô tả `read_file` cho model — chỉ khi cờ bật", () => {
       expect(JSON.stringify(ds[i])).toBe(JSON.stringify(goc[i]));
     }
     const mt = moTa(ds, "read_file");
-    expect(mt.startsWith(moTa(goc, "read_file"))).toBe(true);
-    expect(mt).toContain(".csv files can only be read with read_file, by exact path inside the project directory");
-    expect(mt).toContain("first 200 lines / 32 KB");
-    expect(mt).toContain("find_files and grep do not scan .csv files");
+    // NGUYÊN VĂN của main (shared/agentCore/congCu.ts, 2c02b83d9) + đúng một câu
+    expect(moTa(goc, "read_file")).toBe("Read a text file of the project. Returns numbered lines. Use start_line/end_line for large files.");
+    expect(mt).toBe(
+      "Read a text file of the project. Returns numbered lines. Use start_line/end_line for large files. .csv files can only be read with read_file, by exact path inside the project directory (first 200 lines / 32 KB); find_files and grep do not scan .csv files.",
+    );
     expect(JSON.stringify(ds.find((t) => t.function.name === "read_file")!.function.parameters)).toBe(JSON.stringify(goc.find((t) => t.function.name === "read_file")!.function.parameters));
   });
   it("★★ moTaDocCsv thuần: tool khác `read_file` trả về CHÍNH đối tượng; không đột biến đầu vào", () => {
@@ -90,7 +91,7 @@ describe("lời nhắn khi `.csv` bị cắt (quan sát model thấy)", () => {
     const r = await cat.bo.chay({ id: "c1", ten: "read_file", thamSo: { path: "du_lieu/dai.csv" } }, cat.ctx);
     expect(r.ok).toBe(true);
     expect(r.choModel).toContain("CSV cap (32768 bytes / 200 lines)");
-    expect(r.choModel).toContain("only the first 200 rows of this 70000-byte file are shown, the rest is NOT visible");
+    expect(r.choModel).toContain("only the first 200 rows are shown, cut after line 200 (byte 8 of 70000); later lines are NOT visible and cannot be read further with this tool");
     const khong = taoBo({ path: "du_lieu/nho.csv", bytes: 14, truncated: false, redacted: false, content: "ma,so\nA,1\n", csv: { rows: 2, cutByLines: false } });
     const r2 = await khong.bo.chay({ id: "c2", ten: "read_file", thamSo: { path: "du_lieu/nho.csv" } }, khong.ctx);
     expect(r2.choModel).not.toContain("CSV cap");

@@ -56,10 +56,10 @@ function duongThatCuaDich(abs: string): string | null {
   return null;
 }
 
-/** `con` nằm BÊN TRONG `cha` (không bằng). */
+/** `con` nằm BÊN TRONG `cha` (không bằng). So THEO ĐƯỜNG (`path.relative`), không so tiền tố chuỗi: `sandbox-projects-evil` không nằm trong `sandbox-projects`. */
 function namBenTrong(cha: string, con: string): boolean {
   const rel = path.relative(cha, con);
-  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+  return rel !== "" && rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel);
 }
 
 /**
@@ -96,6 +96,17 @@ export function catCsv(noiDung: string): KetQuaCatCsv {
   const tong = coXuongDongCuoi ? ds.length - 1 : ds.length;
   if (tong <= TRAN_DONG_DOC_CSV) return { noiDung, dong: tong, catTheoDong: false };
   return { noiDung: ds.slice(0, TRAN_DONG_DOC_CSV).join("\n") + "\n", dong: TRAN_DONG_DOC_CSV, catTheoDong: true };
+}
+
+/**
+ * Khối khoá nhiều dòng (`-----BEGIN …-----` … `-----END …-----`) bị cắt ngang ranh giới đọc: `redactSecretsOnly` chỉ khớp khi có CẢ BEGIN lẫn END, nên phần đã đọc mà thiếu END sẽ hiện nguyên
+ * dòng BEGIN + thân cho model. ⇒ Nếu BEGIN cuối cùng chưa có END nào sau nó, cắt TỪ DÒNG BEGIN đó trở đi. Gọi SAU `boDongDoDang`, CHỈ khi đọc bị cắt theo byte. Thuần.
+ */
+export function boKhoiPemDoDang(noiDung: string): string {
+  const b = noiDung.lastIndexOf("-----BEGIN");
+  if (b < 0) return noiDung;
+  if (noiDung.indexOf("-----END", b) >= 0) return noiDung;
+  return noiDung.slice(0, noiDung.lastIndexOf("\n", b) + 1);
 }
 
 /** Bỏ dòng dở dang ở cuối khi đọc bị cắt theo BYTE (không để một chuỗi bí mật bị chặt ngang đúng ranh giới rồi lọt lưới che). */

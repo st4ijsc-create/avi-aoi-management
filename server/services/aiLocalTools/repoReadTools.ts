@@ -239,7 +239,9 @@ const readFileTool: Tool<z.infer<typeof thamSoDocTep>, DuLieuDocTep> = {
     const dau =
       `${kq.relPath} — ${kq.byteTrenDia} byte` +
       (kq.catBot ? `, ĐÃ CẮT ở ${kq.noiDung.length} byte (trần mỗi tệp/ngân sách phiên)` : "") +
-      (kq.csv && kq.catBot ? `; CSV: chỉ trả ${kq.csv.dongTra} dòng đầu của tệp ${kq.byteTrenDia} byte (trần ${TRAN_BYTE_DOC_CSV} byte / ${TRAN_DONG_DOC_CSV} dòng), phần còn lại KHÔNG được hiển thị` : "") +
+      (kq.csv && kq.catBot
+        ? `; CSV: chỉ trả ${kq.csv.dongTra} dòng đầu, CẮT sau dòng ${kq.csv.dongTra} (byte ${Buffer.byteLength(kq.noiDung)} / ${kq.byteTrenDia} byte); các dòng sau KHÔNG được hiển thị và KHÔNG đọc tiếp được bằng công cụ này (trần ${TRAN_BYTE_DOC_CSV} byte / ${TRAN_DONG_DOC_CSV} dòng)`
+        : "") +
       (kq.daChe ? ", CÓ chuỗi bí mật đã bị che" : "") +
       ":";
     return { type: KIEU, title, data, textSummary: `${dau}\n${kq.noiDung}` };

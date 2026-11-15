@@ -646,7 +646,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     if (so.tongDong === 0 || (so.tongDong === 1 && String(d.content ?? "") === "")) ghiChu.push("empty file");
     if (dau !== undefined || cuoi !== undefined || so.catBot) ghiChu.push(`showing lines ${so.dauThat}-${so.cuoiThat}`);
     if (d.truncated) ghiChu.push(`TRUNCATED: only the first ${String(d.content ?? "").length} of ${d.bytes} bytes could be read`);
-    if (d.csv && d.truncated) ghiChu.push(`CSV cap (${TRAN_BYTE_DOC_CSV} bytes / ${TRAN_DONG_DOC_CSV} lines): only the first ${d.csv.rows} rows of this ${d.bytes}-byte file are shown, the rest is NOT visible`);
+    if (d.csv && d.truncated) ghiChu.push(`CSV cap (${TRAN_BYTE_DOC_CSV} bytes / ${TRAN_DONG_DOC_CSV} lines): only the first ${d.csv.rows} rows are shown, cut after line ${d.csv.rows} (byte ${Buffer.byteLength(String(d.content ?? ""))} of ${d.bytes}); later lines are NOT visible and cannot be read further with this tool`);
     if (d.redacted) ghiChu.push("some secret-looking strings are shown as [REDACTED_…] and cannot be edited");
     const dauDong = `${d.path ?? duong} (${so.tongDong} lines${ghiChu.length ? `; ${ghiChu.join("; ")}` : ""})`;
     const duoi = so.catBot ? `\n[… file continues at line ${so.cuoiThat + 1}; read more with start_line/end_line]` : "";

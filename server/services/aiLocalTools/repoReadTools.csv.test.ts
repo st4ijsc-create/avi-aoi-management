@@ -61,9 +61,9 @@ describe("read_file — `.csv` trong dự án (cờ bật)", () => {
     expect(r.data.truncated).toBe(true);
     expect(r.data.content.split("\n").filter(Boolean).length).toBe(200);
     expect(r.data.bytes).toBe(Buffer.byteLength(dongCsv(250)));
-    expect(r.textSummary).toMatch(/CSV/);
-    expect(r.textSummary).toContain("200 dòng");
-    expect(r.textSummary).toContain(String(Buffer.byteLength(dongCsv(250))));
+    const bs = Buffer.byteLength(r.data.content);
+    const that = Buffer.byteLength(dongCsv(250));
+    expect(r.textSummary).toContain(`; CSV: chỉ trả 200 dòng đầu, CẮT sau dòng 200 (byte ${bs} / ${that} byte); các dòng sau KHÔNG được hiển thị và KHÔNG đọc tiếp được bằng công cụ này (trần 32768 byte / 200 dòng)`);
     expect(r.textSummary).toContain("TU_KHOA_CSV_199");
     expect(r.textSummary).not.toContain("TU_KHOA_CSV_200");
   });
@@ -78,13 +78,27 @@ describe("read_file — `.csv` trong dự án (cờ bật)", () => {
   });
 });
 
+describe("read_file — vị trí cắt tính theo BYTE thật (UTF-8 đa byte)", () => {
+  it("★★★ `.csv` tiếng Việt 250 dòng: số byte đã hiển thị trong lời nhắn là BYTE (không phải số ký tự)", async () => {
+    const nd = Array.from({ length: 250 }, (_, i) => `d${i},Nguyễn Văn Ê`).join(String.fromCharCode(10)) + String.fromCharCode(10);
+    fs.writeFileSync(path.join(DU_AN, "du_lieu", "viet.csv"), nd);
+    const r = await doc("du_lieu/viet.csv");
+    const bs = Buffer.byteLength(r.data.content);
+    expect(bs).toBeGreaterThan(r.data.content.length);
+    expect(r.textSummary).toContain(`(byte ${bs} / ${Buffer.byteLength(nd)} byte)`);
+  });
+});
+
 describe("read_file — `.csv` bị TỪ CHỐI như cũ (DENIED_EXT)", () => {
   it("★★★ cờ TẮT ⇒ DENIED_EXT nêu `.csv`", async () => {
     vi.stubEnv("AI_AGENT_CSV_DOC", "0");
     const r = await doc("du_lieu/nho.csv");
     expect(r.note).toBe("DENIED_EXT");
     expect(r.data.content).toBeNull();
-    expect(r.textSummary).toContain(".csv");
+    // NGUYÊN VĂN như main (2c02b83d9, repoReadTools.ts ketQuaTuChoiHopCat) — không đổi một byte khi cờ tắt
+    expect(r.textSummary).toBe(
+      "Phần mở rộng .csv không nằm trong danh sách TRẮNG của hộp cát. Hộp cát chỉ mở cho tệp mã nguồn/cấu hình dạng văn bản; mọi đuôi khác bị từ chối theo mặc định (danh sách TRẮNG, không phải danh sách đen).",
+    );
   });
   it("★★★ cờ BẬT nhưng `.csv` NGOÀI sandbox-projects (gốc repo / docs) ⇒ DENIED_EXT", async () => {
     expect((await doc("docs/ngoai.csv", REPO)).note).toBe("DENIED_EXT");

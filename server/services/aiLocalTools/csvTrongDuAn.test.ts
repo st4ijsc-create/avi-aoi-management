@@ -8,8 +8,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TRAN_BYTE_DOC_CSV, TRAN_DONG_DOC_CSV, catCsv, csvBat, csvDuocPhep, laTepCsv } from "./csvTrongDuAn";
+import { TRAN_BYTE_DOC_CSV, TRAN_DONG_DOC_CSV, boKhoiPemDoDang, catCsv, csvBat, csvDuocPhep, laTepCsv } from "./csvTrongDuAn";
 
+const chr10 = String.fromCharCode(10);
 let goc: string; // "gốc repo" giả
 let sb: string; // <goc>/sandbox-projects
 let duAn: string; // <sb>/agent-f
@@ -75,6 +76,14 @@ describe("csvDuocPhep — phán quyết theo ĐƯỜNG THẬT (realpath), fail-c
     expect(csvDuocPhep(goc, "sandbox-projects/lk/x.csv", { gocSandboxProjects: sb })).toBe(false);
     expect(csvDuocPhep(path.join(sb, "lk"), "x.csv", { gocSandboxProjects: sb })).toBe(false);
   });
+  it("★★★ thư mục ANH EM trùng tiền tố (`sandbox-projects-evil`) KHÔNG được coi là bên trong sandbox-projects (so theo đường, không so tiền tố chuỗi)", () => {
+    const evil = path.join(goc, "sandbox-projects-evil");
+    fs.mkdirSync(evil, { recursive: true });
+    fs.writeFileSync(path.join(evil, "x.csv"), "a,b" + chr10);
+    expect(csvDuocPhep(evil, "x.csv", { gocSandboxProjects: sb })).toBe(false);
+    expect(csvDuocPhep(goc, "sandbox-projects-evil/x.csv", { gocSandboxProjects: sb })).toBe(false);
+    expect(csvDuocPhep(duAn, "../../sandbox-projects-evil/x.csv", { gocSandboxProjects: sb })).toBe(false);
+  });
   it("★★★ cờ TẮT / khác `1` ⇒ KHÔNG, mọi tổ hợp", () => {
     for (const v of ["0", "", "true"]) {
       vi.stubEnv("AI_AGENT_CSV_DOC", v);
@@ -93,6 +102,31 @@ describe("csvDuocPhep — phán quyết theo ĐƯỜNG THẬT (realpath), fail-c
   });
   it("★★ chính thư mục sandbox-projects làm gốc: đọc đường con được (gốc = sandbox-projects)", () => {
     expect(csvDuocPhep(sb, "agent-f/py/du_lieu/a.csv", { gocSandboxProjects: sb })).toBe(true);
+  });
+});
+
+describe("boKhoiPemDoDang — khối PEM bị cắt ngang ranh giới đọc", () => {
+  const pem = (so: number) => ["-----BEGIN PRIVATE KEY-----", ...Array.from({ length: so }, (_, i) => `THAN${i}` + "A".repeat(60)), "-----END PRIVATE KEY-----", ""].join(chr10);
+  it("★★★ BEGIN chưa có END sau nó ⇒ cắt TỪ DÒNG BEGIN trở đi, giữ phần trước nguyên văn", () => {
+    const truoc = ["ma,ghi_chu", "A,ok", ""].join(chr10);
+    const dem = pem(10).split(chr10).slice(0, 6).join(chr10) + chr10; // BEGIN + 5 dòng thân, chưa có END
+    expect(boKhoiPemDoDang(truoc + dem)).toBe(truoc);
+  });
+  it("★★★ BEGIN đã có END sau nó (khối đủ) ⇒ KHÔNG đổi; nhiều khối, khối cuối dở ⇒ chỉ bỏ khối cuối", () => {
+    const du = pem(3);
+    expect(boKhoiPemDoDang(du)).toBe(du);
+    const dở = pem(10).split(chr10).slice(0, 5).join(chr10) + chr10;
+    expect(boKhoiPemDoDang(du + dở)).toBe(du);
+  });
+  it("★★★ BEGIN nằm GIỮA dòng (ô CSV có nháy, `A,\"-----BEGIN…`) ⇒ cắt từ ĐẦU DÒNG đó (cả tiền tố `A,` của dòng), không chỉ từ chữ BEGIN", () => {
+    const truoc = ["ma,x", "A,1", ""].join(chr10);
+    const dở = ["B,\"-----BEGIN PRIVATE KEY-----", "THANTHANTHAN", ""].join(chr10);
+    expect(boKhoiPemDoDang(truoc + dở)).toBe(truoc);
+  });
+  it("★★ không có BEGIN ⇒ nguyên văn; chuỗi rỗng ⇒ rỗng; BEGIN ở đầu tệp, không END ⇒ rỗng", () => {
+    expect(boKhoiPemDoDang("a,b" + chr10)).toBe("a,b" + chr10);
+    expect(boKhoiPemDoDang("")).toBe("");
+    expect(boKhoiPemDoDang(pem(10).split(chr10).slice(0, 4).join(chr10) + chr10)).toBe("");
   });
 });
 
