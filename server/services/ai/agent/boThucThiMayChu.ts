@@ -99,6 +99,7 @@ import {
   type MotEdit,
   type NguCanhThucThi,
   type ThayDoiTep,
+  type WireTool,
 } from "@shared/agentCore";
 import { daBiTuChoiGhi, docKetQuaTest, maTuChoiGhi } from "@shared/aiCodingLoop";
 import { executeDecision as executeDecisionGoc, type PendingActionDTO, type ToolExecContext, type ToolResult } from "../../aiLocalTools";
@@ -125,6 +126,7 @@ import { goiYTraApiTuDauRa, tuTraApiBat } from "../apiRef/goiYLoiBienDich";
 import { cheDoCompileStTacNhan } from "../st/kiemBienDichSt";
 import type { KhoDauRaDai } from "./khoDauRaDai";
 import { goiYLenhTuChoi } from "./goiYLenhTuChoi";
+import { TRAN_BYTE_DOC_CSV, TRAN_DONG_DOC_CSV, csvBat } from "../../aiLocalTools/csvTrongDuAn";
 import { laDuAnPlc } from "./nhanDienDuAnPlc";
 
 /** Lý do gắn vào audit của `confirmAction` cho một lượt ghi KHÔNG người bấm của chế độ `tu-dong`. */
@@ -519,6 +521,21 @@ export function docTruocKhiGhiBat(giaTri: string | undefined): boolean {
   return giaTri === "1";
 }
 
+/**
+ * B1 `.csv` — dòng mô tả thêm cho tool `read_file` khi cờ `AI_AGENT_CSV_DOC=1` (để model khỏi dò lệnh khác): `.csv` chỉ đọc bằng `read_file`, đường chính xác, trong thư mục dự án;
+ * `find_files` / `grep` không quét `.csv`. KHÔNG đổi gì khi cờ tắt (từng byte). Thuần.
+ */
+export function moTaDocCsv(t: WireTool): WireTool {
+  if (t.function.name !== "read_file") return t;
+  return {
+    ...t,
+    function: {
+      ...t.function,
+      description: `${t.function.description} .csv files can only be read with read_file, by exact path inside the project directory (first ${TRAN_DONG_DOC_CSV} lines / ${TRAN_BYTE_DOC_CSV / 1024} KB); find_files and grep do not scan .csv files.`,
+    },
+  };
+}
+
 export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   const p = cauHinh.phuThuoc ?? {};
   const layChiMuc = phanGiaiChiMuc(p.chiMucMa);
@@ -621,7 +638,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
       const tho = docThoTrongHopCat(gocDuAn, duong);
       if (tho.ok && tho.tonTai) ghiNhanBam(duong, tho.noiDung);
     }
-    const d = (result.data ?? {}) as { path?: string; bytes?: number; truncated?: boolean; redacted?: boolean; content?: string };
+    const d = (result.data ?? {}) as { path?: string; bytes?: number; truncated?: boolean; redacted?: boolean; content?: string; csv?: { rows?: number; cutByLines?: boolean } };
     const dau = typeof t.start_line === "number" ? t.start_line : undefined;
     const cuoi = typeof t.end_line === "number" ? t.end_line : undefined;
     const so = danhSoDong(String(d.content ?? ""), { dau, cuoi });
@@ -629,6 +646,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     if (so.tongDong === 0 || (so.tongDong === 1 && String(d.content ?? "") === "")) ghiChu.push("empty file");
     if (dau !== undefined || cuoi !== undefined || so.catBot) ghiChu.push(`showing lines ${so.dauThat}-${so.cuoiThat}`);
     if (d.truncated) ghiChu.push(`TRUNCATED: only the first ${String(d.content ?? "").length} of ${d.bytes} bytes could be read`);
+    if (d.csv && d.truncated) ghiChu.push(`CSV cap (${TRAN_BYTE_DOC_CSV} bytes / ${TRAN_DONG_DOC_CSV} lines): only the first ${d.csv.rows} rows are shown, cut after line ${d.csv.rows} (byte ${Buffer.byteLength(String(d.content ?? ""))} of ${d.bytes}); later lines are NOT visible and cannot be read further with this tool`);
     if (d.redacted) ghiChu.push("some secret-looking strings are shown as [REDACTED_…] and cannot be edited");
     const dauDong = `${d.path ?? duong} (${so.tongDong} lines${ghiChu.length ? `; ${ghiChu.join("; ")}` : ""})`;
     const duoi = so.catBot ? `\n[… file continues at line ${so.cuoiThat + 1}; read more with start_line/end_line]` : "";
@@ -1196,7 +1214,8 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
           ten === "delegate" ? cauHinh.coGiaoViec === true : ten === "read_output" ? cauHinh.khoDauRaDai !== undefined : toolTuyChonBat(ten, process.env, gocDuAn),
         ),
       );
-      return an.size === 0 ? ds : ds.filter((t) => !an.has(t.function.name));
+      const dsCsv = csvBat(process.env.AI_AGENT_CSV_DOC) ? ds.map(moTaDocCsv) : ds;
+      return an.size === 0 ? dsCsv : dsCsv.filter((t) => !an.has(t.function.name));
     },
     async chay(goi, ctx) {
       const kq = await chayMot(goi, ctx);
