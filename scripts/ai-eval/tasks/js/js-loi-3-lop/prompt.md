@@ -4,6 +4,7 @@ Báo lỗi từ kế toán, dự án sandbox-projects/agent-f/js-loi-3-lop (báo
 
 Yêu cầu:
 - Tìm nguyên nhân và sửa TẬN GỐC: một dòng trả hàng phải đúng bằng số âm của dòng bán tương ứng ở mọi khoản (tiền sau giảm, thuế), với mọi đơn giá và mức giảm. Số của đơn không có trả hàng giữ nguyên.
+- Phép tính phần trăm tiền dùng chung (giảm giá, VAT và mọi nơi khác dùng nó) phải đúng cả với số tiền âm (hoàn tiền): phần trăm của một số âm bằng đúng số âm của phần trăm số dương tương ứng; kết quả với số dương giữ nguyên. Ví dụ: 10 % của 12.345 đ là 1.235 đ thì 10 % của -12.345 đ phải là -1.235 đ.
 - KHÔNG đổi định dạng CSV (phần mềm kế toán đọc theo cột).
 - Thêm một tệp test hồi quy mới trong `test/` (đuôi `.test.mjs`) tái hiện đúng lỗi này: phải đỏ trên mã trước khi sửa và xanh sau khi sửa.
 
