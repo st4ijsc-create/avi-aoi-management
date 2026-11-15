@@ -125,6 +125,16 @@ describe("cheKhoiPemThieuEnd — BEGIN không có END TƯƠNG ỨNG tới hết 
     const dở = khoi("OPENSSH PRIVATE KEY", 6).split(chr10).slice(0, 3).join(chr10) + chr10;
     expect(cheKhoiPemThieuEnd(dau + du + dở)).toEqual({ text: dau + du + DAU_CHE_PEM_THIEU_END + chr10, daChe: true });
   });
+  it("★★★ khối ĐỦ với nhãn KHÁC (CERTIFICATE, RSA PRIVATE KEY, PGP PRIVATE KEY BLOCK, nhãn có số) ⇒ KHÔNG đổi (để redactSecretsOnly lo); nhãn không theo mẫu chữ HOA/số (chữ thường, ký tự lạ) ⇒ không nhận ra ⇒ che (fail-closed)", () => {
+    for (const nhan of ["CERTIFICATE", "RSA PRIVATE KEY", "PGP PRIVATE KEY BLOCK", "EC PARAMETERS", "X509 CRL"]) {
+      const du = khoi(nhan, 2);
+      expect(cheKhoiPemThieuEnd(dau + du), nhan).toEqual({ text: dau + du, daChe: false });
+    }
+    for (const nhan of ["private key", "Private-Key", "KEY_1"]) {
+      const du = [`-----BEGIN ${nhan}-----`, "THANTHAN" + "A".repeat(40), `-----END ${nhan}-----`, ""].join(chr10);
+      expect(cheKhoiPemThieuEnd(dau + du), nhan).toEqual({ text: dau + DAU_CHE_PEM_THIEU_END + chr10, daChe: true });
+    }
+  });
   it("★★★ END LỆCH NHÃN (BEGIN PRIVATE KEY … END CERTIFICATE) = không tương ứng ⇒ che từ BEGIN (bộ che chung KHÔNG che ca này)", () => {
     const lech = ["-----BEGIN PRIVATE KEY-----", "THANTHAN" + "A".repeat(40), "-----END CERTIFICATE-----", ""].join(chr10);
     const r = cheKhoiPemThieuEnd(dau + lech);
