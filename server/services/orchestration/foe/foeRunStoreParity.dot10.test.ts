@@ -2037,6 +2037,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   // chu-du-an-HST 15/11, chữ bất biến chính thức (chép nguyên văn): "walker và Continue không bao giờ gửi STOP ghim hai lần; Abort là lần gửi riêng của người, chỉ gửi lại STOP chưa xác nhận (acked_verified)"
   // Phạm vi ba ca A/B/C dưới đây: walker + Continue (không có Abort). Abort: bốn ca T4-B3-ABORT-GUI-LAI-* ngay sau chúng.
   it("T4-B3-STOP-BAT-BIEN-A (ô #20, bất biến L-7, walker + Continue) TRUNG TÂM: r1 trả timeout, bù trừ cst là STOP ghim ⇒ khi run kết thúc, walker và Continue đã gửi cst ĐÚNG MỘT lần, không bao giờ hai lần", async () => {
+    // trung tâm chỉ hỏi ghim cho lệnh stop ở ca này (3/3); đột biến 'pinned cho mọi lệnh' không phân biệt được ở A, được giữ bởi ABORT-GUI-LAI-TT-* (kiem-dinh 15/11)
     ghimHalt();
     h.ghim = async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // central pin answer: a STOP only (never the ordinary c1)
     h.timeoutDispatch.add("r1");
@@ -2070,8 +2071,11 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   // Abort gửi lại STOP ghim chưa xác nhận, không gửi lại STOP đã xác nhận (acked_verified). Trung tâm và edge giống nhau.
   // Ca khẳng định hành vi CÓ SẴN (đo tại 11addedba, do-26, bao-cao mục 26; trung tâm và edge giống nhau); không có pha đỏ trên mã cũ;
   // đột biến A1/A2 của buoc3/dot-bien-qd4.sh phải làm ca đỏ; chu-du-an-HST 15/11
+  // Hai lớp chặn gửi lại STOP acked_verified (tại fe909613a): lớp 1 foeEngine.ts:1619-1620 (planner có `nguoi`); lớp 2 foeRunStore.ts:522 + :547-548, áp ở foeEngine.ts:6934 (phân loại "xong").
+  // Đột biến làm đỏ: A1 cho hai ca CHUA-XN; A4 (cả hai lớp) cho hai ca DA-XN. A2/A3 chỉ phá lớp 1 nên ca DA-XN sống sót (lớp 2 vẫn loại s9).
   const gocAbortGuiLai = async (ref: string, xacNhan: boolean, duong: "trungTam" | "edge") => {
     ghimHalt();
+    // các ca EDGE: đường edge quyết ghim bằng thẻ thật (ghimHalt, device_tags stopValue:true); h.ghim không được hỏi ở các ca này (kiem-dinh đếm 0 lần, 15/11)
     h.ghim = async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // chỉ STOP là ghim
     h.acked = xacNhan;
     h.ackStatus = xacNhan ? "acked_verified" : "acked";
@@ -2091,8 +2095,9 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     const s9 = () => h.sent.filter((x) => x.stepId === "s9" && x.runId === runId).map((x) => String(x.key));
     expect(runRow(runId).status, "trước Abort: run đang giữ").toBe("held");
     expect(s9(), "trước Abort: s9 đã gửi đúng một lần, khoá của walker").toEqual([expect.stringMatching(new RegExp(`^run${runId}-s9-a1$`))]);
-    await abortRun(runId, OWNER, "checked on site").catch((err: unknown) => String(err));
+    const kq = await abortRun(runId, OWNER, "checked on site"); // không bắt lỗi: abortRun ném thì ca đỏ
     await new Promise((r) => setTimeout(r, 100));
+    expect(kq, "Abort thật sự chạy").toMatchObject({ ok: true, status: "aborted" });
     return { runId, s9: s9() };
   };
   for (const [duong, tenDuong] of [["trungTam", "TT"], ["edge", "EDGE"]] as const) {
@@ -2163,6 +2168,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   it("T4-B3-QD5-ABORT-CO-DAU (QĐ4 (iii), có dấu) the latch's URGENT durable at the hold (DA_BAO r1): an Abort does NOT tell the forward work again; the pinned STOP goes as usual (the Abort's own send)", async () => {
     ghimHalt();
     h.ghim = async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // central pin answer: a STOP only (never the ordinary c1)
+    // đường edge quyết ghim bằng thẻ thật (ghimHalt, device_tags stopValue:true); h.ghim không được hỏi ở ca này (kiem-dinh đếm 0 lần, 15/11)
     const e = await giuCoDau("qd5-abd", ot("c1"));
     const a0 = h.alerts.length;
     await abortRun(e.runId, OWNER, "checked on site");
@@ -2205,6 +2211,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   it("T4-B3-QD5-ABORT (QĐ4 (iii), không dấu) edge journalFull, run latched only through foeOutcomeUnknown (no latch record, no DA_BAO): an Abort after the hold tells the dropped forward work again and sends the owed pinned STOP once", async () => {
     ghimHalt();
     h.ghim = async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // central pin answer: a STOP only (never the ordinary c1)
+    // đường edge quyết ghim bằng thẻ thật (ghimHalt, device_tags stopValue:true); h.ghim không được hỏi ở ca này (kiem-dinh đếm 0 lần, 15/11)
     const e = await edgeAssignedRun(def("qd5-ab", [gate(), move("r1", { maxAttempts: 2, compensation: ot("c1") }), move("r2"), otStop("s9")]));
     await edgeSegment(e, 1);
     await approveEdgeGate(e);
