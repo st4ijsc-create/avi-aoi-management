@@ -1919,12 +1919,18 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     const n0 = h.sent.length;
     h.failPlan.set("r1", 1); // the first send is refused by the device ⇒ the walker would retry …
     e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
+    const urgent = (tu: number) => h.alerts.slice(tu).map((a) => String(a.dedupKey)).sort();
+    const a2 = h.alerts.length;
     const s2 = await edgeSegment(e, 2);
     expect(s2.out).toMatchObject({ outcome: "held", heldReason: "journalFull", outcomeUnknown: ["r1"] });
     expect(s2.out.error).toMatch(/^EDGE_OUTCOME_UNKNOWN\(r1\)/);
     expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]); // … but never re-sends it; r2 / c1 never sent
     expect(runRow(e.runId).status).toBe("held");
     expect(runRow(e.runId).contextJson.foeOutcomeUnknown).toEqual(["r1"]);
+    // chu-du-an-HST 15/11: khớp chuẩn trung tâm T4-B3-URGENT-TT (#18); kỳ vọng 3c85d0bad viết theo luồng hai lần giữ.
+    // At the hold (segment 2, claim 2): EXACTLY the two URGENTs central's walk raises at its hold — `held` for the pair waiting for a person, `forwardNotSent` for the forward step dropped
+    await new Promise((r) => setTimeout(r, 50));
+    expect(urgent(a2), "segment 2: exactly two URGENTs").toEqual([`${CANH_BAO_KHONG_RO_KIND.held}:${e.runId}:r1:c1:claim2`, `${CANH_BAO_KHONG_RO_KIND.forwardNotSent}:${e.runId}:r2:${KHONG_CO_BU_TRU}:claim2`].sort());
     // Continue: r1 is NOT sent again — it is a failure. Its compensation c1 is NOT a pinned STOP ⇒ never sent by itself on a device whose state is unknown.
     // T4 bước 3, chủ dự án 14/11, R2 (a): central's end of segment 2 already names r1/c1 in the outcome-unknown mark (r1 ∈ U, it has a compensation) ⇒ as on a
     // central run, ONE Continue by a person with machine-control rights AND a reason approves exactly c1; it is sent in the NEXT segment (after its interlock).
@@ -1952,6 +1958,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     const duyet = runRow(e.runId).contextJson.foeKetCucKhongRoDuyet as { buTru: unknown; at: string };
     expect(duyet.buTru).toEqual([{ stepId: "r1", compId: "c1" }]);
     expect(soC1(), "still nothing authorised: the approval is a record, not a send").toEqual([]);
+    const a3 = h.alerts.length;
     const s3 = await edgeSegment(e, 3);
     expect(s3.out).toMatchObject({ outcome: "failed" });
     // chủ dự án 14/11, R2 (a) (HST, điều kiện 1) — c1 REALLY went, EXACTLY ONCE: one hand-over, one step row, one ledger record with its result; and AFTER the approval
@@ -1960,8 +1967,14 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(stepRows(e.runId).filter((s) => s.stepId === "c1")).toEqual([expect.objectContaining({ status: "compensated" })]);
     expect(soC1(), "the ledger: c1 authorised once, its result recorded").toEqual([expect.objectContaining({ supersededAt: null, resultReportedAt: expect.any(Date) })]);
     expect((soC1()[0]!.resultReportedAt as Date).getTime(), "the order: the approval first, the send of c1 after it").toBeGreaterThanOrEqual(Date.parse(duyet.at));
-    // A2(n) T6 (decision 3, H13) — r2 never goes forward on this latched run: a person is told
-    expect(e.events!.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION").map((x) => JSON.parse(x.detail))).toEqual([expect.objectContaining({ loai: "forwardNotSent", stepId: "r2", claimSeq: 3 })]);
+    // A2(n) T6 (decision 3, H13) — r2 never goes forward on this latched run: the person was told at the hold (segment 2, above).
+    // QĐ5 (chu-du-an-HST 15/11): after the ONE approved Continue, nothing but AT MOST one run_end, and it names r1 (never the forward step); no noCompensation, no approvedNotSent.
+    // The exact expectation (#18: no URGENT at all) is T4-B3-RUNEND-THUA (it.fails, a known limit)
+    await new Promise((r) => setTimeout(r, 50));
+    const k3 = urgent(a3);
+    expect(k3.filter((k) => !k.startsWith(`${CANH_BAO_KHONG_RO_KIND.runEnd}:`)), "segment 3: no URGENT but a run_end").toEqual([]);
+    expect(k3.length, "at most one run_end").toBeLessThanOrEqual(1);
+    for (const k of k3) expect(k, "the run_end names r1").toMatch(new RegExp(`^${CANH_BAO_KHONG_RO_KIND.runEnd}:${e.runId}:r1:`));
     expect(h.sent.map((x) => x.stepId)).not.toContain("r2");
   });
 
@@ -2007,6 +2020,142 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     await resumeRun(e.runId, { approved: true, note: "interlock clear now", expectedStepId: v.run.currentStepId, expectedDefHash: v.defHash!, expectedBindingDigest: v.bindingDigest! }, OTHER).catch((err: unknown) => err);
     expect(runRow(e.runId).status).toBe("failed");
     expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]); // ★ nothing sent: no second approval of a failed run
+  });
+
+  // ── T4 bước 3, ô #20 (HST DUYỆT thay ca điều kiện 3 của QĐ1, 15/11): bù trừ là STOP ghim của lệnh có kết cục không rõ ──
+  const ghimHalt = () => fake.seed(deviceTags, [...rows("device_tags"), { id: 73, adapterId: 501, tagKey: "halt", address: "00001", dataType: "bool", scale: null, offset: null, updatedAt: T0, writable: true, isEnabled: true, stopValue: true }]);
+  const dinhNghiaStop = (ref: string) => def(ref, [gate(), move("r1", { maxAttempts: 2, compensation: otStop("cst") }), move("r2")]);
+  const lanGuiCst = () => h.sent.filter((x) => x.stepId === "cst").map((x) => String(x.key));
+  /** đường B: sổ edge từ chối bản ghi kết quả của r1 ⇒ đoạn 2 giữ journalFull */
+  const doanJournalFull = async (e: EdgeHarness) => {
+    h.failPlan.set("r1", 1);
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
+    const s2 = await edgeSegment(e, 2);
+    e.refuse = undefined;
+    return s2;
+  };
+  it("T4-B3-STOP-BAT-BIEN-A (ô #20, bất biến L-7) TRUNG TÂM: r1 trả timeout, bù trừ cst là STOP ghim ⇒ khi run kết thúc cst đã đi ĐÚNG MỘT lần, không bao giờ hai lần", async () => {
+    ghimHalt();
+    h.ghim = async () => ({ pinnedStop: true, loiDocGhim: null });
+    h.timeoutDispatch.add("r1");
+    const c = await centralRun(dinhNghiaStop("d20-a"), 1);
+    expect(["failed", "aborted", "completed"]).toContain(runRow(c).status);
+    expect(lanGuiCst(), "cst exactly once, one command key").toHaveLength(1);
+  });
+  it("T4-B3-STOP-BAT-BIEN-B (ô #20, bất biến L-7) EDGE, đường journalFull: dù cst đi ở đoạn nào, khi run kết thúc cst đã đi ĐÚNG MỘT lần, không bao giờ hai lần", async () => {
+    ghimHalt();
+    const e = await edgeAssignedRun(dinhNghiaStop("d20-b"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const s2 = await doanJournalFull(e);
+    expect(s2.out).toMatchObject({ outcome: "held" });
+    expect(lanGuiCst().length, "never twice, at any point").toBeLessThanOrEqual(1);
+    await approveEdgeGate(e); // a STOP compensation is never behind the person gate (R2 (a), condition 4): a plain Continue is taken
+    await edgeSegment(e, 3);
+    expect(runRow(e.runId).status).toBe("failed");
+    expect(lanGuiCst(), "cst exactly once, one command key").toHaveLength(1);
+  });
+  it("T4-B3-STOP-BAT-BIEN-C (ô #20, bất biến L-7) EDGE, r1 trả timeout NGAY trong đoạn ⇒ khi run kết thúc cst đã đi ĐÚNG MỘT lần", async () => {
+    ghimHalt();
+    const e = await edgeAssignedRun(dinhNghiaStop("d20-c"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("r1");
+    await edgeSegment(e, 2);
+    expect(runRow(e.runId).status).toBe("failed");
+    expect(lanGuiCst(), "cst exactly once, one command key").toHaveLength(1);
+  });
+  // ô #20, lệch L-7 có từ afde4270a, chờ chủ dự án quyết đường gửi STOP; chu-du-an-HST 15/11
+  it.fails("T4-B3-O20 (ô #20, it.fails, CHỈ thời điểm gửi) EDGE, đường journalFull: STOP ghim của bù trừ đi NGAY ở đoạn 2, lúc giữ, như trung tâm", async () => {
+    ghimHalt();
+    const e = await edgeAssignedRun(dinhNghiaStop("d20-o20"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await doanJournalFull(e);
+    expect(lanGuiCst(), "cst went at the hold (segment 2)").toHaveLength(1);
+  });
+  it("T4-B3-O20-URGENT (ô #20, ca THƯỜNG) EDGE, đường journalFull, bù trừ là STOP ghim: URGENT ở đoạn 2 sau (iv) ⇒ forwardNotSent cho r2 (claim 2); STOP KHÔNG bao giờ đứng sau cổng người (không held cho r1/cst, không dấu); lý do held vẫn journalFull", async () => {
+    ghimHalt();
+    const e = await edgeAssignedRun(dinhNghiaStop("d20-u"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const a2 = h.alerts.length;
+    const s2 = await doanJournalFull(e);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "journalFull", outcomeUnknown: ["r1"] });
+    const khoa = h.alerts.slice(a2).map((a) => String(a.dedupKey));
+    // QĐ5 mục 5 (chu-du-an-HST 15/11): toContain, NOT the whole set, on purpose — on this path segment 2 also lacks an URGENT about the STOP not yet sent; that gap is ô #20
+    // (T4-B3-O20, it.fails): pinning the whole set here would pin it
+    expect(khoa).toContain(`${CANH_BAO_KHONG_RO_KIND.forwardNotSent}:${e.runId}:r2:${KHONG_CO_BU_TRU}:claim2`);
+    expect(khoa.filter((k) => k.startsWith(`${CANH_BAO_KHONG_RO_KIND.held}:`)), "a STOP compensation is never held for a person").toEqual([]);
+    expect(runRow(e.runId).contextJson.foeKetCucKhongRo).toBeUndefined();
+  });
+
+  // giới hạn đã biết: edge journalFull + Continue được duyệt ⇒ một run_end(r1) thừa ở cuối, hướng đóng; gốc: không có bản ghi chốt khi kết cục chỉ do nút báo; SG-T1 giải; chu-du-an-HST 15/11
+  it.fails("T4-B3-RUNEND-THUA (#18, kỳ vọng ĐÚNG) edge journalFull, ONE approved Continue: segment 3 raises NO URGENT at all", async () => {
+    const e = await edgeAssignedRun(def("qd5-rt", [gate(), move("r1", { maxAttempts: 2, compensation: ot("c1") }), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await doanJournalFull(e);
+    expect((await continueOutcomeUnknown(e, "checked on site: r1 not applied")).status).toBe("queued");
+    const a3 = h.alerts.length;
+    await edgeSegment(e, 3);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(h.alerts.slice(a3).map((a) => String(a.dedupKey))).toEqual([]);
+  });
+  /** the unknown INSIDE the segment (r1 answers timeout): the walker holds c1 itself, its held report rides on the end ⇒ the latch is r1 and DA_BAO is written (QĐ4) */
+  const giuCoDau = async (ref: string, comp: WorkflowStep) => {
+    const e = await edgeAssignedRun(def(ref, [gate(), move("r1", { compensation: comp }), move("r2"), otStop("s9")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("r1");
+    await edgeSegment(e, 2);
+    h.timeoutDispatch.clear();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(runRow(e.runId).status).toBe("held");
+    expect(runRow(e.runId).contextJson[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY], "the mark: the latch's URGENT is durable").toMatchObject({ stepId: "r1" });
+    return e;
+  };
+  it("T4-B3-QD5-ABORT-CO-DAU (QĐ4 (iii), có dấu) the latch's URGENT durable at the hold (DA_BAO r1): an Abort does NOT tell the forward work again; the pinned STOP goes as usual (the Abort's own send)", async () => {
+    ghimHalt();
+    h.ghim = async () => ({ pinnedStop: true, loiDocGhim: null });
+    const e = await giuCoDau("qd5-abd", ot("c1"));
+    const a0 = h.alerts.length;
+    await abortRun(e.runId, OWNER, "checked on site");
+    await new Promise((r) => setTimeout(r, 100));
+    // "as usual" (measured 15/11 at afde4270a AND b832110d6, do-iv probe2): the edge walker's latched STOP pass sent s9 in segment 2 (`run<id>-s9-a1`), and the Abort sends it again
+    // under its own key (`run<id>-abort-…-s9`): an Abort may send again a STOP nothing confirmed (G). Not this lot's to change; the never-twice invariant is for an end with no Abort
+    expect(h.sent.filter((x) => x.stepId === "s9" && /-abort-/.test(String(x.key))), "the Abort sends the pinned STOP, as usual").toHaveLength(1);
+    expect(h.alerts.slice(a0).map((a) => String(a.dedupKey)).filter((k) => k.startsWith(`${CANH_BAO_KHONG_RO_KIND.forwardNotSent}:`) && k.endsWith(":abort")), "not told again: the mark says it was").toEqual([]);
+  });
+  it("T4-B3-QD5-SU-CO-MOI (QĐ4 (v)) the mark present, the ONE approved Continue, and c1's interlock BLOCKS in segment 3: that NEW incident still raises its URGENT (approvedNotSent r1/c1)", async () => {
+    ghimHalt();
+    const e = await giuCoDau("qd5-sm", ot("c1", { precondition: { source: "telemetry", machineId: 1, key: "temp", op: "lt", value: 100 }, onPreconditionFail: "hold" }));
+    expect((await continueOutcomeUnknown(e, "checked on site: r1 not applied")).status).toBe("queued");
+    h.telemetry = [{ key: "temp", value: 150 }];
+    const a3 = h.alerts.length;
+    await edgeSegment(e, 3);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(h.sent.filter((x) => x.stepId === "c1"), "c1 NOT sent").toEqual([]);
+    expect(h.alerts.slice(a3).map((a) => String(a.dedupKey))).toContain(`${CANH_BAO_KHONG_RO_KIND.approvedNotSent}:${e.runId}:r1:c1:claim3`);
+  });
+
+  // QĐ5 (HST 15/11), mục 3 — run chốt CHỈ qua foeOutcomeUnknown (kết cục do nút báo, không có bản ghi chốt, không có dấu DA_BAO): Abort sau lúc giữ phải NÓI LẠI và gửi STOP nợ như thường
+  it("T4-B3-QD5-ABORT (QĐ4 (iii), không dấu) edge journalFull, run latched only through foeOutcomeUnknown (no latch record, no DA_BAO): an Abort after the hold tells the dropped forward work again and sends the owed pinned STOP once", async () => {
+    ghimHalt();
+    h.ghim = async () => ({ pinnedStop: true, loiDocGhim: null });
+    const e = await edgeAssignedRun(def("qd5-ab", [gate(), move("r1", { maxAttempts: 2, compensation: ot("c1") }), move("r2"), otStop("s9")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await doanJournalFull(e);
+    expect(runRow(e.runId).status).toBe("held");
+    expect(runRow(e.runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY], "no latch record").toBeUndefined();
+    expect(runRow(e.runId).contextJson[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY], "no mark").toBeUndefined();
+    const a0 = h.alerts.length;
+    await abortRun(e.runId, OWNER, "checked on site");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(h.sent.filter((x) => x.stepId === "s9"), "the owed STOP goes, once").toHaveLength(1);
+    expect(h.alerts.slice(a0).map((a) => String(a.dedupKey)), "the Abort tells the forward work again (no mark)").toContain(`${CANH_BAO_KHONG_RO_KIND.forwardNotSent}:${e.runId}:r2:${KHONG_CO_BU_TRU}:abort`);
   });
 
   it("T4-B3-R2A-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của ca trên) the same refused POST-SEND result, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never sent again", async () => {
