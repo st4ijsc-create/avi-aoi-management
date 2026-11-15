@@ -2226,6 +2226,68 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(h.alerts.slice(a0).map((a) => String(a.dedupKey)), "the Abort tells the forward work again (no mark)").toContain(`${CANH_BAO_KHONG_RO_KIND.forwardNotSent}:${e.runId}:r2:${KHONG_CO_BU_TRU}:abort`);
   });
 
+  // Đ-3 (chu-du-an-HST 15/11, P2): đoạn 3 kết thúc held SAU KHI bù trừ c1 (đã duyệt) đã đi. Đo tại 491c12e8f (buoc3/bao-cao.md mục 29): held(r1/c1) claim 3 nói "NOT sent" cho c1 ĐÃ ĐI, dấu đòi Continue lần hai.
+  // Đúng: không còn held cho cặp đó; ĐÚNG MỘT URGENT nói thật về c1 (đã gửi, kết cục chưa xác nhận); dấu không đòi người duyệt lại c1; c1 không đi lần hai
+  it("T4-B3-HELD-DA-GUI (Đ-3, P2) edge journalFull, MỘT Continue được duyệt, c1 đã đi ở đoạn 3 rồi đoạn 3 kết thúc held vì sổ: KHÔNG held(r1/c1) 'NOT sent'; ĐÚNG MỘT URGENT thật về c1; dấu không đòi duyệt lại; c1 một lần", async () => {
+    const e = await edgeAssignedRun(def("hdg", [gate(), move("r1", { maxAttempts: 2, compensation: ot("c1") }), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const n0 = h.sent.length;
+    h.failPlan.set("r1", 1);
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
+    const s2 = await edgeSegment(e, 2);
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "journalFull", outcomeUnknown: ["r1"] });
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "c1" && typeof (rec.result as any)?.routedTo === "string"; // the journal refuses c1's RESULT, after c1 went
+    expect((await continueOutcomeUnknown(e, "checked on site: r1 not applied")).status).toBe("queued");
+    const a3 = h.alerts.length;
+    const s3 = await edgeSegment(e, 3);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(s3.out).toMatchObject({ outcome: "held", heldReason: "journalFull" });
+    expect(h.sent.slice(n0).filter((x) => x.stepId === "c1"), "c1 went once").toHaveLength(1);
+    const dg = h.alerts.slice(a3);
+    const khoaC1 = dg.map((a) => String(a.dedupKey)).filter((k) => k.includes(`:${e.runId}:r1:c1:`));
+    expect(khoaC1.filter((k) => k.startsWith(`${CANH_BAO_KHONG_RO_KIND.held}:`)), "no held(r1/c1) for a compensation that went").toEqual([]);
+    expect(dg.filter((a) => /NOT sent/.test(String(a.message))), "no URGENT says NOT sent").toEqual([]);
+    expect(runRow(e.runId).status).toBe("held");
+    expect(runRow(e.runId).contextJson.foeKetCucKhongRo, "the mark does not ask a person to approve c1 again").toBeUndefined();
+    expect(khoaC1, "exactly one true URGENT about c1: sent, outcome not confirmed").toEqual([expect.stringMatching(new RegExp(`^(${CANH_BAO_KHONG_RO_KIND.approvedNotConfirmed}|${CANH_BAO_KHONG_RO_KIND.compensationUnknown}):${e.runId}:r1:c1:claim3$`))]);
+  });
+
+  // Q-1 (chu-du-an-HST 15/11): held() chờ URGENT bền tới 5·D trong giao dịch giữ khoá hàng run (foeRunStore.ts:2136, :2204, KET_DOAN_EDGE_TONG_MS :733). Abort bấm trong lúc đó: ghi `aborted` chờ khoá, nhưng bị chặn bởi D
+  // (foeEngine.ts:7234-7250) rồi VẪN quét STOP. Khoá hàng của Postgres không có trong FakeDb (for() là no-op): chờ khoá được mô hình bằng h.treAborted (trễ của lần ghi `aborted`), cơ chế có sẵn. Đo thật: mục 29 / 30 của bao-cao.md
+  afterEach(() => vi.useRealTimers());
+  it("T4-B3-Q1-ABORT-TRONG-CHO (Q-1, fake timers) Abort bấm trong lúc held() chờ URGENT bền (URGENT treo) và lần ghi `aborted` chờ khoá 5·D: STOP nợ s9 đi ĐÚNG MỘT lần, trễ thêm ≤ D", async () => {
+    ghimHalt();
+    h.ghim = async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // chỉ STOP là ghim
+    const e = await edgeAssignedRun(def("q1", [gate(), move("r1", { compensation: ot("c1") }), move("r2"), otStop("s9")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    h.timeoutDispatch.add("r1");
+    h.alertTreo = true;
+    const doan = edgeSegment(e, 2); // held() chờ URGENT bền (treo) tới 5·D
+    await vi.advanceTimersByTimeAsync(50);
+    h.timeoutDispatch.clear();
+    expect(h.treoLan, "held() đã phát URGENT và đang chờ nó").toBeGreaterThan(0);
+    const guiAbort = () => h.sent.filter((x) => x.stepId === "s9" && /-abort-/.test(String(x.key)));
+    const t0 = Date.now();
+    let tStop = -1;
+    const push = h.sent.push.bind(h.sent);
+    (h.sent as any).push = (...a: any[]) => {
+      if (a[0]?.stepId === "s9" && /-abort-/.test(String(a[0]?.key)) && tStop < 0) tStop = Date.now() - t0;
+      return push(...a);
+    };
+    h.treAborted = 5 * STOP_DB_STEP_DEADLINE_MS; // the row lock the hold keeps: the `aborted` write lands only when held() ends
+    const ab = abortRun(e.runId, OWNER, "checked on site");
+    await vi.advanceTimersByTimeAsync(STOP_DB_STEP_DEADLINE_MS);
+    expect(guiAbort(), "past D the sweep ran and the owed STOP went once").toHaveLength(1);
+    expect(tStop, "the extra delay is at most D").toBeLessThanOrEqual(STOP_DB_STEP_DEADLINE_MS);
+    await vi.advanceTimersByTimeAsync(6 * STOP_DB_STEP_DEADLINE_MS);
+    await Promise.all([doan, ab]);
+    delete (h.sent as any).push; // the own property set above: nothing else of the array is left changed
+    expect(guiAbort(), "still exactly once when the hold and the delayed write end").toHaveLength(1);
+  });
+
   it("T4-B3-R2A-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của ca trên) the same refused POST-SEND result, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never sent again", async () => {
     const e = await edgeAssignedRun(def("ja-e-dc", [gate(), move("r1", { maxAttempts: 2 }), move("r2")]));
     await edgeSegment(e, 1);

@@ -230,3 +230,43 @@ describe("T4 bước 3 — các ca bắt buộc thêm (R1, phần hợp U, chố
     expect(r).toEqual({ khongRo: [], chot: null, canhBao: [], soLoiChung: false, buTruCanNguoi: [] });
   });
 });
+
+// Đ-3 (chu-du-an-HST 15/11, P2): cặp (x, cx) ĐÃ DUYỆT (ctx) VÀ cx có mục sổ uỷ quyền chưa supersede (cx đã đi) không còn "chờ người": không vào buTruCanNguoi, và được nói thật bằng
+// approvedNotConfirmed (luật của foeEngine.ts:1333: bù trừ đã duyệt, đã giao, kết cục chưa xác nhận). Ca đường thật: T4-B3-HELD-DA-GUI ở foeRunStoreParity.dot10.test.ts.
+describe("T4 bước 3 — Đ-3 (P2): cặp đã duyệt và đã gửi", () => {
+  const duyet = { foeKetCucKhongRoDuyet: { stepId: "x", buTru: [{ stepId: "x", compId: "cx" }], by: 12, at: "2026-11-15T00:00:00Z" } };
+  const ctxDuyet = { foeOutcomeUnknown: ["x"], ...duyet };
+  const dd = dinhNghia(move("x", move("cx")));
+  const ACN = (s: string, c: string) => `approvedNotConfirmed:${s}:${c}`;
+  it("T4-B3-HELD-DA-GUI-TT (a)(b) đã duyệt + cx có mục sổ chưa supersede: KHÔNG buTruCanNguoi; ĐÚNG MỘT approvedNotConfirmed(x/cx), claim của đoạn", () => {
+    const r = goi({ def: dd, hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x"), uq("cx", { resultStatus: "acked" })] }, ctx: ctxDuyet, claimSeq: 3 });
+    expect(r.buTruCanNguoi).toEqual([]);
+    expect(cb(r)).toEqual([ACN("x", "cx")]);
+    expect(r.canhBao.find((b) => b.loai === "approvedNotConfirmed")).toEqual({ loai: "approvedNotConfirmed", stepId: "x", compId: "cx", ma: MA, claimSeq: 3 });
+  });
+  it("T4-B3-HELD-DA-GUI-CHUA-DUYET có mục sổ chưa supersede nhưng CHƯA ai duyệt cặp: vẫn chờ người (buTruCanNguoi nêu x), không approvedNotConfirmed", () => {
+    const r = goi({ def: dd, hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x"), uq("cx", { resultStatus: "acked" })] }, ctx: { foeOutcomeUnknown: ["x"] } });
+    expect(r.buTruCanNguoi).toEqual(["x"]);
+    expect(cb(r)).not.toContain(ACN("x", "cx"));
+  });
+  it("T4-B3-HELD-DA-GUI-SO-LOI đã duyệt nhưng sổ đọc lỗi (muc null): giữ như trước (buTruCanNguoi nêu x), không approvedNotConfirmed", () => {
+    const r = goi({ def: dd, hang: [hangChay("x")], so: { doc: "loi" }, ctx: ctxDuyet });
+    expect(r.buTruCanNguoi).toEqual(["x"]);
+    expect(cb(r)).not.toContain(ACN("x", "cx"));
+  });
+  it("T4-B3-HELD-DA-GUI-CHUA-GUI đã duyệt nhưng cx CHƯA có mục sổ (chưa gửi): vẫn chờ giao (buTruCanNguoi nêu x), không approvedNotConfirmed", () => {
+    const r = goi({ def: dd, hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x")] }, ctx: ctxDuyet });
+    expect(r.buTruCanNguoi).toEqual(["x"]);
+    expect(cb(r)).not.toContain(ACN("x", "cx"));
+  });
+  it("T4-B3-HELD-DA-GUI-SUPERSEDE đã duyệt, mục sổ của cx ĐÃ supersede (không còn là lần gửi hiện hành): như chưa gửi, vẫn buTruCanNguoi", () => {
+    const r = goi({ def: dd, hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x"), uq("cx", { supersededAt: "2026-11-14T00:00:00Z", resultStatus: "acked" })] }, ctx: ctxDuyet });
+    expect(r.buTruCanNguoi).toEqual(["x"]);
+    expect(cb(r)).not.toContain(ACN("x", "cx"));
+  });
+  it("T4-B3-HELD-DA-GUI-RIDER rider đã báo approvedNotConfirmed(x/cx): bộ lọc (7) bỏ báo cáo của central, không phát hai lần", () => {
+    const r = goi({ def: dd, hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x"), uq("cx", { resultStatus: "acked" })] }, ctx: ctxDuyet, bao: [bao("approvedNotConfirmed", "x", "cx")] });
+    expect(cb(r)).not.toContain(ACN("x", "cx"));
+    expect(r.buTruCanNguoi).toEqual([]);
+  });
+});
