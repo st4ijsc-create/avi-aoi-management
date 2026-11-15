@@ -2034,7 +2034,9 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     e.refuse = undefined;
     return s2;
   };
-  it("T4-B3-STOP-BAT-BIEN-A (ô #20, bất biến L-7) TRUNG TÂM: r1 trả timeout, bù trừ cst là STOP ghim ⇒ khi run kết thúc cst đã đi ĐÚNG MỘT lần, không bao giờ hai lần", async () => {
+  // chu-du-an-HST 15/11, chữ bất biến chính thức (chép nguyên văn): "walker và Continue không bao giờ gửi STOP ghim hai lần; Abort là lần gửi riêng của người, chỉ gửi lại STOP chưa xác nhận (acked_verified)"
+  // Phạm vi ba ca A/B/C dưới đây: walker + Continue (không có Abort). Abort: bốn ca T4-B3-ABORT-GUI-LAI-* ngay sau chúng.
+  it("T4-B3-STOP-BAT-BIEN-A (ô #20, bất biến L-7, walker + Continue) TRUNG TÂM: r1 trả timeout, bù trừ cst là STOP ghim ⇒ khi run kết thúc, walker và Continue đã gửi cst ĐÚNG MỘT lần, không bao giờ hai lần", async () => {
     ghimHalt();
     h.ghim = async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // central pin answer: a STOP only (never the ordinary c1)
     h.timeoutDispatch.add("r1");
@@ -2042,7 +2044,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(["failed", "aborted", "completed"]).toContain(runRow(c).status);
     expect(lanGuiCst(), "cst exactly once, one command key").toHaveLength(1);
   });
-  it("T4-B3-STOP-BAT-BIEN-B (ô #20, bất biến L-7) EDGE, đường journalFull: dù cst đi ở đoạn nào, khi run kết thúc cst đã đi ĐÚNG MỘT lần, không bao giờ hai lần", async () => {
+  it("T4-B3-STOP-BAT-BIEN-B (ô #20, bất biến L-7, walker + Continue) EDGE, đường journalFull: dù cst đi ở đoạn nào, khi run kết thúc, walker và Continue đã gửi cst ĐÚNG MỘT lần, không bao giờ hai lần", async () => {
     ghimHalt();
     const e = await edgeAssignedRun(dinhNghiaStop("d20-b"));
     await edgeSegment(e, 1);
@@ -2055,7 +2057,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(runRow(e.runId).status).toBe("failed");
     expect(lanGuiCst(), "cst exactly once, one command key").toHaveLength(1);
   });
-  it("T4-B3-STOP-BAT-BIEN-C (ô #20, bất biến L-7) EDGE, r1 trả timeout NGAY trong đoạn ⇒ khi run kết thúc cst đã đi ĐÚNG MỘT lần", async () => {
+  it("T4-B3-STOP-BAT-BIEN-C (ô #20, bất biến L-7, walker + Continue) EDGE, r1 trả timeout NGAY trong đoạn ⇒ khi run kết thúc, walker và Continue đã gửi cst ĐÚNG MỘT lần", async () => {
     ghimHalt();
     const e = await edgeAssignedRun(dinhNghiaStop("d20-c"));
     await edgeSegment(e, 1);
@@ -2065,6 +2067,48 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(runRow(e.runId).status).toBe("failed");
     expect(lanGuiCst(), "cst exactly once, one command key").toHaveLength(1);
   });
+  // Abort gửi lại STOP ghim chưa xác nhận, không gửi lại STOP đã xác nhận (acked_verified). Trung tâm và edge giống nhau.
+  // Ca khẳng định hành vi CÓ SẴN (đo tại 11addedba, do-26, bao-cao mục 26; trung tâm và edge giống nhau); không có pha đỏ trên mã cũ;
+  // đột biến A1/A2 của buoc3/dot-bien-qd4.sh phải làm ca đỏ; chu-du-an-HST 15/11
+  const gocAbortGuiLai = async (ref: string, xacNhan: boolean, duong: "trungTam" | "edge") => {
+    ghimHalt();
+    h.ghim = async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // chỉ STOP là ghim
+    h.acked = xacNhan;
+    h.ackStatus = xacNhan ? "acked_verified" : "acked";
+    const d = def(ref, [gate(), move("r1", { compensation: ot("c1") }), move("r2"), otStop("s9")]);
+    let runId: number;
+    h.timeoutDispatch.add("r1");
+    if (duong === "trungTam") {
+      runId = await centralRun(d, 1);
+    } else {
+      const e = await edgeAssignedRun(d);
+      await edgeSegment(e, 1);
+      await approveEdgeGate(e);
+      await edgeSegment(e, 2);
+      runId = e.runId;
+    }
+    h.timeoutDispatch.clear();
+    const s9 = () => h.sent.filter((x) => x.stepId === "s9" && x.runId === runId).map((x) => String(x.key));
+    expect(runRow(runId).status, "trước Abort: run đang giữ").toBe("held");
+    expect(s9(), "trước Abort: s9 đã gửi đúng một lần, khoá của walker").toEqual([expect.stringMatching(new RegExp(`^run${runId}-s9-a1$`))]);
+    await abortRun(runId, OWNER, "checked on site").catch((err: unknown) => String(err));
+    await new Promise((r) => setTimeout(r, 100));
+    return { runId, s9: s9() };
+  };
+  for (const [duong, tenDuong] of [["trungTam", "TT"], ["edge", "EDGE"]] as const) {
+    it(`T4-B3-ABORT-GUI-LAI-${tenDuong}-CHUA-XN (${duong}) STOP ghim s9 chưa xác nhận (simulated): Abort gửi lại ĐÚNG MỘT lần với khoá riêng của Abort; tổng hai lần`, async () => {
+      const { runId, s9 } = await gocAbortGuiLai(`abort-gl-${tenDuong}-cxn`, false, duong);
+      expect(s9).toHaveLength(2);
+      expect(s9[0]).toBe(`run${runId}-s9-a1`);
+      expect(s9[1], "khoá của Abort").toMatch(new RegExp(`^run${runId}-abort-[a-z0-9]+-s9$`));
+      expect(rows("orchestration_run_steps").find((r) => r.runId === runId && r.stepId === "abort:s9")).toMatchObject({ status: "completed" });
+    });
+    it(`T4-B3-ABORT-GUI-LAI-${tenDuong}-DA-XN (${duong}) STOP ghim s9 đã xác nhận (acked_verified): Abort KHÔNG gửi lại; tổng một lần`, async () => {
+      const { runId, s9 } = await gocAbortGuiLai(`abort-gl-${tenDuong}-dxn`, true, duong);
+      expect(s9).toEqual([`run${runId}-s9-a1`]);
+      expect(rows("orchestration_run_steps").filter((r) => r.runId === runId && String(r.stepId).startsWith("abort:"))).toEqual([]);
+    });
+  }
   // ô #20, lệch L-7 có từ afde4270a, chờ chủ dự án quyết đường gửi STOP; chu-du-an-HST 15/11
   it.fails("T4-B3-O20 (ô #20, it.fails, CHỈ thời điểm gửi) EDGE, đường journalFull: STOP ghim của bù trừ đi NGAY ở đoạn 2, lúc giữ, như trung tâm", async () => {
     ghimHalt();
