@@ -3598,13 +3598,23 @@ async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<Orches
     await rc.store.persistContext(rc);
     return "aborted";
   }
+  // T4 bước 3 (iv) (HST QĐ1 15/11) — an edge segment whose journal refused the result of a command it sent ends with that command unknown, the walk not latched: the forward work a Continue
+  // drops is told now, by THE rule (buocTienBiBo, reported below by baoBuocTienBiBo), as baoH13KhiAbort does; never duongKetThuc here: its STOP pass would change when a STOP goes (HST (d))
+  const khongRoDoan = daChotKhongRo(rc) ? undefined : rc.store.buocKhongRoDoan?.();
   if (daChotKhongRo(rc)) out = await duongKetThuc(rc, out);
+  else if (khongRoDoan?.size) {
+    for (const id of khongRoDoan) (rc.khongRoTai ??= new Map()).set(id, `EDGE_OUTCOME_UNKNOWN: command "${id}" was sent and its result could not be recorded.`);
+    rc.khongGuiDs = await buocTienBiBo(rc, await rc.store.sweepSource({ live: rc, hasLiveDriver: () => true }).catch(() => null));
+  }
   // R1b-2b-2a A2(n) (R-4) — an unknown outcome with no compensation due anywhere: nothing was split, nobody was told yet
-  // (C-A) — the same on a paused / held / aborted end: the flag rode on it
+  // (C-A) — the same on a paused / held / aborted end: the flag rode on it. T4 bước 3 (#18) — a step whose compensation a Continue approved and that went: told already, nothing more
   const loiKhongRoKet = loiKhongRoRun(rc, null, out);
   if (loiKhongRoKet !== undefined && !rc.khongRoDaBao) {
     const lan = luotDiCua(rc);
-    for (const stepId of rc.khongRoGoc ?? []) baoKetCucKhongRo(rc, { loai: "noCompensation", stepId, compId: KHONG_CO_BU_TRU, error: loiCoMaKhongRo(loiKhongRoKet), lan });
+    for (const stepId of rc.khongRoGoc ?? []) {
+      const cid = findStepDeep(rc.def.steps, stepId)?.compensation?.id;
+      if (!(cid && daDuyetBuTruKhongRo(rc.context, stepId, cid) && rc.buTruDaGui?.has(cid))) baoKetCucKhongRo(rc, { loai: "noCompensation", stepId, compId: KHONG_CO_BU_TRU, error: loiCoMaKhongRo(loiKhongRoKet), lan });
+    }
   }
   // A2(n) (decision 3) — forward work dropped: said in its own words, whatever else this walk told. T6 (H13) — one URGENT per branch dropped, read by duongKetThuc
   baoBuocTienBiBo(rc, luotDiCua(rc));

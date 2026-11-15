@@ -48,7 +48,7 @@ import { toRobotJob } from "../../equipment/robotJobMapping";
 import { readEdgeAssignment } from "../../edge/edgeExecutionSchema"; // A2(n) T8 lượt sửa 1 (CHAN-3) — a run given to an edge node: its claim's progress is its heartbeat; lượt sửa 2 (CHAN-4): through the shared read (0370 missing ⇒ no edge)
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, docDsKhongRoEdge, TRAN_LOI_EDGE, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, rutGonGiua, TRAN_TEN_NUT, TRAN_LY_DO, VI_KHONG_BAO, CAU_TAY_MAY, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, BUOC_KHONG_XAC_DINH, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, docDsKhongRoEdge, TRAN_LOI_EDGE, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, rutGonGiua, TRAN_TEN_NUT, TRAN_LY_DO, VI_KHONG_BAO, CAU_TAY_MAY, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 import { edgeStepAuthorizations } from "../../edge/edgeControlSchema"; // T9 lượt sửa 3e — central's authorisation ledger (0372), read at an edge segment end (SELECT only)
 import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
@@ -270,6 +270,8 @@ export interface RunStore {
   buTruLaStopGhim?(rc: RunStoreContext, comp: WorkflowStep): Promise<LaStop>;
   /** R1b-2b-2a A2(n) — tell a person (central: URGENT alert; edge: an anomaly central turns into that alert). Never throws, never awaited. */
   ketCucKhongRo?(rc: RunStoreContext, a: KetCucKhongRoBaoCao): void | Promise<boolean>;
+  /** T4 bước 3 (iv) — edge: the commands of this segment sent whose result its journal refused (outcome unknown, never sent again). Absent on central */
+  buocKhongRoDoan?(): ReadonlySet<string>;
   /**
    * A2(n) extension (4) — EDGE only: the authorisation `stepId` holds was never used (the sink refused the hand-over). Central supersedes it, so nothing reads the
    * step as possibly sent. The rows stop quoting it from the call (its synchronous part: a quoted jti is evidence of use). Never rejects. The central store has none.
@@ -2185,12 +2187,15 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     for (const st of allStepsOf(end.def.steps)) if (st.type === "command" && (await laStopTheoBuoc(st, new Map()).catch(() => false))) stops.add(st.id);
     // the context it reads: the run's, its list ∪ khongRoCuaDoan (3e: U wide, and a latch S is read with)
     const q = quyetDinhKetDoanEdge({ runId, claimSeq: end.claimSeq, def: end.def, hang, so: au ? { doc: "duoc", muc: au } : { doc: "loi" }, stops, rider: riderThieu === true ? "thieu" : "du", bao: baoKhongRo, ctx: { ...ctx, [OUTCOME_UNKNOWN_KEY]: [...prevUnknown, ...unknown] } });
-    for (const b of q.canhBao) void cachEdgeTrungTam(runId, end.def, b).then((k) => canhBaoTuBaoCaoEdge(runId, b, run.startedBy ?? null, k)).catch(() => false);
     const ou = [...new Set([...prevUnknown, ...unknown, ...q.khongRo])];
     const dauCu = reason === "outcomeUnknown" && (!error?.startsWith(`${FOE_STOP_NOT_SENT}:`) || baoKhongRo.some((x) => x.loai === "held"));
     // R2 (a) (chủ dự án 14/11) — a command with a compensation in U: the mark NAMES it with its own compensation in `ds` (never empty, never "?"): ONE Continue by a person with a reason approves that pair (duyetKhongRo), as central's walk
     const buTruCua = new Map(allStepsOf(end.def.steps).map((s) => [s.id, s.compensation?.id] as const));
     const dauBu: BaoCaoKhongRoEdge[] = q.buTruCanNguoi.filter((id) => !baoKhongRo.some((b) => b.loai === "held" && b.stepId === id)).map((id) => ({ loai: "held", stepId: id, compId: buTruCua.get(id) ?? "?", ma: maKetCucKhongRoCua(end.error), claimSeq: end.claimSeq }));
+    // T4 bước 3 (iv) (HST 15/11, #17 / #19) — the pair waiting for a person is told HERE, as central's walk tells it at the hold (`held`, the rider's key: a report on the end is never told twice); the rider short or
+    // broken (#19: the node's anomalies may be lost with it): ONE forwardNotSent naming no step (the forward work a Continue drops is the node's to name, buocTienBiBo)
+    const luoi: BaoCaoKhongRoEdge[] = riderThieu === true && q.buTruCanNguoi.length > 0 && !baoKhongRo.some((b) => b.loai === "forwardNotSent") ? [{ loai: "forwardNotSent", stepId: BUOC_KHONG_XAC_DINH, compId: KHONG_CO_BU_TRU, ma: maKetCucKhongRoCua(end.error), claimSeq: end.claimSeq }] : [];
+    for (const b of [...q.canhBao, ...dauBu, ...luoi]) void cachEdgeTrungTam(runId, end.def, b).then((k) => canhBaoTuBaoCaoEdge(runId, b, run.startedBy ?? null, k)).catch(() => false);
     return write("held", {
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)

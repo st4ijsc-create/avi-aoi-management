@@ -32,7 +32,7 @@ vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
 
 import { FakeDb } from "../../../routers/__otFakeDb";
 import { applyEdgeSegmentEnd } from "./foeRunStore";
-import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, ganBaoCaoKhongRoEdge, runDaChotKhongRo, tachBaoCaoKhongRoEdge } from "./foeKetCucKhongRo";
+import { BUOC_KHONG_XAC_DINH, CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, noiDungCanhBaoKhongRo, ganBaoCaoKhongRoEdge, runDaChotKhongRo, tachBaoCaoKhongRoEdge } from "./foeKetCucKhongRo";
 import { edgeResumeStateOf, stopChuaRaTuHang } from "./foeRunStore";
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
 
@@ -165,6 +165,53 @@ describe("T4 — dạng 4, the cases of the review (rider short or unreadable)",
     const { ctx } = await ket({ ref: "t4b3o16dc", name: "t4b3o16dc", steps: [move("x")] } as never);
     expect(ctx[KET_CUC_KHONG_RO_CTX_KEY]).toBeUndefined();
     expect(khoaCua("noCompensation", "x")).toHaveLength(1);
+  });
+  // HST 15/11, hướng (iv) — bảng #17 / #19, ĐỎ trước. Chuẩn trung tâm T4-B3-URGENT-TT: lúc giữ ĐÚNG HAI URGENT, `held` cho cặp chờ duyệt và `forwardNotSent` cho bước forward bị bỏ.
+  // Lý do held của đoạn giữ nguyên (journalFull). So ĐÚNG tập khoá của MỌI URGENT.
+  const defXY = () => ({ ref: "t4b3xy", name: "t4b3xy", steps: [{ ...move("x"), compensation: move("cx") }, move("y")] }) as never as WorkflowDefinition;
+  const hangX = () => d.store.set("orchestration_run_steps", [{ runId: RUN, stepId: "x", stepType: "command", status: "running", attempt: 1, error: null, resultJson: { routedTo: "robot-dispatcher" } }]);
+  const tatCaKhoa = () => H.alerts.map((a) => String(a.dedupKey)).sort();
+  const K = (kind: keyof typeof CANH_BAO_KHONG_RO_KIND, step: string, comp: string) => `${CANH_BAO_KHONG_RO_KIND[kind]}:${RUN}:${step}:${comp}:claim1`;
+  const riderCo = (bao: Array<Record<string, unknown>>) => ganBaoCaoKhongRoEdge("EDGE_HELD(journalFull): the journal refused a record (journal_full) — the run is held.", bao as never, 4_000)!;
+  it("T4-B3-O17-DA-BAO (bảng #17, rider ĐỦ và đã báo held + forwardNotSent) ⇒ ĐÚNG HAI URGENT, central không phát thêm cái thứ ba; lý do held vẫn journalFull", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    hangX();
+    const { ctx } = await ket(defXY(), riderCo([{ loai: "held", stepId: "x", compId: "cx", ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }, { loai: "forwardNotSent", stepId: "y", compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }]));
+    expect(ctx.edgeHeld).toBe("journalFull");
+    expect(tatCaKhoa()).toEqual([K("held", "x", "cx"), K("forwardNotSent", "y", KHONG_CO_BU_TRU)].sort());
+  });
+  it("T4-B3-O17-KHONG-BAO (bảng #17, rider ĐỦ, chở forwardNotSent của y nhưng KHÔNG báo held) ⇒ ĐÚNG HAI URGENT: held x/cx do central phát, forwardNotSent y của rider; lưới #19 không phát (phủ định)", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    hangX();
+    const { ctx } = await ket(defXY(), riderCo([{ loai: "forwardNotSent", stepId: "y", compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }]));
+    expect(ctx.edgeHeld).toBe("journalFull");
+    expect(tatCaKhoa()).toEqual([K("held", "x", "cx"), K("forwardNotSent", "y", KHONG_CO_BU_TRU)].sort());
+  });
+  it("T4-B3-O19 (bảng #19, rider HỎNG, sổ sự kiện đầy: không anomaly nào tới) ⇒ held cho từng cặp chờ duyệt, cộng MỘT forwardNotSent KHÔNG nêu bước (\"?\"), câu nói không xác định được bước nào bị bỏ, kiểm tại chỗ", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    hangX();
+    const { ctx } = await ket(defXY());
+    expect(ctx.edgeHeld).toBe("journalFull");
+    expect(tatCaKhoa()).toEqual([K("held", "x", "cx"), K("forwardNotSent", "?", KHONG_CO_BU_TRU)].sort());
+    const f = H.alerts.find((a) => String(a.dedupKey) === K("forwardNotSent", "?", KHONG_CO_BU_TRU))!;
+    expect(String(f.title)).toMatch(/which command could not be determined/);
+    expect(String(f.message)).toMatch(/Check the machine on site/);
+    expect(String(f.message), "QĐ3 — the cause said: the node's report unreadable with its event journal full").toMatch(/edge node's report of them was unreadable while its event journal was full/);
+  });
+  it("T4-B3-O19-TRAN (QĐ3) the words of a forwardNotSent naming no step stay under the 800-character ceiling, at the longest run id and event", () => {
+    const n = noiDungCanhBaoKhongRo({ loai: "forwardNotSent", runId: Number.MAX_SAFE_INTEGER, stepId: BUOC_KHONG_XAC_DINH, compId: KHONG_CO_BU_TRU, error: "EDGE_OUTCOME_UNKNOWN", lan: `claim${Number.MAX_SAFE_INTEGER}` });
+    expect(n.message).toMatch(/could not be determined/);
+    expect(n.message.length).toBeLessThanOrEqual(800);
+    expect(n.title.length).toBeLessThanOrEqual(800);
+  });
+  it("T4-B3-O19-HAI-CAP (bảng #19) rider hỏng, HAI lệnh có bù trừ có thể đã đi ⇒ held cho TỪNG cặp, vẫn chỉ MỘT forwardNotSent không nêu bước", async () => {
+    d.store.set("edge_step_authorizations", [so("x"), so("z")]);
+    d.store.set("orchestration_run_steps", [
+      { runId: RUN, stepId: "x", stepType: "command", status: "running", attempt: 1, error: null, resultJson: { routedTo: "robot-dispatcher" } },
+      { runId: RUN, stepId: "z", stepType: "command", status: "running", attempt: 1, error: null, resultJson: { routedTo: "robot-dispatcher" } },
+    ]);
+    await ket({ ref: "t4b3o19h", name: "t4b3o19h", steps: [{ ...move("x"), compensation: move("cx") }, { ...move("z"), compensation: move("cz") }, move("y")] } as never);
+    expect(tatCaKhoa()).toEqual([K("held", "x", "cx"), K("held", "z", "cz"), K("forwardNotSent", "?", KHONG_CO_BU_TRU)].sort());
   });
   // HST 14/11: Q2 đi cùng lô client. Ô #8 (sổ đọc lỗi VÀ lệnh không có hàng): kỳ vọng ĐÚNG là MỘT URGENT chung cho run (kind foe_outcome_unknown_ledger_unreadable,
   // dedupKey dựng theo run) cùng H; hàm thuần đã trả soLoiChung nhưng held() CHƯA dùng nó ở lượt này ⇒ it.fails.

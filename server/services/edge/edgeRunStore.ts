@@ -626,6 +626,9 @@ export class EdgeRunStore extends EdgeStoreBase {
     this.event({ kind: "anomaly", code: KHONG_RO_EDGE_ANOMALY, runId: this.io.runId, detail, at: Date.now() });
   }
 
+  /** T4 bước 3 (iv) — the commands of this segment sent whose result the journal refused (outcome unknown): the walker's end tells the forward work it drops */
+  buocKhongRoDoan(): ReadonlySet<string> { return this.outcomeUnknown; }
+
   /** An abort STOP never asks (L-7): it is bound to this run segment for the edge dispatch's ledger, nothing else. */
   bindAbortStop(runId: number, step: Extract<WorkflowStep, { type: "command" }>, cmd: EquipmentCommand): void {
     bindEdge(cmd, { authorization: null, run: { runId, claimSeq: this.io.claimSeq, stepId: step.id, attempt: 0 }, source: "local" });
