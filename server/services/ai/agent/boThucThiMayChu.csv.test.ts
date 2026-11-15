@@ -1,6 +1,6 @@
 /**
  * B1 `.csv` ở BỘ THỰC THI MÁY CHỦ của tác nhân: (1) dòng mô tả `read_file` CHỈ khi cờ AI_AGENT_CSV_DOC=1 (tắt ⇒ từng byte như cũ); (2) lời nhắn "CSV cap" khi `.csv` bị cắt;
- * (3) `docThoTrongHopCat` (đọc trước khi ghi) mở `.csv` đúng phạm vi. THUẦN: executeDecision / kiemKillSwitch giả, thư mục tạm thật, không CSDL.
+ * (3) `docThoTrongHopCat` (đọc trước khi ghi) KHÔNG mở `.csv` (GHI chưa được duyệt). THUẦN: executeDecision / kiemKillSwitch giả, thư mục tạm thật, không CSDL.
  * ĐỘT BIẾN PHẢI BẮT: mô tả đổi khi cờ tắt · mô tả đổi tool khác · bỏ lời nhắn cắt · docThoTrongHopCat mở ngoài sandbox-projects.
  */
 import fs from "node:fs";
@@ -101,16 +101,13 @@ describe("lời nhắn khi `.csv` bị cắt (quan sát model thấy)", () => {
   });
 });
 
-describe("docThoTrongHopCat — đọc `.csv` đã có trước khi ghi (cờ bật)", () => {
-  it("★★★ gốc dự án dưới sandbox-projects ⇒ đọc được nội dung nguyên văn", () => {
-    expect(docThoTrongHopCat(DU_AN, "du_lieu/nho.csv")).toEqual({ ok: true, tonTai: true, noiDung: "ma,so\nA,1\n" });
-    expect(docThoTrongHopCat(DU_AN, "du_lieu/chua-co.csv")).toEqual({ ok: true, tonTai: false, noiDung: "" });
-  });
-  it("★★★ gốc là gốc repo, hoặc tệp ngoài sandbox-projects ⇒ DENIED_EXT; cờ tắt ⇒ DENIED_EXT", () => {
+describe("docThoTrongHopCat — đường ĐỌC-TRƯỚC-KHI-GHI KHÔNG mở `.csv` (ghi chưa duyệt), cờ bật", () => {
+  it("★★★ `.csv` trong dự án / gốc repo / ngoài sandbox-projects ⇒ DENIED_EXT; tệp mã vẫn đọc được", () => {
+    expect(docThoTrongHopCat(DU_AN, "du_lieu/nho.csv")).toMatchObject({ ok: false, ma: "DENIED_EXT" });
+    expect(docThoTrongHopCat(DU_AN, "du_lieu/chua-co.csv")).toMatchObject({ ok: false, ma: "DENIED_EXT" });
     expect(docThoTrongHopCat(REPO, "sandbox-projects/agent-f/du_lieu/nho.csv")).toMatchObject({ ok: false, ma: "DENIED_EXT" });
     expect(docThoTrongHopCat(REPO, "docs/ngoai.csv")).toMatchObject({ ok: false, ma: "DENIED_EXT" });
-    expect(docThoTrongHopCat(path.join(REPO, "docs"), "ngoai.csv")).toMatchObject({ ok: false, ma: "DENIED_EXT" });
-    vi.stubEnv("AI_AGENT_CSV_DOC", "0");
-    expect(docThoTrongHopCat(DU_AN, "du_lieu/nho.csv")).toMatchObject({ ok: false, ma: "DENIED_EXT" });
+    fs.writeFileSync(path.join(DU_AN, "ma.py"), ["x = 1", ""].join("\n"));
+    expect(docThoTrongHopCat(DU_AN, "ma.py")).toEqual({ ok: true, tonTai: true, noiDung: ["x = 1", ""].join("\n") });
   });
 });

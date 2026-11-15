@@ -1,8 +1,8 @@
 /**
  * B1 `.csv` — phán quyết theo ĐƯỜNG + cắt đọc. THUẦN: thư mục tạm thật, không CSDL, không mạng.
- * Phạm vi do chủ dự án duyệt (qua HST): CHỈ đường dưới `sandbox-projects/**`; đọc có trần 32 KB / 200 dòng; ghi chỉ trong chính dự án; mặc định TẮT (cờ AI_AGENT_CSV_DOC).
+ * Phạm vi do chủ dự án duyệt (14/11, qua HST): CHỈ ĐỌC, CHỈ đường dưới `sandbox-projects/**`; trần 32 KB / 200 dòng; mặc định TẮT (cờ AI_AGENT_CSV_DOC). GHI chưa được duyệt ⇒ không có ở đây.
  * ĐỘT BIẾN PHẢI BẮT: mặc định BẬT · cờ khác `1` cũng bật · kiểm CHUỖI `sandbox-projects` trên đường tương đối (bẫy goc = sandbox-projects/agent-f) · bỏ realpath
- * (junction trỏ ra ngoài) · ghi được khi goc là gốc repo · bỏ trần dòng · bỏ trần byte · cắt giữa dòng · đuôi khác (.csv.txt) lọt.
+ * (junction trỏ ra ngoài) · bỏ trần dòng · bỏ trần byte · cắt giữa dòng · đuôi khác (.csv.txt) lọt.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -53,17 +53,11 @@ describe("csvDuocPhep — phán quyết theo ĐƯỜNG THẬT (realpath), fail-c
   it("★★★ BẪY agent-f: gốc = sandbox-projects/agent-f, đường tương đối KHÔNG chứa chữ `sandbox-projects` ⇒ ĐƯỢC (kiểm trên đường tuyệt đối đã giải)", () => {
     expect(csvDuocPhep(duAn, "py/du_lieu/a.csv", { gocSandboxProjects: sb })).toBe(true);
   });
-  it("★★★ gốc = gốc repo, đường đi vào sandbox-projects ⇒ ĐỌC được; GHI thì KHÔNG (gốc phải là chính dự án)", () => {
+  it("★★★ gốc = gốc repo, đường đi vào sandbox-projects ⇒ ĐỌC được", () => {
     expect(csvDuocPhep(goc, "sandbox-projects/agent-f/py/du_lieu/a.csv", { gocSandboxProjects: sb })).toBe(true);
-    expect(csvDuocPhep(goc, "sandbox-projects/agent-f/py/du_lieu/a.csv", { gocSandboxProjects: sb, ghi: true })).toBe(false);
   });
-  it("★★★ GHI trong chính dự án (gốc nằm dưới sandbox-projects), kể cả tệp CHƯA tồn tại và thư mục cha chưa có", () => {
-    expect(csvDuocPhep(duAn, "py/tests/data/moi.csv", { gocSandboxProjects: sb, ghi: true })).toBe(true);
-    expect(csvDuocPhep(duAn, "moi.csv", { gocSandboxProjects: sb, ghi: true })).toBe(true);
-  });
-  it("★★★ `.csv` NGOÀI sandbox-projects (docs/, gốc repo) ⇒ KHÔNG, đọc lẫn ghi", () => {
+  it("★★★ `.csv` NGOÀI sandbox-projects (docs/, gốc repo) ⇒ KHÔNG", () => {
     expect(csvDuocPhep(goc, "docs/x.csv", { gocSandboxProjects: sb })).toBe(false);
-    expect(csvDuocPhep(goc, "docs/x.csv", { gocSandboxProjects: sb, ghi: true })).toBe(false);
     expect(csvDuocPhep(goc, "moi.csv", { gocSandboxProjects: sb })).toBe(false);
     expect(csvDuocPhep(path.join(goc, "docs"), "x.csv", { gocSandboxProjects: sb })).toBe(false);
   });
@@ -85,7 +79,6 @@ describe("csvDuocPhep — phán quyết theo ĐƯỜNG THẬT (realpath), fail-c
     for (const v of ["0", "", "true"]) {
       vi.stubEnv("AI_AGENT_CSV_DOC", v);
       expect(csvDuocPhep(duAn, "py/du_lieu/a.csv", { gocSandboxProjects: sb }), v).toBe(false);
-      expect(csvDuocPhep(duAn, "moi.csv", { gocSandboxProjects: sb, ghi: true }), v).toBe(false);
     }
     vi.unstubAllEnvs();
     expect(csvDuocPhep(duAn, "py/du_lieu/a.csv", { gocSandboxProjects: sb })).toBe(false);
@@ -98,9 +91,8 @@ describe("csvDuocPhep — phán quyết theo ĐƯỜNG THẬT (realpath), fail-c
     for (const d of [undefined, null, 42, "", {}]) expect(() => csvDuocPhep(duAn, d as unknown, { gocSandboxProjects: sb })).not.toThrow();
     for (const d of [undefined, null, 42, "", {}]) expect(csvDuocPhep(duAn, d as unknown, { gocSandboxProjects: sb }), String(d)).toBe(false);
   });
-  it("★★ chính thư mục sandbox-projects làm gốc: đọc / ghi đường con đều được (gốc = sandbox-projects)", () => {
+  it("★★ chính thư mục sandbox-projects làm gốc: đọc đường con được (gốc = sandbox-projects)", () => {
     expect(csvDuocPhep(sb, "agent-f/py/du_lieu/a.csv", { gocSandboxProjects: sb })).toBe(true);
-    expect(csvDuocPhep(sb, "agent-f/moi.csv", { gocSandboxProjects: sb, ghi: true })).toBe(true);
   });
 });
 

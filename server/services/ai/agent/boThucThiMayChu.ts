@@ -343,7 +343,7 @@ export type KetQuaDocTho =
  * (fd, trần `TRAN_TEP`). Không che, không trừ ngân sách (việc nội bộ, không byte nào tới cửa sổ chat).
  */
 export function docThoTrongHopCat(goc: string, duong: string): KetQuaDocTho {
-  const cs = phanQuyetChinhSachDuong(duong, goc);
+  const cs = phanQuyetChinhSachDuong(duong);
   if (!cs.ok) return { ok: false, ma: cs.ma, chiTiet: cs.chiTiet };
   const c = confineTargetUnder(goc, duong);
   if (!c.ok) {

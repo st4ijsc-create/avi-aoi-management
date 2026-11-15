@@ -1,6 +1,6 @@
 /**
  * B1 `.csv` — CA PHỦ ĐỊNH CHO TỪNG ĐƯỜNG KHÔNG ĐƯỢC MỞ THEO + CENSUS điểm gọi. Cờ AI_AGENT_CSV_DOC=1 BẬT trong cả tệp này (chứng minh không rò theo khi cờ bật).
- * Phạm vi duyệt: chỉ `read_file` (đọc) và `apply_diff.phanQuyetChinhSachDuong(duong, goc)` (ghi) hỏi `csvDuocPhep`. KHÔNG mở theo: chỉ mục mã, nhập ZIP, cửa git, dòng chữ prompt,
+ * Phạm vi duyệt (14/11): chỉ ĐỌC; chỉ `read_file` (qua `moTepTrongHopCat`) hỏi `csvDuocPhep`. GHI chưa duyệt. KHÔNG mở theo: ghi, chỉ mục mã, nhập ZIP, cửa git, dòng chữ prompt,
  * `grep`/`glob`, tạo khung, xoá/đổi tên, IDE người dùng, đường AI ngoài.
  * ĐỘT BIẾN PHẢI BẮT: thêm `.csv` vào DUOI_CHO_PHEP · thêm điểm gọi `csvDuocPhep` ở nơi khác · đặt `choPhepCsv` ở người gọi khác (IDE / git / ST) · chỉ mục / ZIP / git đổi sang dùng `csvDuocPhep`.
  */
@@ -12,7 +12,7 @@ import { DUOI_CAM_NGOAI, DUOI_CHO_PHEP, DUOI_CHO_PHEP_NGOAI, TEN_TEP_CHO_PHEP, p
 import { docTepChiMuc } from "../ai/chiMucMa/hopCatChiMuc";
 import { lyDoBoQua } from "../ai/duAnCaNhan/nhapZipAnToan";
 import { duoiDuocPhep, duyetTepDocDuoc } from "./repoSandbox";
-import { phanQuyetChinhSachDuong } from "./writeHandlers/applyDiff";
+import { phanQuyet, phanQuyetChinhSachDuong } from "./writeHandlers/applyDiff";
 
 let REPO: string;
 let DU_AN: string;
@@ -55,9 +55,10 @@ describe("KHÔNG mở theo — hành vi (cờ BẬT)", () => {
     expect(kq.tep).toContain("ma.py");
     expect(kq.tep.some((t) => t.endsWith(".csv"))).toBe(false);
   });
-  it("★★★ xoá / đổi tên (phanQuyetChinhSachDuong KHÔNG truyền gốc) vẫn từ chối `.csv`; dự án đúng thì chỉ cửa GHI mở (có gốc)", () => {
-    expect(phanQuyetChinhSachDuong("du_lieu/nho.csv")).toMatchObject({ ok: false, ma: "DENIED_EXT" });
-    expect(phanQuyetChinhSachDuong("du_lieu/nho.csv", DU_AN)).toEqual({ ok: true });
+  it("★★★ GHI (phanQuyetChinhSachDuong + phanQuyet của apply_diff) và xoá / đổi tên: `.csv` VẪN bị từ chối, kể cả trong chính dự án", async () => {
+    expect(phanQuyetChinhSachDuong("du_lieu/nho.csv")).toMatchObject({ ok: false, ma: "DENIED_EXT", chiTiet: ".csv" });
+    expect(phanQuyetChinhSachDuong("du_lieu/moi.csv")).toMatchObject({ ok: false, ma: "DENIED_EXT", chiTiet: ".csv" });
+    expect(await phanQuyet({ path: "du_lieu/moi.csv", original: "", modified: ["a,b", "1,2", ""].join("\n") }, DU_AN)).toMatchObject({ ok: false, ma: "DENIED_EXT" });
   });
 });
 
@@ -86,12 +87,9 @@ const boChuThich = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^
 describe("CENSUS — chỉ đúng chỗ được duyệt hỏi `.csv`", () => {
   const nguon = nguonSanXuat();
   const dem = (re: RegExp) => nguon.map((f) => ({ rel: f.rel, n: (boChuThich(f.text).match(re) ?? []).length })).filter((x) => x.n > 0);
-  it("★★★ điểm gọi `csvDuocPhep(` ngoài chính nó: đúng HAI chỗ (repoSandbox.moTepTrongHopCat — đọc; applyDiff.phanQuyetChinhSachDuong — ghi)", () => {
+  it("★★★ điểm gọi `csvDuocPhep(` ngoài chính nó: đúng MỘT chỗ (repoSandbox.moTepTrongHopCat — đọc). Cửa GHI (applyDiff.ts) KHÔNG có", () => {
     const goi = dem(/\bcsvDuocPhep\(/g).filter((x) => x.rel !== "server/services/aiLocalTools/csvTrongDuAn.ts");
-    expect(goi).toEqual([
-      { rel: "server/services/aiLocalTools/repoSandbox.ts", n: 1 },
-      { rel: "server/services/aiLocalTools/writeHandlers/applyDiff.ts", n: 1 },
-    ]);
+    expect(goi).toEqual([{ rel: "server/services/aiLocalTools/repoSandbox.ts", n: 1 }]);
   });
   it("★★★ `choPhepCsv` xuất hiện ở đúng repoSandbox.ts (định nghĩa + dùng) và repoReadTools.ts (tool read_file đặt true) — IDE người dùng, git, ST KHÔNG có", () => {
     expect(dem(/\bchoPhepCsv\b/g).map((x) => x.rel).sort()).toEqual(["server/services/aiLocalTools/repoReadTools.ts", "server/services/aiLocalTools/repoSandbox.ts"]);
@@ -116,6 +114,7 @@ describe("CENSUS — chỉ đúng chỗ được duyệt hỏi `.csv`", () => {
       "server/services/aiLocalKnowledgeCodingTaoKhung.ts",
       "server/services/aiLocalKnowledgeCodingSua.ts",
       "server/services/aiLocalTools/writeHandlers/xoaDoiTenTep.ts",
+      "server/services/aiLocalTools/writeHandlers/applyDiff.ts",
       "server/services/aiLocalTools/kiemBienDichStTool.ts",
       "server/routers/repoWorkspaceRouter.ts",
       "shared/aiNgoaiDenyList.ts",

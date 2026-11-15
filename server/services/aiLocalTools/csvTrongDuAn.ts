@@ -1,11 +1,12 @@
 /**
- * B1 `.csv` — cho tác nhân ĐỌC / GHI tệp `.csv` CHỈ trong `sandbox-projects/**`, theo ĐƯỜNG THẬT. Phạm vi do chủ dự án duyệt (qua HST, 15/11):
- *   • CHỈ đường dưới `sandbox-projects/**`; đọc có trần 32 KB / 200 dòng, báo "đã cắt"; ghi CHỈ trong chính dự án (gốc nằm dưới `sandbox-projects`);
+ * B1 `.csv` — cho tác nhân ĐỌC tệp `.csv` CHỈ trong `sandbox-projects/**`, theo ĐƯỜNG THẬT. Phạm vi do chủ dự án duyệt (14/11, qua HST): ĐỌC, dự án mẫu, 32 KB / 200 dòng, có che.
+ *   • GHI `.csv` (apply_diff / write_file / edit_file) CHƯA được duyệt ⇒ KHÔNG mở: `applyDiff.ts` không nhập tệp này, census khoá điều đó. Muốn mở ghi phải có duyệt riêng + cờ riêng.
+ *   • CHỈ đường dưới `sandbox-projects/**`; đọc có trần 32 KB / 200 dòng, báo "đã cắt";
  *   • MẶC ĐỊNH TẮT — cờ `AI_AGENT_CSV_DOC=1` (cùng quy ước H1.1/H1.4/HA-4: chữ gửi model đổi ⇒ phải có A/B GPU rồi mới bật; phát lại fixture H4.2 không lệch);
- *   • KHÔNG mở theo: chỉ mục mã, nhập ZIP, cửa git, dòng chữ prompt, `grep`/`glob` (`duyetTepDocDuoc`), tạo khung, xoá/đổi tên, IDE người dùng, đường AI ngoài.
+ *   • KHÔNG mở theo: ghi, chỉ mục mã, nhập ZIP, cửa git, dòng chữ prompt, `grep`/`glob` (`duyetTepDocDuoc`), tạo khung, xoá/đổi tên, IDE người dùng, đường AI ngoài.
  *
  * VÌ SAO KHÔNG THÊM `.csv` VÀO `DUOI_CHO_PHEP`: tập đó dùng chung cho mọi nơi trên — thêm vào là mở theo tất cả. Ở đây `duoiDuocPhep(ten)` GIỮ NGUYÊN (`.csv` ⇒ false);
- * chỉ HAI điểm gọi sản xuất hỏi `csvDuocPhep` (đọc: `moTepTrongHopCat` khi người gọi bật `choPhepCsv`; ghi: `phanQuyetChinhSachDuong(duong, goc)`), census khoá số đó.
+ * chỉ MỘT điểm gọi sản xuất hỏi `csvDuocPhep` (đọc: `moTepTrongHopCat` khi người gọi bật `choPhepCsv`), census khoá số đó.
  *
  * ⚠ BẪY ĐÃ ĐO: gốc agent-f là `sandbox-projects/agent-f` và đường tương đối là `py-doi-soat/du_lieu/so_sach.csv` — KHÔNG chứa chữ `sandbox-projects`. Kiểm chuỗi trên
  *   đường tương đối sẽ từ chối đúng ca cần mở. Vị từ kiểm trên đường TUYỆT ĐỐI đã `realpath` (junction/symlink trong sandbox-projects trỏ ra ngoài ⇒ KHÔNG).
@@ -36,8 +37,6 @@ export function gocSandboxProjects(): string {
 export interface TuyChonCsv {
   /** Ghi đè gốc `sandbox-projects` (lưới thử). Mặc định `gocSandboxProjects()`. */
   gocSandboxProjects?: string;
-  /** Lượt GHI: gốc dự án chính nó phải nằm dưới `sandbox-projects` (không đủ khi gốc là gốc repo). */
-  ghi?: boolean;
 }
 
 /** `realpath` của phần tồn tại sâu nhất của `abs`, nối lại phần còn thiếu (đích GHI mới). `null` khi không xác định được. */
@@ -64,7 +63,7 @@ function namBenTrong(cha: string, con: string): boolean {
 }
 
 /**
- * Tệp `duong` (tương đối với `goc`) có được mở `.csv` không: cờ BẬT ∧ đuôi `.csv` ∧ đường THẬT nằm dưới `sandbox-projects` ∧ (ghi ⇒ gốc dự án nằm dưới `sandbox-projects`).
+ * Tệp `duong` (tương đối với `goc`) có được ĐỌC `.csv` không: cờ BẬT ∧ đuôi `.csv` ∧ đường THẬT nằm dưới `sandbox-projects`.
  * Thuần trừ đọc `realpath`; không ném.
  */
 export function csvDuocPhep(goc: string, duong: unknown, tuyChon: TuyChonCsv = {}): boolean {
@@ -75,13 +74,7 @@ export function csvDuocPhep(goc: string, duong: unknown, tuyChon: TuyChonCsv = {
     if (!laTepCsv(ten)) return false;
     const sb = fs.realpathSync(tuyChon.gocSandboxProjects ?? gocSandboxProjects());
     const thatDich = duongThatCuaDich(path.resolve(goc, duong));
-    if (thatDich === null || !namBenTrong(sb, thatDich)) return false;
-    if (tuyChon.ghi === true) {
-      const thatGoc = duongThatCuaDich(path.resolve(goc));
-      if (thatGoc === null) return false;
-      if (thatGoc !== sb && !namBenTrong(sb, thatGoc)) return false;
-    }
-    return true;
+    return thatDich !== null && namBenTrong(sb, thatDich);
   } catch {
     return false;
   }
