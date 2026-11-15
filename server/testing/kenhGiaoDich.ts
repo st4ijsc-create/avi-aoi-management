@@ -10,6 +10,17 @@ export interface KenhGiaoDich {
   lot: string[];
 }
 
+/** Ném ở cuối giao dịch ⇒ ROLLBACK. Tên chứa "rollback" để census `nguoiDungTest` nhận ra giao dịch luôn hoàn tác. */
+export class RollbackPhatLai extends Error {}
+
+/**
+ * Dùng trong `catch (e)` NGOÀI giao dịch của ca: CHỈ nuốt `RollbackPhatLai` (đích của ROLLBACK); MỌI lỗi khác (expect hỏng, lỗi của ca, lỗi giao dịch) PHẢI ném lại.
+ * ★ Nếu nuốt mọi lỗi thì phát lại XANH GIẢ trên mọi lệch (đột biến `void e` của kiem-dinh).
+ */
+export function nuotRollback(e: unknown): void {
+  if (!(e instanceof RollbackPhatLai)) throw e;
+}
+
 /** Vài dòng ngăn xếp NGOÀI tệp này, để người đọc thấy ai gọi. */
 function viTriGoi(): string {
   const dong = (new Error().stack ?? "").split("\n").slice(1).map((d) => d.trim());
@@ -21,6 +32,15 @@ function viTriGoi(): string {
 export function layDbTheoKenh(kenh: KenhGiaoDich): unknown {
   if (kenh.db !== null && kenh.db !== undefined) return kenh.db;
   kenh.lot.push(viTriGoi());
+  return null;
+}
+
+/**
+ * Thay cho các hàm lấy kết nối KHÁC `getDb` (`getJobsDb`, `getReadDb`, `openSessionClient`, `getNotifyClient`): GHI LẠI lời gọi (kể cả trong giao dịch — kết nối khác không nằm trong giao dịch của ca)
+ * và trả `null` (không rơi vào kết nối thật). `kiemKhongLot` làm ca ĐỎ nêu TÊN hàm.
+ */
+export function ghiNoiKhac(kenh: KenhGiaoDich, ten: string): null {
+  kenh.lot.push(`${ten}: ${viTriGoi()}`);
   return null;
 }
 

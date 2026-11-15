@@ -20,7 +20,7 @@ import { execFileSync } from "node:child_process";
 import { taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
 import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
 import { users } from "../../drizzle/schema";
-import { kiemKhongLot, layDbTheoKenh, type KenhGiaoDich } from "./kenhGiaoDich";
+import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, type KenhGiaoDich } from "./kenhGiaoDich";
 import { chuanHoaSuKien, soSuKien, taoBoThay, taoStreamPhatLai, TOKEN_GOC, type FixturePhatLai } from "./phatLaiLuot";
 
 const THU_MUC = path.join(__dirname, "fixtures", "phat-lai");
@@ -32,10 +32,16 @@ const ENV0 = { ...process.env };
 const kenh = vi.hoisted((): KenhGiaoDich => ({ db: null, lot: [] }));
 vi.mock("../db/connection", async (importOriginal) => {
   const goc = await importOriginal<typeof import("../db/connection")>();
-  return { ...goc, getDb: async () => layDbTheoKenh(kenh) };
+  return {
+    ...goc,
+    getDb: async () => layDbTheoKenh(kenh),
+    // các cách lấy kết nối KHÁC không nằm trong giao dịch của ca ⇒ ghi lại + null; `afterEach(kiemKhongLot)` làm ca ĐỎ có tên nếu đường phát lại chạm chúng
+    getJobsDb: async () => ghiNoiKhac(kenh, "getJobsDb"),
+    getReadDb: async () => ghiNoiKhac(kenh, "getReadDb"),
+    openSessionClient: () => ghiNoiKhac(kenh, "openSessionClient"),
+    getNotifyClient: () => ghiNoiKhac(kenh, "getNotifyClient"),
+  };
 });
-/** Ném ở cuối giao dịch ⇒ ROLLBACK (tên chứa "rollback" để census nguoiDungTest nhận ra giao dịch luôn hoàn tác). */
-class RollbackPhatLai extends Error {}
 
 beforeAll(async () => {
   process.env.SECRET_ENCRYPTION_KEY ??= "khoa-thu-phat-lai-0123456789";
@@ -148,7 +154,7 @@ describe("H4.2 — phát lại fixture thật", () => {
         throw new RollbackPhatLai();
       });
     } catch (e) {
-      if (!(e instanceof RollbackPhatLai)) throw e;
+      nuotRollback(e);
     }
   }, 300_000);
 });

@@ -4,10 +4,67 @@
  * thông báo không nêu số lần / nơi gọi.
  */
 import { describe, expect, it } from "vitest";
-import { kiemKhongLot, layDbTheoKenh, type KenhGiaoDich } from "./kenhGiaoDich";
+import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, type KenhGiaoDich } from "./kenhGiaoDich";
 
 const kenhMoi = (): KenhGiaoDich => ({ db: null, lot: [] });
 const TX = { ten: "giao-dich-gia" };
+
+describe("nuotRollback — CHỈ nuốt RollbackPhatLai; mọi lỗi khác phải lan ra (không xanh giả)", () => {
+  it("★★★ RollbackPhatLai ⇒ KHÔNG ném (đích của ROLLBACK)", () => {
+    expect(() => nuotRollback(new RollbackPhatLai())).not.toThrow();
+  });
+  it("★★★ MỘT `expect` hỏng / lỗi bất kỳ ⇒ ném LẠI đúng lỗi đó (ca đỏ), kể cả Error thường, TypeError, và chuỗi / giá trị lạ", () => {
+    let loiExpect: unknown;
+    try {
+      expect(1, "lệch giả").toBe(2);
+    } catch (e) {
+      loiExpect = e;
+    }
+    expect(() => nuotRollback(loiExpect)).toThrow(/lệch giả|expected 1 to be 2/);
+    const te = new TypeError("lỗi của ca");
+    expect(() => nuotRollback(te)).toThrow(te);
+    expect(() => nuotRollback(new Error("mất kết nối"))).toThrow("mất kết nối");
+    expect(() => nuotRollback("chuỗi")).toThrow();
+    expect(() => nuotRollback(undefined)).toThrow();
+  });
+  it("★★ chỉ ĐÚNG lớp RollbackPhatLai: một lỗi khác tên 'Rollback…' không đủ", () => {
+    class RollbackGia extends Error {}
+    expect(() => nuotRollback(new RollbackGia("không phải của helper"))).toThrow(RollbackGia);
+  });
+  it("★★ mô phỏng vòng `try { transaction(…throw Rollback) } catch (e) { nuotRollback(e) }`: expect hỏng trong thân LAN RA, thân sạch thì KHÔNG ném", async () => {
+    const chay = async (than: () => Promise<void>) => {
+      try {
+        await (async () => {
+          await than();
+          throw new RollbackPhatLai();
+        })();
+      } catch (e) {
+        nuotRollback(e);
+      }
+    };
+    await expect(chay(async () => undefined)).resolves.toBeUndefined();
+    await expect(
+      chay(async () => {
+        expect("a").toBe("b");
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+describe("ghiNoiKhac — các hàm lấy kết nối KHÁC `getDb`", () => {
+  it("★★★ ghi lại TÊN hàm + nơi gọi, trả null, kể cả TRONG giao dịch; kiemKhongLot ném nêu tên", () => {
+    const k = kenhMoi();
+    k.db = TX;
+    expect(ghiNoiKhac(k, "getJobsDb")).toBeNull();
+    expect(ghiNoiKhac(k, "getReadDb")).toBeNull();
+    expect(ghiNoiKhac(k, "openSessionClient")).toBeNull();
+    expect(ghiNoiKhac(k, "getNotifyClient")).toBeNull();
+    expect(k.lot).toHaveLength(4);
+    expect(() => kiemKhongLot(k)).toThrow(/4 lần/);
+    ghiNoiKhac(k, "getJobsDb");
+    expect(() => kiemKhongLot(k)).toThrow(/getJobsDb:/);
+  });
+});
 
 describe("kenhGiaoDich — getDb ngoài giao dịch ⇒ null + ĐỎ có tên", () => {
   it("★★★ TRONG giao dịch: trả CHÍNH giao dịch, không ghi lại gì, kiemKhongLot không ném", () => {
