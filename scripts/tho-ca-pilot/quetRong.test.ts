@@ -208,6 +208,6 @@ describe("HA-6d (b) — RLS ở bộ quét", () => {
     expect(goi[0]).toContain("set_config");
     const c = goi[1]!;
     expect(c).toMatch(/^select /);
-    for (const mau of ["n.nspname = 'public'", "c.relrowsecurity", "rolbypassrls", "rolsuper", "c.relforcerowsecurity", "pg_has_role(current_user, c.relowner, 'MEMBER')"]) expect(c, mau).toContain(mau);
+    for (const mau of ["n.nspname = 'public'", "c.relkind in ('r', 'p')", "c.relrowsecurity", "rolbypassrls", "rolsuper", "c.relforcerowsecurity", "pg_has_role(current_user, c.relowner, 'MEMBER')"]) expect(c, mau).toContain(mau);
   });
 });

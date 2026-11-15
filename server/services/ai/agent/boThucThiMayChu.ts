@@ -124,6 +124,7 @@ import { dinhDangKetQuaApi, traApiMacDinh, type NgonNguApi, type TraApi } from "
 import { goiYTraApiTuDauRa, tuTraApiBat } from "../apiRef/goiYLoiBienDich";
 import { cheDoCompileStTacNhan } from "../st/kiemBienDichSt";
 import type { KhoDauRaDai } from "./khoDauRaDai";
+import { goiYLenhTuChoi } from "./goiYLenhTuChoi";
 import { laDuAnPlc } from "./nhanDienDuAnPlc";
 
 /** Lý do gắn vào audit của `confirmAction` cho một lượt ghi KHÔNG người bấm của chế độ `tu-dong`. */
@@ -415,7 +416,20 @@ export function phanQuyetLenhTuDong(
   return { ok: true, nhan: kc.nhan, duongCham };
 }
 
-function cauTuChoiLenhTuDong(ma: "AUTOLOOP_TAT" | "LENH_CAN_DUYET_TAY", chiTiet: string): string {
+/**
+ * Công tắc `AI_AGENT_GOI_Y_LENH` (HA-4 lệnh): chỉ `1` bật. MẶC ĐỊNH TẮT — lời từ chối giữ NGUYÊN TỪNG BYTE như trước HA-4 cho tới khi có A/B GPU
+ * (đổi chữ trong kết quả tool = đổi byte gửi model ⇒ phát lại fixture H4.2 lệch, và các lượt model sau trong fixture không còn đại diện hành vi mới;
+ * `server/testing/phatLaiFixture.test.ts` bắt đúng loại đổi này). Bật ⇒ phải ghi lại fixture ở cửa sổ GPU.
+ */
+export function goiYLenhBat(giaTri: string | undefined): boolean {
+  return giaTri === "1";
+}
+
+/**
+ * `lenh` (tuỳ chọn) = chuỗi lệnh model đã gửi — CHỈ để `goiYLenhTuChoi` chọn gợi ý DẠNG ĐƯỢC PHÉP (HA-4 lệnh); không chép vào câu. Vắng ⇒ như cũ.
+ * Cờ `AI_AGENT_GOI_Y_LENH` (đọc TẠI CHỖ GỌI) tắt ⇒ KHÔNG gợi ý, câu y hệt bản cũ.
+ */
+export function cauTuChoiLenhTuDong(ma: "AUTOLOOP_TAT" | "LENH_CAN_DUYET_TAY", chiTiet: string, lenh?: unknown): string {
   if (ma === "AUTOLOOP_TAT")
     return (
       "Refused in automatic mode: running commands without approval is disabled on this server (AI_CODING_AUTOLOOP is off). " +
@@ -428,13 +442,15 @@ function cauTuChoiLenhTuDong(ma: "AUTOLOOP_TAT" | "LENH_CAN_DUYET_TAY", chiTiet:
       "just run `dotnet test <project>`; a package not on this machine fails with NU1101 and needs the user to approve " +
       "`dotnet restore` in 'Edit' mode. Do not create or edit obj/project.assets.json by hand."
     : "";
+  const goiYDang = goiYLenhBat(process.env.AI_AGENT_GOI_Y_LENH) ? goiYLenhTuChoi(lenh) : "";
   return (
     `Refused in automatic mode: this command needs manual approval (${chiTiet}).${goiYRestore} Only test/build verification commands ` +
     "(e.g. node --test <path>, npx vitest run <path>, dotnet build|test <path>, python -m pytest|unittest <path>, " +
     "javac -d <out> <files|dir>, java -cp <out> <TestClass>, cmake -S . -B <build>, cmake --build <build>, ctest --test-dir <build>, " +
     "go test|build|vet ./..., cargo test|build|check --offline) run without approval, " +
     "and never commands that rewrite source files (dotnet format). The command was NOT run. Use a verification command, " +
-    "or tell the user to run this one in 'Edit' mode."
+    "or tell the user to run this one in 'Edit' mode." +
+    (goiYDang === "" ? "" : ` ${goiYDang}`)
   );
 }
 
@@ -951,7 +967,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
           return {
             ok: false,
             ma: pq.ma,
-            choModel: pq.ma === "REPO_CHINH_CHUA_CHECKPOINT" ? cauTuChoiTuDong("REPO_CHINH_CHUA_CHECKPOINT") : cauTuChoiLenhTuDong(pq.ma, pq.chiTiet),
+            choModel: pq.ma === "REPO_CHINH_CHUA_CHECKPOINT" ? cauTuChoiTuDong("REPO_CHINH_CHUA_CHECKPOINT") : cauTuChoiLenhTuDong(pq.ma, pq.chiTiet, args.command),
           };
         }
       } else if (!tuTriGhiRepoChinhDuoc()) {
