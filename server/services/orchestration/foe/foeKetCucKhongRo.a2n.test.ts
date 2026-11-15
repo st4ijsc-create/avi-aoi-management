@@ -1603,6 +1603,20 @@ describe("A2(n) fix round 4 — THE sink at the dispatch, the durable fact, the 
     await tiep(ok.runId);
     expect(sent("reset")).toHaveLength(1);
   });
+  // T4 bước 3 (chủ dự án 14/11, R2 (a)) — ĐO chuẩn TRUNG TÂM cho parity :1896 (đỏ :1964 ở 3c85d0bad): URGENT nào, cho bước nào, lúc giữ và sau MỘT lần duyệt
+  it("T4-B3-URGENT-TT the latched run holds at the compensation of the unknown step, a forward step behind it: which URGENTs fire at the hold and after the ONE approved Continue", async () => {
+    const { runId } = await giuKhongRo([main(resetComp("c1")), { id: "r2", type: "command", machineId: 3, command: "reset" } as WorkflowStep]);
+    await vi.waitFor(() => expect(alertsOf("held")).toHaveLength(1));
+    const khoa = (a: Record<string, unknown>) => `${String(a.kind)}|${String(a.dedupKey).split(":").slice(2, 4).join(":")}`;
+    const luc = alerts.map(khoa).sort();
+    expect(luc, "at the hold").toEqual([`${CANH_BAO_KHONG_RO_KIND.forwardNotSent}|r2:-`, `${CANH_BAO_KHONG_RO_KIND.held}|main:c1`].sort());
+    const n = alerts.length;
+    otDispatchMock.mockClear();
+    expect((await tiep(runId)).status).toBe("failed");
+    expect(sent("reset")).toEqual(["reset"]); // c1 once; r2 never
+    await new Promise((r) => setTimeout(r, 50));
+    expect(alerts.slice(n).map(khoa).sort(), "after the ONE approved Continue").toEqual([]);
+  });
   // T4 bước 3 (chủ dự án 14/11, R2 (a)) — ĐO chuẩn TRUNG TÂM trước khi viết ca edge: duyệt có người + lý do nhưng interlock chặn; rồi interlock mở lại
   it("T4-B3-INTERLOCK-TT an approved compensation whose interlock BLOCKS: not sent, its row failed, the run fails, a person told; the interlock opening again sends NOTHING (a failed run is not continued: no second approval)", async () => {
     const { runId } = await giuKhongRo([main({ ...resetComp("c1"), ...dk } as WorkflowStep)]);
