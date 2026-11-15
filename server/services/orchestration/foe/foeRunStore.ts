@@ -2092,9 +2092,10 @@ export function quyetDinhKetDoanEdge(v: {
     return { loai: "stopNotSent", stepId: chu ? chu.step.id : id, compId: chu ? id : KHONG_CO_BU_TRU, ma: MA_KET_DOAN_EDGE, claimSeq: v.claimSeq, biet: true };
   });
   for (const s of coTheDi) if (!s.compensation) them.push({ loai: "noCompensation", stepId: s.id, compId: KHONG_CO_BU_TRU, ma: MA_KET_DOAN_EDGE, claimSeq: v.claimSeq }); // (6)
-  const daGui = new Map(lenh.filter((s) => s.compensation && muc !== null && daDuyetBuTruKhongRo(v.ctx, s.id, s.compensation.id) && muc.some((a) => a.stepId === s.compensation!.id && a.supersededAt == null)).map((s) => [s.id, s.compensation!.id] as const)); // Đ-3 (P2, chu-du-an-HST 15/11): approved AND authorised (it went)
+  const cxXong = (cid: string) => v.hang.some((r) => r.stepId === cid && r.status === "compensated"); // P2 (HST 15/11): "cx done" = its ROW is `compensated` (foeEngine.ts:3523, what central takes for ok); the ledger is no word on it
+  const daGui = new Map(lenh.filter((s) => s.compensation && !v.stops.has(s.compensation.id) && !cxXong(s.compensation.id) && muc !== null && daDuyetBuTruKhongRo(v.ctx, s.id, s.compensation.id) && muc.some((a) => a.stepId === s.compensation!.id && a.supersededAt == null)).map((s) => [s.id, s.compensation!.id] as const)); // Đ-3 (P2, chu-du-an-HST 15/11): approved AND authorised (it went)
   for (const [id, cid] of daGui) if (tapU.has(id)) them.push({ loai: "approvedNotConfirmed", stepId: id, compId: cid, ma: MA_KET_DOAN_EDGE, claimSeq: v.claimSeq }); // told as central's walk tells it (foeEngine.ts:1333), not "held"
-  const buTruCanNguoi = lenh.filter((s) => s.compensation && !v.stops.has(s.compensation.id) && tapU.has(s.id) && !daGui.has(s.id)).map((s) => s.id); // R2 (a) điều kiện 4: a STOP compensation never behind this gate (L-7)
+  const buTruCanNguoi = lenh.filter((s) => s.compensation && !v.stops.has(s.compensation.id) && tapU.has(s.id) && !daGui.has(s.id) && !cxXong(s.compensation.id)).map((s) => s.id); // R2 (a) điều kiện 4: a STOP compensation never behind this gate (L-7)
   const canhBao = them.filter((b) => !v.bao.some((x) => x.loai === b.loai && x.stepId === b.stepId && x.compId === b.compId)); // (7); (8) no branch on v.rider
   return { khongRo, chot, canhBao, soLoiChung: v.so.doc === "loi", buTruCanNguoi }; // (9)
 }

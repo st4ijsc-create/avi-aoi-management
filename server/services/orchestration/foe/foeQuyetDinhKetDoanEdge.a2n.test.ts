@@ -271,25 +271,43 @@ describe("T4 bước 3 — Đ-3 (P2): cặp đã duyệt và đã gửi", () => 
   });
 });
 
-// HST 15/11, hai câu hỏi về P2 (đo tại 0a2071e6e/33632cf8c bằng các ca này): `daGui` (foeRunStore.ts:2095) chỉ hỏi "đã duyệt VÀ cx có mục sổ chưa supersede" — KHÔNG nhìn hàng cx, `resultStatus`, hay `v.stops`;
-// dòng đẩy approvedNotConfirmed (foeRunStore.ts:2096) chạy cho mọi cặp trong `daGui` có x ∈ tapU. Hai hệ quả dưới đây là báo NẶNG hơn sự thật (hướng ĐÓNG): KHÔNG vá; giới hạn đã biết hướng đóng; chờ HST; chu-du-an-HST 15/11.
-describe("T4 bước 3 — P2 giới hạn đã biết (hướng đóng, chờ HST)", () => {
+// HST 15/11, P2 lần vá cuối: "cx đã xong" khớp TRUNG TÂM (#18) và CHỈ theo vế HÀNG: hàng cx ở `compensated` (foeEngine.ts:3523). Trung tâm chỉ phát approvedNotConfirmed khi runCompensation trả kết quả khác ok/held/paused
+// (foeEngine.ts:1331-1333); đối chứng đo: T4-B3-P2-DOI-CHUNG-TT (parity). Vế SỔ bị bỏ: sổ ok mà hàng chưa chốt đúng là ca HELD-DA-GUI (đường thật), nên không dùng làm tiêu chí. `daGui` còn lọc `v.stops` (cx là STOP không vào).
+describe("T4 bước 3 — P2: cx đã xong / thất bại / là STOP (chu-du-an-HST 15/11)", () => {
   const duyet = { foeKetCucKhongRoDuyet: { stepId: "x", buTru: [{ stepId: "x", compId: "cx" }], by: 12, at: "2026-11-15T00:00:00Z" } };
   const ctxDuyet = { foeOutcomeUnknown: ["x"], ...duyet };
   const dd = dinhNghia(move("x", move("cx")));
   const ACN = `approvedNotConfirmed:x:cx`;
-  // Câu 1: cx ĐÃ ĐI VÀ ĐÃ XONG, đoạn kết thúc held vì lý do khác, x còn ở tapU. Đo: hàm VẪN phát approvedNotConfirmed ("failed or got no answer") — CÓ. Kỳ vọng ĐÚNG: không phát cho cx đã xong
-  it.fails("T4-B3-P2-CX-XONG-HANG (giới hạn đã biết hướng đóng; chờ HST) hàng cx `completed`: KHÔNG approvedNotConfirmed cho bù trừ đã xong", () => {
-    const r = goi({ def: dd, hang: [{ ...hangHongMatMa("x"), error: "FOE_OUTCOME_UNKNOWN: timeout" }, hangXong("cx")], so: { doc: "duoc", muc: [uq("x"), uq("cx")] }, ctx: ctxDuyet, claimSeq: 3 });
+  const hangCxXong = { stepId: "cx", stepType: "command", status: "compensated", error: null, resultJson: { routedTo: "ot-dispatcher", status: "simulated" } };
+  const hangX = { ...hangHongMatMa("x"), error: "FOE_OUTCOME_UNKNOWN: timeout" };
+  it("T4-B3-P2-CX-XONG-HANG hàng cx `compensated` (trung tâm: ok): không approvedNotConfirmed, không chờ người", () => {
+    const r = goi({ def: dd, hang: [hangX, hangCxXong], so: { doc: "duoc", muc: [uq("x"), uq("cx")] }, ctx: ctxDuyet, claimSeq: 3 });
     expect(cb(r)).not.toContain(ACN);
+    expect(r.buTruCanNguoi).toEqual([]);
   });
-  it.fails("T4-B3-P2-CX-XONG-SO (giới hạn đã biết hướng đóng; chờ HST) sổ 0372 ghi kết quả đã biết của cx (acked_verified): KHÔNG approvedNotConfirmed cho bù trừ đã xong", () => {
+  // giới hạn đã biết hướng ĐÓNG: sổ ok mà hàng chưa chốt ⇒ vẫn approvedNotConfirmed; tiêu chí nghiệm thu SG-T1; chu-du-an-HST 15/11
+  it.fails("T4-B3-P2-CX-XONG-SO (giới hạn đã biết hướng đóng; SG-T1) sổ ghi cx với kết quả ok nhưng hàng chưa chốt: kỳ vọng ĐÚNG là không approvedNotConfirmed", () => {
     const r = goi({ def: dd, hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x"), uq("cx", { resultStatus: "acked_verified" })] }, ctx: ctxDuyet, claimSeq: 3 });
     expect(cb(r)).not.toContain(ACN);
   });
-  // Câu 2: cx là STOP ghim (cx ∈ v.stops). Đo: cx VÀO daGui (daGui không lọc stops); approvedNotConfirmed ("approved by a Continue") sai cho một STOP (STOP không bao giờ đứng sau cổng người, R2 (a) điều kiện 4) và,
-  // khi cx có nợ STOP (hàng bị dispatcher từ chối), đi cùng stopNotSent:x:cx ⇒ HAI URGENT cho cùng cx. Luồng thật chưa tới: cặp duyệt đến từ báo `held` (foeRunStore.ts:1890) và buTruCanNguoi, đều loại STOP; ca này đo hàm thuần
-  it.fails("T4-B3-P2-CX-STOP (giới hạn đã biết hướng đóng; chờ HST) cx là STOP ghim có nợ chưa ra: ĐÚNG MỘT URGENT (stopNotSent x/cx), KHÔNG approvedNotConfirmed", () => {
+  it("T4-B3-P2-CX-THAT-BAI-HANG hàng cx `failed` (trung tâm: không ok): VẪN có approvedNotConfirmed, không im, không chờ người", () => {
+    const r = goi({ def: dd, hang: [hangX, hangHongMatMa("cx")], so: { doc: "duoc", muc: [uq("x"), uq("cx")] }, ctx: ctxDuyet, claimSeq: 3 });
+    expect(cb(r).filter((k) => k === ACN)).toEqual([ACN]);
+    expect(r.buTruCanNguoi).toEqual([]);
+  });
+  // thừa noCompensation:cx (cx vào coTheDi vì hàng chưa xong, sổ chưa có kết quả), hướng ĐÓNG, không ★ (HST 15/11); SG-T1
+  it.fails("T4-B3-P2-CX-THAT-BAI-HANG-MOT (giới hạn đã biết hướng đóng; SG-T1) hàng cx `failed`: kỳ vọng ĐÚNG là ĐÚNG MỘT URGENT về cx (hiện thêm noCompensation:cx)", () => {
+    const r = goi({ def: dd, hang: [hangX, hangHongMatMa("cx")], so: { doc: "duoc", muc: [uq("x"), uq("cx")] }, ctx: ctxDuyet, claimSeq: 3 });
+    expect(cb(r)).toEqual([ACN]);
+  });
+  it("T4-B3-P2-CX-THAT-BAI-SO sổ ghi cx với kết quả thất bại (rejected/timeout/failed): VẪN đúng một approvedNotConfirmed, không im, không chờ người", () => {
+    for (const st of ["rejected", "timeout", "failed"]) {
+      const r = goi({ def: dd, hang: [hangChay("x")], so: { doc: "duoc", muc: [uq("x"), uq("cx", { resultStatus: st })] }, ctx: ctxDuyet, claimSeq: 3 });
+      expect(cb(r).filter((k) => k === ACN), st).toEqual([ACN]);
+      expect(r.buTruCanNguoi, st).toEqual([]);
+    }
+  });
+  it("T4-B3-P2-CX-STOP cx là STOP ghim có nợ chưa ra: không vào daGui (không câu 'approved by a Continue'), đúng MỘT URGENT cho cx (stopNotSent)", () => {
     const r = goi({ def: dinhNghia(move("x", otStop("cx"))), hang: [hangChay("x"), hangStopTuChoi("cx")], so: { doc: "duoc", muc: [uq("x"), uq("cx")] }, ctx: ctxDuyet, stops: new Set(["cx"]), claimSeq: 3 });
     expect(cb(r)).toEqual(["stopNotSent:x:cx"]);
   });

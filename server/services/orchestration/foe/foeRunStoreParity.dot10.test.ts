@@ -2253,6 +2253,27 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(khoaC1, "exactly one true URGENT about c1: sent, outcome not confirmed").toEqual([expect.stringMatching(new RegExp(`^(${CANH_BAO_KHONG_RO_KIND.approvedNotConfirmed}|${CANH_BAO_KHONG_RO_KIND.compensationUnknown}):${e.runId}:r1:c1:claim3$`))]);
   });
 
+  // Đối chứng TRUNG TÂM của Đ-3 (P2): cx được duyệt bằng Continue và đi `simulated` (dispatcher trả ok) ⇒ hàng cx `compensated` (foeEngine.ts:3523) và trung tâm KHÔNG phát URGENT nào (foeEngine.ts:1331-1333: chỉ khi kết quả khác ok/held/paused).
+  // Căn cứ của tiêu chí "đã xong" = vế hàng (HST 15/11): hàm thuần của edge (quyetDinhKetDoanEdge) loại cx có hàng `compensated` khỏi approvedNotConfirmed và khỏi chờ người
+  it("T4-B3-P2-DOI-CHUNG-TT (đối chứng trung tâm của Đ-3) TRUNG TÂM: cx được duyệt bằng Continue, đi simulated (ok): hàng cx `compensated`, c1 một lần, KHÔNG URGENT nào sau Continue", async () => {
+    const d = def("p2-doi-chung", [gate(), move("r1", { compensation: ot("c1") }), move("r2")]);
+    h.timeoutDispatch.add("r1");
+    const c = await centralRun(d, 1);
+    await waitFor(() => runRow(c).status !== "running", "the hold");
+    h.timeoutDispatch.clear();
+    expect(runRow(c).status).toBe("held");
+    const a1 = h.alerts.length;
+    const n0 = h.sent.length;
+    grantMachineControl();
+    const view = (await getRun(c, { bindingDigest: true }))!;
+    await resumeRun(c, { approved: true, note: "checked on site: r1 not applied", expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! }, OTHER);
+    await waitFor(() => !["queued", "running", "compensating"].includes(runRow(c).status), "the end after Continue");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(h.sent.slice(n0).filter((x) => x.stepId === "c1"), "c1 went once").toHaveLength(1);
+    expect(rows("orchestration_run_steps").filter((s) => s.runId === c && s.stepId === "c1")).toEqual([expect.objectContaining({ status: "compensated" })]);
+    expect(h.alerts.slice(a1).map((a) => String(a.dedupKey)), "central tells nothing about a compensation that went ok").toEqual([]);
+  });
+
   // Q-1 (chu-du-an-HST 15/11): held() chờ URGENT bền tới 5·D trong giao dịch giữ khoá hàng run (foeRunStore.ts:2136, :2204, KET_DOAN_EDGE_TONG_MS :733). Abort bấm trong lúc đó: ghi `aborted` chờ khoá, nhưng bị chặn bởi D
   // (foeEngine.ts:7234-7250) rồi VẪN quét STOP. Khoá hàng của Postgres không có trong FakeDb (for() là no-op): chờ khoá được mô hình bằng h.treAborted (trễ của lần ghi `aborted`), cơ chế có sẵn. Đo thật: mục 29 / 30 của bao-cao.md
   afterEach(() => vi.useRealTimers());
