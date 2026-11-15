@@ -12,8 +12,8 @@
  * `phuBoi` (chỉ cho `vang = "bat"`): "mac-dinh-tu-dau" = mặc định bật TỪ TRƯỚC mọi fixture (fixture cũ phủ nhánh bật bằng chính việc cờ vắng; danh sách đóng, xem census);
  *   "fixture-co-bat" = mặc định bật SAU NÀY ⇒ phải có ít nhất MỘT fixture ghi với cờ bật (V1.2: chặn đổi mặc định khi không có fixture phủ nhánh).
  *
- * Phạm vi quét của census: mọi tên bắt đầu `AI_AGENT_` / `AI_AGENTIC_` trong server/ + shared/ (không kể test), cộng `CO_QUET_THEM`. Các cờ `AI_CODING_*` khác (chat coding cũ, không qua
- * vòng agent) CHƯA vào phạm vi — đưa vào bằng cách thêm vào `CO_QUET_THEM` + một mục ở đây.
+ * Phạm vi quét của census: mọi tên bắt đầu `AI_AGENT_` / `AI_AGENTIC_` / `AI_CODING_` trong server/ + shared/ (không kể test), cộng `CO_QUET_THEM`. Luật HST (15/11): mọi cờ mà mã đọc và nằm trên
+ * đường dựng nội dung gửi model đều phải được phân loại; chỉ cờ `doi-byte` vào danh sách ghim. 18 cờ `AI_CODING_*` của đường chat lập trình (không qua vòng agent) đã vào cùng đợt này.
  */
 
 export type NhomCo = "doi-byte" | "khong-doi-byte";
@@ -31,13 +31,9 @@ export interface CoAnhHuongByte {
 }
 
 /** Tiền tố quét tự động. */
-export const TIEN_TO_CO_QUET: readonly string[] = ["AI_AGENT_", "AI_AGENTIC_"];
+export const TIEN_TO_CO_QUET: readonly string[] = ["AI_AGENT_", "AI_AGENTIC_", "AI_CODING_"];
 /** Cờ ngoài tiền tố mà vòng agent đọc (hoặc đổi nội dung gửi model của nó). Thêm ở đây ⇒ census quét thêm. */
 export const CO_QUET_THEM: readonly string[] = [
-  "AI_CODING_AUTOLOOP",
-  "AI_CODING_TU_TRI_GHI",
-  "AI_CODING_TU_TRI_GHI_REPO_CHINH",
-  "AI_CODING_MODEL_TASK",
   "AI_KIEM_BIEN_DICH_ST",
   "AI_COMPILE_ST_TRAN_MOI_LUOT",
   "AI_GHI_LUOT_DIR",
@@ -45,6 +41,16 @@ export const CO_QUET_THEM: readonly string[] = [
 
 /** Danh sách ĐÓNG các cờ mặc định BẬT từ trước mọi fixture (xem `phuBoi`). Thêm tên vào đây là một thay đổi hiển thị cho người rà. */
 export const CO_MAC_DINH_BAT_TU_DAU: readonly string[] = [
+  "AI_CODING_BO_SUNG_USING",
+  "AI_CODING_EDIT",
+  "AI_CODING_EDIT_HUNKS",
+  "AI_CODING_GEN",
+  "AI_CODING_LESSONS",
+  "AI_CODING_REPO_CONTEXT",
+  "AI_CODING_TOOL_LLM",
+  "AI_CODING_TOOL_LOOP",
+  "AI_CODING_TOOL_VETO",
+  "AI_CODING_USING_MO_RONG",
   "AI_AGENT_CUU_TRAN",
   "AI_AGENT_GIU_NGHI",
   "AI_AGENT_KIEM_DAC_TA",
@@ -84,6 +90,25 @@ export const CO_ANH_HUONG_BYTE: readonly CoAnhHuongByte[] = [
   kd("AI_AGENT_HOUSEKEEPING_INTERVAL_MS", "chu kỳ dọn nền, không vào lượt chạy"),
   kd("AI_AGENT_TU_DONG", "hằng nhãn lý do (LY_DO_AGENT_TU_DONG) trong sổ duyệt, không phải biến môi trường"),
   kd("AI_AGENT_UOC_LUONG_TOKEN", "ước lượng token cho cổng quota, không vào lời nhắn"),
+  // ── 18 cờ AI_CODING_* của đường chat lập trình (HST 15/11). `vang` đã được census so với mặc định THẬT; ngày = lúc tên cờ xuất hiện (git log -S), mọi cờ `bat` có TỪ TRƯỚC fixture đầu tiên (02/11) ──
+  db("AI_CODING_ABLATION_NGU_CANH", "khong-dat", "công tắc ĐO: bỏ khối mã khỏi persona (aiLocalKnowledgeCodingSinhMa.ts:202); không bật ở sản xuất"),
+  db("AI_CODING_AUTOLOOP_MAX", "khong-dat", "trần số vòng của vòng kiểm chứng tự động cũ (aiCodingVerify.ts:98); thêm 2026-08-19"),
+  db("AI_CODING_BO_SUNG_USING", "bat", "bổ sung using vào ngữ cảnh sinh mã C# (aiLocalKnowledgeCodingSinhMa.ts:458; 2026-09-23, ff0b87824)", "mac-dinh-tu-dau"),
+  db("AI_CODING_EDIT", "bat", "đường sửa mã bằng model (aiCodingAgent.ts:86; 2026-08-19, fe703d719)", "mac-dinh-tu-dau"),
+  db("AI_CODING_EDIT_HUNKS", "bat", "sửa mã dạng khối (hunk) thay cho cả tệp (aiCodingAgent.ts:98; 2026-08-23, f8f7d9174)", "mac-dinh-tu-dau"),
+  db("AI_CODING_GEN", "bat", "đường sinh mã bằng model (aiCodingAgent.ts:81; 2026-08-19, fe703d719)", "mac-dinh-tu-dau"),
+  db("AI_CODING_LESSONS", "bat", "bài học đã lưu đưa vào ngữ cảnh (codingLessonContext.ts:88; 2026-08-23, 59b5875c0)", "mac-dinh-tu-dau"),
+  db("AI_CODING_REPO_CONTEXT", "bat", "ngữ cảnh mã của repo đưa vào lời nhắn (codingRepoContext.ts:144; 2026-08-20, 7430d10d0)", "mac-dinh-tu-dau"),
+  db("AI_CODING_REPO_CONTEXT_MIN_SCORE", "khong-dat", "ngưỡng điểm lọc đoạn mã ngữ cảnh (codingRepoContext.ts:261; mặc định NGUONG_DIEM_NGU_CANH_MA)"),
+  db("AI_CODING_REPO_CONTEXT_TIMEOUT_MS", "khong-dat", "hạn giờ dựng ngữ cảnh mã (codingRepoContext.ts:266; mặc định HAN_GIO_MUC_LUC_MS)"),
+  db("AI_CODING_TOOL_LLM", "bat", "chọn tool bằng model ở lượt đầu (intentClassifier.ts:2044; 2026-08-19, de58c5654)", "mac-dinh-tu-dau"),
+  db("AI_CODING_TOOL_LOOP", "bat", "vòng tool nhiều nhịp của chat lập trình (aiLocalTools/index.ts:392; 2026-08-19, c0ae0134f)", "mac-dinh-tu-dau"),
+  db("AI_CODING_TOOL_LOOP_MAX_ROUNDS", "khong-dat", "trần số nhịp vòng tool (aiLocalTools/index.ts:397)"),
+  db("AI_CODING_TOOL_VETO", "bat", "phủ quyết lời gọi tool native không an toàn (phuQuyetToolNative.ts:135; 2026-09-23, c8f57fbe5)", "mac-dinh-tu-dau"),
+  db("AI_CODING_TU_TRI_GHI_MAX", "khong-dat", "trần số lượt tự ghi mỗi vòng (aiCodingTuTriGhi.ts:92)"),
+  db("AI_CODING_USING_MO_RONG", "bat", "mở rộng chỉ mục using .NET trong ngữ cảnh (apiRef/chiMucUsingDotnet.ts:57; 2026-10-18, 52b7897f5)", "mac-dinh-tu-dau"),
+  kd("AI_CODING_AUTOLOOP_VERIFY", "hằng chuỗi `reason` ghi vào sổ duyệt của bước CHẠY lệnh kiểm chứng (aiCodingVerify.ts:398), không phải biến môi trường; không đổi byte gửi model"),
+  kd("AI_CODING_TU_TRI_LUOT", "hằng hành động kiểm toán `AUDIT_ACTIONS.AI_CODING_TU_TRI_LUOT` và chuỗi `operation` (aiCodingTuTriGhi.ts:403,407), không phải biến môi trường"),
   db("AI_CODING_AUTOLOOP", "tat", "cho phép lệnh kiểm chứng chạy không duyệt ở tu-dong (không có ⇒ lệnh bị từ chối)"),
   db("AI_CODING_MODEL_TASK", "tat", "đặt `code` ⇒ chọn model lập trình thay model chat"),
   db("AI_CODING_TU_TRI_GHI", "tat", "cho phép ghi không duyệt ở tu-dong"),

@@ -22,6 +22,9 @@ import { soLuotToiDaTuEnv } from "../services/ai/agent/gioiHanLuot";
 import { tacNhanTheoVaiTroBat } from "../services/ai/agent/vaiTroTacNhan";
 import { tuTraApiBat } from "../services/ai/apiRef/goiYLoiBienDich";
 import { chonTacVuModel } from "../services/ai/chonTacVuModel";
+import { HAN_GIO_MUC_LUC_MS, NGUONG_DIEM_NGU_CANH_MA, hanGioMucLucMs, nguCanhMaEnabled, nguongDiemNguCanhMa } from "../services/ai/codingRepoContext";
+import { baiHocEnabled } from "../services/ai/codingLessonContext";
+import { kepTranVong, kepTranVongTuTri, TRAN_VONG_MAC_DINH } from "../../shared/aiCodingLoop";
 import { cheDoCompileStTacNhan } from "../services/ai/st/kiemBienDichSt";
 import {
   CO_ANH_HUONG_BYTE,
@@ -82,13 +85,15 @@ export function macDinhTuViTriDoc(node: ts.PropertyAccessExpression): GiaTriVang
       if (/^(Number|parseInt|parseFloat|Number\.parseInt|Number\.parseFloat)$/.test(ten)) return "khong-dat";
       return null;
     }
+    if (ts.isVariableDeclaration(cha) && cha.initializer === cur && vang === "") return "khong-dat"; // `const x = (env.X ?? "").trim()` ⇒ cờ giá trị, vắng ⇒ rỗng
     if (ts.isBinaryExpression(cha) && (cha.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken || cha.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken)) {
       const khac = cha.left === cur ? cha.right : cha.left;
       if (!ts.isStringLiteral(khac)) return null;
-      if (khac.text === "0") return "bat";
+      if (khac.text === "0") return "bat"; // `=== "0"` (tắt khi 0) hoặc `!== "0"` (bật trừ khi 0) ⇒ mặc định bật
       const bang = cha.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
-      const bat = bang ? vang === khac.text : vang !== khac.text;
-      return bat ? "bat" : "tat";
+      // `!== L` với L khác "0" mơ hồ về HƯỚNG (bật trừ khi L? hay tắt trừ khi L?) — AST không phân biệt được ⇒ KHÔNG suy, bắt buộc có hàm đọc thật (PROBE)
+      if (!bang) return null;
+      return vang === khac.text ? "bat" : "tat";
     }
     return null;
   }
@@ -131,8 +136,24 @@ function quetMa(): Map<string, ThongTinCo> {
 }
 
 const b = (x: boolean): GiaTriVang => (x ? "bat" : "tat");
+/** Chạy `fn` khi biến môi trường `ten` VẮNG (các hàm đọc env tại chỗ gọi không nhận tham số); trả lại giá trị cũ sau đó. */
+function khiEnvVang<T>(ten: string, fn: () => T): T {
+  const cu = process.env[ten];
+  delete process.env[ten];
+  try {
+    return fn();
+  } finally {
+    if (cu !== undefined) process.env[ten] = cu;
+  }
+}
 /** Hàm đọc cờ THẬT của mã, gọi với cờ VẮNG (đối số rỗng / bỏ trống — chú ý tham số mặc định đọc `process.env`, nên truyền chuỗi rỗng khi hàm có tham số mặc định). */
 const PROBE: Record<string, () => GiaTriVang> = {
+  AI_CODING_AUTOLOOP_MAX: () => (kepTranVong(undefined) === TRAN_VONG_MAC_DINH ? "khong-dat" : "bat"),
+  AI_CODING_TU_TRI_GHI_MAX: () => (kepTranVongTuTri(undefined) === TRAN_VONG_MAC_DINH ? "khong-dat" : "bat"),
+  AI_CODING_LESSONS: () => khiEnvVang("AI_CODING_LESSONS", () => b(baiHocEnabled())),
+  AI_CODING_REPO_CONTEXT: () => khiEnvVang("AI_CODING_REPO_CONTEXT", () => b(nguCanhMaEnabled())),
+  AI_CODING_REPO_CONTEXT_MIN_SCORE: () => khiEnvVang("AI_CODING_REPO_CONTEXT_MIN_SCORE", () => (nguongDiemNguCanhMa() === NGUONG_DIEM_NGU_CANH_MA ? "khong-dat" : "bat")),
+  AI_CODING_REPO_CONTEXT_TIMEOUT_MS: () => khiEnvVang("AI_CODING_REPO_CONTEXT_TIMEOUT_MS", () => (hanGioMucLucMs() === HAN_GIO_MUC_LUC_MS ? "khong-dat" : "bat")),
   AI_AGENT_AN_CONG_CU: () => (congCuBiAn("").size === 0 ? "khong-dat" : "bat"),
   AI_AGENT_CSV_DOC: () => b(csvBat(undefined)),
   AI_AGENT_CUU_TRAN: () => b(giuNghiBat(undefined)),
@@ -229,7 +250,9 @@ describe("(2) giá trị-khi-vắng khớp mặc định THẬT của mã (chố
     expect(suy('const a = (process.env.AI_X ?? "1").trim() !== "0";')).toBe("bat");
     expect(suy('const a = String(process.env.AI_X ?? "").trim() === "0";')).toBe("bat");
     expect(suy('const a = process.env.AI_X === "code";')).toBe("tat");
-    expect(suy('const a = (process.env.AI_X ?? "on") !== "on";')).toBe("tat");
+    expect(suy('const a = (process.env.AI_X ?? "on") === "on";')).toBe("bat");
+    expect(suy('const a = (process.env.AI_X ?? "on") !== "on";')).toBeNull(); // `!== L` (L ≠ "0") mơ hồ hướng ⇒ không suy
+    expect(suy('const a = (process.env.AI_X ?? "").trim() !== "1";')).toBeNull();
     expect(suy("const a = Number(process.env.AI_X);")).toBe("khong-dat");
     expect(suy("const a = f(process.env.AI_X);")).toBeNull();
     expect(suy("const a = process.env.AI_X;")).toBeNull();
