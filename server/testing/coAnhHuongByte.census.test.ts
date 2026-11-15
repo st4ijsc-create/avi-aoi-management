@@ -89,11 +89,16 @@ export function macDinhTuViTriDoc(node: ts.PropertyAccessExpression): GiaTriVang
     if (ts.isBinaryExpression(cha) && (cha.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken || cha.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken)) {
       const khac = cha.left === cur ? cha.right : cha.left;
       if (!ts.isStringLiteral(khac)) return null;
-      if (khac.text === "0") return "bat"; // `=== "0"` (tắt khi 0) hoặc `!== "0"` (bật trừ khi 0) ⇒ mặc định bật
+      const L = khac.text;
       const bang = cha.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
-      // `!== L` với L khác "0" mơ hồ về HƯỚNG (bật trừ khi L? hay tắt trừ khi L?) — AST không phân biệt được ⇒ KHÔNG suy, bắt buộc có hàm đọc thật (PROBE)
-      if (!bang) return null;
-      return vang === khac.text ? "bat" : "tat";
+      // CHỈ ba dạng có HƯỚNG rõ (còn lại AST không biết nhánh nào bật ⇒ null ⇒ bắt buộc PROBE: hàm đọc cờ thật):
+      //   `=== "1"`  : bật khi bằng "1"      ⇒ mặc định bật ⇔ giá trị-khi-vắng (fallback) === "1"
+      //   `!== "0"`  : bật trừ khi "0"       ⇒ mặc định bật ⇔ fallback !== "0"
+      //   `=== "0"`  : TẮT khi "0" (kill-switch) ⇒ mặc định bật ⇔ fallback !== "0"
+      // Kill-switch `=== "off"` / `"false"` / `"no"`, `!== "1"`, `=== "code"`… ⇒ không suy.
+      if (L === "1" && bang) return vang === "1" ? "bat" : "tat";
+      if (L === "0") return vang !== "0" ? "bat" : "tat";
+      return null;
     }
     return null;
   }
@@ -234,7 +239,13 @@ describe("(2) giá trị-khi-vắng khớp mặc định THẬT của mã (chố
       expect(gia, `danh sách khai vang=${c.vang} nhưng mã thật mặc định ${gia} (${nguon})`).toBe(c.vang);
     });
   }
-  it("★★ trình suy AST đúng bảng: `=== \"1\"` ⇒ tat · `!== \"0\"` ⇒ bat · `(x ?? \"1\").trim() !== \"0\"` ⇒ bat · `=== \"0\"` ⇒ bat · `=== \"code\"` ⇒ tat · `Number(x)` ⇒ khong-dat · còn lại ⇒ null", () => {
+  it("★★★ cờ dạng KILL-SWITCH off/false/no và mẫu `?? '0'`: AST không suy được hướng ⇒ cờ thật dùng dạng đó PHẢI có PROBE (hàm đọc cờ thật), không dựa AST", () => {
+    const CO_KILL = ["AI_AGENT_KIEM_DAC_TA", "AI_AGENT_GIU_NGHI", "AI_AGENT_CUU_TRAN", "AI_AGENT_TU_TRA_API", "AI_AGENT_THEO_VAI_TRO"];
+    for (const ten of CO_KILL) expect(PROBE[ten], `${ten} phải có PROBE`).toBeDefined();
+    // các cờ này đọc qua hàm chứa ["0","false","off","no"] / regex off|false|no ⇒ AST không suy: đúng chủ ý
+    for (const ten of CO_KILL) for (const d of MA.get(ten)?.doc ?? []) expect(d.macDinh, `${ten} ${d.file}:${d.dong} — AST không được tự suy`).toBeNull();
+  });
+  it("★★★ trình suy AST chỉ suy ba dạng có HƯỚNG rõ, tính cả giá trị-khi-vắng (`?? \"0\"` đảo kết quả); kill-switch `off`/`false`/`no`, `!== \"1\"`, `=== \"code\"` ⇒ null (buộc PROBE)", () => {
     const suy = (ma: string) => {
       const sf = ts.createSourceFile("x.ts", ma, ts.ScriptTarget.Latest, true);
       let ra: GiaTriVang | null | undefined;
@@ -245,15 +256,26 @@ describe("(2) giá trị-khi-vắng khớp mặc định THẬT của mã (chố
       vao(sf);
       return ra;
     };
+    // dạng `=== "1"`
     expect(suy('const a = process.env.AI_X === "1";')).toBe("tat");
+    expect(suy('const a = (process.env.AI_X ?? "1") === "1";')).toBe("bat");
+    // dạng `!== "0"`
     expect(suy('const a = process.env.AI_X !== "0";')).toBe("bat");
     expect(suy('const a = (process.env.AI_X ?? "1").trim() !== "0";')).toBe("bat");
+    expect(suy('const a = (process.env.AI_X ?? "0") !== "0";')).toBe("tat"); // fallback "0" ⇒ MẶC ĐỊNH TẮT (mẫu `?? "0"` cũ suy sai thành bật)
+    // dạng kill-switch `=== "0"`
     expect(suy('const a = String(process.env.AI_X ?? "").trim() === "0";')).toBe("bat");
-    expect(suy('const a = process.env.AI_X === "code";')).toBe("tat");
-    expect(suy('const a = (process.env.AI_X ?? "on") === "on";')).toBe("bat");
-    expect(suy('const a = (process.env.AI_X ?? "on") !== "on";')).toBeNull(); // `!== L` (L ≠ "0") mơ hồ hướng ⇒ không suy
+    expect(suy('const a = (process.env.AI_X ?? "0") === "0";')).toBe("tat");
+    // không suy
+    expect(suy('const a = process.env.AI_X === "off";')).toBeNull();
+    expect(suy('const a = (process.env.AI_X ?? "").toLowerCase() === "false";')).toBeNull();
+    expect(suy('const a = process.env.AI_X === "no";')).toBeNull();
+    expect(suy('const a = (process.env.AI_X ?? "on") !== "on";')).toBeNull();
     expect(suy('const a = (process.env.AI_X ?? "").trim() !== "1";')).toBeNull();
+    expect(suy('const a = process.env.AI_X === "code";')).toBeNull();
+    // cờ giá trị / không suy được
     expect(suy("const a = Number(process.env.AI_X);")).toBe("khong-dat");
+    expect(suy('const a = (process.env.AI_X ?? "").trim();')).toBe("khong-dat");
     expect(suy("const a = f(process.env.AI_X);")).toBeNull();
     expect(suy("const a = process.env.AI_X;")).toBeNull();
   });
@@ -263,6 +285,30 @@ describe("(3) V1.2 — mặc định BẬT cần lý do được kiểm", () => 
   const bat = CO_ANH_HUONG_BYTE.filter((c) => c.vang === "bat");
   it("★★★ mọi cờ vang=bat phải khai phuBoi", () => {
     for (const c of bat) expect(c.phuBoi, `${c.ten}: vang=bat thiếu phuBoi`).toBeDefined();
+  });
+  it("★★★ KHOÁ DANH SÁCH ĐÓNG = ĐÚNG 16 TÊN (so với danh sách tường minh): thêm hay bớt một tên ⇒ ĐỎ, người rà thấy ngay", () => {
+    const TUONG_MINH = [
+      "AI_AGENT_CUU_TRAN",
+      "AI_AGENT_GIU_NGHI",
+      "AI_AGENT_KIEM_DAC_TA",
+      "AI_AGENT_NGHI",
+      "AI_AGENT_THEO_VAI_TRO",
+      "AI_AGENT_TU_TRA_API",
+      "AI_CODING_BO_SUNG_USING",
+      "AI_CODING_EDIT",
+      "AI_CODING_EDIT_HUNKS",
+      "AI_CODING_GEN",
+      "AI_CODING_LESSONS",
+      "AI_CODING_REPO_CONTEXT",
+      "AI_CODING_TOOL_LLM",
+      "AI_CODING_TOOL_LOOP",
+      "AI_CODING_TOOL_VETO",
+      "AI_CODING_USING_MO_RONG",
+    ];
+    expect(TUONG_MINH).toHaveLength(16);
+    expect([...CO_MAC_DINH_BAT_TU_DAU].sort()).toEqual([...TUONG_MINH].sort());
+    expect(CO_MAC_DINH_BAT_TU_DAU).toHaveLength(16);
+    expect(new Set(CO_MAC_DINH_BAT_TU_DAU).size).toBe(16);
   });
   it("★★★ `mac-dinh-tu-dau` CHỈ cho cờ trong danh sách đóng CO_MAC_DINH_BAT_TU_DAU, và mọi cờ trong danh sách đóng đều khai đúng như vậy", () => {
     for (const c of bat.filter((x) => x.phuBoi === "mac-dinh-tu-dau")) expect(CO_MAC_DINH_BAT_TU_DAU, `${c.ten} không thuộc danh sách đóng`).toContain(c.ten);
@@ -278,6 +324,52 @@ describe("(3) V1.2 — mặc định BẬT cần lý do được kiểm", () => 
   });
   it("★★ chỉ cờ `doi-byte` mới có phuBoi", () => {
     for (const c of CO_ANH_HUONG_BYTE.filter((x) => x.phuBoi !== undefined)) expect(c.vang, c.ten).toBe("bat");
+  });
+});
+
+describe("khong-doi-byte — nhãn bằng chứng + kiểm tĩnh (đếm điểm gọi)", () => {
+  const kd = CO_ANH_HUONG_BYTE.filter((c) => c.nhom === "khong-doi-byte");
+  it("★★★ mọi mục `khong-doi-byte` khai `bangChung`: `doc` (bằng đọc, CHƯA đo) hoặc `do-tinh`; mục `doi-byte` không có", () => {
+    for (const c of kd) expect(["doc", "do-tinh"], c.ten).toContain(c.bangChung);
+    for (const c of CO_ANH_HUONG_BYTE.filter((x) => x.nhom === "doi-byte")) expect(c.bangChung, c.ten).toBeUndefined();
+    expect(kd.filter((c) => c.bangChung === "do-tinh").map((c) => c.ten).sort()).toEqual(["AI_AGENT_TU_DONG", "AI_AGENT_UOC_LUONG_TOKEN"]);
+    expect(kd.filter((c) => c.bangChung === "doc").map((c) => c.ten).sort()).toEqual([
+      "AI_AGENT_HOAN_TAC",
+      "AI_AGENT_HOUSEKEEPING_ENABLED",
+      "AI_AGENT_HOUSEKEEPING_INTERVAL_MS",
+      "AI_CODING_AUTOLOOP_VERIFY",
+      "AI_CODING_TU_TRI_LUOT",
+      "AI_GHI_LUOT_DIR",
+    ]);
+  });
+  const dem = (re: RegExp) => {
+    const ra: Array<{ rel: string; n: number }> = [];
+    const di = (d: string) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) {
+          if (["node_modules", "__fixtures__", "fixtures", "dist"].includes(e.name)) continue;
+          di(p);
+        } else if (/\.(ts|tsx)$/.test(e.name) && !/\.test\.(ts|tsx)$/.test(e.name) && e.name !== "coAnhHuongByte.ts") {
+          const t = fs.readFileSync(p, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+          const n = (t.match(re) ?? []).length;
+          if (n > 0) ra.push({ rel: path.relative(GOC, p).split(path.sep).join("/"), n });
+        }
+      }
+    };
+    di(path.join(GOC, "server"));
+    di(path.join(GOC, "shared"));
+    return ra;
+  };
+  it("★★★ đo tĩnh AI_AGENT_TU_DONG: `LY_DO_AGENT_TU_DONG` chỉ có định nghĩa + MỘT chỗ dùng, và chỗ dùng là `reason` của confirmAction", () => {
+    expect(dem(/\bLY_DO_AGENT_TU_DONG\b/g)).toEqual([{ rel: "server/services/ai/agent/boThucThiMayChu.ts", n: 2 }]);
+    const t = fs.readFileSync(path.join(GOC, "server/services/ai/agent/boThucThiMayChu.ts"), "utf8");
+    expect(t).toMatch(/confirmAction\([^;]*\{\s*reason:\s*LY_DO_AGENT_TU_DONG\s*\}/);
+  });
+  it("★★★ đo tĩnh AI_AGENT_UOC_LUONG_TOKEN: `uocLuongTokenLuotChay(` chỉ ở vaiTroTacNhan.ts (định nghĩa + MỘT lời gọi), đưa vào khoá `uocLuongToken` của yêu cầu cổng quota; không điểm gọi nào khác (không đi vào dựng tin)", () => {
+    expect(dem(/\buocLuongTokenLuotChay\(/g)).toEqual([{ rel: "server/services/ai/agent/vaiTroTacNhan.ts", n: 2 }]);
+    const t = fs.readFileSync(path.join(GOC, "server/services/ai/agent/vaiTroTacNhan.ts"), "utf8");
+    expect(t).toMatch(/uocLuongToken:\s*uocLuongTokenLuotChay\(env\)/);
   });
 });
 

@@ -28,6 +28,11 @@ export interface CoAnhHuongByte {
   phuBoi?: "mac-dinh-tu-dau" | "fixture-co-bat";
   /** Một dòng. Bắt buộc với `khong-doi-byte`; khuyến khích với `doi-byte`. */
   lyDo: string;
+  /**
+   * Chỉ cho `khong-doi-byte`: lý do "không đổi byte" dựa trên GÌ. `doc` = BẰNG ĐỌC mã, CHƯA ĐO (rà tay); `do-tinh` = có một ca census đếm điểm gọi (kiểm tĩnh) khoá nó.
+   * Chưa có mục nào `do-dong` (đo động: bật/tắt cờ ⇒ mảng tin gửi model giống nhau từng byte) — việc đó cần chạy vòng lặp thật (DB / phát lại), ghi backlog.
+   */
+  bangChung?: "doc" | "do-tinh";
 }
 
 /** Tiền tố quét tự động. */
@@ -60,7 +65,7 @@ export const CO_MAC_DINH_BAT_TU_DAU: readonly string[] = [
 ];
 
 const db = (ten: string, vang: GiaTriVang, lyDo: string, phuBoi?: "mac-dinh-tu-dau" | "fixture-co-bat"): CoAnhHuongByte => ({ ten, nhom: "doi-byte", vang, lyDo, ...(phuBoi ? { phuBoi } : {}) });
-const kd = (ten: string, lyDo: string): CoAnhHuongByte => ({ ten, nhom: "khong-doi-byte", lyDo });
+const kd = (ten: string, lyDo: string, bangChung: "doc" | "do-tinh" = "doc"): CoAnhHuongByte => ({ ten, nhom: "khong-doi-byte", lyDo, bangChung });
 
 export const CO_ANH_HUONG_BYTE: readonly CoAnhHuongByte[] = [
   db("AI_AGENTIC_ENABLED", "tat", "cổng bật trung tâm tác nhân: vắng ⇒ không có lượt chạy nào"),
@@ -88,8 +93,8 @@ export const CO_ANH_HUONG_BYTE: readonly CoAnhHuongByte[] = [
   kd("AI_AGENT_HOAN_TAC", "hằng nhãn kiểm toán (LY_DO_HOAN_TAC, AUDIT_ACTIONS), không phải biến môi trường"),
   kd("AI_AGENT_HOUSEKEEPING_ENABLED", "dọn dữ liệu nền, không vào lượt chạy"),
   kd("AI_AGENT_HOUSEKEEPING_INTERVAL_MS", "chu kỳ dọn nền, không vào lượt chạy"),
-  kd("AI_AGENT_TU_DONG", "hằng nhãn lý do (LY_DO_AGENT_TU_DONG) trong sổ duyệt, không phải biến môi trường"),
-  kd("AI_AGENT_UOC_LUONG_TOKEN", "ước lượng token cho cổng quota, không vào lời nhắn"),
+  kd("AI_AGENT_TU_DONG", "hằng nhãn lý do (LY_DO_AGENT_TU_DONG, boThucThiMayChu.ts:135) chỉ đi vào `reason` của confirmAction (boThucThiMayChu.ts:1039), không phải biến môi trường", "do-tinh"),
+  kd("AI_AGENT_UOC_LUONG_TOKEN", "số ước lượng token của lượt chạy cho cổng quota (vaiTroTacNhan.ts:53,154 → aiGateway.ts:928), không vào lời nhắn / mảng tin", "do-tinh"),
   // ── 18 cờ AI_CODING_* của đường chat lập trình (HST 15/11). `vang` đã được census so với mặc định THẬT; ngày = lúc tên cờ xuất hiện (git log -S), mọi cờ `bat` có TỪ TRƯỚC fixture đầu tiên (02/11) ──
   db("AI_CODING_ABLATION_NGU_CANH", "khong-dat", "công tắc ĐO: bỏ khối mã khỏi persona (aiLocalKnowledgeCodingSinhMa.ts:202); không bật ở sản xuất"),
   db("AI_CODING_AUTOLOOP_MAX", "khong-dat", "trần số vòng của vòng kiểm chứng tự động cũ (aiCodingVerify.ts:98); thêm 2026-08-19"),
