@@ -23,7 +23,7 @@ import { factories, machines, productModels, productInspections, measurementResu
  * Vai `admin` ⇒ `getAccessFilterConditions` trả `undefined` ⇒ KHÔNG bộ lọc nào được áp
  * ⇒ hành vi y hệt trước bản vá phạm vi 2026-08-17, nên các phép đo cũ giữ nguyên nghĩa.
  * (`userId` không cần có thật: `getUserAssignmentCodes` ngắt mạch ở vai `admin` trước
- * khi chạm CSDL.) Trục phạm vi có lưới RIÊNG: `defectSpatialHeatmap.scope.test.ts`.
+ * khi chạm CSDL.) Trục phạm vi có lưới RIÊNG: `defectSpatialHeatmap.scope.db.test.ts`.
  */
 const ADMIN_SCOPE = { userId: 1, userRole: "admin" } as const;
 

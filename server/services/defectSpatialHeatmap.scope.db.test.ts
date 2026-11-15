@@ -34,7 +34,7 @@
  * Lưới chạy trên CSDL test thật (vitest.setup.ts) với `_core/accessControl` THẬT — không mock
  * bộ phân giải phạm vi, vì thứ cần chứng minh chính là SQL sinh ra từ nó có tới nơi hay không.
  *
- * ⚠ Chạm `_test` (GIỮ tên tệp vì `nguoiDungTest.census.test.ts` trỏ tới nó): fixture (nhà máy … bản ghi kiểm, measurement_results, người dùng, gán nhà máy) nằm trong MỘT giao dịch drizzle mở suốt tệp
+ * ⚠ Chạm `_test` (đuôi `.db.test.ts`): fixture (nhà máy … bản ghi kiểm, measurement_results, người dùng, gán nhà máy) nằm trong MỘT giao dịch drizzle mở suốt tệp
  *   và kết thúc bằng ROLLBACK (không DELETE, không TRUNCATE, không owner `aoi`). `_core/accessControl` đọc cùng `getDb` (mock) nên thấy người dùng / gán chưa commit.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
