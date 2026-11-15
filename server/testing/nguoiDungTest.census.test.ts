@@ -458,7 +458,7 @@ describe("census — test không tự insert(users) ngoài giao dịch hoàn tá
       "server/_core/accessControlScope.test.ts",
       "server/routers/reportServiceScope.test.ts",
       "server/routers/defectHeatmapSavedScope.test.ts",
-      "server/services/defectSpatialHeatmap.scope.test.ts",
+      "server/services/defectSpatialHeatmap.scope.db.test.ts",
       "server/db/statisticsDailyScope.test.ts",
       "server/routers/reportExportScope.test.ts",
       "server/db/statisticsScope.test.ts",

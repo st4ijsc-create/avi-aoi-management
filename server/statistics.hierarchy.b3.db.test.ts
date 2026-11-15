@@ -22,12 +22,18 @@
  *  json/text detail columns).
  *
  * Runs against the isolated cloned test DB (vitest.setup.ts).
+ *
+ * ⚠ TOÀN BỘ tệp chạm `_test` (đuôi `.db.test.ts`): fixture (nhà máy / xưởng / dây chuyền / trạm / máy / bản ghi kiểm) nằm trong MỘT giao dịch
+ *   drizzle mở suốt tệp và kết thúc bằng ROLLBACK (không DELETE, không TRUNCATE, không owner `aoi`). Kỳ vọng các ca giữ nguyên.
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import * as db from "./db";
 import { getDb } from "./db/connection";
 import { inArray, eq, and, gte, lte, sql } from "drizzle-orm";
 import {
+  factories,
   workshops,
   productionLines,
   stations,
@@ -36,6 +42,85 @@ import {
 } from "../drizzle/schema";
 
 const ts = Date.now();
+
+// ═════════════════════════════════════════════════════════════════
+// GIAO DỊCH HOÀN TÁC — mẫu server/db/statisticsScope.test.ts + aiAnalyticsMachineType.db.test.ts
+// ═════════════════════════════════════════════════════════════════
+// `getDb` (mock) trả về `tx` của MỘT giao dịch drizzle mở suốt tệp; hàm `db.create*` / `createProductInspection` tự mở `transaction(...)`:
+// trên `tx` việc đó thành SAVEPOINT (không COMMIT giao dịch ngoài) nên ROLLBACK cuối cùng hoàn tác TẤT CẢ hàng đã chèn.
+// Không DELETE, không TRUNCATE, không owner `aoi`. Không có DATABASE_URL ⇒ cả nhóm bị bỏ qua (skipIf).
+const DB_URL = process.env.DATABASE_URL;
+class HoanTacCuoiTep extends Error {}
+const holder: { db: unknown } = { db: null };
+vi.mock("./db/connection", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getDb: async () => holder.db,
+}));
+/** id các hàng đã chèn — để chứng minh (a) ca THẬT SỰ ghi trong giao dịch, (b) sau ROLLBACK không còn hàng nào. */
+const daChen: Record<string, number[]> = {};
+const ghiNho = (khoa: string, id: number): number => {
+  (daChen[khoa] ??= []).push(id);
+  return id;
+};
+let phienGiaoDich: ReturnType<typeof postgres> | null = null;
+let moKhoaHoanTac: () => void = () => undefined;
+let giaoDichXong: Promise<void> = Promise.resolve();
+
+async function moGiaoDichHoanTac(): Promise<void> {
+  phienGiaoDich = postgres(DB_URL!, { max: 1, onnotice: () => undefined });
+  const choHoanTac = new Promise<void>((xong) => {
+    moKhoaHoanTac = xong;
+  });
+  await new Promise<void>((sanSang, thatBai) => {
+    giaoDichXong = drizzle(phienGiaoDich!)
+      .transaction(async (tx) => {
+        holder.db = tx;
+        sanSang();
+        await choHoanTac;
+        throw new HoanTacCuoiTep();
+      })
+      .then(
+        () => undefined,
+        (e: unknown) => {
+          if (!(e instanceof HoanTacCuoiTep)) thatBai(e);
+        },
+      );
+  });
+}
+
+beforeAll(async () => {
+  if (!DB_URL) return;
+  await moGiaoDichHoanTac();
+}, 120_000);
+
+afterAll(async () => {
+  holder.db = null;
+  moKhoaHoanTac();
+  await giaoDichXong;
+  if (phienGiaoDich) await phienGiaoDich.end({ timeout: 5 });
+  // (b) NGOÀI giao dịch, bằng kết nối RIÊNG sau ROLLBACK: mọi hàng của chính lượt này KHÔNG còn. Đếm theo id đã chèn
+  // (id từ sequence không tái dùng) nên không nhiễu bởi tệp khác chạy song song.
+  if (DB_URL) {
+    const ngoai = postgres(DB_URL, { max: 1, onnotice: () => undefined });
+    try {
+      for (const [bang, cot, ids] of [
+        ["factories", "id", daChen.factoryIds],
+        ["workshops", "id", daChen.workshopIds],
+        ["production_lines", "id", daChen.lineIds],
+        ["stations", "id", daChen.stationIds],
+        ["machines", "id", daChen.machineIds],
+        ["product_inspections", "id", daChen.inspectionIds],
+      ] as Array<[string, string, number[] | undefined]>) {
+        if (!ids || ids.length === 0) continue;
+        const n = Number((await ngoai.unsafe(`SELECT count(*)::int AS n FROM ${bang} WHERE "${cot}" = ANY($1::bigint[])`, [ids as never]))[0].n);
+        expect(n, `${bang} sau ROLLBACK`).toBe(0);
+      }
+    } finally {
+      await ngoai.end({ timeout: 5 });
+    }
+  }
+}, 60_000);
+
 
 // Fixture window — keep clear of other suites (kpi test uses 2026-03).
 const rangeStart = new Date("2026-04-01T00:00:00Z");
@@ -59,36 +144,36 @@ async function seedChain(opts: {
   wsCode: string;
   machineCode: string;
 }): Promise<{ workshopId: number; machineId: number }> {
-  const workshopId = await db.createWorkshop({
+  const workshopId = ghiNho("workshopIds", await db.createWorkshop({
     factoryId: opts.factoryId,
     code: opts.wsCode,
     name: opts.wsCode,
-  });
-  const lineId = await db.createProductionLine({
+  }));
+  const lineId = ghiNho("lineIds", await db.createProductionLine({
     workshopId,
     code: `${opts.wsCode}_LN`,
     name: `${opts.wsCode} line`,
-  });
-  const stationId = await db.createStation({
+  }));
+  const stationId = ghiNho("stationIds", await db.createStation({
     lineId,
     code: `${opts.wsCode}_ST`,
     name: `${opts.wsCode} station`,
-    sequence: 1,
-  });
-  const machineId = await db.createMachine({
+    orderIndex: 1,
+  }));
+  const machineId = ghiNho("machineIds", await db.createMachine({
     stationId,
     code: opts.machineCode,
     name: opts.machineCode,
     machineType: "AOI",
     apiKey: `test_${opts.machineCode}`,
-  });
+  }));
   return { workshopId, machineId };
 }
 
-describe("hierarchy filter single-query (B3) + list projection (B9)", () => {
+describe.skipIf(!DB_URL)("hierarchy filter single-query (B3) + list projection (B9)", () => {
   beforeAll(async () => {
-    f1Id = await db.createFactory({ code: F1_CODE, name: "B3 factory 1" });
-    f2Id = await db.createFactory({ code: F2_CODE, name: "B3 factory 2" });
+    f1Id = ghiNho("factoryIds", await db.createFactory({ code: F1_CODE, name: "B3 factory 1" }));
+    f2Id = ghiNho("factoryIds", await db.createFactory({ code: F2_CODE, name: "B3 factory 2" }));
 
     const c1 = await seedChain({ factoryId: f1Id, wsCode: `TEST_B3_WS1_${ts}`, machineCode: `TEST_B3_MA_${ts}` });
     const c2 = await seedChain({ factoryId: f1Id, wsCode: WS2_CODE, machineCode: `TEST_B3_MB_${ts}` });
@@ -108,14 +193,25 @@ describe("hierarchy filter single-query (B3) + list projection (B9)", () => {
     let n = 0;
     for (const [machineId, overallResult, minutes] of rows) {
       n += 1;
-      await db.createProductInspection({
+      ghiNho("inspectionIds", await db.createProductInspection({
         machineId,
         serialNumber: `SN_B3_${ts}_${n}`,
         overallResult,
         originalResult: overallResult === "NTF" ? "NG" : overallResult,
         inspectionTime: new Date(baseTime + minutes * 60_000),
-      });
+      }));
     }
+  });
+
+  it("(a) ca THẬT SỰ ghi trong giao dịch: 2 nhà máy, 3 xưởng, 3 dây chuyền, 3 trạm, 3 máy, 5 bản ghi kiểm (đếm qua tx, trước ROLLBACK)", async () => {
+    const raw = (await getDb())!;
+    const dem = async (bang: any, cot: any, ids: number[]) => (await raw.select().from(bang).where(inArray(cot, ids))).length;
+    expect(await dem(factories, factories.id, daChen.factoryIds)).toBe(2);
+    expect(await dem(workshops, workshops.id, daChen.workshopIds)).toBe(3);
+    expect(await dem(productionLines, productionLines.id, daChen.lineIds)).toBe(3);
+    expect(await dem(stations, stations.id, daChen.stationIds)).toBe(3);
+    expect(await dem(machines, machines.id, daChen.machineIds)).toBe(3);
+    expect(await dem(productInspections, productInspections.id, daChen.inspectionIds)).toBe(5);
   });
 
   // ── B3: getDashboardStats hierarchy filter ────────────────────────────────
@@ -276,7 +372,7 @@ describe("hierarchy filter single-query (B3) + list projection (B9)", () => {
 
     // OLD shape — replicated verbatim from the pre-B3 code (4 awaited selects
     // to resolve machine IDs, then the aggregate with an inArray literal list).
-    async function oldShape() {
+    const oldShape = async () => {
       const workshopsInFactory = await dbc.select({ id: workshops.id }).from(workshops)
         .where(eq(workshops.factoryId, f1Id));
       const workshopIds = workshopsInFactory.map((w) => w.id);
@@ -298,7 +394,7 @@ describe("hierarchy filter single-query (B3) + list projection (B9)", () => {
         inArray(productInspections.machineId, machineIds),
       ));
       return Number(row.total);
-    }
+    };
 
     // Warm-up (connection, plan caches) so neither side pays first-query cost.
     await oldShape();
