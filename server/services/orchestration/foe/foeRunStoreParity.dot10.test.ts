@@ -2036,7 +2036,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   };
   it("T4-B3-STOP-BAT-BIEN-A (ô #20, bất biến L-7) TRUNG TÂM: r1 trả timeout, bù trừ cst là STOP ghim ⇒ khi run kết thúc cst đã đi ĐÚNG MỘT lần, không bao giờ hai lần", async () => {
     ghimHalt();
-    h.ghim = async () => ({ pinnedStop: true, loiDocGhim: null });
+    h.ghim = async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // central pin answer: a STOP only (never the ordinary c1)
     h.timeoutDispatch.add("r1");
     const c = await centralRun(dinhNghiaStop("d20-a"), 1);
     expect(["failed", "aborted", "completed"]).toContain(runRow(c).status);
@@ -2118,7 +2118,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   };
   it("T4-B3-QD5-ABORT-CO-DAU (QĐ4 (iii), có dấu) the latch's URGENT durable at the hold (DA_BAO r1): an Abort does NOT tell the forward work again; the pinned STOP goes as usual (the Abort's own send)", async () => {
     ghimHalt();
-    h.ghim = async () => ({ pinnedStop: true, loiDocGhim: null });
+    h.ghim = async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // central pin answer: a STOP only (never the ordinary c1)
     const e = await giuCoDau("qd5-abd", ot("c1"));
     const a0 = h.alerts.length;
     await abortRun(e.runId, OWNER, "checked on site");
@@ -2140,10 +2140,27 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(h.alerts.slice(a3).map((a) => String(a.dedupKey))).toContain(`${CANH_BAO_KHONG_RO_KIND.approvedNotSent}:${e.runId}:r1:c1:claim3`);
   });
 
+  // HST 15/11 (thay vế "bù trừ thật sự thiếu" của QĐ4 (v)): a noCompensation CANNOT arise in segment 3. Segment 3 is a compensation-only walk (duongBuTruCua,
+  // foeEngine.ts:1284; buocTienBiBo returns [] for it, :1442; resumeRun's I-4 marks every other failed step doneFailed, themBuocHongKhiTiepTuc foeRunStore.ts:1989): no forward step is walked,
+  // so the only raise of a forward step's noCompensation (foeEngine.ts:1205, a forward command failing on an unknown outcome) is not reached; the walk-end net (R-4, :3614-3616) skips a step
+  // whose approved compensation went (#18), and an approved one that failed was told already (approvedNotSent / approvedNotConfirmed, :1333). The NEW incident of segment 3 is the approved
+  // compensation itself failing: it still raises its own URGENT with the mark present. Its URGENT is approvedNotConfirmed (congBuTru, foeEngine.ts:1333: an approved compensation handed over that
+  // failed or got no answer; words foeKetCucKhongRo.ts:801), the SAME code as central's walk — not compensationUnknown (:803, a compensation sent with no approval or by an earlier segment).
+  // Measured 15/11 (do-iv probe3): exactly this one URGENT. The brief named compensationUnknown: reported to scada-master
+  it("T4-B3-QD5-BU-TRU-HONG (QĐ4 (v), thay vế 'bù trừ thiếu') the mark present, the ONE approved Continue, and the approved compensation c1 itself FAILS in segment 3 (no answer: timeout) ⇒ it still raises its own URGENT: approvedNotConfirmed(r1/c1), exactly that one", async () => {
+    const e = await giuCoDau("qd5-bh", ot("c1"));
+    expect((await continueOutcomeUnknown(e, "checked on site: r1 not applied")).status).toBe("queued");
+    h.timeoutDispatch.add("c1");
+    const a3 = h.alerts.length;
+    await edgeSegment(e, 3);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(h.sent.filter((x) => x.stepId === "c1"), "c1 handed over once").toHaveLength(1);
+    expect(h.alerts.slice(a3).map((a) => String(a.dedupKey))).toEqual([`${CANH_BAO_KHONG_RO_KIND.approvedNotConfirmed}:${e.runId}:r1:c1:claim3`]);
+  });
   // QĐ5 (HST 15/11), mục 3 — run chốt CHỈ qua foeOutcomeUnknown (kết cục do nút báo, không có bản ghi chốt, không có dấu DA_BAO): Abort sau lúc giữ phải NÓI LẠI và gửi STOP nợ như thường
   it("T4-B3-QD5-ABORT (QĐ4 (iii), không dấu) edge journalFull, run latched only through foeOutcomeUnknown (no latch record, no DA_BAO): an Abort after the hold tells the dropped forward work again and sends the owed pinned STOP once", async () => {
     ghimHalt();
-    h.ghim = async () => ({ pinnedStop: true, loiDocGhim: null });
+    h.ghim = async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // central pin answer: a STOP only (never the ordinary c1)
     const e = await edgeAssignedRun(def("qd5-ab", [gate(), move("r1", { maxAttempts: 2, compensation: ot("c1") }), move("r2"), otStop("s9")]));
     await edgeSegment(e, 1);
     await approveEdgeGate(e);
