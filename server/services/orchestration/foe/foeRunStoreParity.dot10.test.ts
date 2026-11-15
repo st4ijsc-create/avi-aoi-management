@@ -2360,6 +2360,37 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(h.alerts.slice(a1).map((a) => String(a.dedupKey)).some((k) => k.includes(`:${e.runId}:r1:`)), "an URGENT after the Abort names r1").toBe(true);
   });
 
+  // kiem-dinh S7 / #18, đường (ii) của congBuTru (foeEngine.ts:1320, `daXongBuTru` ⇒ return KHÔNG thêm cx vào buTruDaGui): Continue 1 gửi c1 (hàng `compensated`), đoạn 3 lại giữ vì sổ từ chối bản ghi ngữ cảnh,
+  // Continue 2, đoạn 4. Đo (bao-cao mục 36): bản gốc KHÔNG báo thêm noCompensation(r1) ở cả hai đoạn; c1 đúng một lần. Đột biến S6 (`if (true)` ở lưới R-4, foeEngine.ts:3616) đỏ ở đoạn 3 (noCompensation(r1) claim3);
+  // đột biến S7 (bỏ `rc.buTruDaGui?.has(cid)`) vẫn xanh ở đây: bản gốc đã không báo, nên S7 không có ca đỏ trên đường này
+  it("T4-B3-S7-CX-XONG-TRUOC (kiem-dinh S7, #18) edge: Continue 1 sends c1, segment 3 holds again (journal refuses the context record), Continue 2, segment 4: c1 exactly once, NO noCompensation of r1 at any segment", async () => {
+    const e = await edgeAssignedRun(def("s7ctt", [gate(), move("r1", { maxAttempts: 2, compensation: ot("c1") }), move("r2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const n0 = h.sent.length;
+    h.failPlan.set("r1", 1);
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as any)?.routedTo === "string";
+    await edgeSegment(e, 2);
+    e.refuse = undefined;
+    expect((await continueOutcomeUnknown(e, "checked on site: r1 not applied")).status).toBe("queued");
+    e.refuse = (rec) => rec.kind !== "step"; // the journal refuses the segment's context record, after c1's result went in
+    const a3 = h.alerts.length;
+    const s3 = await edgeSegment(e, 3);
+    e.refuse = undefined;
+    await new Promise((r) => setTimeout(r, 100));
+    expect(s3.out).toMatchObject({ outcome: "held", heldReason: "journalFull" });
+    expect(rows("orchestration_run_steps").filter((r) => r.runId === e.runId && r.stepId === "c1").map((r) => r.status)).toEqual(["compensated"]);
+    const noComp = (a: number) => h.alerts.slice(a).map((x) => String(x.dedupKey)).filter((k) => k.startsWith(`${CANH_BAO_KHONG_RO_KIND.noCompensation}:${e.runId}:r1:`));
+    expect(noComp(a3), "segment 3: c1 went and was approved: told already, no noCompensation(r1)").toEqual([]);
+    expect(runRow(e.runId).status).toBe("held");
+    const a4 = h.alerts.length;
+    expect((await continueOutcomeUnknown(e, "second continue")).status).toBe("queued");
+    await edgeSegment(e, 4);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(noComp(a4), "segment 4: c1 done in an earlier walk: no noCompensation(r1) either").toEqual([]);
+    expect(h.sent.slice(n0).filter((x) => x.stepId === "c1"), "c1 exactly once").toHaveLength(1);
+  });
+
   // Q-1 (chu-du-an-HST 15/11): held() chờ URGENT bền tới 5·D trong giao dịch giữ khoá hàng run (foeRunStore.ts:2136, :2204, KET_DOAN_EDGE_TONG_MS :733). Abort bấm trong lúc đó: ghi `aborted` chờ khoá, nhưng bị chặn bởi D
   // (foeEngine.ts:7234-7250) rồi VẪN quét STOP. Khoá hàng của Postgres không có trong FakeDb (for() là no-op): chờ khoá được mô hình bằng h.treAborted (trễ của lần ghi `aborted`), cơ chế có sẵn. Đo thật: mục 29 / 30 của bao-cao.md
   afterEach(() => vi.useRealTimers());
