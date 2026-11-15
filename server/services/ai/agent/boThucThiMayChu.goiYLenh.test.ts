@@ -141,6 +141,47 @@ describe("cờ AI_AGENT_GOI_Y_LENH — MẶC ĐỊNH TẮT: lời từ chối gi
   });
 });
 
+describe("cờ TẮT ⇒ câu từ chối bằng CHUỖI NGUYÊN VĂN của main b64cfa984 (không so tương đối)", () => {
+  /** [mã, chi tiết, câu NGUYÊN VĂN do hàm `cauTuChoiLenhTuDong` của b64cfa984 trả — trích từ git, KHÔNG sinh từ mã nhánh này] */
+  const NGUYEN_VAN_MAIN: Array<[ "LENH_CAN_DUYET_TAY" | "AUTOLOOP_TAT", string, string ]> = [
+  ["LENH_CAN_DUYET_TAY", "CMD_NOT_ALLOWED: git status", "Refused in automatic mode: this command needs manual approval (CMD_NOT_ALLOWED: git status). Only test/build verification commands (e.g. node --test <path>, npx vitest run <path>, dotnet build|test <path>, python -m pytest|unittest <path>, javac -d <out> <files|dir>, java -cp <out> <TestClass>, cmake -S . -B <build>, cmake --build <build>, ctest --test-dir <build>, go test|build|vet ./..., cargo test|build|check --offline) run without approval, and never commands that rewrite source files (dotnet format). The command was NOT run. Use a verification command, or tell the user to run this one in 'Edit' mode."],
+  ["LENH_CAN_DUYET_TAY", "dotnet restore", "Refused in automatic mode: this command needs manual approval (dotnet restore). Note: dotnet build|test <path> restore NuGet packages automatically (offline, from this machine's package cache) — just run `dotnet test <project>`; a package not on this machine fails with NU1101 and needs the user to approve `dotnet restore` in 'Edit' mode. Do not create or edit obj/project.assets.json by hand. Only test/build verification commands (e.g. node --test <path>, npx vitest run <path>, dotnet build|test <path>, python -m pytest|unittest <path>, javac -d <out> <files|dir>, java -cp <out> <TestClass>, cmake -S . -B <build>, cmake --build <build>, ctest --test-dir <build>, go test|build|vet ./..., cargo test|build|check --offline) run without approval, and never commands that rewrite source files (dotnet format). The command was NOT run. Use a verification command, or tell the user to run this one in 'Edit' mode."],
+  ["AUTOLOOP_TAT", "AI_CODING_AUTOLOOP", "Refused in automatic mode: running commands without approval is disabled on this server (AI_CODING_AUTOLOOP is off). The command was NOT run. Do not retry it; tell the user they can run it in 'Edit' mode (approval per command)."],
+  ["LENH_CAN_DUYET_TAY", "CMD_METACHAR: ky tu \"*\" (U+002A)", "Refused in automatic mode: this command needs manual approval (CMD_METACHAR: ky tu \"*\" (U+002A)). Only test/build verification commands (e.g. node --test <path>, npx vitest run <path>, dotnet build|test <path>, python -m pytest|unittest <path>, javac -d <out> <files|dir>, java -cp <out> <TestClass>, cmake -S . -B <build>, cmake --build <build>, ctest --test-dir <build>, go test|build|vet ./..., cargo test|build|check --offline) run without approval, and never commands that rewrite source files (dotnet format). The command was NOT run. Use a verification command, or tell the user to run this one in 'Edit' mode."],
+  ];
+  const LENH = [undefined, "git status", "python -m pytest tests/x.py -v", "cat a/b.csv", "node --test a/*.mjs", "mkdir -p d", "python -c print(1)", "dotnet restore p.csproj", 42];
+  it("★★★ cờ vắng / rỗng / 0 / true / on / ' 1' ⇒ ĐÚNG chuỗi của main, cho 4 tổ hợp (mã × chi tiết) × 9 lệnh", () => {
+    let n = 0;
+    for (const giaTri of [undefined, "", "0", "true", "on", " 1"]) {
+      vi.unstubAllEnvs();
+      if (giaTri !== undefined) vi.stubEnv("AI_AGENT_GOI_Y_LENH", giaTri);
+      else delete process.env.AI_AGENT_GOI_Y_LENH;
+      for (const [ma, chiTiet, nguyenVan] of NGUYEN_VAN_MAIN) {
+        for (const lenh of LENH) {
+          expect(cauTuChoiLenhTuDong(ma, chiTiet, lenh), `${String(giaTri)} · ${ma} · ${chiTiet} · ${String(lenh)}`).toBe(nguyenVan);
+          n++;
+        }
+      }
+    }
+    expect(n).toBe(6 * 4 * 9);
+  });
+  it("★★★ chuỗi của main là chuỗi THẬT (có 'needs manual approval', danh sách chung, 'NOT run'), và dotnet restore giữ gợi ý cũ", () => {
+    const [a, b, c] = NGUYEN_VAN_MAIN;
+    expect(a![2]).toContain("this command needs manual approval (CMD_NOT_ALLOWED: git status)");
+    expect(a![2]).toContain("Only test/build verification commands");
+    expect(a![2]).toContain("The command was NOT run.");
+    expect(b![2]).toContain("dotnet build|test <path> restore NuGet packages automatically");
+    expect(c![2]).toContain("Do not retry it");
+  });
+  it("★★ cờ `1` ĐỔI chuỗi với lệnh có họ gợi ý (có tác dụng), nhưng vẫn BẮT ĐẦU bằng đúng chuỗi của main", () => {
+    vi.stubEnv("AI_AGENT_GOI_Y_LENH", "1");
+    const [a] = NGUYEN_VAN_MAIN;
+    const day = cauTuChoiLenhTuDong(a![0], a![1], "python -m pytest tests/x.py -v");
+    expect(day).not.toBe(a![2]);
+    expect(day.startsWith(a![2])).toBe(true);
+  });
+});
+
 describe("điểm gọi thật: bộ thực thi tu-dong truyền `args.command` vào lời từ chối (bản GIẢ, không CSDL)", () => {
   function dung() {
     vi.stubEnv("AI_CODING_TU_TRI_GHI", "1");
