@@ -131,13 +131,14 @@ afterAll(async () => {
         expect(n, `${bang} sau ROLLBACK`).toBe(0);
       }
 
-      for (const [bang, cot] of [
-        ["audit_logs", "entityId"],
-        ["product_inspections", "machineId"],
+      // `audit_logs.entityId` là số CHUNG cho mọi loại thực thể ⇒ phải lọc thêm entityType='machine', nếu không hàng audit CÓ SẴN của thực thể khác trùng số id sẽ lọt vào.
+      for (const [bang, cot, them] of [
+        ["audit_logs", "entityId", ` AND "entityType" = 'machine'`],
+        ["product_inspections", "machineId", ""],
       ] as const) {
         const ids = daChen.machineIds ?? [];
         if (ids.length === 0) continue;
-        const n = Number((await ngoai.unsafe(`SELECT count(*)::int AS n FROM ${bang} WHERE "${cot}" = ANY($1::bigint[])`, [ids as never]))[0].n);
+        const n = Number((await ngoai.unsafe(`SELECT count(*)::int AS n FROM ${bang} WHERE "${cot}" = ANY($1::bigint[])${them}`, [ids as never]))[0].n);
         expect(n, `${bang} sau ROLLBACK`).toBe(0);
       }
     } finally {
@@ -448,7 +449,7 @@ describe.skipIf(!DB_URL)("§E — BG-57b (phần ghi thật): `ingest_shape_lega
 });
 
 describe.skipIf(!DB_URL)("(a) các ca THẬT SỰ ghi trong giao dịch (đếm qua tx, trước ROLLBACK)", () => {
-  it("8 máy đã chèn, 6 hàng audit_logs đếm hình dạng mang entityId = các máy ấy, 7 bản ghi kiểm do ingest tạo", async () => {
+  it("8 máy đã chèn, 6 hàng audit_logs (entityType='machine') đếm hình dạng mang entityId = các máy ấy, 7 bản ghi kiểm do ingest tạo", async () => {
     // Máy: ACCEPT-V1, ACCEPT-V2, BATCH-OK, ANTI-FORGE, REJ-V1, FLAG-ON, FLAG-OFF, REJECTED-SIGNAL = 8.
     // Hàng audit (mỗi ca xác thực thành công đúng 1 hàng, ca bị từ chối 0): V1, V2, BATCH, FORGE, FLAG-OFF, REJECTED-SIGNAL = 6.
     // Bản ghi kiểm: V1 1 + V2 1 + BATCH 3 + FORGE 1 + FLAG-OFF 1 = 7.
@@ -456,7 +457,7 @@ describe.skipIf(!DB_URL)("(a) các ca THẬT SỰ ghi trong giao dịch (đếm 
     const ids = daChen.machineIds;
     expect(ids).toHaveLength(8);
     expect((await d.select({ id: machines.id }).from(machines).where(inArray(machines.id, ids))).length).toBe(8);
-    expect((await d.select({ id: auditLogs.id }).from(auditLogs).where(inArray(auditLogs.entityId, ids))).length).toBe(6);
+    expect((await d.select({ id: auditLogs.id }).from(auditLogs).where(and(inArray(auditLogs.entityId, ids), eq(auditLogs.entityType, "machine")))).length).toBe(6);
     expect((await d.select({ id: productInspections.id }).from(productInspections).where(inArray(productInspections.machineId, ids))).length).toBe(7);
   });
 });
