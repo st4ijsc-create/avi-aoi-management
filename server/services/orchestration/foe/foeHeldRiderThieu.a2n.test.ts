@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const H = vi.hoisted(() => ({ alerts: [] as Array<Record<string, any>> }));
+const H = vi.hoisted(() => ({ alerts: [] as Array<Record<string, any>>, ben: true }));
 
 vi.mock("drizzle-orm", async (orig) => {
   const actual = await orig<typeof import("drizzle-orm")>();
@@ -25,14 +25,14 @@ vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
     ...orig,
     raiseCriticalStopAlert: async (a: Record<string, any>) => {
       H.alerts.push(a);
-      a.baoBen?.(true);
+      a.baoBen?.(H.ben);
     },
   };
 });
 
 import { FakeDb } from "../../../routers/__otFakeDb";
 import { applyEdgeSegmentEnd } from "./foeRunStore";
-import { BUOC_KHONG_XAC_DINH, CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KHONG_CO_BU_TRU, noiDungCanhBaoKhongRo, ganBaoCaoKhongRoEdge, runDaChotKhongRo, tachBaoCaoKhongRoEdge } from "./foeKetCucKhongRo";
+import { BUOC_KHONG_XAC_DINH, CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, noiDungCanhBaoKhongRo, ganBaoCaoKhongRoEdge, runDaChotKhongRo, tachBaoCaoKhongRoEdge } from "./foeKetCucKhongRo";
 import { edgeResumeStateOf, stopChuaRaTuHang } from "./foeRunStore";
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
 
@@ -47,6 +47,7 @@ const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
 let d: FakeDb;
 beforeEach(() => {
   H.alerts.length = 0;
+  H.ben = true;
   d = new FakeDb();
   d.store.set("orchestration_runs", [{ id: RUN, status: "running", contextJson: null, startedBy: OWNER }]);
 });
@@ -212,6 +213,36 @@ describe("T4 — dạng 4, the cases of the review (rider short or unreadable)",
     ]);
     await ket({ ref: "t4b3o19h", name: "t4b3o19h", steps: [{ ...move("x"), compensation: move("cx") }, { ...move("z"), compensation: move("cz") }, move("y")] } as never);
     expect(tatCaKhoa()).toEqual([K("held", "x", "cx"), K("held", "z", "cz"), K("forwardNotSent", "?", KHONG_CO_BU_TRU)].sort());
+  });
+  // HST 15/11, QĐ4 — DA_BAO ("the latch was told to a person": an Abort reads it, foeEngine.ts:6989) ONLY when an URGENT that says THE latch's event (names the latch's step, its outcome
+  // unknown) was confirmed durable; its stepId = the latch's. chotTuBao: the first report that is no forwardNotSent. ĐỎ trước
+  it("T4-B3-QD4-BEN (QĐ4) the URGENT of the pair waiting (held x/cx: names x, outcome unknown) confirmed durable at the hold ⇒ DA_BAO with the latch's step x", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    hangX();
+    const { ctx } = await ket(defXY());
+    expect(ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toMatchObject({ stepId: "x" });
+    expect(ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]).toMatchObject({ stepId: "x" });
+  });
+  it("T4-B3-QD4-KHONG-BEN (QĐ4 (ii)) the URGENT not confirmed durable at the hold ⇒ NO DA_BAO (the end gate raises run_end later: the closed side); the latch names x", async () => {
+    H.ben = false;
+    d.store.set("edge_step_authorizations", [so("x")]);
+    hangX();
+    const { ctx } = await ket(defXY());
+    expect(ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toMatchObject({ stepId: "x" });
+    expect(ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]).toBeUndefined();
+  });
+  it("T4-B3-QD4-CHI-FWD (QĐ4 (iv)) the rider carries ONLY forwardNotSent(y): the latch never names the forward step — it is central's (x, from the rows), and DA_BAO (if any) names x, never y", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    hangX();
+    const { ctx } = await ket(defXY(), riderCo([{ loai: "forwardNotSent", stepId: "y", compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }]));
+    expect(ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toMatchObject({ stepId: "x" });
+    expect((ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] as { stepId?: string } | undefined)?.stepId ?? "x").toBe("x");
+  });
+  it("T4-B3-QD4-FWD-KHONG-DAU (QĐ4) only a forwardNotSent is durable (no pair waiting, nothing names the latch's step) ⇒ NO DA_BAO", async () => {
+    d.store.set("edge_step_authorizations", [so("x", { resultReportedAt: new Date(), resultStatus: "acked" })]);
+    d.store.set("orchestration_run_steps", [{ runId: RUN, stepId: "x", stepType: "command", status: "completed", attempt: 1, error: null, resultJson: null }]);
+    const { ctx } = await ket(defXY(), riderCo([{ loai: "forwardNotSent", stepId: "y", compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }]));
+    expect(ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]).toBeUndefined();
   });
   // HST 14/11: Q2 đi cùng lô client. Ô #8 (sổ đọc lỗi VÀ lệnh không có hàng): kỳ vọng ĐÚNG là MỘT URGENT chung cho run (kind foe_outcome_unknown_ledger_unreadable,
   // dedupKey dựng theo run) cùng H; hàm thuần đã trả soLoiChung nhưng held() CHƯA dùng nó ở lượt này ⇒ it.fails.

@@ -2083,8 +2083,9 @@ export function quyetDinhKetDoanEdge(v: {
   const tapU = new Set([...coTheDi.map((s) => s.id), ...ctxU.filter((id) => !v.stops.has(id))]);
   const khongRo = [...new Set([...tat.map((s) => s.id).filter((id) => tapU.has(id)), ...tapU])];
   const daChot = v.ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] != null; // (4)
-  const chot = coTheDi[0] && !daChot && !v.bao[0] ? { stepId: coTheDi[0].id, ma: MA_KET_DOAN_EDGE } : null;
-  const chotBao = !daChot && v.bao[0] ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: v.bao[0].stepId, ma: v.bao[0].ma } } : {}; // (5)
+  const b0 = v.bao.find((b) => b.loai !== "forwardNotSent"); // QĐ4 (HST 15/11) — the report that sets the latch: never a forwardNotSent (a step that did NOT go), as chotTuBao
+  const chot = coTheDi[0] && !daChot && !b0 ? { stepId: coTheDi[0].id, ma: MA_KET_DOAN_EDGE } : null;
+  const chotBao = !daChot && b0 ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: b0.stepId, ma: b0.ma } } : {}; // (5)
   const sauChot = { ...v.ctx, ...chotBao, ...(chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: chot } : {}), [OUTCOME_UNKNOWN_KEY]: [...ctxU, ...khongRo] };
   const them: BaoCaoKhongRoEdge[] = [...stopChuaRaTuHang(v.hang, sauChot)].map((id) => {
     const chu = chuBuTruTrongDinhNghia(v.def.steps, id);
@@ -2170,7 +2171,8 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     return { ok: true, status: ok ? status : run.status, changed: ok };
   };
   // A2(n) (b, C-C) — a report on the end is the fact itself, whatever the rows lost (a full journal): the latch is central's from here on
-  const chotTuBao = ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] == null && baoKhongRo[0] ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: baoKhongRo[0].stepId, ma: baoKhongRo[0].ma, at: new Date().toISOString() } } : {};
+  const b0 = baoKhongRo.find((x) => x.loai !== "forwardNotSent"); // QĐ4 (HST 15/11) — a forwardNotSent names a step that did NOT go: it sets no latch (only forwardNotSent ⇒ as no report)
+  const chotTuBao = ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] == null && b0 ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: b0.stepId, ma: b0.ma, at: new Date().toISOString() } } : {};
   const held = async (reason: string, error: string | undefined) => {
     const at = new Date().toISOString();
     // RA2-2 — state C: central's own words, whole (never cut: the safe act is their last clause; measured under 800 with the prefix, T9 lượt sửa 3b). T9 lượt sửa 3b (mục 3) — anything else is the
@@ -2195,7 +2197,11 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     // T4 bước 3 (iv) (HST 15/11, #17 / #19) — the pair waiting for a person is told HERE, as central's walk tells it at the hold (`held`, the rider's key: a report on the end is never told twice); the rider short or
     // broken (#19: the node's anomalies may be lost with it): ONE forwardNotSent naming no step (the forward work a Continue drops is the node's to name, buocTienBiBo)
     const luoi: BaoCaoKhongRoEdge[] = riderThieu === true && q.buTruCanNguoi.length > 0 && !baoKhongRo.some((b) => b.loai === "forwardNotSent") ? [{ loai: "forwardNotSent", stepId: BUOC_KHONG_XAC_DINH, compId: KHONG_CO_BU_TRU, ma: maKetCucKhongRoCua(end.error), claimSeq: end.claimSeq }] : [];
-    for (const b of [...q.canhBao, ...dauBu, ...luoi]) void cachEdgeTrungTam(runId, end.def, b).then((k) => canhBaoTuBaoCaoEdge(runId, b, run.startedBy ?? null, k)).catch(() => false);
+    const phat = [...q.canhBao, ...dauBu, ...luoi].map((b) => [b, cachEdgeTrungTam(runId, end.def, b).then((k) => canhBaoTuBaoCaoEdge(runId, b, run.startedBy ?? null, k)).catch(() => false)] as const);
+    // QĐ4 (HST 15/11) — DA_BAO (an Abort reads it) ONLY when an URGENT that says THE latch's event (its step, its outcome unknown: held / noCompensation, never forwardNotSent) is durable, within the end gate's bound
+    const chotId = ((ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] ?? chotTuBao[KET_CUC_KHONG_RO_CHOT_CTX_KEY] ?? q.chot) as { stepId?: string } | null)?.stepId;
+    const benChot = [...baoKhongRo.map((b, i) => [b, daCo[i] as Promise<boolean>] as const), ...phat].filter(([b]) => b.stepId === chotId && (b.loai === "held" || b.loai === "noCompensation") && !b.biet).map(([, p]) => p);
+    const daBao = benChot.length > 0 && (await withDeadline(Promise.all(benChot), KET_DOAN_EDGE_TONG_MS, `FOE run ${runId} edge hold URGENT`).then((r) => r.some(Boolean), () => false)) ? { [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: chotId, at } } : {};
     return write("held", {
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
@@ -2216,6 +2222,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
         ...(dauCu || q.buTruCanNguoi.length > 0 ? { [KET_CUC_KHONG_RO_CTX_KEY]: dauKhongRoTuEdge(end, at, dauCu ? baoKhongRo : [...baoKhongRo, ...dauBu]) } : {}),
         ...chotTuBao,
         ...(q.chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { ...q.chot, at } } : {}),
+        ...daBao,
       },
     });
   };
