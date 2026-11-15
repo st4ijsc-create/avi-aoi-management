@@ -120,6 +120,8 @@ const h = vi.hoisted(() => ({
   docNemLan: 0,
   /** A2(n) T7 lượt sửa 1 — the alert's raise never answers and never resolves (a hung notifications write); treoLan counts the raises it swallowed */
   alertTreo: false,
+  /** kiem-dinh S5 — the URGENT raise THROWS (a failed notifications write): no confirmation of durability */
+  alertNem: false,
   treoLan: 0,
   /** A2(n) T7b-1c — a step-row upsert of this step lands this many ms later, by a real timer; treGhiLan counts the writes it held */
   treGhi: new Map<string, number>(),
@@ -195,6 +197,7 @@ vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
         h.treoLan++;
         return new Promise<void>(() => undefined);
       }
+      if (h.alertNem) throw new Error("alert write failed (test)");
       if (h.raiseChet) {
         h.raiseChet.push(a);
         return;
@@ -577,6 +580,7 @@ beforeEach(() => {
   h.docNemSauThrow = null;
   h.docNemLan = 0;
   h.alertTreo = false;
+  h.alertNem = false;
   h.treoLan = 0;
   h.heSoHan = 0;
   h.treoNap.clear();
@@ -2272,6 +2276,48 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(h.sent.slice(n0).filter((x) => x.stepId === "c1"), "c1 went once").toHaveLength(1);
     expect(rows("orchestration_run_steps").filter((s) => s.runId === c && s.stepId === "c1")).toEqual([expect.objectContaining({ status: "compensated" })]);
     expect(h.alerts.slice(a1).map((a) => String(a.dedupKey)), "central tells nothing about a compensation that went ok").toEqual([]);
+  });
+
+  // kiem-dinh S5 (chu-du-an-HST 15/11, QĐ4 (ii)): lời ghi bền của URGENT lúc giữ THẤT BẠI (ném lỗi) hoặc QUÁ HẠN 5·D ⇒ KHÔNG dấu DA_BAO; run_end có ở cuối; Abort sau đó NÓI LẠI.
+  // Đột biến: `() => false` → `() => true` ở nhánh lỗi/hết hạn của withDeadline (foeRunStore.ts ~2204): chỉ ca QUA-HAN chạm nhánh đó (hết hạn thật); lỗi ném bị bắt sớm hơn (.catch(() => false)) nên ca NEM ghim hành vi
+  const giuKhongBen = async (ref: string, cach: "nem" | "qua-han") => {
+    ghimHalt();
+    h.ghim = async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // chỉ STOP là ghim
+    const e = await edgeAssignedRun(def(ref, [gate(), move("r1", { compensation: ot("c1") }), move("r2"), otStop("s9")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("r1");
+    if (cach === "nem") {
+      h.alertNem = true;
+      await edgeSegment(e, 2);
+      h.alertNem = false;
+    } else {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+      h.alertTreo = true;
+      const doan = edgeSegment(e, 2);
+      await vi.advanceTimersByTimeAsync(6 * STOP_DB_STEP_DEADLINE_MS); // past 5·D (KET_DOAN_EDGE_TONG_MS)
+      await doan;
+      h.alertTreo = false;
+      vi.useRealTimers();
+    }
+    h.timeoutDispatch.clear();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(runRow(e.runId).status).toBe("held");
+    expect(runRow(e.runId).contextJson[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY], "(1) the URGENT was not confirmed durable: NO DA_BAO").toBeUndefined();
+    const a1 = h.alerts.length;
+    const kq = await abortRun(e.runId, OWNER, "checked on site");
+    await new Promise((r) => setTimeout(r, 150));
+    expect(kq).toMatchObject({ ok: true, status: "aborted" });
+    const khoa = h.alerts.slice(a1).map((a) => String(a.dedupKey));
+    expect(khoa, "(3) the Abort tells the dropped forward work AGAIN (no mark)").toContain(`${CANH_BAO_KHONG_RO_KIND.forwardNotSent}:${e.runId}:r2:${KHONG_CO_BU_TRU}:abort`);
+    expect(khoa, "(2) run_end at the end, under the latch's step").toContain(`${CANH_BAO_KHONG_RO_KIND.runEnd}:${e.runId}:r1:-:chot`);
+    expect(h.sent.filter((x) => x.stepId === "s9" && /-abort-/.test(String(x.key))), "the owed STOP goes once").toHaveLength(1);
+  };
+  it("T4-B3-S5-NEM (kiem-dinh S5) the hold's durable URGENT write THROWS: NO DA_BAO; the Abort tells the forward work again; run_end at the end", async () => {
+    await giuKhongBen("s5n", "nem");
+  });
+  it("T4-B3-S5-QUA-HAN (kiem-dinh S5, fake timers) the hold's durable URGENT write hangs past 5·D: NO DA_BAO; the Abort tells the forward work again; run_end at the end", async () => {
+    await giuKhongBen("s5q", "qua-han");
   });
 
   // Q-1 (chu-du-an-HST 15/11): held() chờ URGENT bền tới 5·D trong giao dịch giữ khoá hàng run (foeRunStore.ts:2136, :2204, KET_DOAN_EDGE_TONG_MS :733). Abort bấm trong lúc đó: ghi `aborted` chờ khoá, nhưng bị chặn bởi D

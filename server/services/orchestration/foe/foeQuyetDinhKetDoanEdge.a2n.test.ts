@@ -312,3 +312,13 @@ describe("T4 bước 3 — P2: cx đã xong / thất bại / là STOP (chu-du-an
     expect(cb(r)).toEqual(["stopNotSent:x:cx"]);
   });
 });
+
+// kiem-dinh S1 (chu-du-an-HST 15/11): approvedNotConfirmed CHỈ cho x còn trong tapU. Đột biến: bỏ `tapU.has(id)` ở dòng đẩy approvedNotConfirmed (foeRunStore.ts ~2096)
+describe("T4 bước 3 — kiem-dinh S1: approvedNotConfirmed chỉ cho x còn ở tapU", () => {
+  it("T4-B3-S1-NGOAI-TAPU cặp x/cx đã duyệt và cx có mục sổ chưa supersede, nhưng x KHÔNG còn 'có thể đã đi' (hàng completed, sổ có kết quả, không trong foeOutcomeUnknown): KHÔNG approvedNotConfirmed", () => {
+    const duyet = { foeKetCucKhongRoDuyet: { stepId: "x", buTru: [{ stepId: "x", compId: "cx" }], by: 12, at: "2026-11-15T00:00:00Z" } };
+    const r = goi({ def: dinhNghia(move("x", move("cx"))), hang: [hangXong("x")], so: { doc: "duoc", muc: [uq("x", { resultStatus: "acked" }), uq("cx")] }, ctx: duyet, claimSeq: 3 });
+    expect(r.khongRo, "x is no longer a command that may have gone").not.toContain("x");
+    expect(cb(r)).not.toContain("approvedNotConfirmed:x:cx");
+  });
+});

@@ -72,6 +72,7 @@ describe("T4 — dạng 4, the cases of the review (rider short or unreadable)",
     expect(khoaCua("noCompensation", "x"), "the URGENT of the command whose outcome is unknown").toEqual([`${CANH_BAO_KHONG_RO_KIND.noCompensation}:${RUN}:x:-:claim1`]);
   });
 
+  // N và C do T4-RA-B6 giữ; Q1 (#6) đóng ở 35a3210af (chu-du-an-HST 15/11)
   it("T4-RA-B (bảng #6, HST 14/11: chỉ U, H, không gửi lại) the same command authorised with no row, the rider READABLE (a whole empty rider): x named unknown (U), the run held (H), x never sent again", async () => {
     d.store.set("edge_step_authorizations", [so("x")]);
     const def = { ref: "t4rb", name: "t4rb", steps: [move("x")] } as never as WorkflowDefinition;
@@ -243,6 +244,54 @@ describe("T4 — dạng 4, the cases of the review (rider short or unreadable)",
     d.store.set("orchestration_run_steps", [{ runId: RUN, stepId: "x", stepType: "command", status: "completed", attempt: 1, error: null, resultJson: null }]);
     const { ctx } = await ket(defXY(), riderCo([{ loai: "forwardNotSent", stepId: "y", compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }]));
     expect(ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]).toBeUndefined();
+  });
+  // ── kiem-dinh S1-S7 (chu-du-an-HST 15/11): ca THƯỜNG giết đột biến sống của bản rà 486ee5f71 ──
+  const baoBiet = (loai: string, stepId: string, compId: string) => ({ loai, stepId, compId, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1, biet: true });
+  // S3: một URGENT `biet: true` (nút BIẾT nó là gì) nêu bước chốt KHÔNG phải sự kiện của chốt ⇒ không DA_BAO. Đột biến: bỏ `&& !b.biet` ở benChot (foeRunStore.ts ~2204)
+  it("T4-B3-S3-BIET-KHONG-DAU (kiem-dinh S3) the only durable URGENT naming the latch's step is `biet: true` (the node knew it) ⇒ NO DA_BAO", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    hangX();
+    const { ctx } = await ket({ ref: "t4s3", name: "t4s3", steps: [move("x")] } as never, riderCo([baoBiet("noCompensation", "x", KHONG_CO_BU_TRU)]));
+    expect(ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toMatchObject({ stepId: "x" });
+    expect(H.alerts.map((a) => String(a.dedupKey)), "the URGENT of x was raised (durable), yet it is no DA_BAO").toContain(`${CANH_BAO_KHONG_RO_KIND.noCompensation}:${RUN}:x:-:claim1`);
+    expect(ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]).toBeUndefined();
+  });
+  // S4: un forwardNotSent durable NÊU ĐÚNG bước chốt (chốt đã đặt từ trước, x không còn "có thể đã đi") không là sự kiện của chốt ⇒ không DA_BAO. Đột biến: bỏ lọc loai (held / noCompensation) ở benChot
+  it("T4-B3-S4-FWD-CUNG-BUOC (kiem-dinh S4) only a forwardNotSent is durable and it carries the latch's OWN step id ⇒ NO DA_BAO (not only a different step, as QD4-FWD-KHONG-DAU)", async () => {
+    const run = (d.store.get("orchestration_runs") as Array<Record<string, any>>)[0]!;
+    run.contextJson = { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "x", ma: "FOE_OUTCOME_UNKNOWN" } };
+    d.store.set("edge_step_authorizations", [so("x", { resultReportedAt: new Date(), resultStatus: "acked" })]);
+    d.store.set("orchestration_run_steps", [{ runId: RUN, stepId: "x", stepType: "command", status: "completed", attempt: 1, error: null, resultJson: null }]);
+    const { ctx } = await ket(defXY(), riderCo([{ loai: "forwardNotSent", stepId: "x", compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }]));
+    expect(H.alerts.map((a) => String(a.dedupKey)), "the forwardNotSent was raised and durable").toContain(K("forwardNotSent", "x", KHONG_CO_BU_TRU));
+    expect(ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]).toBeUndefined();
+  });
+  // S2: lưới forwardNotSent("?") (foeRunStore.ts ~2199). Ba điều kiện, mỗi ca giết một đột biến: bỏ `riderThieu === true`; bỏ `q.buTruCanNguoi.length > 0`; bỏ `!baoKhongRo.some(forwardNotSent)`
+  it("T4-B3-S2-RIDER-DOC-DUOC (kiem-dinh S2a) rider READABLE (whole, nothing in it), a pair waiting ⇒ the net raises NO forwardNotSent(?)", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    hangX();
+    await ket(defXY(), riderCo([]));
+    expect(tatCaKhoa()).toEqual([K("held", "x", "cx")]);
+  });
+  it("T4-B3-S2-KHONG-CAP-CHO (kiem-dinh S2b) rider BROKEN but NO pair waiting (x has no compensation) ⇒ the net raises NO forwardNotSent(?)", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    hangX();
+    await ket({ ref: "t4s2b", name: "t4s2b", steps: [move("x"), move("y")] } as never);
+    expect(H.alerts.map((a) => String(a.dedupKey)).filter((k) => k.startsWith(`${CANH_BAO_KHONG_RO_KIND.forwardNotSent}:`))).toEqual([]);
+  });
+  it("T4-B3-S2-RIDER-DA-CO-FWD (kiem-dinh S2c) rider SHORT (marked, carrying forwardNotSent(y)) with a pair waiting ⇒ the net adds NO second forwardNotSent(?)", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    hangX();
+    const cat = riderCo([{ loai: "forwardNotSent", stepId: "y", compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }]).replace(" [[A2N:", " [[A2N-THIEU:"); // the marked-short rider (its reports were dropped for the text floor), one forwardNotSent(y) kept
+    await ket(defXY(), cat);
+    expect(H.alerts.map((a) => String(a.dedupKey)).filter((k) => k.startsWith(`${CANH_BAO_KHONG_RO_KIND.forwardNotSent}:`))).toEqual([K("forwardNotSent", "y", KHONG_CO_BU_TRU)]);
+  });
+  // Đ-1, hướng ĐÓNG, SG-T1; chu-du-an-HST 15/11: định nghĩa KHÔNG có bước forward mà lưới vẫn phát forwardNotSent(?) (nó chỉ hỏi "có cặp chờ", không hỏi "có bước forward")
+  it.fails("T4-B3-D1-KHONG-FWD (Đ-1, giới hạn đã biết hướng đóng; SG-T1) rider hỏng, một cặp chờ, định nghĩa KHÔNG có bước forward nào bị bỏ: kỳ vọng ĐÚNG là không forwardNotSent(?)", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    hangX();
+    await ket({ ref: "t4d1", name: "t4d1", steps: [{ ...move("x"), compensation: move("cx") }] } as never);
+    expect(H.alerts.map((a) => String(a.dedupKey)).filter((k) => k.startsWith(`${CANH_BAO_KHONG_RO_KIND.forwardNotSent}:`))).toEqual([]);
   });
   // HST 14/11: Q2 đi cùng lô client. Ô #8 (sổ đọc lỗi VÀ lệnh không có hàng): kỳ vọng ĐÚNG là MỘT URGENT chung cho run (kind foe_outcome_unknown_ledger_unreadable,
   // dedupKey dựng theo run) cùng H; hàm thuần đã trả soLoiChung nhưng held() CHƯA dùng nó ở lượt này ⇒ it.fails.
