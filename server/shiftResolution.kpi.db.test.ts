@@ -158,7 +158,7 @@ describe.skipIf(!DB_URL)("getShiftStats / getShiftReport — real shift_configs 
     const workshopId = await db.createWorkshop({ factoryId, code: `${prefix}_WS_${ts}`, name: "ws" });
     const lineCode = `${prefix}_LINE_${ts}`;
     const lineId = await db.createProductionLine({ workshopId, code: lineCode, name: "line" });
-    const stationId = await db.createStation({ lineId, code: `${prefix}_ST_${ts}`, name: "st", sequence: 1 });
+    const stationId = await db.createStation({ lineId, code: `${prefix}_ST_${ts}`, name: "st", orderIndex: 1 });
     const machineId = ghiNho("machineIds", await db.createMachine({
       stationId,
       code: `${prefix}_M_${ts}`,
@@ -170,7 +170,7 @@ describe.skipIf(!DB_URL)("getShiftStats / getShiftReport — real shift_configs 
   }
 
   beforeAll(async () => {
-    const productModelId = ghiNho("modelIds", await db.createProductModel({ code: `PM_SHIFT_${ts}`, name: "pm", version: "1.0" }));
+    const productModelId = ghiNho("modelIds", await db.createProductModel({ code: `PM_SHIFT_${ts}`, name: "pm" }));
 
     // ── F2: clean 2-shift (DAY 06-18, NIGHT 18-06) covering 24h ──
     const f2 = await buildFactory("SHIFT_F2");

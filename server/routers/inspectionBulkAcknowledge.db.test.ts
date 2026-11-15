@@ -22,6 +22,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { initTRPC } from "@trpc/server";
+import superjson from "superjson";
 import { and, eq, gt, inArray, like } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { productInspections, auditLogs } from "../../drizzle/schema";
@@ -114,7 +115,7 @@ const TEST_USER_ID = 990_001;
 const OTHER_USER_ID = 990_002;
 const SERIAL_PREFIX = `F1-ACK-${Date.now()}`;
 
-const t = initTRPC.context<any>().create();
+const t = initTRPC.context<any>().create({ transformer: superjson });
 const makeInspectionCaller = t.createCallerFactory(inspectionRouter);
 const makeMeasurementCaller = t.createCallerFactory(measurementResultRouter);
 

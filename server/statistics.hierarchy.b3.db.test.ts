@@ -158,7 +158,7 @@ async function seedChain(opts: {
     lineId,
     code: `${opts.wsCode}_ST`,
     name: `${opts.wsCode} station`,
-    sequence: 1,
+    orderIndex: 1,
   }));
   const machineId = ghiNho("machineIds", await db.createMachine({
     stationId,
@@ -372,7 +372,7 @@ describe.skipIf(!DB_URL)("hierarchy filter single-query (B3) + list projection (
 
     // OLD shape — replicated verbatim from the pre-B3 code (4 awaited selects
     // to resolve machine IDs, then the aggregate with an inArray literal list).
-    async function oldShape() {
+    const oldShape = async () => {
       const workshopsInFactory = await dbc.select({ id: workshops.id }).from(workshops)
         .where(eq(workshops.factoryId, f1Id));
       const workshopIds = workshopsInFactory.map((w) => w.id);
@@ -394,7 +394,7 @@ describe.skipIf(!DB_URL)("hierarchy filter single-query (B3) + list projection (
         inArray(productInspections.machineId, machineIds),
       ));
       return Number(row.total);
-    }
+    };
 
     // Warm-up (connection, plan caches) so neither side pays first-query cost.
     await oldShape();

@@ -120,7 +120,7 @@ describe.skipIf(!DB_URL)("computeSpatialHeatmap (DB integration)", () => {
     const factoryId = ghiNho("factoryIds", await db.createFactory({ code: `TEST_FAC_HM_${ts}`, name: "Heatmap fac" }));
     const workshopId = await db.createWorkshop({ factoryId, code: `TEST_WS_HM_${ts}`, name: "Heatmap ws" });
     const lineId = await db.createProductionLine({ workshopId, code: `TEST_LINE_HM_${ts}`, name: "Heatmap line" });
-    const stationId = await db.createStation({ lineId, code: `TEST_ST_HM_${ts}`, name: "Heatmap st", sequence: 1 });
+    const stationId = await db.createStation({ lineId, code: `TEST_ST_HM_${ts}`, name: "Heatmap st", orderIndex: 1 });
     machineId = ghiNho("machineIds", await db.createMachine({
       stationId,
       code: `M_HM_${ts}`,
@@ -131,7 +131,6 @@ describe.skipIf(!DB_URL)("computeSpatialHeatmap (DB integration)", () => {
     productModelId = ghiNho("modelIds", await db.createProductModel({
       code: `PROD_HM_${ts}`,
       name: "Heatmap product",
-      version: "1.0",
       imageWidth: 1000,
       imageHeight: 800,
     }));
