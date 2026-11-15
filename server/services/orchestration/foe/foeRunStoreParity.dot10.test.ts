@@ -750,6 +750,8 @@ interface EdgeHarness {
   runId: number;
   /** fix review 2 — the complete request lost its outcome-unknown list / prefix (E did not forward it) */
   stripEndUnknown?: boolean;
+  /** T4-B3-O8-KEP only — runs right after the segment's step rows reach central (before the end is applied): a lost-rows fault, simulated. Set and cleared inside that case */
+  sauGhiHang?: () => void;
   /** T9 lượt sửa 3e — the segment end as the complete request carries it (edgeExecutionAgent → edgeProtocol strictObject): what central is given, not the walker's in-process end */
   quaDay?: (out: Record<string, any>) => Promise<Record<string, any>>;
   /** fix review 1 — the journal refuses the record matching this (once refused, every later non-STOP record too) */
@@ -981,6 +983,7 @@ async function edgeSegment(x: EdgeHarness, claimSeq: number, opts: { beforeEnd?:
       : { stepId: `abort:${r.stepId}`, stepType: "command", status: r.status, attempt: 0, startedAt: new Date(r.at), finishedAt: new Date(r.at), error: null, result: { ...(r.result ?? {}), stepId: r.stepId } },
   );
   if (!x.quaBaoCao) await recordEdgeStepRows(fake as never, x.runId, write);
+  x.sauGhiHang?.();
   // fix review 2 — through THE context filter (edgeContextPolicy — the one B's report endpoint uses), and only while the run is
   // live (as edgeReportsCentral: a context record of a stopped / ended run is evidence only)
   for (const r of x.quaBaoCao ? [] : seg) {
@@ -2318,6 +2321,43 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   });
   it("T4-B3-S5-QUA-HAN (kiem-dinh S5, fake timers) the hold's durable URGENT write hangs past 5·D: NO DA_BAO; the Abort tells the forward work again; run_end at the end", async () => {
     await giuKhongBen("s5q", "qua-han");
+  });
+
+  // ô #8 dưới sự cố kép mô phỏng (mất báo cáo hàng + sổ lỗi): lúc giữ URGENT duy nhất nêu r2 (không đi) không nêu r1 (đã đi); Abort thì r1 không bao giờ được nêu.
+  // Hướng MỞ có từ trước, cần hai sự cố đồng thời, CHẶN nghiệm thu SG-T1; chu-du-an-HST 15/11. Móc `sauGhiHang` (xoá hàng r1 ngay sau recordEdgeStepRows) và móc sổ lỗi chỉ sống trong ca này, trả lại trong finally
+  it.fails("T4-B3-O8-KEP (ô #8, sự cố kép mô phỏng, it.fails) r1 đã đi, hàng r1 mất, sổ 0372 đọc lỗi, rider im, r2 offline ⇒ giữ; sau Abort kỳ vọng ĐÚNG là có URGENT nêu r1 (đã đi, kết cục không rõ)", async () => {
+    const e = await edgeAssignedRun(def("o8-kep", [gate(), move("r1"), move("r2"), otStop("s9")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const sel0 = FakeDb.prototype.select.bind(fake);
+    e.sauGhiHang = () => {
+      fake.store.set("orchestration_run_steps", (fake.store.get("orchestration_run_steps") ?? []).filter((r: any) => !(r.runId === e.runId && r.stepId === "r1")));
+    };
+    e.stripEndUnknown = true; // the rider is silent
+    e.offlineSteps = new Set(["r2"]); // the walker holds at r2
+    (fake as any).select = (p?: unknown) => {
+      const b = sel0(p as never);
+      const from = b.from.bind(b);
+      b.from = (t: any) => {
+        if (t?.[Symbol.for("drizzle:Name")] === "edge_step_authorizations") throw Object.assign(new Error("ledger"), { code: "08006" });
+        return from(t);
+      };
+      return b;
+    };
+    try {
+      await edgeSegment(e, 2);
+    } finally {
+      delete (fake as any).select;
+      e.sauGhiHang = undefined;
+      e.stripEndUnknown = false;
+      e.offlineSteps = undefined;
+    }
+    await new Promise((r) => setTimeout(r, 150));
+    expect(runRow(e.runId).status).toBe("held");
+    const a1 = h.alerts.length;
+    await abortRun(e.runId, OWNER, "checked on site");
+    await new Promise((r) => setTimeout(r, 150));
+    expect(h.alerts.slice(a1).map((a) => String(a.dedupKey)).some((k) => k.includes(`:${e.runId}:r1:`)), "an URGENT after the Abort names r1").toBe(true);
   });
 
   // Q-1 (chu-du-an-HST 15/11): held() chờ URGENT bền tới 5·D trong giao dịch giữ khoá hàng run (foeRunStore.ts:2136, :2204, KET_DOAN_EDGE_TONG_MS :733). Abort bấm trong lúc đó: ghi `aborted` chờ khoá, nhưng bị chặn bởi D
