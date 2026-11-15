@@ -58,6 +58,7 @@
  */
 import path from "node:path";
 import { redactSecretsOnly } from "../ai/aiSafety";
+import { TRAN_BYTE_DOC_CSV, boDongDoDang, catCsv, csvDuocPhep } from "./csvTrongDuAn";
 import {
   confineDirUnder,
   confineTargetUnder,
@@ -361,6 +362,8 @@ export type KetQuaDocTep =
       catBot: boolean;
       /** `true` ⇔ `redactSecretsOnly` đã thay ít nhất một chỗ. */
       daChe: boolean;
+      /** Chỉ có khi đọc `.csv` theo B1: số dòng TRẢ VỀ và có bị cắt theo trần số dòng không. */
+      csv?: { dongTra: number; catTheoDong: boolean };
     }
   | { ok: false; ma: MaTuChoiHopCat; chiTiet: string };
 
@@ -375,6 +378,13 @@ export interface TuyChonDocTep {
   khoaNganSach?: string;
   /** Gốc hộp cát. Bỏ trống ⇒ `gocHopCat()`. */
   goc?: string;
+  /**
+   * B1 `.csv`: người gọi này có được mở `.csv` (dưới `sandbox-projects/**`, trần 32 KB / 200 dòng, cờ `AI_AGENT_CSV_DOC=1`) không. MẶC ĐỊNH `false` — chỉ tool `read_file`
+   * của tác nhân đặt `true`; IDE người dùng, cửa git, kiểm biên dịch ST… KHÔNG đặt ⇒ giữ nguyên `DENIED_EXT`.
+   */
+  choPhepCsv?: boolean;
+  /** Ghi đè gốc `sandbox-projects` (lưới thử). */
+  gocSandboxProjects?: string;
 }
 
 /**
@@ -392,12 +402,15 @@ export function moTepTrongHopCat(duongDan: unknown, tuyChon: TuyChonDocTep = {})
   const ma = phanQuyetDuongDan(duongDan);
   if (ma !== null) return { ok: false, ma, chiTiet: String(duongDan ?? "") };
   const ten = String(duongDan).replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "";
+  const goc = tuyChon.goc ?? gocHopCat();
+  let laCsv = false;
   if (!duoiDuocPhep(ten)) {
-    return { ok: false, ma: MA_TU_CHOI_HOP_CAT.DENIED_EXT, chiTiet: path.extname(ten) || "(không có đuôi)" };
+    if (tuyChon.choPhepCsv === true && csvDuocPhep(goc, duongDan, tuyChon.gocSandboxProjects !== undefined ? { gocSandboxProjects: tuyChon.gocSandboxProjects } : {})) laCsv = true;
+    else return { ok: false, ma: MA_TU_CHOI_HOP_CAT.DENIED_EXT, chiTiet: path.extname(ten) || "(không có đuôi)" };
   }
 
-  const goc = tuyChon.goc ?? gocHopCat();
   let tran = Math.max(0, Math.min(tuyChon.tranByte ?? TRAN_BYTE_MOI_TEP, TRAN_BYTE_MOI_TEP));
+  if (laCsv) tran = Math.min(tran, TRAN_BYTE_DOC_CSV);
   if (tuyChon.khoaNganSach) {
     const ns = nganSachConLai(tuyChon.khoaNganSach);
     if (ns.conLai <= 0) {
@@ -421,6 +434,21 @@ export function moTepTrongHopCat(duongDan: unknown, tuyChon: TuyChonDocTep = {})
   }
 
   if (tuyChon.khoaNganSach) tieuNganSach(tuyChon.khoaNganSach, rd.content.length);
+  // `.csv` (B1): đọc bị cắt theo BYTE ⇒ bỏ dòng dở dang TRƯỚC khi che (khoá bị chặt ngang ranh giới không lọt lưới), rồi cắt theo trần SỐ DÒNG.
+  if (laCsv) {
+    const duocDoc = rd.truncated ? boDongDoDang(rd.content) : rd.content;
+    const cheCsv = redactSecretsOnly(duocDoc);
+    const c = catCsv(cheCsv.text);
+    return {
+      ok: true,
+      relPath: confined.target.relPath,
+      noiDung: c.noiDung,
+      byteTrenDia: rd.size,
+      catBot: rd.truncated || c.catTheoDong,
+      daChe: cheCsv.text !== duocDoc,
+      csv: { dongTra: c.dong, catTheoDong: c.catTheoDong },
+    };
+  }
   const che = redactSecretsOnly(rd.content);
   return {
     ok: true,

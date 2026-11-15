@@ -77,6 +77,7 @@ import {
   phanQuyetDuongDan,
   tieuNganSach,
 } from "../repoSandbox";
+import { csvDuocPhep } from "../csvTrongDuAn";
 import { trangThaiGitCuaTep } from "../repoGitStatus";
 import {
   registerTool,
@@ -371,6 +372,7 @@ export function cauCanhBaoKhongGit(relPath: string, lang: ToolLang): string {
  */
 export function phanQuyetChinhSachDuong(
   duong: unknown,
+  gocDuAn?: string,
 ): { ok: true } | { ok: false; ma: "PATH_REJECTED" | "DENIED_SECRET" | "DENIED_DIR" | "DENIED_EXT"; chiTiet: string } {
   const maPath = phanQuyetDuongDan(duong);
   if (maPath !== null) {
@@ -384,6 +386,8 @@ export function phanQuyetChinhSachDuong(
   }
   const ten = String(duong).replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "";
   if (!duoiDuocPhep(ten)) {
+    // B1 `.csv`: CHỈ khi người gọi truyền gốc DỰ ÁN (ghi ⇒ gốc phải nằm dưới sandbox-projects) và cờ AI_AGENT_CSV_DOC=1. `delete_file`/`rename_file` không truyền ⇒ vẫn từ chối.
+    if (gocDuAn !== undefined && csvDuocPhep(gocDuAn, duong, { ghi: true })) return { ok: true };
     return { ok: false, ma: "DENIED_EXT", chiTiet: path.extname(ten) || "(không có đuôi)" };
   }
   return { ok: true };
@@ -391,7 +395,7 @@ export function phanQuyetChinhSachDuong(
 
 export async function phanQuyet(p: Partial<ThamSo>, goc: string): Promise<PhanQuyet> {
   // 1. CHÍNH SÁCH đường dẫn (dùng lại nguyên mã pha A).
-  const cs = phanQuyetChinhSachDuong(p.path);
+  const cs = phanQuyetChinhSachDuong(p.path, goc);
   if (!cs.ok) return cs;
 
   // 2. THAM SỐ.
