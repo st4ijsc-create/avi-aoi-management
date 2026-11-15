@@ -6,15 +6,17 @@
 import path from "node:path";
 import { kiemThamSo } from "@shared/agentCore";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cauTuChoiLenhTuDong, phanQuyetLenhTuDong, taoBoThucThiMayChu } from "./boThucThiMayChu";
+import { cauTuChoiLenhTuDong, goiYLenhBat, phanQuyetLenhTuDong, taoBoThucThiMayChu } from "./boThucThiMayChu";
 
 const goc = path.resolve(process.cwd());
 let cu: string | undefined;
 beforeEach(() => {
   cu = process.env.AI_CODING_AUTOLOOP;
   process.env.AI_CODING_AUTOLOOP = "1";
+  vi.stubEnv("AI_AGENT_GOI_Y_LENH", "1"); // cờ BẬT cho các ca dưới (mặc định TẮT: xem describe "cờ AI_AGENT_GOI_Y_LENH")
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   if (cu === undefined) delete process.env.AI_CODING_AUTOLOOP;
   else process.env.AI_CODING_AUTOLOOP = cu;
 });
@@ -100,8 +102,46 @@ describe("lời từ chối lệnh tu-dong có gợi ý dạng được phép", 
   });
 });
 
+describe("cờ AI_AGENT_GOI_Y_LENH — MẶC ĐỊNH TẮT: lời từ chối giữ NGUYÊN TỪNG BYTE (phát lại fixture H4.2 không lệch)", () => {
+  const LENH = ["python -m pytest py-kho-cache/tests/test_repo_cache_edge.py -v", "cat py-doi-soat/du_lieu/so_sach.csv", "node --test js-loi-3-lop/test/*.test.mjs", "mkdir -p a/b", "python -c print(1)"];
+  const chiTietCua = (lenh: string) => {
+    const pq = phanQuyetLenhTuDong(lenh, goc, () => false);
+    if (pq.ok || pq.ma === "REPO_CHINH_CHUA_CHECKPOINT") throw new Error(`phải bị từ chối: ${lenh}`);
+    return { ma: pq.ma, chiTiet: pq.chiTiet };
+  };
+  it("★★★ goiYLenhBat: chỉ đúng chuỗi `1` bật; vắng / 0 / true / rỗng / có khoảng trắng ⇒ TẮT", () => {
+    expect(goiYLenhBat("1")).toBe(true);
+    for (const v of [undefined, "", "0", "true", "TRUE", " 1", "1 ", "on", "yes"]) expect(goiYLenhBat(v), String(v)).toBe(false);
+  });
+  it("★★★ cờ vắng / 0 ⇒ câu từ chối BẰNG ĐÚNG câu không truyền lệnh (byte-identical với bản trước HA-4), cho mọi họ lệnh", () => {
+    for (const giaTri of [undefined, "0", "true"]) {
+      vi.unstubAllEnvs();
+      if (giaTri !== undefined) vi.stubEnv("AI_AGENT_GOI_Y_LENH", giaTri);
+      else delete process.env.AI_AGENT_GOI_Y_LENH;
+      for (const lenh of LENH) {
+        const { ma, chiTiet } = chiTietCua(lenh);
+        expect(cauTuChoiLenhTuDong(ma, chiTiet, lenh), `${String(giaTri)} · ${lenh}`).toBe(cauTuChoiLenhTuDong(ma, chiTiet));
+      }
+    }
+  });
+  it("★★★ cờ `1` ⇒ câu có gợi ý (dài hơn câu không truyền lệnh), cùng các lệnh đó", () => {
+    vi.stubEnv("AI_AGENT_GOI_Y_LENH", "1");
+    for (const lenh of LENH) {
+      const { ma, chiTiet } = chiTietCua(lenh);
+      const day = cauTuChoiLenhTuDong(ma, chiTiet, lenh);
+      expect(day.length, lenh).toBeGreaterThan(cauTuChoiLenhTuDong(ma, chiTiet).length);
+    }
+  });
+  it("★★ cờ đọc TẠI CHỖ GỌI (đổi env giữa hai lần gọi ⇒ kết quả đổi theo)", () => {
+    const { ma, chiTiet } = chiTietCua(LENH[0]!);
+    vi.stubEnv("AI_AGENT_GOI_Y_LENH", "1");
+    const bat = cauTuChoiLenhTuDong(ma, chiTiet, LENH[0]);
+    vi.stubEnv("AI_AGENT_GOI_Y_LENH", "0");
+    expect(cauTuChoiLenhTuDong(ma, chiTiet, LENH[0])).not.toBe(bat);
+  });
+});
+
 describe("điểm gọi thật: bộ thực thi tu-dong truyền `args.command` vào lời từ chối (bản GIẢ, không CSDL)", () => {
-  afterEach(() => vi.unstubAllEnvs());
   function dung() {
     vi.stubEnv("AI_CODING_TU_TRI_GHI", "1");
     vi.stubEnv("AI_CODING_AUTOLOOP", "1");
