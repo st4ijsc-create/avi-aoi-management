@@ -10,7 +10,7 @@
  * đều nằm trong giao dịch và biến mất lúc ROLLBACK. Ngoài giao dịch `getDb()` trả `null` ⇒ việc nền chạy muộn không có CSDL để ghi (không rơi về kết nối chung, vì rơi về đó là để lại hàng).
  * Kiểm bằng phép ĐẾM RỘNG trước/sau một lượt (mọi bảng): 0 bảng đổi.
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import { taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
 import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
 import { users } from "../../drizzle/schema";
+import { kiemKhongLot, layDbTheoKenh, type KenhGiaoDich } from "./kenhGiaoDich";
 import { chuanHoaSuKien, soSuKien, taoBoThay, taoStreamPhatLai, TOKEN_GOC, type FixturePhatLai } from "./phatLaiLuot";
 
 const THU_MUC = path.join(__dirname, "fixtures", "phat-lai");
@@ -27,11 +28,11 @@ const GOC_REPO = path.join(__dirname, "..", "..");
 const tep = fs.existsSync(THU_MUC) ? fs.readdirSync(THU_MUC).filter((t) => t.endsWith(".json.gz")).sort() : [];
 const ENV0 = { ...process.env };
 
-/** Kênh tới giao dịch của ca đang chạy; ngoài ca ⇒ `null` (xem khối ★ đầu tệp). */
-const kenh = vi.hoisted(() => ({ db: null as unknown }));
+/** Kênh tới giao dịch của ca đang chạy; ngoài ca ⇒ `null` VÀ ghi lại, `afterEach` làm ca ĐỎ nếu có lời gọi lọt ngoài (xem `kenhGiaoDich.ts`). */
+const kenh = vi.hoisted((): KenhGiaoDich => ({ db: null, lot: [] }));
 vi.mock("../db/connection", async (importOriginal) => {
   const goc = await importOriginal<typeof import("../db/connection")>();
-  return { ...goc, getDb: async () => kenh.db ?? null };
+  return { ...goc, getDb: async () => layDbTheoKenh(kenh) };
 });
 /** Ném ở cuối giao dịch ⇒ ROLLBACK (tên chứa "rollback" để census nguoiDungTest nhận ra giao dịch luôn hoàn tác). */
 class RollbackPhatLai extends Error {}
@@ -43,7 +44,11 @@ beforeAll(async () => {
   delete process.env.AI_GHI_LUOT_DIR;
 }, 60_000);
 
+/** Một lời gọi `getDb()` rơi ra NGOÀI giao dịch (việc nền chạy muộn, đường ghi quên đi qua `getDb`) ⇒ ca ĐỎ có tên, không bị nuốt. */
+afterEach(() => kiemKhongLot(kenh));
+
 afterAll(async () => {
+  kiemKhongLot(kenh);
   for (const k of ["AI_AGENT_THEO_VAI_TRO", "AI_CODING_TU_TRI_GHI", "AI_REPO_SANDBOX_ROOTS", "SECRET_ENCRYPTION_KEY"]) {
     if (ENV0[k] === undefined) delete process.env[k];
     else process.env[k] = ENV0[k];

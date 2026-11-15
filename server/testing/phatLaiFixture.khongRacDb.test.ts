@@ -56,7 +56,10 @@ describe("phatLaiFixture.test.ts — không để lại hàng nào trong CSDL", 
   });
   it("★★★ `getDb` của module `../db/connection` bị thay bằng bản trả giao dịch của ca (`kenh.db ?? null`) — KHÔNG rơi về kết nối chung", () => {
     expect(nguon).toMatch(/vi\.mock\("\.\.\/db\/connection"/);
-    expect(nguon).toMatch(/getDb:\s*async\s*\(\)\s*=>\s*kenh\.db\s*\?\?\s*null/);
+    expect(nguon).toMatch(/getDb:\s*async\s*\(\)\s*=>\s*layDbTheoKenh\(kenh\)/);
+    // hành vi (trong giao dịch ⇒ giao dịch; ngoài ⇒ null + ghi lại + ĐỎ) được kiểm ở `kenhGiaoDich.test.ts`; ở đây khoá việc NỐI nó vào ca
+    expect(nguon).toMatch(/afterEach\(\(\)\s*=>\s*kiemKhongLot\(kenh\)\)/);
+    expect(nguon).toMatch(/afterAll\(async \(\) => \{\s*kiemKhongLot\(kenh\);/);
   });
   it("★★★ kênh được TRẢ VỀ `null` trong `finally` sau mỗi ca; và `getDb` thật chỉ lấy qua `vi.importActual` (để mở giao dịch)", () => {
     expect(nguon).toMatch(/finally\s*\{\s*kenh\.db\s*=\s*null;\s*\}/);
