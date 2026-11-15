@@ -2277,15 +2277,18 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
       if (a[0]?.stepId === "s9" && /-abort-/.test(String(a[0]?.key)) && tStop < 0) tStop = Date.now() - t0;
       return push(...a);
     };
-    h.treAborted = 5 * STOP_DB_STEP_DEADLINE_MS; // the row lock the hold keeps: the `aborted` write lands only when held() ends
-    const ab = abortRun(e.runId, OWNER, "checked on site");
-    await vi.advanceTimersByTimeAsync(STOP_DB_STEP_DEADLINE_MS);
-    expect(guiAbort(), "past D the sweep ran and the owed STOP went once").toHaveLength(1);
-    expect(tStop, "the extra delay is at most D").toBeLessThanOrEqual(STOP_DB_STEP_DEADLINE_MS);
-    await vi.advanceTimersByTimeAsync(6 * STOP_DB_STEP_DEADLINE_MS);
-    await Promise.all([doan, ab]);
-    delete (h.sent as any).push; // the own property set above: nothing else of the array is left changed
-    expect(guiAbort(), "still exactly once when the hold and the delayed write end").toHaveLength(1);
+    try {
+      h.treAborted = 5 * STOP_DB_STEP_DEADLINE_MS; // the row lock the hold keeps: the `aborted` write lands only when held() ends
+      const ab = abortRun(e.runId, OWNER, "checked on site");
+      await vi.advanceTimersByTimeAsync(STOP_DB_STEP_DEADLINE_MS);
+      expect(guiAbort(), "past D the sweep ran and the owed STOP went once").toHaveLength(1);
+      expect(tStop, "the extra delay is at most D").toBeLessThanOrEqual(STOP_DB_STEP_DEADLINE_MS);
+      await vi.advanceTimersByTimeAsync(6 * STOP_DB_STEP_DEADLINE_MS);
+      await Promise.all([doan, ab]);
+      expect(guiAbort(), "still exactly once when the hold and the delayed write end").toHaveLength(1);
+    } finally {
+      delete (h.sent as any).push; // the own property set above: it must never reach the next case, whatever happens in the body
+    }
   });
 
   it("T4-B3-R2A-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của ca trên) the same refused POST-SEND result, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never sent again", async () => {
