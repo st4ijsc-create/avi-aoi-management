@@ -65,6 +65,28 @@ describe("goiYLenhTuChoi — lệnh ĐỌC tệp / chạy mã tuỳ ý", () => {
   });
 });
 
+describe("goiYLenhTuChoi — các họ còn lại (P3 kiem-dinh y4/y6/y7/y8/y13)", () => {
+  it("★★ python3.11 và python3 (tên có số phiên bản) ⇒ nêu phải đúng `python`", () => {
+    expect(goiYLenhTuChoi("python3.11 -m pytest tests")).toMatch(/named exactly `python`/);
+    expect(goiYLenhTuChoi("python3 -m unittest tests")).toMatch(/named exactly `python`/);
+  });
+  it("★★ mọi lệnh đọc tệp trong bảng: cat head tail type less more Get-Content gc ⇒ gợi ý read_file", () => {
+    for (const t of ["cat", "head", "tail", "type", "less", "more", "Get-Content", "gc"]) expect(goiYLenhTuChoi(`${t} a/b.csv`), t).toContain("read_file");
+  });
+  it("★★ `?` đứng riêng (không có `*`) ⇒ gợi ý ký tự đại diện chung", () => {
+    expect(goiYLenhTuChoi("npx vitest run tests/a?.test.ts")).toContain("Wildcards (* ?)");
+  });
+  it("★★ `md` (tên mkdir của Windows) ⇒ gợi ý mkdir", () => {
+    expect(goiYLenhTuChoi("md thu-muc-moi")).toContain("mkdir is not a verification command");
+  });
+  it("★★★ glob ở lệnh node KHÔNG phải `node --test` (vd `node a*.js`) ⇒ gợi ý ký tự đại diện CHUNG, không nêu `node --test <directory>`", () => {
+    const g = goiYLenhTuChoi("node a*.js");
+    expect(g).toContain("Wildcards (* ?)");
+    expect(g).not.toContain("node --test <directory>");
+    expect(goiYLenhTuChoi("node --test a/*.mjs")).toContain("node --test <directory>");
+  });
+});
+
 describe("goiYLenhTuChoi — an toàn và biên", () => {
   it("★★★ gợi ý KHÔNG chép nguyên văn lệnh của model (không dẫn lại chuỗi bất kỳ vào lời nhắc)", () => {
     const lenh = "cat ../../ngoai/BI_MAT_DUOI_DAY_123.csv";

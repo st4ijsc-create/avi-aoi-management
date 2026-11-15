@@ -65,6 +65,25 @@ describe("lời từ chối lệnh tu-dong có gợi ý dạng được phép", 
     expect(c.indexOf("needs manual approval")).toBeLessThan(c.indexOf("Only test/build verification commands"));
     expect(c.indexOf("The command was NOT run.")).toBeLessThan(c.indexOf("The only accepted form"));
   });
+  it("★★★ HỢP ĐỒNG ĐIỂM NỐI: phần câu do gợi ý thêm vào KHÔNG chép nguyên văn lệnh của model (token lạ trong đối số), cho cả họ cờ / đọc tệp / glob / mkdir; câu gốc không đổi và gợi ý đứng CUỐI", () => {
+    const ca: Array<[string, string]> = [
+      ["python -m pytest tests/x.py -v QQTOKENCO1", "QQTOKENCO1"],
+      ["cat QQTOKENDOC2/a.csv", "QQTOKENDOC2"],
+      ["node --test QQTOKENGLOB3/*.mjs", "QQTOKENGLOB3"],
+      ["mkdir -p QQTOKENMK4", "QQTOKENMK4"],
+    ];
+    for (const [lenh, dauHieu] of ca) {
+      const pq = phanQuyetLenhTuDong(lenh, goc, () => false);
+      if (pq.ok || pq.ma === "REPO_CHINH_CHUA_CHECKPOINT") throw new Error(`phải bị từ chối: ${lenh}`);
+      const goc_ = cauTuChoiLenhTuDong(pq.ma, pq.chiTiet);
+      const day = cauTuChoiLenhTuDong(pq.ma, pq.chiTiet, lenh);
+      expect(day.startsWith(goc_), lenh).toBe(true);
+      const them = day.slice(goc_.length);
+      expect(them.length, lenh).toBeGreaterThan(0);
+      expect(them, lenh).not.toContain(dauHieu);
+      expect(day.indexOf("Only test/build verification commands"), lenh).toBeLessThan(day.indexOf(them.trim()));
+    }
+  });
   it("★★ AUTOLOOP_TAT: KHÔNG gắn gợi ý lệnh (câu riêng, lệnh không được thử lại ở dạng khác)", () => {
     const c = cauTuChoiLenhTuDong("AUTOLOOP_TAT", "AI_CODING_AUTOLOOP", "python -m pytest tests -v");
     expect(c).toContain("Do not retry it");
