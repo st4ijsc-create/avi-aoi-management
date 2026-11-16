@@ -186,6 +186,30 @@ describe("moTepTrongHopCat — .csv trong dự án (cờ bật + người gọi 
     expect(r.noiDung).not.toContain("BEGIN");
     for (const dong of than) expect(r.noiDung, "dòng thân PEM lọt").not.toContain(dong.slice(0, 20));
   });
+  it("★★★ TỆP NHỎ đọc trọn mà có BEGIN không END: từ DÒNG BEGIN tới hết bị che (kể cả các dòng sau khối); dòng trước nguyên văn; daChe=true; KHÔNG catBot", () => {
+    const b64 = (n: number) => randomBytes(n).toString("base64").replace(/[^A-Za-z0-9]/g, "Q");
+    const than = Array.from({ length: 5 }, () => b64(48));
+    const tep = ["ma,ghi_chu", "A,ok", "-----BEGIN PRIVATE KEY-----", ...than, "B,sau-khoi", ""].join(nl);
+    fs.writeFileSync(path.join(duAn, "du_lieu", "pem-nho.csv"), tep);
+    const r = moTepTrongHopCat("du_lieu/pem-nho.csv", MO());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.catBot).toBe(false);
+    expect(r.daChe).toBe(true);
+    expect(r.noiDung).toBe(["ma,ghi_chu", "A,ok", "[REDACTED_PEM_BLOCK_WITHOUT_END]", ""].join(nl));
+    for (const dong of than) expect(r.noiDung, "dòng thân PEM lọt").not.toContain(dong.slice(0, 20));
+  });
+  it("★★★ tệp nhỏ: END LỆCH NHÃN cũng bị che (bộ che chung bỏ sót ca này); khối ĐỦ vẫn do redactSecretsOnly che như cũ", () => {
+    const b64 = (n: number) => randomBytes(n).toString("base64").replace(/[^A-Za-z0-9]/g, "Q");
+    const than = Array.from({ length: 4 }, () => b64(48));
+    fs.writeFileSync(path.join(duAn, "du_lieu", "pem-lech.csv"), ["x,y", "-----BEGIN PRIVATE KEY-----", ...than, "-----END CERTIFICATE-----", "z,w", ""].join(nl));
+    const r = moTepTrongHopCat("du_lieu/pem-lech.csv", MO());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.noiDung).toBe(["x,y", "[REDACTED_PEM_BLOCK_WITHOUT_END]", ""].join(nl));
+    expect(r.daChe).toBe(true);
+    for (const dong of than) expect(r.noiDung).not.toContain(dong.slice(0, 20));
+  });
   it("★★★ ngân sách phiên VẪN bị trừ theo byte đã trả (không phải đường đọc 'miễn phí')", () => {
     const truoc = trangThaiNganSach("u:csv").daDung;
     const r = moTepTrongHopCat("du_lieu/nho.csv", { ...MO(), khoaNganSach: "u:csv" });
