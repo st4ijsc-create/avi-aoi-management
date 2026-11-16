@@ -949,6 +949,468 @@ describe("doc 81 Đợt 10 E — agent v2: STOP re-send from the sweep picture (
   });
 });
 
+// DO-66 vòng 4 (17/11) — lô X-12 commit 1 (chỉ test), theo cách (1) HST trình: nút nhớ theo ĐÍCH, qua các lượt pull, STOP nó đã chạy THÀNH CÔNG
+// (bản ký hoặc bản không ký tường minh; bản bằng chứng không tính — HST (b)), kèm phép so ghim; ảnh kiểm được chữ ký mới được bỏ qua bước.
+// Kỳ vọng theo đặc tả (hàng X-12, bất biến STOP 16/11, "không biết" = cái biết của bên quyết định gửi; vòng 3: TỔNG lần tới driver = 1 qua cả
+// cửa sổ), không theo mã hiện tại. it.fails = hành vi mong muốn chưa có (đỏ trước sửa); it = phủ / đối chứng, xanh trước và sau sửa.
+// Vòng 4 (HST: lệch giờ không được là giới hạn): "STOP chạy SAU lúc huỷ" được chứng minh theo THỨ TỰ, không theo giờ — lời gọi driver của STOP bắt
+// đầu sau khi nút đã NHẬN một phản hồi pull liệt run kèm ảnh kiểm được chữ ký. Các ca lệch giờ đặt đồng hồ nút ±10 phút: kết quả không đổi.
+describe("X-12 — the node never re-sends from a sweep picture a STOP it already knows went out (edge half of the A2(n) gate)", () => {
+  /** the OT STOP of step s9 on the node's adapter 21, with the step's pin (the fake config pins `run` = false) */
+  const S9 = { kind: "ot" as const, stepId: "s9", adapterId: 21, pins: [{ tagKey: "run", value: false }] };
+  const S9_DRIVER = 'stopAdapter:21:[{"tagKey":"run","value":false}]';
+  const S8_ROBOT = { kind: "robot" as const, stepId: "s8", robotId: 12 };
+  const CUA_SO_MS = 15 * 60_000;
+  const prior0 = { completed: [] as string[], settled: [] as string[], attempted: [] as string[], startOrder: [] as string[], branches: [], abortSentBefore: [] as string[], unknown: false };
+  type H = Awaited<ReturnType<typeof harness>>;
+  /** a sweep picture of run `runId` (its walker gone: no segment here), naming s9 unconfirmed; aborted `abortedAt` (default 5 s ago) */
+  const anh = (h: H, runId: number, over: Parameters<FakeCentral["sweepPicture"]>[1] = {}) =>
+    h.central.sweepPicture(runId, { verifiedStops: [S9], prior: { ...prior0 }, abortedAt: Date.now() - 5_000, issuedAt: Date.now() - 100, ...over });
+  const toiAdapter21 = (h: H) => h.devices.calls.filter((c) => c.startsWith("stopAdapter:21:"));
+  type AnhKy = Parameters<NonNullable<EdgeWalker["resendStops"]>>[0];
+  /** central's time `d.now`, driven by the case; the node's clock (cfg.now) is central's time + `lech` (a node clock fast / slow) */
+  function dongHo(h: H, lech = 0) {
+    const d = { now: Date.now() };
+    (h.agent as unknown as { cfg: { now: () => number } }).cfg.now = () => d.now + lech;
+    return d;
+  }
+  /**
+   * the device port as edgeDispatchDevicePort answers a STOP with the CONFIG's pins (pins null, edgeExecutionAgent.ts:1271-1277): `sent` with
+   * `written` = the pins it wrote (the fake config pins `run` = false). `sua` changes the answer of the n-th such call (1-based).
+   */
+  function congCoWritten(h: H, sua: (n: number) => Partial<{ outcome: "sent" | "failed" | "simulated"; written: Array<{ tagKey: string; value: unknown }> | undefined }> = () => ({})) {
+    const goc = h.devices.port.stopAdapter;
+    let n = 0;
+    h.devices.port.stopAdapter = async (id, pins, why, ctx) => {
+      const r = await goc(id, pins, why, ctx);
+      if (pins !== null) return r;
+      n++;
+      const o = { outcome: "sent" as const, written: [{ tagKey: "run", value: false }], ...sua(n) };
+      // a variable, not a literal: `written` is the port's answer AFTER the X-12 fix (EdgeStopOutcome has no such field before it)
+      const ra = o.written ? { ...r, outcome: o.outcome, written: o.written } : { ...r, outcome: o.outcome };
+      return ra;
+    };
+  }
+  /**
+   * the walker's (engine) STOP re-send, modelled on its contract only: a step in prior.abortSentBefore ("never sent again",
+   * edgeProtocol.ts:272; foeEngine.ts:6146) or prior.settled (edgeRunStore.ts:809/816; foeEngine.ts:6161) is skipped; every other verified
+   * STOP goes to the node's device port, its outcome bound to the picture as a `sweep_stop` (edgeExecutionAgent.ts:1224-1236). The real
+   * engine (foeEngine.resendStopsOfAbortedRun) is not loaded here.
+   */
+  function walkerMay() {
+    const w = { pictures: [] as AnhKy[], port: null as EdgeDevicePort | null, walker: null as unknown as EdgeWalker };
+    w.walker = {
+      drive: async () => ({ outcome: "completed" }),
+      abortLive: async () => ({ live: false }),
+      resendStops: async (picture, sink, ownerEpochOf) => {
+        w.pictures.push(picture);
+        const bo = new Set([...picture.prior.abortSentBefore, ...picture.prior.settled]);
+        let sent = 0;
+        for (const s of picture.verifiedStops) {
+          if (bo.has(s.stepId)) continue;
+          const ctx = { source: "local" as const, requestId: null };
+          const target = s.kind === "ot" ? { adapterId: s.adapterId } : { robotId: s.robotId };
+          const r = s.kind === "ot" ? await w.port!.stopAdapter(s.adapterId, s.pins, `engine sweep ${s.stepId}`, ctx) : await w.port!.stopRobot(s.robotId, `engine sweep ${s.stepId}`, ctx);
+          const ep = ownerEpochOf?.(target) ?? null;
+          if (ep !== null) await sink.event({ kind: "sweep_stop", runId: picture.runId, stepId: s.stepId, target, ownerEpoch: ep, pictureIssuedAt: picture.issuedAt, status: r.outcome === "failed" ? "failed" : "completed", at: Date.now() }, { stop: true });
+          sent++;
+        }
+        return { sent, failed: 0 };
+      },
+    };
+    return w;
+  }
+  /** a SIGNED STOP request central queued for the node (the routed STOP of the same Abort), on `target` */
+  const stopDaXep = (h: H, requestId: number, target: { robotId: number } | { adapterId: number }) =>
+    h.central.sign("cmd", h.central.commandPayload({ requestId, kind: "stop", target }));
+  /**
+   * central, modelled: a run leaves stopsUnconfirmed once a non-failed `sweep_stop` of it arrived, or once its window (15 min from its abort)
+   * is over; delivered STOP requests are acked (not re-delivered). The node pulls at each back-off step (10 s, 20 s, then 30 s) until no run
+   * is listed (at most `max` pulls).
+   */
+  async function quaCuaSo(h: H, d: { now: number }, abortedAt: Map<number, number>, max = 80) {
+    for (let i = 0; i < max && h.central.stopsUnconfirmed.length > 0; i++) {
+      await h.agent.tick();
+      await h.shipper.flushAll();
+      h.central.commands = [];
+      const xacNhan = new Set(h.central.received.locksEvents.filter((r) => r.kind === "sweep_stop" && r.status !== "failed").map((r) => r.runId));
+      d.now += i === 0 ? 10_500 : i === 1 ? 20_500 : 30_500;
+      h.central.stopsUnconfirmed = h.central.stopsUnconfirmed.filter((s) => !xacNhan.has(s.runId) && d.now - (abortedAt.get(s.runId) ?? 0) <= CUA_SO_MS);
+    }
+    expect(h.central.stopsUnconfirmed, "every run left the list (confirmed or window over)").toEqual([]);
+  }
+
+  it("X12-ANH-KY-GUI-MOT-LAN (phủ, đường dự phòng) a signed picture names s9 unconfirmed, no walker re-send ⇒ s9 reaches the node's driver exactly once (step pins), bound to the picture; the back-off sends nothing more", async () => {
+    const h = await harness({ claimRuns: false });
+    const pic = anh(h, 40);
+    h.central.stopsUnconfirmed = [{ runId: 40, picture: h.central.sign("runpkg", pic) }];
+    expect((await h.agent.tick()).stopsResent).toEqual([40]);
+    expect((await h.agent.tick()).stopsResent, "back-off: not again in the next pull").toEqual([]);
+    expect(h.devices.calls).toEqual([S9_DRIVER]);
+    await h.shipper.flushAll();
+    const bound = h.central.received.locksEvents.filter((r) => r.kind === "sweep_stop");
+    expect(bound.map((r) => [r.runId, r.stepId, r.target, r.ownerEpoch, r.pictureIssuedAt, r.status])).toEqual([[40, "s9", { adapterId: 21 }, 2, pic.issuedAt, "completed"]]);
+  });
+
+  it("X12-ANH-KY-GUI-MOT-LAN-MAY (phủ, đường máy) a signed picture names s9 unconfirmed, the walker re-sends ⇒ the engine gets the picture once with s9 not marked sent; s9 reaches the driver exactly once; the device-port fallback adds nothing", async () => {
+    const wm = walkerMay();
+    const h = await harness({ claimRuns: false, walker: wm.walker });
+    wm.port = h.devices.port;
+    h.central.stopsUnconfirmed = [{ runId: 41, picture: h.central.sign("runpkg", anh(h, 41)) }];
+    expect((await h.agent.tick()).stopsResent).toEqual([41]);
+    expect((await h.agent.tick()).stopsResent).toEqual([]);
+    expect(wm.pictures).toHaveLength(1);
+    expect(wm.pictures[0].prior.abortSentBefore).not.toContain("s9");
+    expect(h.devices.calls).toEqual([S9_DRIVER]);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
+  it.fails("X12-DU-PHONG-BO-COMPLETED (1) device-port fallback, signed picture: s9 has its own row completed (prior.completed) ⇒ s9 is NOT re-sent; the other unconfirmed STOP s8 still is", async () => {
+    const h = await harness({ claimRuns: false });
+    const pic = anh(h, 42, { verifiedStops: [S8_ROBOT, S9], prior: { ...prior0, completed: ["s9"], settled: ["s9"], attempted: ["s9"], startOrder: ["s9"] } });
+    h.central.stopsUnconfirmed = [{ runId: 42, picture: h.central.sign("runpkg", pic) }];
+    expect((await h.agent.tick()).stopsResent).toEqual([42]);
+    expect(h.devices.calls).toEqual(["stopRobot:12"]);
+  });
+
+  it("X12-DU-PHONG-HONG-VAN-GUI (1-đối chứng) device-port fallback, signed picture: s9 settled but FAILED (in settled, not in completed) ⇒ s9 is still re-sent (a failed STOP is not known to have gone out)", async () => {
+    const h = await harness({ claimRuns: false });
+    const pic = anh(h, 43, { verifiedStops: [S8_ROBOT, S9], prior: { ...prior0, settled: ["s9"], attempted: ["s9"], startOrder: ["s9"] } });
+    h.central.stopsUnconfirmed = [{ runId: 43, picture: h.central.sign("runpkg", pic) }];
+    await h.agent.tick();
+    expect(h.devices.calls).toEqual(["stopRobot:12", S9_DRIVER]);
+  });
+
+  it("X12-DU-PHONG-ANH-KHONG-KY-VAN-GUI (1-đối chứng, L-7) a picture whose signature does not verify, saying s9 completed ⇒ s9 is still sent (config pins), nothing offered for confirmation", async () => {
+    const h = await harness({ claimRuns: false });
+    const evil = generateEdgeSigningKey().key;
+    const pic = anh(h, 44, { verifiedStops: [S8_ROBOT, S9], prior: { ...prior0, completed: ["s9"], settled: ["s9"], attempted: ["s9"], startOrder: ["s9"] } });
+    h.central.stopsUnconfirmed = [{ runId: 44, picture: h.central.sign("runpkg", pic, evil) }];
+    await h.agent.tick();
+    expect(h.devices.calls).toEqual(["stopRobot:12", "stopAdapter:21:config"]);
+    await h.shipper.flushAll();
+    expect(eventKinds(h.central)).toContain("anomaly:EDGE_SWEEP_PICTURE_INVALID");
+    expect(eventKinds(h.central)).not.toContain("sweep_stop");
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
+  it.fails("X12-CUNG-LUOT-BO-STOP-VUA-THANH-CONG (2, đường dự phòng) one pull: the fast path executes a queued signed STOP on adapter 21 with success (pins written ⊇ s9's), then the picture of the aborted run names s9 on adapter 21 ⇒ the picture does NOT send s9: adapter 21 reaches the driver once", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h);
+    h.central.commands = [stopDaXep(h, 90, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 45, picture: h.central.sign("runpkg", anh(h, 45)) }];
+    const t = await h.agent.tick();
+    expect(t.commands.map((c) => [c.requestId, c.outcome]), "the queued STOP ran and succeeded").toEqual([[90, "sent"]]);
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config"]);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
+  it.fails("X12-CUNG-LUOT-BO-STOP-VUA-THANH-CONG-MAY (2, đường máy) one pull: the queued signed STOP on adapter 21 succeeds, then the walker re-sends the picture naming s9 on adapter 21 ⇒ s9 does not reach the driver again", async () => {
+    const wm = walkerMay();
+    const h = await harness({ claimRuns: false, walker: wm.walker });
+    wm.port = h.devices.port;
+    congCoWritten(h);
+    h.central.commands = [stopDaXep(h, 91, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 46, picture: h.central.sign("runpkg", anh(h, 46)) }];
+    const t = await h.agent.tick();
+    expect(t.commands.map((c) => [c.requestId, c.outcome])).toEqual([[91, "sent"]]);
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config"]);
+  });
+
+  it("X12-CUNG-LUOT-STOP-LOI-VAN-GUI (2-đối chứng) one pull: the queued STOP on adapter 21 FAILS at the driver ⇒ the node does not know it went out: the picture still sends s9 (adapter 21 reached twice)", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h, (n) => (n === 1 ? { outcome: "failed", written: undefined } : {}));
+    h.central.commands = [stopDaXep(h, 92, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 47, picture: h.central.sign("runpkg", anh(h, 47)) }];
+    const t = await h.agent.tick();
+    expect(t.commands.map((c) => [c.requestId, c.outcome])).toEqual([[92, "failed"]]);
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", S9_DRIVER]);
+  });
+
+  it("X12-CUNG-LUOT-DICH-KHAC-VAN-GUI (2-đối chứng) one pull: the queued STOP that succeeds is on ANOTHER target (robot 12) ⇒ the picture still sends s9 to adapter 21", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h);
+    h.central.commands = [stopDaXep(h, 93, { robotId: 12 })];
+    h.central.stopsUnconfirmed = [{ runId: 48, picture: h.central.sign("runpkg", anh(h, 48)) }];
+    const t = await h.agent.tick();
+    expect(t.commands.map((c) => [c.requestId, c.outcome])).toEqual([[93, "sent"]]);
+    expect(h.devices.calls).toEqual(["stopRobot:12", S9_DRIVER]);
+  });
+
+  it("X12-CUNG-LUOT-DICH-KHAC-ROBOT-VAN-GUI (2-đối chứng) one pull: the queued STOP that succeeds (pins written) is on adapter 21, the picture names s8 on ROBOT 12 ⇒ the picture still sends s8 to robot 12", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h);
+    h.central.commands = [stopDaXep(h, 103, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 59, picture: h.central.sign("runpkg", anh(h, 59, { verifiedStops: [S8_ROBOT] })) }];
+    const t = await h.agent.tick();
+    expect(t.commands.map((c) => [c.requestId, c.outcome])).toEqual([[103, "sent"]]);
+    expect(h.devices.calls).toEqual(["stopAdapter:21:config", "stopRobot:12"]);
+  });
+
+  // ── vòng 3: TỔNG qua cả cửa sổ (Map nhớ qua các lượt pull) ─────────────────────────────────────────────────────────────
+
+  for (const duong of ["du-phong", "may"] as const) {
+    // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
+    it.fails(`X12-MAP-TONG-MOT-LAN-${duong === "may" ? "MAY" : "DU-PHONG"} (1) the queued STOP on adapter 21 succeeds (pins ⊇ s9's), the picture lists the run until its window ends ⇒ over the whole window adapter 21 reaches the driver ONCE: s9 never again`, async () => {
+      const wm = walkerMay();
+      const h = await harness({ claimRuns: false, ...(duong === "may" ? { walker: wm.walker } : {}) });
+      wm.port = h.devices.port;
+      congCoWritten(h);
+      const d = dongHo(h);
+      const ab = d.now - 5_000;
+      h.central.commands = [stopDaXep(h, 94, { adapterId: 21 })];
+      h.central.stopsUnconfirmed = [{ runId: 49, picture: h.central.sign("runpkg", anh(h, 49, { abortedAt: ab })) }];
+      await quaCuaSo(h, d, new Map([[49, ab]]));
+      expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config"]);
+    });
+  }
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
+  it.fails("X12-MAP-ROBOT-TONG-MOT-LAN (1, robot) the queued STOP on robot 12 is sent (the canonical abort, robotEdgeDispatch.ts:114-115), the picture names s8 on robot 12 ⇒ over the whole window robot 12 reaches the driver ONCE", async () => {
+    const h = await harness({ claimRuns: false });
+    const d = dongHo(h);
+    const ab = d.now - 5_000;
+    h.central.commands = [stopDaXep(h, 95, { robotId: 12 })];
+    h.central.stopsUnconfirmed = [{ runId: 50, picture: h.central.sign("runpkg", anh(h, 50, { verifiedStops: [S8_ROBOT], abortedAt: ab })) }];
+    await quaCuaSo(h, d, new Map([[50, ab]]));
+    expect(h.devices.calls).toEqual(["stopRobot:12"]);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
+  it.fails("X12-KHOI-DONG-LAI-GUI-MOT-LAN (1, ngoại lệ 'không biết') the node skipped s9 (its own STOP covered it), then RESTARTS (its memory is gone) while the run is still listed ⇒ the restarted node sends s9 exactly once, central confirms, nothing more", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h);
+    h.central.commands = [stopDaXep(h, 96, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 51, picture: h.central.sign("runpkg", anh(h, 51)) }];
+    await h.agent.tick();
+    expect(toiAdapter21(h), "before the restart: only the queued STOP").toEqual(["stopAdapter:21:config"]);
+    h.central.commands = [];
+    await h.agent.stop();
+    const h2 = await harness({ central: h.central, claimRuns: false });
+    const d = dongHo(h2);
+    await quaCuaSo(h2, d, new Map([[51, d.now - 5_000]]));
+    expect(toiAdapter21(h2), "after the restart: s9 once (not known here any more ⇒ sent, L-7)").toEqual([S9_DRIVER]);
+  });
+
+  it("X12-GIA-TRI-LECH-VAN-GUI (1-đối chứng) the queued STOP succeeded but wrote a DIFFERENT value on the pin s9 needs ⇒ not covered: s9 is sent (once, then confirmed)", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h, () => ({ written: [{ tagKey: "run", value: true }] }));
+    const d = dongHo(h);
+    const ab = d.now - 5_000;
+    h.central.commands = [stopDaXep(h, 97, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 52, picture: h.central.sign("runpkg", anh(h, 52, { abortedAt: ab })) }];
+    await quaCuaSo(h, d, new Map([[52, ab]]));
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", S9_DRIVER]);
+  });
+
+  it("X12-SIMULATED-VAN-GUI (1-đối chứng) the queued STOP on adapter 21 was only SIMULATED ⇒ nothing was written: s9 is sent", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h, () => ({ outcome: "simulated" })); // the port even says what it would have written: simulated is still no STOP
+    const d = dongHo(h);
+    const ab = d.now - 5_000;
+    h.central.commands = [stopDaXep(h, 98, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 53, picture: h.central.sign("runpkg", anh(h, 53, { abortedAt: ab })) }];
+    await quaCuaSo(h, d, new Map([[53, ab]]));
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", S9_DRIVER]);
+  });
+
+  it("X12-KHONG-WRITTEN-VAN-GUI (1-đối chứng) a device port that does not say what it wrote (no `written`) ⇒ not covered: s9 is sent", async () => {
+    const h = await harness({ claimRuns: false });
+    const d = dongHo(h);
+    const ab = d.now - 5_000;
+    h.central.commands = [stopDaXep(h, 99, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 54, picture: h.central.sign("runpkg", anh(h, 54, { abortedAt: ab })) }];
+    await quaCuaSo(h, d, new Map([[54, ab]]));
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", S9_DRIVER]);
+  });
+
+  it("X12-STOP-TRUOC-HUY-VAN-GUI (1-đối chứng) the node's STOP on adapter 21 succeeded BEFORE the run's abort ⇒ it does not cover the abort's STOP: s9 is sent", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h);
+    const d = dongHo(h);
+    h.central.commands = [stopDaXep(h, 100, { adapterId: 21 })];
+    await h.agent.tick();
+    h.central.commands = [];
+    const ab = d.now + 5_000;
+    d.now += 10_000;
+    h.central.stopsUnconfirmed = [{ runId: 55, picture: h.central.sign("runpkg", anh(h, 55, { abortedAt: ab })) }];
+    await quaCuaSo(h, d, new Map([[55, ab]]));
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", S9_DRIVER]);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
+  it.fails("X12-HAI-RUN-MOC-RIENG (1) one STOP on adapter 21, run in the answer that FIRST listed run A (aborted before it); run B is aborted after it and listed in a later answer; both name s9 on adapter 21 ⇒ each run is judged on ITS OWN listing: A is covered, B's s9 is sent once", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h);
+    const d = dongHo(h);
+    const abA = d.now - 5_000;
+    const anhA = { runId: 56, picture: h.central.sign("runpkg", anh(h, 56, { abortedAt: abA })) };
+    h.central.commands = [stopDaXep(h, 101, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [anhA];
+    await h.agent.tick();
+    h.central.commands = [];
+    const abB = d.now + 5_000;
+    d.now += 10_000;
+    h.central.stopsUnconfirmed = [anhA, { runId: 57, picture: h.central.sign("runpkg", anh(h, 57, { abortedAt: abB })) }];
+    await quaCuaSo(h, d, new Map([[56, abA], [57, abB]]));
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", S9_DRIVER]);
+    await h.shipper.flushAll();
+    expect(h.central.received.locksEvents.filter((r) => r.kind === "sweep_stop").map((r) => r.runId), "only B's s9 went (and is bound)").toEqual([57]);
+  });
+
+  it("X12-BANG-CHUNG-VAN-GUI (1-đối chứng, HST (b)) the STOP on adapter 21 ran only as EVIDENCE (its signature fails: L-7, never acked) ⇒ it does not count as known: s9 is sent", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h);
+    const d = dongHo(h);
+    const ab = d.now - 5_000;
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 102, kind: "stop", target: { adapterId: 21 } }), generateEdgeSigningKey().key)];
+    h.central.stopsUnconfirmed = [{ runId: 58, picture: h.central.sign("runpkg", anh(h, 58, { abortedAt: ab })) }];
+    const t = await h.agent.tick();
+    expect(t.commands.map((c) => c.outcome), "the evidence run").toEqual(["unverified:sent"]);
+    await quaCuaSo(h, d, new Map([[58, ab]]));
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", S9_DRIVER]);
+  });
+
+  // ── vòng 4: thứ tự, không giờ ─────────────────────────────────────────────────────────────────────────────────────────────
+
+  for (const lech of [600_000, -600_000]) {
+    const ten = lech > 0 ? "NHANH" : "CHAM";
+    // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
+    it.fails(`X12-LECH-GIO-${ten}-CUNG-LUOT-PHU (1) node clock ${lech > 0 ? "+" : "-"}10 min: the STOP arrives in the answer that first lists the run ⇒ covered whatever the clock: adapter 21 reaches the driver ONCE over the window`, async () => {
+      const h = await harness({ claimRuns: false });
+      congCoWritten(h);
+      const d = dongHo(h, lech);
+      const ab = d.now - 5_000;
+      h.central.commands = [stopDaXep(h, 104, { adapterId: 21 })];
+      h.central.stopsUnconfirmed = [{ runId: 60, picture: h.central.sign("runpkg", anh(h, 60, { abortedAt: ab })) }];
+      await quaCuaSo(h, d, new Map([[60, ab]]));
+      expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config"]);
+    });
+    it(`X12-LECH-GIO-${ten}-TRUOC-LIET-KE-GUI (1-đối chứng) node clock ${lech > 0 ? "+" : "-"}10 min: the STOP ran in a pull BEFORE any answer listed the run (it ran before the abort, which lies 5 s later on central's clock) ⇒ never covered: s9 is sent`, async () => {
+      const h = await harness({ claimRuns: false });
+      congCoWritten(h);
+      const d = dongHo(h, lech);
+      h.central.commands = [stopDaXep(h, 105, { adapterId: 21 })];
+      await h.agent.tick();
+      h.central.commands = [];
+      const ab = d.now + 5_000;
+      d.now += 10_000;
+      h.central.stopsUnconfirmed = [{ runId: 61, picture: h.central.sign("runpkg", anh(h, 61, { abortedAt: ab })) }];
+      await quaCuaSo(h, d, new Map([[61, ab]]));
+      expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", S9_DRIVER]);
+    });
+  }
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
+  it.fails("X12-CONSOLE-SAU-HUY-PHU (1) the run is listed, s9's re-send FAILS at the driver (still listed); a console STOP on adapter 21, created after the abort, then succeeds; at the next due re-send s9 is covered ⇒ nothing more reaches adapter 21", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h);
+    const goc = h.devices.port.stopAdapter;
+    let lanS9 = 0;
+    h.devices.port.stopAdapter = async (id, pins, why, ctx) => {
+      const r = await goc(id, pins, why, ctx);
+      return pins !== null && ++lanS9 === 1 ? { ...r, outcome: "failed" as const, detail: "driver error (test)" } : r;
+    };
+    const d = dongHo(h);
+    const ab = d.now - 5_000;
+    h.central.stopsUnconfirmed = [{ runId: 62, picture: h.central.sign("runpkg", anh(h, 62, { abortedAt: ab })) }];
+    await h.agent.tick(); // s9 re-sent, failed: the run stays listed
+    await h.shipper.flushAll();
+    d.now += 5_000; // before the re-send is due again (10 s)
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 106, kind: "stop", target: { adapterId: 21 }, issuedAt: Date.now() - 100 }))];
+    await h.agent.tick();
+    h.central.commands = [];
+    d.now += 5_500;
+    await quaCuaSo(h, d, new Map([[62, ab]]));
+    expect(toiAdapter21(h)).toEqual([S9_DRIVER, "stopAdapter:21:config"]);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
+  it.fails("X12-TAO-TRUOC-CHAY-SAU-PHU (1) a STOP request CREATED before the abort (issuedAt 60 s before) is delivered in the answer that first lists the run and runs after it ⇒ it ran after the abort (order proven by the answer): covered, adapter 21 reaches the driver ONCE", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h);
+    const d = dongHo(h);
+    const ab = d.now - 5_000;
+    h.central.commands = [h.central.sign("cmd", h.central.commandPayload({ requestId: 107, kind: "stop", target: { adapterId: 21 }, issuedAt: Date.now() - 60_000 }))];
+    h.central.stopsUnconfirmed = [{ runId: 63, picture: h.central.sign("runpkg", anh(h, 63, { abortedAt: ab })) }];
+    await quaCuaSo(h, d, new Map([[63, ab]]));
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config"]);
+  });
+
+  it("X12-ANH-HONG-KHONG-DAT-MOC-VAN-GUI (1-đối chứng) the answer that first lists the run carries a picture that does NOT verify; the STOP of that answer succeeds; later answers carry the verified picture ⇒ the STOP ran before any VERIFIED listing: not covered, s9 is sent", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h);
+    const d = dongHo(h);
+    const ab = d.now - 5_000;
+    const pic = anh(h, 64, { abortedAt: ab });
+    h.central.commands = [stopDaXep(h, 108, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 64, picture: h.central.sign("runpkg", pic, generateEdgeSigningKey().key) }];
+    await h.agent.tick(); // forged picture: s9 sent anyway (L-7, config pins), never offered for confirmation
+    h.central.commands = [];
+    d.now += 10_500;
+    h.central.stopsUnconfirmed = [{ runId: 64, picture: h.central.sign("runpkg", pic) }];
+    await quaCuaSo(h, d, new Map([[64, ab]]));
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", "stopAdapter:21:config", S9_DRIVER]);
+  });
+
+  // ── vòng 5: mốc của run bị đặt lại / phản hồi tới sai thứ tự ⇒ chỉ có thể muộn hơn (hướng đóng: gửi lại) ──────────────────────
+
+  /** s9's re-sends through the step pins fail at the driver the first `n` times (the run stays listed) */
+  function s9Hong(h: H, n = 1) {
+    const goc = h.devices.port.stopAdapter;
+    let lan = 0;
+    h.devices.port.stopAdapter = async (id, pins, why, ctx) => {
+      const r = await goc(id, pins, why, ctx);
+      return pins !== null && ++lan <= n ? { ...r, outcome: "failed" as const, detail: "driver error (test)" } : r;
+    };
+  }
+  /** one pull answer as central gives it while its run side is unavailable (edgeProtocol.ts:570-576): commands only, no run listed */
+  const phanThieu = (h: H) => () => ({ status: 200, data: { node: "edge-a", protocolVersion: 2, configVersion: 1, keysetVersion: 1, programCheckRequested: false, runs: [], claims: [], stopsUnconfirmed: [], commands: h.central.commands, runStateUnavailable: true } });
+
+  it("X12-ROI-DANH-SACH-DAT-LAI-MOC-VAN-GUI (vòng 5, mốc đặt lại ⇒ gửi lại) the run is listed, s9 fails; a FULL answer without the run (confirmed, or an answer built before the abort arriving late) drops its mark; a STOP on adapter 21 succeeds while the run is not listed; the run is listed again ⇒ the STOP ran before the NEW first listing: s9 is sent", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h);
+    s9Hong(h);
+    const d = dongHo(h);
+    const ab = d.now - 5_000;
+    const r = { runId: 65, picture: h.central.sign("runpkg", anh(h, 65, { abortedAt: ab })) };
+    h.central.stopsUnconfirmed = [r];
+    await h.agent.tick();
+    d.now += 1_000;
+    h.central.stopsUnconfirmed = [];
+    await h.agent.tick();
+    d.now += 1_000;
+    h.central.commands = [stopDaXep(h, 109, { adapterId: 21 })];
+    await h.agent.tick();
+    h.central.commands = [];
+    d.now += 1_000;
+    h.central.stopsUnconfirmed = [r];
+    await quaCuaSo(h, d, new Map([[65, ab]]));
+    expect(toiAdapter21(h)).toEqual([S9_DRIVER, "stopAdapter:21:config", S9_DRIVER]);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
+  it.fails("X12-THIEU-PHAN-GIU-MOC-PHU (vòng 5) the run is listed, s9 fails; a PARTIAL answer (runStateUnavailable: nothing is inferred from what it omits, edgeExecutionAgent.ts:550-551) carries a STOP on adapter 21 that succeeds; the run is listed again ⇒ the mark of the first listing is kept: covered, nothing more reaches adapter 21", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h);
+    s9Hong(h);
+    const d = dongHo(h);
+    const ab = d.now - 5_000;
+    h.central.stopsUnconfirmed = [{ runId: 66, picture: h.central.sign("runpkg", anh(h, 66, { abortedAt: ab })) }];
+    await h.agent.tick();
+    d.now += 5_000;
+    h.central.commands = [stopDaXep(h, 110, { adapterId: 21 })];
+    h.central.handlers.pull = phanThieu(h);
+    const t = await h.agent.tick();
+    delete h.central.handlers.pull;
+    h.central.commands = [];
+    expect(t.commands.map((c) => [c.requestId, c.outcome]), "STOPs still go in a partial answer").toEqual([[110, "sent"]]);
+    d.now += 5_500;
+    await quaCuaSo(h, d, new Map([[66, ab]]));
+    expect(toiAdapter21(h)).toEqual([S9_DRIVER, "stopAdapter:21:config"]);
+  });
+});
+
 describe("doc 81 Đợt 10 E — agent v2: fix review 1 minors", () => {
   it("★ M-7: an UNVERIFIED sweep picture never skips a STOP — its `abortSentBefore` is not trusted", async () => {
     const h = await harness({ claimRuns: false });
