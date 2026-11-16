@@ -2768,6 +2768,63 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(loi, loi).not.toContain("except the run's STOPs due");
     expect(loi.endsWith(CAU_CU46), loi).toBe(true);
   });
+  // DO-61 (lô X-10 bước 4, điều kiện của kiem-dinh 16/11): ca đối chứng cho câu `:2029` — câu mới CHỈ khi hàng của một STOP nói nó đã được giao (hoặc có thể đã ra); mọi hàng khác ⇒ câu cũ.
+  // Hold journalFull của edge (không phải trạng thái C), áp thẳng applyEdgeSegmentEnd như N16/N19
+  const giuJournalFull61 = async (id: number, hang: Array<Record<string, unknown>>, buoc: WorkflowStep[]) => {
+    fake.store.set("orchestration_runs", [...rows("orchestration_runs"), { id, status: "running", contextJson: null }]);
+    fake.store.set("orchestration_run_steps", [...rows("orchestration_run_steps"), ...hang.map((r, i) => ({ id: id * 10 + i, runId: id, stepType: "command", attempt: 1, error: null, resultJson: null, ...r }))]);
+    await applyEdgeSegmentEnd(fake as never, id, { outcome: "held", heldReason: "journalFull", error: "EDGE_HELD(journalFull): the journal refused a record (full) — nothing further was sent; the run is held.", nodeCode: "edge-a", claimSeq: 1, def: def(`d61-${id}`, buoc) });
+    expect(runRow(id).status).toBe("held");
+    return String(runRow(id).error ?? "");
+  };
+  it("T4-B3-O20-KD-T7 (DO-61, t7) EDGE journalFull hold: a FORWARD command that is no STOP completed, no STOP row at all: the run's words are the old ones (a non-STOP's row says nothing of a STOP)", async () => {
+    const loi = await giuJournalFull61(9613, [{ stepId: "m1", status: "completed", resultJson: { routedTo: "ot-dispatcher", accepted: true, status: "simulated" } }], [ot("m1"), otStop("s9")]);
+    expect(loi, loi).not.toContain("except the run's STOPs due");
+    expect(loi.endsWith(CAU_CU46), loi).toBe(true);
+  });
+  it("T4-B3-O20-KD-T9 (DO-61, t9) EDGE journalFull hold: the only STOP row says nothing of a hand-over (skipped: no result, no dispatcher word): the run's words are the old ones", async () => {
+    const loi = await giuJournalFull61(9614, [{ stepId: "s9", status: "skipped" }], [otStop("s9")]);
+    expect(loi, loi).not.toContain("except the run's STOPs due");
+    expect(loi.endsWith(CAU_CU46), loi).toBe(true);
+  });
+  it("T4-B3-O20-KD-T10 (DO-61, t10) EDGE journalFull hold: the only STOP row is in state C with no dispatcher result (the attempt never reached a dispatcher: its adapter could not be resolved, foeEngine.ts:3266-3268): the words of its row say it did NOT go ⇒ the old words", async () => {
+    const { loiChuaRaStop } = await import("./foeKetCucKhongRo");
+    const loiHang = loiChuaRaStop("s9", 1, { nguon: "doc", ma: "ADAPTER_UNRESOLVED" });
+    expect(loiHang, "the fixture is a row of state C that says it did NOT go").toMatch(/^FOE_STOP_NOT_SENT: STOP "s9" did NOT go out/);
+    const loi = await giuJournalFull61(9615, [{ stepId: "s9", status: "failed", error: loiHang }], [otStop("s9")]);
+    expect(loi, "not state C: the advice branch is the one with the new words").not.toMatch(/\): FOE_STOP_NOT_SENT/);
+    expect(loi, loi).not.toContain("except the run's STOPs due");
+    expect(loi.endsWith(CAU_CU46), loi).toBe(true);
+  });
+  // DO-61 h1 — the walker's last word for a failed step (F4, foeEngine.ts:1044) is for a row LEFT running (a journal refused its result); a row that already says its last word is never written again
+  it("T4-B3-O20-KD-H1 (DO-61, h1) EDGE, r1 answers TIMEOUT in segment 2 (its row: failed, outcome unknown) and s9 is refused there (state C ⇒ held); a person's Continue: segment 3 writes NO row of r1 (its last word stands), s9 reaches a driver exactly once, the run fails", async () => {
+    ghimHalt();
+    h.ghim = PIN_OK;
+    const e = await edgeAssignedRun(def("d61-h1", [gate(), move("r1"), otStop("s9")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("r1");
+    h.tuChoi.set("s9", OFF46);
+    try {
+      await edgeSegment(e, 2);
+    } finally {
+      h.timeoutDispatch.clear();
+      h.tuChoi.clear();
+    }
+    await cho46();
+    expect(runRow(e.runId).status, "s9 in state C holds the run").toBe("held");
+    const truoc = { ...hang46(e.runId, "r1") };
+    expect(truoc, "r1's row has its last word from segment 2").toMatchObject({ status: "failed", error: expect.stringMatching(/^FOE_OUTCOME_UNKNOWN/) });
+    const n2 = h.sent.length;
+    expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+    const s3 = await edgeSegment(e, 3);
+    await cho46();
+    expect(s3.segment.filter((r: any) => r.kind === "step" && r.stepId === "r1"), "segment 3 writes no row of r1").toEqual([]);
+    expect(hang46(e.runId, "r1"), "r1's row unchanged").toEqual(truoc);
+    expect(h.sent.slice(n2).filter((x) => x.runId === e.runId && x.stepId === "s9"), "s9 (refused before a driver in segment 2) reaches a driver once in segment 3").toHaveLength(1);
+    expect(h.sent.slice(n2).filter((x) => x.runId === e.runId && x.stepId === "r1"), "r1 never sent again").toEqual([]);
+    expect(runRow(e.runId).status).toBe("failed");
+  });
   it("T4-B3-R2A-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của ca trên) the same refused POST-SEND result, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never sent again", async () => {
     const e = await edgeAssignedRun(def("ja-e-dc", [gate(), move("r1", { maxAttempts: 2 }), move("r2")]));
     await edgeSegment(e, 1);
