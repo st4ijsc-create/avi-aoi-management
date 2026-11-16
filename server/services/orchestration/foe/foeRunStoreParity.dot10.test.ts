@@ -2825,6 +2825,36 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(h.sent.slice(n2).filter((x) => x.runId === e.runId && x.stepId === "r1"), "r1 never sent again").toEqual([]);
     expect(runRow(e.runId).status).toBe("failed");
   });
+  // DO-61 vòng 2/3 (HST 16/11, from kiem-dinh's mutation f6): the walk reaches a gate after a command whose result the journal refused; the STOP compensation is refused at the hold (state C).
+  // The segment ends held whatever the walk says (a refused journal, edgeRunStore.ts:352-353, :679-689): as central's (same definition: held, state C's words, no marker; a plain Continue sends cst once)
+  it("T4-B3-O20-KD-F6 (DO-61, f6) EDGE [g1, r1 (comp cst), g2], r1's result refused by the journal, cst refused at the hold (state C): the run's words never point to Continue alone, no person's gate in front of cst; a plain Continue sends cst once", async () => {
+    ghimHalt();
+    h.ghim = PIN_OK;
+    const e = await edgeAssignedRun(def("d61-kd-f6", [gate(), move("r1", { compensation: otStop("cst") }), gate("g2")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.tuChoi.set("cst", OFF46);
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "r1" && typeof (rec.result as { routedTo?: unknown } | null)?.routedTo === "string";
+    try {
+      await edgeSegment(e, 2);
+    } finally {
+      e.refuse = undefined;
+      h.tuChoi.clear();
+    }
+    await cho46();
+    expect(runRow(e.runId).status).toBe("held");
+    expect(lanGuiCst(), "cst tried at the hold, refused").toEqual([1, 2, 3].map((i) => `run${e.runId}-cst-a${i}`));
+    expect(khoa46(), "cst named").toContain(`${K46.stopNotSent}:${e.runId}:r1:cst:claim2`);
+    const loi = String(runRow(e.runId).error ?? "");
+    expect(/Continue/.test(loi) && !/Abort/.test(loi), `the run's words point to Continue alone: ${loi}`).toBe(false);
+    expect(ctx46(e.runId)[KET_CUC_KHONG_RO_CTX_KEY], "L-7: no person's gate in front of the STOP owed").toBeUndefined();
+    const n = h.sent.length;
+    expect(await tiepThuong46(e)).toMatchObject({ ok: true, status: "queued" });
+    await doan3_46(e);
+    expect(h.sent.slice(n).filter((x) => x.runId === e.runId && x.stepId === "cst"), "cst reaches a driver once after the plain Continue").toHaveLength(1);
+    expect(hang46(e.runId, "cst")).toMatchObject({ status: "compensated" });
+    expect(runRow(e.runId).status).toBe("failed");
+  });
   it("T4-B3-R2A-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của ca trên) the same refused POST-SEND result, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never sent again", async () => {
     const e = await edgeAssignedRun(def("ja-e-dc", [gate(), move("r1", { maxAttempts: 2 }), move("r2")]));
     await edgeSegment(e, 1);

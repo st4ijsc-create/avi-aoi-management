@@ -3615,7 +3615,7 @@ async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<Orches
     const src = await rc.store.sweepSource({ live: rc, hasLiveDriver: () => true }).catch(() => null);
     rc.khongGuiDs = await buocTienBiBo(rc, src);
     const giuChuaRa = await giuStopChuaRa(rc, src);
-    if (giuChuaRa && out.kind !== "paused" && !(out.kind === "held" && out.reason === "outcomeUnknown")) out = giuChuaRa; // F1 — the walker's own hold here is the journal's (no authorisation): state C's words, as central's
+    if (giuChuaRa && !(out.kind === "held" && out.reason === "outcomeUnknown")) out = giuChuaRa; // F1 — the walker's own hold here is the journal's (no authorisation): state C's words, as central's. Only a hold for a person (held outcomeUnknown) stays; a gate reached is no real pause here: a refused journal ends the segment held (edgeRunStore.ts:352-353, :679-689), so a STOP owed never stands behind a person (L-7, HST 16/11)
   }
   // R1b-2b-2a A2(n) (R-4) — an unknown outcome with no compensation due anywhere: nothing was split, nobody was told yet
   // (C-A) — the same on a paused / held / aborted end: the flag rode on it. T4 bước 3 (#18) — a step whose compensation a Continue approved and that went: told already, nothing more
