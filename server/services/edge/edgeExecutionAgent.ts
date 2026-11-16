@@ -966,7 +966,6 @@ export class EdgeExecutionAgent {
     if (v.ok) {
       stops = v.picture.verifiedStops;
       sentBefore = new Set(v.picture.prior.abortSentBefore);
-      for (const id of v.picture.prior.completed) if (v.picture.prior.attempted.includes(id)) sentBefore.add(id); // skipped (không chạy) không được tính là đã gửi; attempted không gồm skipped (foeRunStore.ts:320)
     } else {
       // unverifiable picture: still STOP — robot aborts, OT stops with the VERIFIED config's pins only (never the message's)
       this.anomaly("EDGE_SWEEP_PICTURE_INVALID", runId, `sweep picture refused by verification (${v.reason}) — STOPs sent with the config's pins`);
