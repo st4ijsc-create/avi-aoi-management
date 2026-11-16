@@ -3496,6 +3496,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(msg).not.toMatch(/records a command whose outcome is unknown/);
   });
   // n10b — xepChoNut bỏ `!ok`: lần gửi ok (dù chi tiết mang mã ADAPTER_OWNED_BY_EDGE) là đã giao, không phải "given to the edge node". Đối chứng (b). h.okKemMa: bộ điều phối thật không bao giờ trả ok kèm mã này.
+  // CA HỢP ĐỒNG PHÒNG XA (HST 17/11): hình này KHÔNG có ở dispatcher thật — đường giao cho nút luôn trả ok:false (commandDispatcher.ts:3356); kiem-dinh tự quyết n10b là "tương đương" hay "đã bắt".
   it("T4-B3-Q1-X11-KD-n10b (X-11, kiem-dinh n10b; đối chứng (b)) press 2 on the latched aborted run, s9's hand-over answers ok with the code ADAPTER_OWNED_BY_EDGE in its detail: sent, not queued for the node: no xepChoNut, no words (d)", async () => {
     const x = await chuoi62("x11kd10b");
     const { c } = x;
@@ -3556,6 +3557,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   });
   // w1 — chuBamLai(…, chuaKhoa = true) với xepChoNut: run CHƯA chốt thì không bao giờ nói "records a command whose outcome is unknown" / "given to the edge node" (x11-chu-duyet (c)/(d): run đã chốt).
   // Trong engine đầu vào này không tới được (xem báo cáo DO-65); ca khoá hợp đồng của hàm export.
+  // CA HỢP ĐỒNG CỦA HÀM (HST 17/11): gọi thẳng chuBamLai với đầu vào engine không tạo (xepChoNut chỉ được gán khi run đã chốt, foeEngine.ts:~7073).
   it("T4-B3-Q1-X11-KD-w1 (X-11, kiem-dinh w1) the words of a press on a run NOT latched (chuaKhoa): a report naming xepChoNut never gets the latched words (d); s9 stays 'refused or not answered'", async () => {
     const { chuBamLai } = await import("./foeEngine");
     const msg = chuBamLai(7, BAO_63({ failed: ["s9"], xepChoNut: ["s9"] }) as never, true);
