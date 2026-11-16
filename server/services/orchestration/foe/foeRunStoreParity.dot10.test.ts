@@ -756,6 +756,8 @@ interface EdgeHarness {
   quaDay?: (out: Record<string, any>) => Promise<Record<string, any>>;
   /** fix review 1 — the journal refuses the record matching this (once refused, every later non-STOP record too) */
   refuse?: (rec: EdgeRunRecordIn) => boolean;
+  /** lô X-10 N1 only — with `refuse`: the journal refuses also a STOP's OWN record (o.stop) matching this; otherwise a STOP's record always lands */
+  refuseStop?: (rec: EdgeRunRecordIn) => boolean;
   /** the walker's run-status calls on the edge stores of every segment (central only applies the segment END) */
   statuses: string[];
   records: EdgeRunRecordIn[];
@@ -920,7 +922,7 @@ async function edgeSegment(x: EdgeHarness, claimSeq: number, opts: { beforeEnd?:
       async run(_runId, _claim, rec, o) {
         const tre = rec.kind === "step" ? x.journalDelay?.get(rec.stepId) : undefined;
         if (tre) await new Promise((r) => setTimeout(r, tre));
-        if (x.refuse && (refusing || x.refuse(rec)) && !o?.stop) {
+        if (x.refuse && (refusing || x.refuse(rec)) && (!o?.stop || x.refuseStop?.(rec) === true)) {
           refusing = true;
           return { seq: null, dropped: true, reason: "journal_full" };
         }
@@ -2429,6 +2431,344 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     }
   });
 
+  // ── lô X-10 (ô #20; QĐ-O20a + X-10, AGENTS-ngoai-le.md 5c772ac5f; chu-du-an-HST 16/11): ca N1–N14, N16–N18, N1b của o20-thiet-ke.md mục 7.2 (N15 ở foeQuyetDinhKetDoanEdge.a2n.test.ts) ──
+  // Kỳ vọng lấy từ số đo DO-45…DO-51 và đặc tả (o20-thiet-ke.md), không chép từ mã. Bất biến (chủ dự án 16/11): walker và Continue không gửi STOP ghim hai lần tới driver;
+  // ngoại lệ: không biết STOP đã ra hay chưa (sổ không ghi được bản ghi của chính STOP, lỗi driver, không có trả lời) ⇒ gửi lại (L-7). Abort là lần gửi riêng của người.
+  const K46 = CANH_BAO_KHONG_RO_KIND;
+  const OFF46 = { status: "failed", error: "ADAPTER_OFFLINE", detail: { edge: true, stop: true, pinnedStop: true, reason: "ADAPTER_OFFLINE" } };
+  const CAU46 = " — nothing further was sent except the run's STOPs due (each STOP's row and URGENT say whether it reached the device or was only simulated); Continue to resume it, or Abort to send the run's STOPs again.";
+  const CAU_CU46 = " — nothing further was sent; Continue to resume it.";
+  const par46 = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
+  const dTien46 = (ref: string) => def(ref, [gate(), move("r1", { maxAttempts: 2, compensation: ot("c1") }), move("r2"), otStop("s9")]);
+  const dPar46 = (ref: string) => def(ref, [gate(), par46("p", [move("m0"), otStop("s")])]);
+  const cho46 = (ms = 120) => new Promise((r) => setTimeout(r, ms));
+  const khoa46 = () => h.alerts.map((a) => String(a.dedupKey));
+  const cua46 = (runId: number, id: string) => h.sent.filter((x) => x.runId === runId && x.stepId === id);
+  /** hand-overs of `id` from h.sent index `tu` that reached a driver: not refused in a segment (tuChoi46), not a no-write answer */
+  const toi46 = (runId: number, id: string, tu = 0) => h.sent.slice(tu).filter((x) => x.runId === runId && x.stepId === id && x.tuChoi46 !== true && x.khongGhi !== true);
+  const hang46 = (runId: number, id: string) => stepRows(runId).find((r) => r.stepId === id);
+  const ctx46 = (runId: number) => (runRow(runId).contextJson ?? {}) as Record<string, any>;
+  /** segment 1, the gate, segment 2 (journalFull: doanJournalFull; `song`: parallel m0 + s, m0's result refused); the STOP `tuChoi` answers `tl` in segment 2 only, its hand-overs there marked refused */
+  const giu46 = async (d: WorkflowDefinition, o: { tuChoi?: string; tl?: { status?: string; error?: string; detail?: Record<string, unknown> }; song?: boolean; chuan?: () => void; ghim?: boolean } = {}) => {
+    if (o.ghim !== false) ghimHalt();
+    h.ghim = o.ghim === false ? null : PIN_OK;
+    o.chuan?.();
+    const e = await edgeAssignedRun(d);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const n0 = h.sent.length;
+    if (o.tuChoi) h.tuChoi.set(o.tuChoi, o.tl ?? OFF46);
+    let s2: any;
+    try {
+      if (o.song) {
+        h.slow.set("m0", 40);
+        e.refuse = (rec) => rec.kind === "step" && rec.stepId === "m0" && typeof (rec.result as { routedTo?: unknown } | null)?.routedTo === "string";
+        s2 = await edgeSegment(e, 2);
+      } else s2 = await doanJournalFull(e);
+    } finally {
+      if (o.tuChoi) for (const x of h.sent.slice(n0)) if (x.runId === e.runId && x.stepId === o.tuChoi) x.tuChoi46 = true;
+      h.tuChoi.clear();
+      e.refuse = undefined;
+      h.slow.clear();
+    }
+    await cho46();
+    return { e, s2, n2: h.sent.length };
+  };
+  const tiepThuong46 = async (e: EdgeHarness) => {
+    const v = (await getRun(e.runId, { bindingDigest: true }))!;
+    return resumeRun(e.runId, { approved: true, expectedStepId: v.run.currentStepId, expectedDefHash: v.defHash!, expectedBindingDigest: v.bindingDigest! }, OTHER);
+  };
+  const doan3_46 = async (e: EdgeHarness) => {
+    if (runRow(e.runId).status === "queued") await edgeSegment(e, 3);
+    await cho46();
+  };
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-R1 (N1; QĐ-O20a + X-10 (5c772ac5f)) EDGE journalFull, the journal refuses cst's OWN records in segment 2: segment 3 sends cst again EXACTLY once (two hand-overs reaching a driver, QĐ-O20a + ngoại lệ bất biến (chủ dự án 16/11)), and an URGENT at claim2 says it was handed over", async () => {
+    ghimHalt();
+    h.ghim = PIN_OK;
+    h.acked = true;
+    h.ackStatus = "acked";
+    try {
+      const e = await edgeAssignedRun(dinhNghiaStop("d46-n1"));
+      await edgeSegment(e, 1);
+      await approveEdgeGate(e);
+      e.refuseStop = (rec) => rec.kind === "step" && rec.stepId === "cst";
+      try {
+        await doanJournalFull(e);
+      } finally {
+        e.refuseStop = undefined;
+      }
+      await cho46();
+      expect(lanGuiCst(), "segment 2: cst once, the walker's key").toEqual([`run${e.runId}-cst-a1`]);
+      const k = khoa46().filter((x) => x.includes(`:${e.runId}:r1:cst:claim2`));
+      expect(k.some((x) => x.startsWith(`${K46.stopSent}:`) || x.startsWith(`${K46.stopNotConfirmed}:`)), `an URGENT that says cst was handed over (${k.join(", ")})`).toBe(true);
+      expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+      await doan3_46(e);
+      expect(lanGuiCst(), "QĐ-O20a + ngoại lệ bất biến (chủ dự án 16/11): its own record was refused, so segment 3 sends cst again EXACTLY once: two hand-overs, never a third").toEqual([`run${e.runId}-cst-a1`, `run${e.runId}-cst-a1`]);
+      expect(toi46(e.runId, "cst"), "both reached a driver").toHaveLength(2);
+    } finally {
+      h.acked = false;
+      h.ackStatus = "acked";
+    }
+  });
+
+  it("T4-B3-O20-R2 (N2) EDGE journalFull, cst goes OK at the hold: the hold stays journalFull, no outcome-unknown marker (xanh trước và sau: lưới cho O20-M5)", async () => {
+    const { e, s2 } = await giu46(dinhNghiaStop("d46-n2"));
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "journalFull", outcomeUnknown: ["r1"] });
+    expect(ctx46(e.runId)[EDGE_HELD_CTX_KEY]).toBe("journalFull");
+    expect(ctx46(e.runId)[KET_CUC_KHONG_RO_CTX_KEY]).toBeUndefined();
+  });
+
+  it("T4-B3-O20-KHONG-GHIM (N3) EDGE journalFull, cst is stop-typed but its tag has NO pinned value: it is never sent at the hold (xanh trước và sau: lưới cho O20-M2)", async () => {
+    fake.seed(deviceTags, [...rows("device_tags"), { id: 74, adapterId: 501, tagKey: "halt", address: "00001", dataType: "bool", scale: null, offset: null, updatedAt: T0, writable: true, isEnabled: true, stopValue: null }]);
+    const { e } = await giu46(dinhNghiaStop("d46-n3"), { ghim: false });
+    expect(lanGuiCst(), "a STOP-typed step that is no pinned STOP never goes by itself").toEqual([]);
+    expect(runRow(e.runId).status).toBe("held");
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-ABORT (N4) EDGE journalFull: cst goes at the hold under the walker's key; an Abort sends it again under its own key, once; two in all", async () => {
+    const { e } = await giu46(dinhNghiaStop("d46-n4"));
+    expect(lanGuiCst(), "segment 2: the walker's key").toEqual([`run${e.runId}-cst-a1`]);
+    expect((await abortRun(e.runId, OWNER, "checked on site")).status).toBe("aborted");
+    await cho46(150);
+    const k = lanGuiCst();
+    expect(k).toHaveLength(2);
+    expect(k.filter((x) => new RegExp(`^run${e.runId}-abort-[a-z0-9]+-cst$`).test(x)), "exactly one Abort key").toHaveLength(1);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-TIEN (N5) EDGE journalFull, forward STOP s9: it goes at the hold (walker key) and a person's Continue never sends it again (as central, DO-42)", async () => {
+    const { e } = await giu46(dTien46("d46-n5"));
+    const s9 = () => cua46(e.runId, "s9").map((x) => String(x.key));
+    expect(s9(), "segment 2").toEqual([`run${e.runId}-s9-a1`]);
+    expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+    await doan3_46(e);
+    expect(s9(), "after segment 3").toEqual([`run${e.runId}-s9-a1`]);
+    expect(runRow(e.runId).status).toBe("failed");
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-TIEN-ABORT-XN (N6) EDGE journalFull, s9 goes at the hold and is acked_verified: the Abort does NOT send it again", async () => {
+    try {
+      const { e } = await giu46(dTien46("d46-n6"), { chuan: () => { h.acked = true; h.ackStatus = "acked_verified"; } });
+      expect((await abortRun(e.runId, OWNER, "checked on site")).status).toBe("aborted");
+      await cho46(150);
+      expect(cua46(e.runId, "s9").map((x) => String(x.key))).toEqual([`run${e.runId}-s9-a1`]);
+      expect(stepRows(e.runId).filter((r) => String(r.stepId).startsWith("abort:"))).toEqual([]);
+    } finally {
+      h.acked = false;
+      h.ackStatus = "acked";
+    }
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-R2II-BUTRU (N7) EDGE journalFull, cst refused ADAPTER_OFFLINE at the hold: state C (3 attempts, FOE_STOP_NOT_SENT), ONE URGENT on cst (stop_not_sent, no 'unconfirmed': F6), run words of state C (F1); the Abort sends it", async () => {
+    const { e, s2 } = await giu46(dinhNghiaStop("d46-n7"), { tuChoi: "cst" });
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(khoa46().filter((x) => x.includes(`:${e.runId}:r1:cst:`)), "F6: one URGENT on cst").toEqual([`${K46.stopNotSent}:${e.runId}:r1:cst:claim2`]);
+    expect(lanGuiCst(), "three attempts at the hold, each refused").toEqual([1, 2, 3].map((i) => `run${e.runId}-cst-a${i}`));
+    expect(String(hang46(e.runId, "cst")?.error ?? "")).toMatch(/^FOE_STOP_NOT_SENT: STOP "cst" did NOT go out \(attempt 3\)/);
+    const loi = String(runRow(e.runId).error ?? "");
+    expect(loi).toMatch(/^Edge node \S+ held run \d+ \(outcomeUnknown\): FOE_STOP_NOT_SENT: STOP "cst"/);
+    expect(loi, "F1: no Continue advice").not.toMatch(/Continue/);
+    expect(loi, "F1: never 'r1 was not sent'").not.toContain("no authorisation could be obtained");
+    expect((await abortRun(e.runId, OWNER, "checked on site")).status).toBe("aborted");
+    await cho46(150);
+    expect(lanGuiCst().filter((x) => /-abort-/.test(x))).toHaveLength(1);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-SAO-S7-NGUOI (N8, ★) EDGE journalFull, cst refused at the hold, then a person's Continue: segment 3 sends cst, it reaches a driver exactly once, cst compensated, run failed", async () => {
+    const { e, n2 } = await giu46(dinhNghiaStop("d46-n8"), { tuChoi: "cst" });
+    expect(cua46(e.runId, "cst").length, "cst was tried at the hold").toBe(3);
+    expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+    await doan3_46(e);
+    expect(toi46(e.runId, "cst", n2).map((x) => String(x.key)), "segment 3: once").toEqual([`run${e.runId}-cst-a1`]);
+    expect(toi46(e.runId, "cst"), "in all: once").toHaveLength(1);
+    expect(hang46(e.runId, "cst")).toMatchObject({ status: "compensated" });
+    expect(runRow(e.runId).status).toBe("failed");
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-SAO-S7-THUONG (N9, ★) EDGE journalFull, cst refused at the hold, then a PLAIN Continue: taken (state C alone holds no compensation for a person, foeRunStore.ts:2224), segment 3 sends cst once", async () => {
+    const { e, n2 } = await giu46(dinhNghiaStop("d46-n9"), { tuChoi: "cst" });
+    expect(cua46(e.runId, "cst").length, "cst was tried at the hold").toBe(3);
+    expect(await tiepThuong46(e)).toMatchObject({ ok: true, status: "queued" });
+    await doan3_46(e);
+    expect(toi46(e.runId, "cst", n2)).toHaveLength(1);
+    expect(toi46(e.runId, "cst")).toHaveLength(1);
+    expect(hang46(e.runId, "cst")).toMatchObject({ status: "compensated" });
+    expect(runRow(e.runId).status).toBe("failed");
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-R2II-TIEN (N10) EDGE journalFull, s9 refused at the hold: stop_not_sent names s9, the latch never names s9 (F2), the run's words are state C's; a person's Continue: s9 reaches a driver exactly once", async () => {
+    const { e, n2 } = await giu46(dTien46("d46-n10"), { tuChoi: "s9" });
+    expect(khoa46()).toContain(`${K46.stopNotSent}:${e.runId}:s9:${KHONG_CO_BU_TRU}:claim2`);
+    expect(ctx46(e.runId)[KET_CUC_KHONG_RO_CHOT_CTX_KEY]?.stepId ?? null, "F2").not.toBe("s9");
+    const loi = String(runRow(e.runId).error ?? "");
+    expect(loi).toMatch(/FOE_STOP_NOT_SENT: STOP "s9"/);
+    expect(loi).not.toContain("Continue to resume it");
+    expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+    await doan3_46(e);
+    expect(toi46(e.runId, "s9", n2)).toHaveLength(1);
+    expect(toi46(e.runId, "s9")).toHaveLength(1);
+    expect(hang46(e.runId, "s9")).toMatchObject({ status: "completed" });
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-R2II-PAR-ABORT (N11a) EDGE, parallel m0 + STOP s refused in the walk: stop_not_sent names s, held outcomeUnknown, no latch on s; the Abort sends s once and raises no run_end on s (F2)", async () => {
+    const { e, s2 } = await giu46(dPar46("d46-n11a"), { tuChoi: "s", song: true });
+    expect(s2.out).toMatchObject({ outcome: "held", heldReason: "outcomeUnknown" });
+    expect(khoa46()).toContain(`${K46.stopNotSent}:${e.runId}:s:${KHONG_CO_BU_TRU}:claim2`);
+    expect(ctx46(e.runId)[KET_CUC_KHONG_RO_CHOT_CTX_KEY]?.stepId ?? null).not.toBe("s");
+    const a1 = h.alerts.length;
+    expect((await abortRun(e.runId, OWNER, "checked on site")).status).toBe("aborted");
+    await cho46(150);
+    expect(h.alerts.slice(a1).map((a) => String(a.dedupKey))).not.toContain(`${K46.runEnd}:${e.runId}:s:${KHONG_CO_BU_TRU}:chot`);
+    expect(cua46(e.runId, "s").filter((x) => /-abort-/.test(String(x.key)))).toHaveLength(1);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-R2II-PAR-NGUOI (N11b) EDGE, parallel m0 + STOP s refused in the walk, then a person's Continue: s reaches a driver exactly once in segment 3", async () => {
+    const { e, n2 } = await giu46(dPar46("d46-n11b"), { tuChoi: "s", song: true });
+    expect(khoa46()).toContain(`${K46.stopNotSent}:${e.runId}:s:${KHONG_CO_BU_TRU}:claim2`);
+    expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+    await doan3_46(e);
+    expect(toi46(e.runId, "s", n2)).toHaveLength(1);
+    expect(toi46(e.runId, "s")).toHaveLength(1);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-LOI-2029 (N12) EDGE journalFull, a STOP went at the hold (cst, then s9): the run's words never say 'nothing further was sent' alone", async () => {
+    const a = await giu46(dinhNghiaStop("d46-n12a"));
+    expect(String(runRow(a.e.runId).error ?? "").endsWith(CAU46), String(runRow(a.e.runId).error)).toBe(true);
+    const b = await giu46(dTien46("d46-n12b"));
+    expect(String(runRow(b.e.runId).error ?? "").endsWith(CAU46), String(runRow(b.e.runId).error)).toBe(true);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-F4 (N13) EDGE journalFull: cst compensated at the hold; after a plain Continue and segment 3 the row of r1 is closed (failed, EDGE_OUTCOME_UNKNOWN), never left running on a failed run", async () => {
+    const { e } = await giu46(dinhNghiaStop("d46-n13"));
+    expect(hang46(e.runId, "cst"), "cst went at the hold").toMatchObject({ status: "compensated" });
+    expect(await tiepThuong46(e)).toMatchObject({ status: "queued" });
+    await doan3_46(e);
+    expect(runRow(e.runId).status).toBe("failed");
+    expect(hang46(e.runId, "r1")).toMatchObject({ status: "failed" });
+    expect(String(hang46(e.runId, "r1")?.error ?? "")).toMatch(/^EDGE_OUTCOME_UNKNOWN/);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-KHONG-GHI-NGUOI (N14) EDGE journalFull, cst refused at the hold: state C on its row, and NO outcome-unknown marker (L-7: a STOP never behind a person's gate)", async () => {
+    const { e } = await giu46(dinhNghiaStop("d46-n14"), { tuChoi: "cst" });
+    expect(String(hang46(e.runId, "cst")?.error ?? "")).toMatch(/^FOE_STOP_NOT_SENT:/);
+    expect(ctx46(e.runId)[KET_CUC_KHONG_RO_CTX_KEY]).toBeUndefined();
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-2029-TRUNG-TAM (N16) central applies a journalFull end: a definition STOP whose row completed ⇒ the new words; no STOP row ⇒ the old words, unchanged", async () => {
+    const chay = async (id: number, coHang: boolean) => {
+      fake.store.set("orchestration_runs", [...rows("orchestration_runs"), { id, status: "running", contextJson: null }]);
+      if (coHang) fake.store.set("orchestration_run_steps", [...rows("orchestration_run_steps"), { id: id * 10, runId: id, stepId: "s9", stepType: "command", status: "completed", attempt: 1, error: null, resultJson: null }]);
+      await applyEdgeSegmentEnd(fake as never, id, { outcome: "held", heldReason: "journalFull", error: "EDGE_HELD(journalFull): the journal refused a record (full) — nothing further was sent; the run is held.", nodeCode: "edge-a", claimSeq: 1, def: def(`d46-n16-${id}`, [otStop("s9")]) });
+      return String(runRow(id).error ?? "");
+    };
+    const co = await chay(9601, true);
+    expect(co.endsWith(CAU46), co).toBe(true);
+    const khong = await chay(9602, false);
+    expect(khong.endsWith(CAU_CU46), khong).toBe(true);
+    expect(khong).not.toContain("except the run's STOPs");
+  });
+
+  // N17 (câu 4 của HST): lời `:2029` khi STOP đã THỬ lúc giữ mà kết cục không rõ (hình D13)
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-2029-KHONG-RO (N17) EDGE journalFull, cst answers TIMEOUT in the pass at the hold: its row says the outcome is unknown, and the run's words never say 'nothing further was sent' alone", async () => {
+    ghimHalt();
+    h.ghim = PIN_OK;
+    const e = await edgeAssignedRun(dinhNghiaStop("d47-n17"));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("cst");
+    try {
+      await doanJournalFull(e);
+    } finally {
+      h.timeoutDispatch.clear();
+    }
+    await cho46();
+    expect(lanGuiCst(), "cst was handed over at the hold").toEqual([`run${e.runId}-cst-a1`]);
+    expect(String(hang46(e.runId, "cst")?.error ?? "")).toMatch(/^FOE_OUTCOME_UNKNOWN/);
+    const loi = String(runRow(e.runId).error ?? "");
+    expect(loi.endsWith(CAU46), loi).toBe(true);
+  });
+
+  // N1b, đối chứng của N1: cùng hình, bản ghi của STOP GHI ĐƯỢC (lưới cho "đã có hàng completed / compensated mà vẫn gửi lại")
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-R1B (N1b, đối chứng của N1) EDGE journalFull, cst goes at the hold and its OWN record is journaled: a person's Continue never sends it again — one hand-over reaching a driver in all", async () => {
+    ghimHalt();
+    h.ghim = PIN_OK;
+    h.acked = true;
+    h.ackStatus = "acked";
+    try {
+      const e = await edgeAssignedRun(dinhNghiaStop("d48-n1b"));
+      await edgeSegment(e, 1);
+      await approveEdgeGate(e);
+      await doanJournalFull(e);
+      await cho46();
+      expect(lanGuiCst(), "segment 2: cst once, the walker's key").toEqual([`run${e.runId}-cst-a1`]);
+      expect(hang46(e.runId, "cst"), "its row reached central").toMatchObject({ status: "compensated" });
+      expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+      await doan3_46(e);
+      expect(lanGuiCst(), "its row says it went: segment 3 never sends it again").toEqual([`run${e.runId}-cst-a1`]);
+      expect(toi46(e.runId, "cst")).toHaveLength(1);
+    } finally {
+      h.acked = false;
+      h.ackStatus = "acked";
+    }
+  });
+
+  /** N18: forward STOP s9 answers TIMEOUT (no answer) in the pass at the hold of a journalFull edge segment */
+  const giuS9Timeout = async (ref: string) => {
+    ghimHalt();
+    h.ghim = PIN_OK;
+    const e = await edgeAssignedRun(dTien46(ref));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("s9");
+    try {
+      await doanJournalFull(e);
+    } finally {
+      h.timeoutDispatch.clear();
+    }
+    await cho46();
+    return e;
+  };
+  // N18 (ngoại lệ bất biến: "lần gửi không có trả lời")
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-TIEN-TIMEOUT (N18) EDGE journalFull, forward STOP s9 answers TIMEOUT at the hold (no answer): a person's Continue sends it again EXACTLY once; an URGENT names s9; the run's words never point to Continue alone", async () => {
+    const e = await giuS9Timeout("d49-n18");
+    const s9 = () => cua46(e.runId, "s9").map((x) => String(x.key));
+    expect(s9(), "segment 2: s9 handed over once at the hold, no answer").toEqual([`run${e.runId}-s9-a1`]);
+    const loi = String(runRow(e.runId).error ?? "");
+    const n2 = h.sent.length;
+    expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+    await doan3_46(e);
+    expect(h.sent.slice(n2).filter((x) => x.runId === e.runId && x.stepId === "s9"), "segment 3 sends s9 again EXACTLY once").toHaveLength(1);
+    expect(s9(), "two hand-overs in all, never a third").toHaveLength(2);
+    expect(khoa46().some((k) => { const p = k.split(":"); return p[1] === String(e.runId) && (p[2] === "s9" || p[3] === "s9"); }), `an URGENT names s9: ${khoa46().join(", ")}`).toBe(true);
+    // (the words of the hold, checked last so the other parts are measured too)
+    expect(/Continue/.test(loi) && !/Abort/.test(loi), `the run's words point to Continue alone: ${loi}`).toBe(false);
+  });
+
+
+  // backlog: foeKetCucKhongRo.ts:800 / foeEngine.ts:1205 — vế chữ URGENT của N18, tách riêng; it.fails giữ cả SAU lô X-10: chữ noCompensation không phân biệt bước STOP
+  it.fails("T4-B3-O20-TIEN-TIMEOUT-CHU (N18, vế chữ URGENT) EDGE journalFull, forward STOP s9 answers TIMEOUT at the hold: an URGENT names s9, and none says s9 is 'never sent again' (a Continue sends it again, N18)", async () => {
+    const e = await giuS9Timeout("d49-n18c");
+    const veS9 = h.alerts.filter((a) => { const p = String(a.dedupKey).split(":"); return p[1] === String(e.runId) && (p[2] === "s9" || p[3] === "s9"); });
+    expect(veS9.map((a) => String(a.dedupKey)), "an URGENT names s9").not.toEqual([]);
+    for (const a of veS9) expect(`${String(a.title ?? "")} ${String(a.message ?? "")}`, String(a.dedupKey)).not.toContain("never sent again");
+  });
   it("T4-B3-R2A-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của ca trên) the same refused POST-SEND result, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never sent again", async () => {
     const e = await edgeAssignedRun(def("ja-e-dc", [gate(), move("r1", { maxAttempts: 2 }), move("r2")]));
     await edgeSegment(e, 1);

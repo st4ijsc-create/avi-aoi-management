@@ -322,3 +322,16 @@ describe("T4 bước 3 — kiem-dinh S1: approvedNotConfirmed chỉ cho x còn �
     expect(cb(r)).not.toContain("approvedNotConfirmed:x:cx");
   });
 });
+
+// lô X-10 N15 (ô #20; QĐ-O20a + X-10 (5c772ac5f); chu-du-an-HST 16/11) — F2: luật chốt-từ-báo-cáo bỏ qua báo cáo `biet` (bước đó hỏng ĐÃ BIẾT, không phải kết cục không rõ)
+describe("DO-46 N15 — the report that sets the latch: never a `biet` one (F2)", () => {
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-10)
+  it.fails("T4-B3-O20-F2-BIET (N15a) a stopNotSent of a forward STOP (biet) sets no latch: the command that may have gone (r1) is the latch", () => {
+    const r = goi({ def: dinhNghia(move("r1"), otStop("s9")), hang: [hangChay("r1"), hangStopTrangThaiC("s9")], so: { doc: "duoc", muc: [uq("r1")] }, stops: new Set(["s9"]), rider: "du", bao: [{ ...bao("stopNotSent", "s9"), biet: true }] });
+    expect(r.chot).toEqual({ stepId: "r1", ma: MA });
+  });
+  it("T4-B3-O20-F2-KHONG-BIET (N15b, đối chứng; xanh trước và sau) a stopNotSent of a compensation STOP under its owner (no biet) is still the report that sets the latch: no second latch from the rows", () => {
+    const r = goi({ def: dinhNghia(move("r1", otStop("cst"))), hang: [hangChay("r1"), hangStopTrangThaiC("cst")], so: { doc: "duoc", muc: [uq("r1")] }, stops: new Set(["cst"]), rider: "du", bao: [bao("stopNotSent", "r1", "cst")] });
+    expect(r.chot).toBeNull();
+  });
+});
