@@ -159,6 +159,8 @@ const h = vi.hoisted(() => ({
   chuEdgeLan: 0,
   /** T9 lượt sửa 3 (RA2-1) — on: the owning node is UNREACHABLE at the press: routeEdgeOwnedAdapterCommand queues it AND sends central's fallback STOP (its answer says so); the FOE reads only the code */
   chuEdgeDuPhong: false,
+  /** DO-65 (X-11, KD-n10b) — this step's dispatch answers ok and its detail carries this reason (central's dispatcher never pairs ok with ADAPTER_OWNED_BY_EDGE, commandDispatcher.ts:3356): ok is read first */
+  okKemMa: new Map<string, string>(),
 }));
 
 vi.mock("../../ot/commandDispatcher", async (importOriginal) => {
@@ -321,6 +323,8 @@ vi.mock("../../equipment/equipmentAdapter", async (importOriginal) => {
       if (cham) await new Promise((r) => setTimeout(r, cham));
       // A2(n) T7b-2 — central's route to an adapter a node owns: commandDispatcher step (4), no driver here, routeEdgeOwnedAdapterCommand: a STOP is queued for the node (an adapter STOP of its pinned
       // values, on the node), any other write refused; never ok, nothing written by central. Step (4) stands before the reservation's pinned check (step 5); step (1) on a marked row: not modelled (EDGE-OWNED-DB)
+      const okMa = h.okKemMa.get(stepId);
+      if (okMa !== undefined) return { ok: true, status: "simulated", routedTo: kind === "robot" ? "robot-dispatcher" : "ot-dispatcher", detail: { simulated: true, reason: okMa } };
       const chuNut = cmd.edge ? undefined : h.chuEdge.get(Number(cmd.adapterId));
       if (chuNut !== undefined && kind !== "robot") {
         h.chuEdgeLan++;
@@ -603,6 +607,7 @@ beforeEach(() => {
   h.chuEdge.clear();
   h.chuEdgeLan = 0;
   h.chuEdgeDuPhong = false;
+  h.okKemMa.clear();
   h.telemetry = [{ key: "temp", value: 80 }];
   centralWrites.clear();
   statusWrites.clear();
@@ -3379,6 +3384,200 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(b.m.chot, "not latched").toBeNull();
     expect(s9Cua62(b.c, b.n0, b.n2), "nothing sent").toEqual([]);
     expect(String(b.kq2.message ?? ""), "the old string").toBe(CHU_CU_63(b.c, "s9"));
+  });
+  // ── DO-65 / lô X-11 commit 3 (chỉ test; scada-master 17/11): ca đối chứng cho các đột biến SỐNG của kiem-dinh (D:/SOURCES/_kd_out/x11_dot_bien_song.md). Tên ca T4-B3-Q1-X11-KD-<mã>.
+  // Kỳ vọng theo hàng X-11 (AGENTS-ngoai-le.md dòng 21), thiết kế tam/p1b-thiet-ke.md và chữ duyệt tam/x11-chu-duyet.md (chữ chép nguyên văn từ tệp đó), không chép mã.
+  /** x11-chu-duyet (b), nguyên văn: the ok answer of a press that left s9 to the node, the run not latched */
+  const CAU_B_DU_65 = (run: number, s: string) => `Run ${run} is aborted. ${CAU_B_63(s)}`;
+  /** x11-chu-duyet "URGENT bản dài": title and body, nguyên văn */
+  const URGENT_TIEU_DE_65 = (s: string) => `STOP ${s} left to the edge node, NOT confirmed`;
+  const URGENT_THAN_65 = (run: number, s: string) =>
+    `Central's Abort of run ${run} did NOT send STOP "${s}": its adapter belongs to the edge node that holds the run, and central has no connection to it. The node sends it, only after the database shows the run aborted: its walker of the run when it learns of the abort, or, once its part of the run has ended, from its signed copy of the run's STOPs, if it reaches central within 15 minutes from when the run was aborted. The run's steps show it confirmed when the node's STOP is; this alert is not withdrawn then. A further press of Abort at central hands it to that node only if by then the run records a command whose outcome is unknown; otherwise it sends nothing for it. Until confirmed, and if the node is offline, use the machine's direct STOP / E-STOP.`;
+  const laUrgentNut65 = (a: { title: string }) => a.title.includes("left to the edge node");
+  /** the shape of denNut62 / bamHaiChuaChot63 (segment 3 the node's, its claim held, the run NOT latched, central with no connection to adapter 501), with a hook before each press; press 2 optional */
+  async function kd65(ref: string, o: { truocBam1?: () => void; truocBam2?: () => void; bamHai?: boolean } = {}) {
+    ghimHalt();
+    h.ghim = PIN62;
+    const e = await edgeAssignedRun(def(ref, [gate(), ot("x"), gate("g2"), move("r1"), tre62("w", 1_500), otStop("s9")]));
+    const c = e.runId;
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    await approveEdgeGate(e);
+    await claimPackage(e, 3);
+    asg62(c).claimTokenHash = hashEdgeSecret(TOKEN62);
+    h.connOk = false;
+    h.chuEdge.set(501, NODE);
+    o.truocBam1?.();
+    const n0 = h.sent.length;
+    const u0 = h.alerts.length;
+    const kq1 = (await abortRun(c, OWNER, "first")) as Record<string, any>;
+    await wait62(40);
+    const hangNemLan = h.hangNemLan;
+    h.hangNem = null;
+    h.classifyLoi = false;
+    const vet1 = hang62(c, "abort:s9");
+    const n1 = h.sent.length;
+    const u1 = h.alerts.length;
+    let kq2: Record<string, any> | null = null;
+    if (o.bamHai) {
+      o.truocBam2?.();
+      kq2 = (await abortRun(c, OWNER, "press again")) as Record<string, any>;
+      await wait62(60);
+    }
+    const n2 = h.sent.length;
+    const u2 = h.alerts.length;
+    const urg = (tu: number, den: number) => h.alerts.slice(tu, den).map((a) => ({ title: String(a.title ?? ""), message: String(a.message ?? ""), dedupKey: String(a.dedupKey ?? "") }));
+    const urg1 = urg(u0, u1);
+    const urg2 = urg(u1, u2);
+    const chot = ((runRow(c).contextJson ?? {}) as Record<string, any>)[KET_CUC_KHONG_RO_CHOT_CTX_KEY] ?? null;
+    const tom = (k: Record<string, any> | null) => (k ? { ok: k.ok, resend: k.resend ?? null, sent: k.abortStops?.sent ?? null, failed: k.abortStops?.failed ?? null, unverified: k.abortStops?.unverified ?? null, choNut: k.abortStops?.choNut ?? null, xepChoNut: k.abortStops?.xepChoNut ?? null, khongBen: k.abortStops?.khongBen ?? null, message: String(k.message ?? "") } : null);
+    console.log(`KETLUAN65 ${ref} ` + JSON.stringify({ kq1: tom(kq1), kq2: tom(kq2), vet1, chot, hangNemLan, s9: tomTat62(c, n0, n2), urg1: urg1.map((a) => [a.title, a.dedupKey]), urg2: urg2.map((a) => [a.title, a.dedupKey]) }));
+    return { c, kq1, kq2, vet1, chot, hangNemLan, n0, n1, n2, urg1, urg2 };
+  }
+  // n7 — nutBen bỏ `!mat`: vết abort:s9 KHÔNG ghi được mà vẫn nói "nút sẽ gửi" (hứa sai về STOP). Hàng X-11: vết mang cờ adapter-của-nút ⇒ nút liệt kê; không có vết ⇒ không có đường nào của nút: chữ là chữ "không ghi được" (H27).
+  it("T4-B3-Q1-X11-KD-n7 (X-11, kiem-dinh n7) press 1 on a run not latched, s9 pinned and read on the node's adapter, only the connection not central's, and its trace `abort:s9` NOT written: never 'the edge node sends it' (nothing lists the run for the node), no URGENT that leaves it to the node; the words say it could not be recorded", async () => {
+    const x = await kd65("x11kd7", { truocBam1: () => (h.hangNem = (v) => v.stepId === "abort:s9") });
+    expect(x.hangNemLan, "the trace's write reached its failure").toBeGreaterThan(0);
+    expect(x.vet1, "no trace of s9").toBeNull();
+    expect(x.kq1.ok, "the Abort confirmed").toBe(true);
+    expect(x.chot, "not latched").toBeNull();
+    expect(x.kq1.abortStops?.unverified ?? [], "s9 not verified at central").toContain("s9");
+    expect(x.kq1.abortStops?.khongBen, "the lost write named").toEqual(["s9"]);
+    expect(x.kq1.abortStops?.choNut, "not left to the node: no trace for its picture").toBeUndefined();
+    const msg = String(x.kq1.message ?? "");
+    expect(msg, "never 'the edge node … sends it'").not.toMatch(/edge node[^.]*\bsends it\b/);
+    expect(msg, "never 'NOT sent from central' as the node's").not.toMatch(/NOT sent from central/);
+    expect(msg, "the words of a trace not recorded").toMatch(/could not be recorded: s9\b/);
+    expect(x.urg1.filter(laUrgentNut65), "no URGENT leaves s9 to the node").toEqual([]);
+    expect(s9Cua62(x.c, x.n0, x.n1), "nothing sent").toEqual([]);
+  });
+  // n8 — nutBen bỏ `ghimNut.has`: mọi STOP có vết bị gọi là của nút. Ghim KHÔNG đọc được ở trung tâm (h.classifyLoi) ⇒ vết là của trung tâm (T7B2-P4-VET), không phải "để cho nút".
+  it("T4-B3-Q1-X11-KD-n8 (X-11, kiem-dinh n8) press 1 on the same run, central's pin read throws: the trace of s9 is central's own (no node flag); s9 is NOT left to the node: no node words, no URGENT that leaves it to the node", async () => {
+    const x = await kd65("x11kd8", { truocBam1: () => (h.classifyLoi = true) });
+    expect(x.kq1.ok).toBe(true);
+    expect(x.chot).toBeNull();
+    expect({ status: x.vet1?.status, abortStop: x.vet1?.abortStop }, "the trace exists").toEqual({ status: "failed", abortStop: "chuaXacMinh" });
+    expect(x.kq1.abortStops?.unverified ?? []).toContain("s9");
+    expect(x.kq1.abortStops?.choNut, "pins not read: not the node's").toBeUndefined();
+    expect(String(x.kq1.message ?? ""), "no node words").not.toMatch(/edge node/);
+    expect(x.urg1.filter(laUrgentNut65), "no URGENT leaves s9 to the node").toEqual([]);
+    expect(s9Cua62(x.c, x.n0, x.n1)).toEqual([]);
+  });
+  // n9 — vetNut không giao với unverified: lần bấm lại mà trung tâm GIAO được s9 (kết nối có, adapter không còn của nút) thì s9 không còn "để cho nút".
+  it("T4-B3-Q1-X11-KD-n9 (X-11, kiem-dinh n9) press again on the run not latched, its trace of s9 flagged for the node, and now central reaches the adapter and hands s9 to a driver: s9 is NOT 'left to the node', no words 'NOT sent from central', no URGENT", async () => {
+    const x = await kd65("x11kd9", {
+      bamHai: true,
+      truocBam2: () => {
+        h.connOk = true;
+        h.chuEdge.clear();
+      },
+    });
+    expect(x.kq1.abortStops?.choNut, "press 1 left it to the node (the flag on its trace)").toEqual(["s9"]);
+    expect(x.chot).toBeNull();
+    expect(x.kq2?.resend, "the press again").toBe(true);
+    expect(toiDriver62(x.c, x.n1, x.n2).length, "press 2: central handed s9 to a driver once").toBe(1);
+    expect(x.kq2?.abortStops?.sent ?? [], "sent").toContain("s9");
+    expect(x.kq2?.abortStops?.unverified ?? [], "verified now").not.toContain("s9");
+    expect(x.kq2?.abortStops?.choNut, "handed over at central: not left to the node").toBeUndefined();
+    expect(String(x.kq2?.message ?? ""), "never 'NOT sent from central'").not.toMatch(/NOT sent from central/);
+    expect(x.urg2.filter(laUrgentNut65)).toEqual([]);
+  });
+  // n10 — xepChoNut bỏ `khoa`: chữ (c)/(d) "given to the edge node" chỉ cho run ĐÃ chốt (x11-chu-duyet (c); thiết kế V2-8). Run chưa chốt, trung tâm giao s9 và bộ điều phối trả ADAPTER_OWNED_BY_EDGE ⇒ không xep.
+  it("T4-B3-Q1-X11-KD-n10 (X-11, kiem-dinh n10; đối chứng (c)) press 1 on a run NOT latched, s9 verified at central and its dispatcher answers ADAPTER_OWNED_BY_EDGE (queued for the node): never the latched words (c) 'given to the edge node' / 'records a command whose outcome is unknown'", async () => {
+    const x = await kd65("x11kd10", { truocBam1: () => (h.connOk = true) });
+    expect(x.kq1.ok).toBe(true);
+    expect(x.chot, "not latched").toBeNull();
+    expect(xepChoNut62(x.c, x.n0, x.n1).length, "the dispatcher queued s9 for the node").toBe(1);
+    expect(x.kq1.abortStops?.failed ?? []).toContain("s9");
+    expect(x.kq1.abortStops?.xepChoNut, "a run not latched: no xepChoNut").toBeUndefined();
+    const msg = String(x.kq1.message ?? "");
+    expect(msg).not.toMatch(/was given to the edge node/);
+    expect(msg).not.toMatch(/records a command whose outcome is unknown/);
+  });
+  // n10b — xepChoNut bỏ `!ok`: lần gửi ok (dù chi tiết mang mã ADAPTER_OWNED_BY_EDGE) là đã giao, không phải "given to the edge node". Đối chứng (b). h.okKemMa: bộ điều phối thật không bao giờ trả ok kèm mã này.
+  it("T4-B3-Q1-X11-KD-n10b (X-11, kiem-dinh n10b; đối chứng (b)) press 2 on the latched aborted run, s9's hand-over answers ok with the code ADAPTER_OWNED_BY_EDGE in its detail: sent, not queued for the node: no xepChoNut, no words (d)", async () => {
+    const x = await chuoi62("x11kd10b");
+    const { c } = x;
+    expect(x.m.sauTre.status).toBe("aborted");
+    expect(x.m.sauA.chot, "latched").toBeTruthy();
+    h.chuEdge.clear();
+    h.okKemMa.set("s9", "ADAPTER_OWNED_BY_EDGE");
+    const b = await bamHai62(x);
+    expect(toiDriver62(c, b.n4, b.n5).length, "press 2: s9 handed over once, answered ok").toBe(1);
+    expect(b.kq2.abortStops?.sent ?? []).toContain("s9");
+    expect(b.kq2.abortStops?.xepChoNut, "ok: not given to the node").toBeUndefined();
+    expect(b.m.message).not.toMatch(/was given to the edge node/);
+  });
+  // n10c — xepChoNut với MỌI mã: chỉ ADAPTER_OWNED_BY_EDGE là "đã xếp cho nút". Đối chứng (a): run chốt, STOP bị từ chối mã khác ⇒ chữ vẫn "refused or not answered" (BẮT BUỘC, HST).
+  it("T4-B3-Q1-X11-KD-n10c (X-11, kiem-dinh n10c; đối chứng (a)) press 2 on the latched aborted run, s9 refused with another code (ADAPTER_OFFLINE: not routed to the node): the words stay 'refused or not answered: s9', never 'given to the edge node'; no xepChoNut", async () => {
+    const x = await chuoi62("x11kd10c");
+    const { c } = x;
+    expect(x.m.sauTre.status).toBe("aborted");
+    expect(x.m.sauA.chot, "latched").toBeTruthy();
+    h.chuEdge.clear();
+    h.tuChoi.set("s9", { status: "failed", error: "ADAPTER_OFFLINE", detail: { reason: "ADAPTER_OFFLINE" } });
+    const b = await bamHai62(x);
+    expect(s9Cua62(c, b.n4, b.n5).length, "press 2: s9 handed to its dispatcher once").toBe(1);
+    expect(xepChoNut62(c, b.n4, b.n5), "not queued for the node").toEqual([]);
+    expect(b.kq2.abortStops?.failed ?? []).toContain("s9");
+    expect(b.kq2.abortStops?.xepChoNut, "another code: not given to the node").toBeUndefined();
+    expect(b.m.message, "the words of a refusal").toMatch(/STOP steps refused or not answered: s9\b/);
+    expect(b.m.message).not.toMatch(/was given to the edge node/);
+    expect(b.m.message).not.toMatch(/queued for that node/);
+  });
+  // n11b — URGENT choNut khoá theo `chot` thay `nut`: cùng khoá với URGENT của lần bấm trên run đã chốt cho cùng s9 ⇒ chống lặp bền nuốt một trong hai. Thiết kế (P3, chủ dự án 16/11): khoá riêng `nut`.
+  // Cùng ca: run đã chốt ⇒ lần bấm hai không bắn URGENT choNut (n11: tương đương, xem báo cáo DO-65).
+  it("T4-B3-Q1-X11-KD-n11b (X-11, kiem-dinh n11b) press 1 (not latched) raises ONE URGENT that leaves s9 to the node, under its own key `…:nut`; press 2 on the latched run raises its URGENT of s9 under another key, and none that leaves s9 to the node", async () => {
+    const x = await chuoi62("x11kd11b");
+    const truoc = h.alerts.length;
+    const nut1 = h.alerts.slice(0, truoc).filter((a) => String(a.title ?? "").includes("left to the edge node") && /\bs9\b/.test(String(a.title ?? "")));
+    expect(nut1.length, "press 1: one URGENT leaves s9 to the node").toBe(1);
+    const k1 = String(nut1[0]?.dedupKey ?? "");
+    expect(k1, "its own key").toMatch(/:s9:.*:nut$/);
+    const b = await bamHai62(x);
+    expect(b.m.xepChoNut, "press 2: queued once").toBe(1);
+    const sau = h.alerts.slice(truoc).map((a) => ({ title: String(a.title ?? ""), dedupKey: String(a.dedupKey ?? "") }));
+    console.log("KETLUAN65B " + JSON.stringify({ k1, sau }));
+    const s9Sau = sau.filter((a) => a.dedupKey.includes(":s9:"));
+    expect(s9Sau.length, "press 2 raises an URGENT of s9").toBeGreaterThanOrEqual(1);
+    expect(s9Sau.map((a) => a.dedupKey), "never under press 1's key").not.toContain(k1);
+    expect(sau.filter(laUrgentNut65), "a latched run: no URGENT that leaves s9 to the node").toEqual([]);
+  });
+  // n11c — bỏ `!vetNut`: URGENT choNut lặp ở mỗi lần bấm. Vòng 2 (HST 17/11): "its URGENT was the first press's". Bấm hai lần ⇒ đúng MỘT URGENT choNut.
+  it("T4-B3-Q1-X11-KD-n11c (X-11, kiem-dinh n11c) two presses on the run not latched, s9 left to the node at both: exactly ONE URGENT leaves s9 to the node (the first press's), its key `…:nut`", async () => {
+    const x = await kd65("x11kd11c", { bamHai: true });
+    expect(x.chot).toBeNull();
+    expect(x.kq2?.abortStops?.choNut, "press 2: still the node's").toEqual(["s9"]);
+    const nut = [...x.urg1, ...x.urg2].filter(laUrgentNut65);
+    expect(nut.length, "one URGENT over both presses").toBe(1);
+    expect(x.urg1.filter(laUrgentNut65).length, "the first press's").toBe(1);
+    expect(nut[0]?.dedupKey).toMatch(/:s9:.*:nut$/);
+  });
+  // w1 — chuBamLai(…, chuaKhoa = true) với xepChoNut: run CHƯA chốt thì không bao giờ nói "records a command whose outcome is unknown" / "given to the edge node" (x11-chu-duyet (c)/(d): run đã chốt).
+  // Trong engine đầu vào này không tới được (xem báo cáo DO-65); ca khoá hợp đồng của hàm export.
+  it("T4-B3-Q1-X11-KD-w1 (X-11, kiem-dinh w1) the words of a press on a run NOT latched (chuaKhoa): a report naming xepChoNut never gets the latched words (d); s9 stays 'refused or not answered'", async () => {
+    const { chuBamLai } = await import("./foeEngine");
+    const msg = chuBamLai(7, BAO_63({ failed: ["s9"], xepChoNut: ["s9"] }) as never, true);
+    expect(msg).not.toMatch(/records a command whose outcome is unknown/);
+    expect(msg).not.toMatch(/was given to the edge node/);
+    expect(msg).toMatch(/refused or not answered: s9\b/);
+  });
+  // w6 — câu mở "Run N is aborted." của nhánh ok khi có STOP để cho nút: chữ (b) nguyên văn.
+  it("T4-B3-Q1-X11-KD-w6 (X-11, kiem-dinh w6) press 1 confirmed on the run not latched, s9 left to the node: the answer opens with the words (b), to the character", async () => {
+    const x = await kd65("x11kdw6");
+    expect(x.kq1.ok).toBe(true);
+    expect(x.kq1.abortStops?.choNut).toEqual(["s9"]);
+    const msg = String(x.kq1.message ?? "");
+    const b = CAU_B_DU_65(x.c, "s9");
+    expect(msg.slice(0, b.length), "the words (b)").toBe(b);
+  });
+  // k1 — khongChot bỏ choNut: URGENT choNut mở bằng chữ "unknown outcome" dù lúc bấm run CHƯA chốt. Chữ duyệt "URGENT bản dài": tiêu đề và thân, không có câu mở về kết cục không rõ.
+  it("T4-B3-Q1-X11-KD-k1 (X-11, kiem-dinh k1) the URGENT of a STOP left to the node (chuAbort choNut, as the press raises it): the approved title and body first, no opening of an unknown outcome", () => {
+    const n = noiDungCanhBaoKhongRo({ loai: "abortStopNotSent", runId: 7, stepId: "s9", compId: KHONG_CO_BU_TRU, error: "FOE_STOP_NOT_SENT", lan: "nut", biet: true, vi: { nguon: "doc", ma: "NOT_CONFIRMED" }, chuAbort: "choNut", adapterNut: true, tuTrungTam: true } as never);
+    expect(n.title, "the approved title").toBe(`Run 7: ${URGENT_TIEU_DE_65("s9")}`);
+    expect(n.message.slice(0, URGENT_THAN_65(7, "s9").length), "the approved body, first").toBe(URGENT_THAN_65(7, "s9"));
+    expect(`${n.title} ${n.message}`, "no unknown outcome").not.toMatch(/unknown outcome|outcome unknown|UNKNOWN/);
   });
   it("T4-B3-R2A-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của ca trên) the same refused POST-SEND result, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never sent again", async () => {
     const e = await edgeAssignedRun(def("ja-e-dc", [gate(), move("r1", { maxAttempts: 2 }), move("r2")]));
