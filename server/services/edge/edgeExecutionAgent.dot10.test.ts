@@ -1074,8 +1074,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
 
   // rà soát bảo mật 17/11 + DO-68: prior.completed của edgePriorPictureOf gồm cả hàng 'skipped' (foeRunStore.ts:2314) — STOP có precondition sai với
   // onPreconditionFail "skip" (foeEngine.ts:1071-1077) hay bù trừ STOP có precondition sai (:1330-1332) chưa từng tới driver: vẫn phải gửi lại
-  // đỏ trước sửa; đổi thành it ở commit 4 (X-12)
-  it.fails("X12-DU-PHONG-SKIPPED-VAN-GUI (1-đối chứng) device-port fallback, signed picture: s9's own row is 'skipped' (it never ran: precondition false, mode skip) — edgePriorPictureOf lists it in `completed` but not in `attempted` ⇒ s9 is still re-sent, once; s8 too", async () => {
+  it("X12-DU-PHONG-SKIPPED-VAN-GUI (1-đối chứng) device-port fallback, signed picture: s9's own row is 'skipped' (it never ran: precondition false, mode skip) — edgePriorPictureOf lists it in `completed` but not in `attempted` ⇒ s9 is still re-sent, once; s8 too", async () => {
     const { edgePriorPictureOf } = await import("../orchestration/foe/foeRunStore");
     const prior = edgePriorPictureOf([{ stepId: "s9", status: "skipped", resultJson: null, startedAt: null }]);
     expect(prior, "the producer: a skipped row is completed + settled, never attempted").toEqual({ ...prior0, completed: ["s9"], settled: ["s9"] });
@@ -1087,8 +1086,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     expect(h.devices.calls).toEqual(["stopRobot:12", S9_DRIVER]);
   });
 
-  // đỏ trước sửa; đổi thành it ở commit 4 (X-12)
-  it.fails("X12-DU-PHONG-SKIPPED-MAY-LOI-VAN-GUI (1-đối chứng) a walker is there but its engine re-send THROWS (edgeExecutionAgent.ts:951-953 ⇒ the device port), signed picture, s9's own row 'skipped' ⇒ the fallback still sends s9 exactly once", async () => {
+  it("X12-DU-PHONG-SKIPPED-MAY-LOI-VAN-GUI (1-đối chứng) a walker is there but its engine re-send THROWS (edgeExecutionAgent.ts:951-953 ⇒ the device port), signed picture, s9's own row 'skipped' ⇒ the fallback still sends s9 exactly once", async () => {
     const { edgePriorPictureOf } = await import("../orchestration/foe/foeRunStore");
     const loi: EdgeWalker = { drive: async () => ({ outcome: "completed" }), abortLive: async () => ({ live: false }), resendStops: async () => Promise.reject(new Error("engine re-send failed (test)")) };
     const h = await harness({ claimRuns: false, walker: loi });
