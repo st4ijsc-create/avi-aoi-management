@@ -65,7 +65,7 @@ describe("phatLaiLuot.test.ts — giao dịch luôn ROLLBACK, chỉ nuốt Rollb
 
 describe("phatLaiLuot.test.ts — không để lại hàng nào trong CSDL", () => {
   it("★★★ phát hiện RÒ RỈ trong `finally` TRƯỚC khi trả kênh: `demHangRoRi(nguoiId)` bằng kết nối riêng (cả khi ca đỏ) ⇒ `kenh.lot.push(cauBaoRoRi(...))` ⇒ `afterEach(kiemKhongLot)` làm ca ĐỎ", () => {
-    expect(nguon).toMatch(/finally\s*\{[\s\S]{0,300}?demHangRoRi\(nguoiId\)\.catch\([\s\S]{0,500}?kenh\.lot\.push\(cauBaoRoRi\(r, nguoiId, tomTatGoi\(kenh\)\)\)[\s\S]{0,200}?kenh\.db\s*=\s*null;/);
+    expect(nguon).toMatch(/finally\s*\{[\s\S]{0,300}?await ghiNhanRoRi\(kenh, nguoiId\);[\s\S]{0,100}?kenh\.db\s*=\s*null;/);
     expect(nguon, "khởi tạo kênh phải có `goi: {}`").toMatch(/vi\.hoisted\(\(\): KenhGiaoDich => \(\{ db: null, lot: \[\], goi: \{\} \}\)\)/);
   });
   it("★★★ mock `../db/connection`: `getDb` = `layDbTheoKenh(kenh)`; bốn hàm kết nối khác đè bằng `ghiNoiKhac`; `afterEach`/`afterAll` gọi `kiemKhongLot`", () => {

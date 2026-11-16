@@ -38,8 +38,8 @@ vi.mock("../services/aiGgufEngine", async (io) => ({
 import { taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
 import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
 import { users } from "../../drizzle/schema";
-import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, tomTatGoi, type KenhGiaoDich } from "./kenhGiaoDich";
-import { cauBaoRoRi, demHangRoRi } from "./kiemRoRiDb";
+import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, type KenhGiaoDich } from "./kenhGiaoDich";
+import { ghiNhanRoRi } from "./kiemRoRiDb";
 import { chuanHoaSuKien, dongGoi, kiemMauCam, taoStreamPhatLai, type FixturePhatLai } from "./phatLaiLuot";
 
 const CAU = "thêm hàm nhân vào src/b.ts";
@@ -78,11 +78,7 @@ async function trongRollback(than: (userId: number) => Promise<void>): Promise<v
         nguoiId = nguoi!.id;
         await than(nguoiId);
       } finally {
-        if (nguoiId !== null) {
-          const r = await demHangRoRi(nguoiId).catch((e: unknown) => (e instanceof Error ? e : new Error(String(e))));
-          if (r instanceof Error) kenh.lot.push(`kiểm rò rỉ KHÔNG chạy được (${r.message.slice(0, 160)}) — không đo được ca này`);
-          else if (r.tong > 0) kenh.lot.push(cauBaoRoRi(r, nguoiId, tomTatGoi(kenh)));
-        }
+        if (nguoiId !== null) await ghiNhanRoRi(kenh, nguoiId);
         kenh.db = null;
       }
       throw new RollbackPhatLai();

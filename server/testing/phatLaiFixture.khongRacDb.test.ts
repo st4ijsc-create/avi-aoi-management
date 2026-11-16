@@ -67,10 +67,10 @@ describe("phatLaiFixture.test.ts — giao dịch luôn ROLLBACK, chỉ nuốt Ro
 describe("phatLaiFixture.test.ts — không để lại hàng nào trong CSDL", () => {
   it("★★★ phát hiện RÒ RỈ ngay trong ca: trong `finally` TRƯỚC khi trả kênh, đếm `demHangRoRi(uid)` bằng kết nối riêng (cả khi ca đỏ) và đẩy `cauBaoRoRi(...)` vào `kenh.lot` ⇒ `afterEach(kiemKhongLot)` làm ca ĐỎ", () => {
     const n = PHAT_LAI.nguon;
-    expect(n).toMatch(/finally\s*\{[\s\S]{0,300}?demHangRoRi\(uid\)[\s\S]{0,400}?kenh\.lot\.push\(cauBaoRoRi\(r, uid, tomTatGoi\(kenh\)\)\)[\s\S]{0,200}?kenh\.db\s*=\s*null;/);
+    expect(n).toMatch(/finally\s*\{[\s\S]{0,300}?await ghiNhanRoRi\(kenh, uid\);[\s\S]{0,100}?kenh\.db\s*=\s*null;/);
     expect(n, "khởi tạo kênh phải có `goi: {}` để có bản tóm tắt chẩn đoán").toMatch(/vi\.hoisted\(\(\): KenhGiaoDich => \(\{ db: null, lot: \[\], goi: \{\} \}\)\)/);
-    // kiểm rò rỉ KHÔNG được nuốt lỗi bằng `catch (e)` riêng (AST test trên chỉ cho đúng MỘT `catch (e)` — của nuotRollback)
-    expect(n).toMatch(/demHangRoRi\(uid\)\.catch\(/);
+    // việc đếm + ghi `kenh.lot` nằm trong `ghiNhanRoRi` (kiemRoRiDb.ts, kiểm hành vi bằng bộ đếm giả) — tệp ca KHÔNG tự `catch` thêm (AST trên chỉ cho đúng MỘT `catch (e)` — của nuotRollback)
+    expect(n).not.toMatch(/demHangRoRi\(uid\)\.catch\(/);
   });
   it("★★★ không dùng `taoNguoiDungTest`; `insert(users)` gọi trên `tx` (tham số giao dịch)", () => {
     expect(/taoNguoiDungTest|nguoiDungTest/.test(boChuThich(PHAT_LAI.nguon))).toBe(false);

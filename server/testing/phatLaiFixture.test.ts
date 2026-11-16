@@ -23,8 +23,8 @@ import { taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
 import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
 import { users } from "../../drizzle/schema";
 import { banCoKhiPhatLai } from "./coAnhHuongByte";
-import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, tomTatGoi, type KenhGiaoDich } from "./kenhGiaoDich";
-import { cauBaoRoRi, demHangRoRi } from "./kiemRoRiDb";
+import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, type KenhGiaoDich } from "./kenhGiaoDich";
+import { ghiNhanRoRi } from "./kiemRoRiDb";
 import { donDuAnTam, dungDuAn } from "./phatLaiDuAn";
 import { chuanHoaSuKien, soSuKien, taoBoThay, taoStreamPhatLai, TOKEN_GOC, type FixturePhatLai } from "./phatLaiLuot";
 
@@ -115,11 +115,7 @@ describe("H4.2 — phát lại fixture thật", () => {
           }
         } finally {
           // RÒ RỈ: hàng mang userId người dùng thử thấy được từ kết nối KHÁC khi giao dịch còn mở ⇒ đã ghi NGOÀI giao dịch (xem khối ★ đầu tệp). Đếm cả khi ca đỏ.
-          if (uid !== null) {
-            const r = await demHangRoRi(uid).catch((e: unknown) => (e instanceof Error ? e : new Error(String(e))));
-            if (r instanceof Error) kenh.lot.push(`kiểm rò rỉ KHÔNG chạy được (${r.message.slice(0, 160)}) — không đo được ca này`);
-            else if (r.tong > 0) kenh.lot.push(cauBaoRoRi(r, uid, tomTatGoi(kenh)));
-          }
+          if (uid !== null) await ghiNhanRoRi(kenh, uid);
           kenh.db = null;
         }
         throw new RollbackPhatLai();

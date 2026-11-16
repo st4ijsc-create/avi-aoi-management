@@ -164,7 +164,7 @@ describe.skipIf(!co)("phát lại — ép một ca ĐỎ: KHÔNG rò hàng ra ng
     kiemKhongLot(kenh);
   }, 300_000);
 
-  it("★★★ ép `apply_diff` bị TỪ CHỐI (gốc dự án KHÔNG thuộc gốc hộp cát): đường từ chối đã chạy thật (có hàng `ai_action_denied` trong giao dịch) và KHÔNG hàng audit_logs / ai_pending_actions nào mang userId người dùng thử rò ra ngoài — trước lẫn sau ROLLBACK", async () => {
+  it("★★★ ép lượt GHI TỆP bị TỪ CHỐI (`edit_file` / `write_file` đều đi qua `apply_diff`; gốc dự án KHÔNG thuộc gốc hộp cát): đường từ chối đã chạy thật (có hàng `ai_action_denied` trong giao dịch) và KHÔNG hàng audit_logs / ai_pending_actions nào mang userId người dùng thử rò ra ngoài — trước lẫn sau ROLLBACK", async () => {
     const k = await epDo(null, {}, "tu-choi-apply-diff");
     expect(k.daTuChoi, "đường từ chối PHẢI đã chạy (nếu 0 ⇒ ca không ép được từ chối, không phải bằng chứng không rò)").toBeGreaterThan(0);
     const sau = await demHangRoRi(k.uid);
