@@ -19,6 +19,8 @@ import { congCuBiAn, docTruocKhiGhiBat, goiYLenhBat, hanGioToolBat } from "../se
 import { dauRaDaiBat } from "../services/ai/agent/khoDauRaDai";
 import { tiepTucBat } from "../services/ai/agent/khoLichSuLuot";
 import { soLuotToiDaTuEnv } from "../services/ai/agent/gioiHanLuot";
+import { apNganSachEp, nganSachEpTuEnv } from "../services/ai/agent/nganSachNguCanh";
+import { banGhiNganSachBatDau } from "../services/ai/agent/ghiNganSachBatDau";
 import { tacNhanTheoVaiTroBat } from "../services/ai/agent/vaiTroTacNhan";
 import { tuTraApiBat } from "../services/ai/apiRef/goiYLoiBienDich";
 import { chonTacVuModel } from "../services/ai/chonTacVuModel";
@@ -169,6 +171,9 @@ const PROBE: Record<string, () => GiaTriVang> = {
   AI_AGENT_KIEM_DAC_TA: () => b(kiemDacTaBat(undefined)),
   AI_AGENT_NEN_MOC: () => (nenMocDich(undefined) === undefined ? "khong-dat" : "bat"),
   AI_AGENT_SO_LUOT_TOI_DA: () => (soLuotToiDaTuEnv({}) === undefined ? "khong-dat" : "bat"),
+  // hai chỗ đọc (nganSachNguCanh.ts:61, ghiNganSachBatDau.ts:14): vắng ⇒ không ép (ngân sách thật giữ nguyên) VÀ không ghi bản ghi ngân sách
+  AI_AGENT_NGAN_SACH_EP: () =>
+    nganSachEpTuEnv(undefined) === undefined && apNganSachEp(65_536, undefined) === 65_536 && banGhiNganSachBatDau({}, undefined) === null ? "khong-dat" : "bat",
   AI_AGENT_THEO_VAI_TRO: () => b(tacNhanTheoVaiTroBat({})),
   AI_AGENT_TIEP_TUC: () => b(tiepTucBat(undefined)),
   AI_AGENT_TOOL_TIMEOUT: () => b(hanGioToolBat(undefined)),
