@@ -4,7 +4,7 @@
  * thông báo không nêu số lần / nơi gọi.
  */
 import { describe, expect, it } from "vitest";
-import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, type KenhGiaoDich } from "./kenhGiaoDich";
+import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, tomTatGoi, type KenhGiaoDich } from "./kenhGiaoDich";
 
 const kenhMoi = (): KenhGiaoDich => ({ db: null, lot: [] });
 const TX = { ten: "giao-dich-gia" };
@@ -111,5 +111,23 @@ describe("kenhGiaoDich — getDb ngoài giao dịch ⇒ null + ĐỎ có tên", 
     const k: KenhGiaoDich = { db: undefined, lot: [] };
     expect(layDbTheoKenh(k)).toBeNull();
     expect(k.lot).toHaveLength(1);
+  });
+});
+
+describe("kenhGiaoDich — bản tóm tắt ai đã gọi getDb qua kênh (chẩn đoán rò rỉ)", () => {
+  it("★★★ có `goi` ⇒ đếm theo NƠI GỌI đầu tiên ngoài helper (cả trong lẫn ngoài giao dịch); không có `goi` ⇒ không ghi", () => {
+    const k: KenhGiaoDich = { db: TX, lot: [], goi: {} };
+    layDbTheoKenh(k);
+    layDbTheoKenh(k);
+    k.db = null;
+    layDbTheoKenh(k);
+    const tong = Object.values(k.goi!).reduce((a, b) => a + b, 0);
+    expect(tong).toBe(3);
+    expect(Object.keys(k.goi!).every((x) => /kenhGiaoDich\.test\.ts/.test(x))).toBe(true); // nơi gọi là tệp test này, không phải helper
+    expect(tomTatGoi(k)).toMatch(/kenhGiaoDich\.test\.ts:\d+:\d+ ×/);
+    const khong: KenhGiaoDich = { db: TX, lot: [] };
+    layDbTheoKenh(khong);
+    expect(khong.goi).toBeUndefined();
+    expect(tomTatGoi(khong)).toBe("");
   });
 });
