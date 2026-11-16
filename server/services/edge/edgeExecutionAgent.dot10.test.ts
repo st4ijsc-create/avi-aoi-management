@@ -1072,6 +1072,33 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     expect(h.devices.calls).toEqual(["stopRobot:12"]);
   });
 
+  // rà soát bảo mật 17/11 + DO-68: prior.completed của edgePriorPictureOf gồm cả hàng 'skipped' (foeRunStore.ts:2314) — STOP có precondition sai với
+  // onPreconditionFail "skip" (foeEngine.ts:1071-1077) hay bù trừ STOP có precondition sai (:1330-1332) chưa từng tới driver: vẫn phải gửi lại
+  // đỏ trước sửa; đổi thành it ở commit 4 (X-12)
+  it.fails("X12-DU-PHONG-SKIPPED-VAN-GUI (1-đối chứng) device-port fallback, signed picture: s9's own row is 'skipped' (it never ran: precondition false, mode skip) — edgePriorPictureOf lists it in `completed` but not in `attempted` ⇒ s9 is still re-sent, once; s8 too", async () => {
+    const { edgePriorPictureOf } = await import("../orchestration/foe/foeRunStore");
+    const prior = edgePriorPictureOf([{ stepId: "s9", status: "skipped", resultJson: null, startedAt: null }]);
+    expect(prior, "the producer: a skipped row is completed + settled, never attempted").toEqual({ ...prior0, completed: ["s9"], settled: ["s9"] });
+    const h = await harness({ claimRuns: false });
+    const pic = anh(h, 67, { verifiedStops: [S8_ROBOT, S9], prior });
+    h.central.stopsUnconfirmed = [{ runId: 67, picture: h.central.sign("runpkg", pic) }];
+    expect((await h.agent.tick()).stopsResent).toEqual([67]);
+    expect((await h.agent.tick()).stopsResent, "back-off: not again in the next pull").toEqual([]);
+    expect(h.devices.calls).toEqual(["stopRobot:12", S9_DRIVER]);
+  });
+
+  // đỏ trước sửa; đổi thành it ở commit 4 (X-12)
+  it.fails("X12-DU-PHONG-SKIPPED-MAY-LOI-VAN-GUI (1-đối chứng) a walker is there but its engine re-send THROWS (edgeExecutionAgent.ts:951-953 ⇒ the device port), signed picture, s9's own row 'skipped' ⇒ the fallback still sends s9 exactly once", async () => {
+    const { edgePriorPictureOf } = await import("../orchestration/foe/foeRunStore");
+    const loi: EdgeWalker = { drive: async () => ({ outcome: "completed" }), abortLive: async () => ({ live: false }), resendStops: async () => Promise.reject(new Error("engine re-send failed (test)")) };
+    const h = await harness({ claimRuns: false, walker: loi });
+    const pic = anh(h, 68, { verifiedStops: [S9], prior: edgePriorPictureOf([{ stepId: "s9", status: "skipped", resultJson: null, startedAt: null }]) });
+    h.central.stopsUnconfirmed = [{ runId: 68, picture: h.central.sign("runpkg", pic) }];
+    expect((await h.agent.tick()).stopsResent).toEqual([68]);
+    expect((await h.agent.tick()).stopsResent).toEqual([]);
+    expect(h.devices.calls).toEqual([S9_DRIVER]);
+  });
+
   it("X12-DU-PHONG-HONG-VAN-GUI (1-đối chứng) device-port fallback, signed picture: s9 settled but FAILED (in settled, not in completed) ⇒ s9 is still re-sent (a failed STOP is not known to have gone out)", async () => {
     const h = await harness({ claimRuns: false });
     const pic = anh(h, 43, { verifiedStops: [S8_ROBOT, S9], prior: { ...prior0, settled: ["s9"], attempted: ["s9"], startOrder: ["s9"] } });
