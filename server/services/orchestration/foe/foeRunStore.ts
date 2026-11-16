@@ -2209,7 +2209,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     return write("held", {
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
-      error: `${chuGiuEdge(end.nodeCode, runId, reason, loiHien)}${heldAdvice(loiHien, hang.some((r) => stops.has(r.stepId) && (r.status === "completed" || r.status === "compensated" || (r.status === "failed" && loiLaKetCucKhongRo((r as { error?: string | null }).error)))))}`,
+      error: `${chuGiuEdge(end.nodeCode, runId, reason, loiHien)}${heldAdvice(loiHien, hang.some((r) => stops.has(r.stepId) && ["daGiao", "coTheDaRa"].includes(dauVetCuaHang(r, r.stepId) ?? "")))}`,
       contextJson: {
         ...ctx,
         [EDGE_HELD_CTX_KEY]: reason,

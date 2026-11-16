@@ -2755,6 +2755,19 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(veS9.map((a) => String(a.dedupKey)), "an URGENT names s9").not.toEqual([]);
     for (const a of veS9) expect(`${String(a.title ?? "")} ${String(a.message ?? "")}`, String(a.dedupKey)).not.toContain("never sent again");
   });
+  // N19 (DO-54, lô X-10 bước 3): câu `:2029` chọn theo dauVetCuaHang ("daGiao" / "coTheDaRa"), không đọc chữ lỗi của hàng. Hold của edge KHÔNG phải trạng thái C (journalFull), hàng STOP
+  // duy nhất của run bị từ chối TRƯỚC driver (ADAPTER_OFFLINE: nguonCuaKetQua ⇒ "tuChoi"), không STOP nào được giao ⇒ lời cũ, không có câu mới
+  it("T4-B3-O20-2029-TU-CHOI (N19) EDGE journalFull hold (not state C), the run's only STOP row was refused before a driver (ADAPTER_OFFLINE) and no STOP was handed over: the run's words never say 'except the run's STOPs due'", async () => {
+    const id = 9619;
+    fake.store.set("orchestration_runs", [...rows("orchestration_runs"), { id, status: "running", contextJson: null }]);
+    fake.store.set("orchestration_run_steps", [...rows("orchestration_run_steps"), { id: id * 10, runId: id, stepId: "s9", stepType: "command", status: "failed", attempt: 1, error: "ADAPTER_OFFLINE", resultJson: { routedTo: "ot-dispatcher", status: "failed", error: "ADAPTER_OFFLINE", detail: { reason: "ADAPTER_OFFLINE" } } }]);
+    await applyEdgeSegmentEnd(fake as never, id, { outcome: "held", heldReason: "journalFull", error: "EDGE_HELD(journalFull): the journal refused a record (full) — nothing further was sent; the run is held.", nodeCode: "edge-a", claimSeq: 1, def: def("d54-n19", [otStop("s9")]) });
+    const loi = String(runRow(id).error ?? "");
+    expect(runRow(id).status).toBe("held");
+    expect(loi, "not state C: the advice branch is the one with the new words").not.toContain("FOE_STOP_NOT_SENT");
+    expect(loi, loi).not.toContain("except the run's STOPs due");
+    expect(loi.endsWith(CAU_CU46), loi).toBe(true);
+  });
   it("T4-B3-R2A-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của ca trên) the same refused POST-SEND result, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never sent again", async () => {
     const e = await edgeAssignedRun(def("ja-e-dc", [gate(), move("r1", { maxAttempts: 2 }), move("r2")]));
     await edgeSegment(e, 1);
