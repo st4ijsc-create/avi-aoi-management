@@ -208,6 +208,8 @@ export interface StopVerification {
   failed: boolean;
   /** final wave F3 — steps that may be stops but could not be verified (pins unreadable, connection down / stale / unknown). */
   unsure: Set<string>;
+  /** X-11 (P1b, chủ dự án 16/11) — of `unsure`: pinned STOPs whose pins were READ and matched, only the running connection not confirmed here (a node's adapter: the node holds the driver). Absent ⇔ none */
+  ghimKhongKetNoi?: Set<string>;
 }
 
 export interface StopVerifier {
@@ -294,6 +296,7 @@ export async function makeStopVerifier(
     async verified(def, map) {
       const ids = new Set<string>();
       const unsure = new Set<string>();
+      const ghimKhongKetNoi = new Set<string>();
       for (const s of allStepsOf(def?.steps)) {
         const c = commandOf(s, map);
         if (!c) continue;
@@ -330,8 +333,9 @@ export async function makeStopVerifier(
         // non-stop either ⇒ unsure (never decided "out of scope" on this).
         if (connectionOk.get(adapterId) === true) ids.add(s.id);
         else unsure.add(s.id);
+        if (connectionOk.get(adapterId) !== true) ghimKhongKetNoi.add(s.id); // X-11 (P1b) — pinned and read; only the running connection is not central's
       }
-      return { ids, failed: unsure.size > 0, unsure };
+      return { ids, failed: unsure.size > 0, unsure, ...(ghimKhongKetNoi.size ? { ghimKhongKetNoi } : {}) };
     },
   };
 }

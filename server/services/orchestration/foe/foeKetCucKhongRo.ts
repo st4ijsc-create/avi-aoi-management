@@ -538,7 +538,7 @@ export interface PhanLoaiStopAbort {
   truoc?: "coTheDaRa" | "daGiao" | "chuaXacMinh";
   khoaThu?: number;
 }
-export type ChuStopAbort = "chuaRaKhongHan" | "chuaRa15" | "coTheKhongHan" | "coThe15" | "daGiaoKhongHan" | "daGiaoKiemMay" | "khongDocKhongHan" | "khongDoc15" | "khongXacMinhKhongHan" | "khongXacMinh15" | "daKetThuc" | "daKetThucChuaKhoa" | "daKetThucKhongXacMinh";
+export type ChuStopAbort = "chuaRaKhongHan" | "chuaRa15" | "coTheKhongHan" | "coThe15" | "daGiaoKhongHan" | "daGiaoKiemMay" | "khongDocKhongHan" | "khongDoc15" | "khongXacMinhKhongHan" | "khongXacMinh15" | "daKetThuc" | "daKetThucChuaKhoa" | "daKetThucKhongXacMinh" | "choNut";
 /** A2(n) T7b-1c — which words a STOP gets whose hand-over by this Abort did not go: its class, and whether its debt is durable ("no time limit" only then). `xong`: nothing to say. Pure. */
 export function chuStopAbort(p: Pick<PhanLoaiStopAbort, "lop" | "truoc">, ben: boolean): ChuStopAbort | null {
   if (p.lop === "xong") return null;
@@ -725,12 +725,14 @@ function chuStopChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "tha
  * debt is durable; "did NOT go out" never of a STOP that may have gone (coTheDaRa), was handed over (daGiao) or whose rows could not be read (khongDoc). Not durable: within the window a press still sends it, past
  * it nothing can; one a dispatcher took is not handed over again (H3).
  */
-function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "chuAbort" | "adapterNut" | "tuTrungTam">): [string, string] {
+function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "compId" | "vi" | "chuAbort" | "adapterNut" | "tuTrungTam">): [string, string] {
   const id = `"${stopCua(a)}"`;
   const ma = a.vi ? ` (${rutGonGiua(a.vi.ma, TRAN_MA)})` : ""; // mục 4 — printed at its ceiling
   const tay = "use the machine's direct STOP / E-STOP";
   const chu = a.chuAbort ?? "chuaRaKhongHan";
   const ketThuc = chu === "daKetThuc" || chu === "daKetThucChuaKhoa" || chu === "daKetThucKhongXacMinh";
+  // X-11 (P3, chữ HST duyệt 17/11, x11-chu-duyet "URGENT bản dài") — left to the edge node at a press that found the run not latched: the node's road, its limit, what a further press does by the run's state then (never a promise)
+  if (chu === "choNut") return [`STOP ${stopCua(a)} left to the edge node, NOT confirmed`, `Central's Abort of run ${a.runId} did NOT send STOP ${id}: its adapter belongs to the edge node that holds the run, and central has no connection to it. The node sends it, only after the database shows the run aborted: its walker of the run when it learns of the abort, or, once its part of the run has ended, from its signed copy of the run's STOPs, if it reaches central within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes from ${MOC_CUA_SO}. The run's steps show it confirmed when the node's STOP is; this alert is not withdrawn then. A further press of Abort at central hands it to that node only if by then the run records a command whose outcome is unknown; otherwise it sends nothing for it. Until confirmed, and if the node is offline, ${tay}.`];
   // T9 (T9-CHU-Q2B, T7b-2) — queued for the edge node that owns the adapter: nothing confirms it, a press queues it again
   if (!ketThuc && a.vi?.ma === "ADAPTER_OWNED_BY_EDGE") return [`run aborted, STOP ${id} queued for the edge node, NOT confirmed`, chuGiaoNut(id)] // 3c (mục 3): the title says "run aborted"; the words need the room;
   // T7b-1d lượt sửa 3 (F1, dieu-phoi 10/11, (a)) — "no time limit" is of the debt while it stands. A press that reads it as no pinned STOP ends it (C-CLR); a pin set again after that is sent only within the window of the Abort (H31):
@@ -775,8 +777,8 @@ export function noiDungCanhBaoKhongRo(goc: CanhBaoKhongRo): { kind: string; titl
   const khongXd = goc.loai === "forwardNotSent" && goc.stepId === BUOC_KHONG_XAC_DINH; // T6 — no step to name (lượt sửa 3c: compared on the whole id)
   const nhanh = a.loai === "stopUntakenBranch" || a.loai === "abortDefUnread" || a.loai === "abortSweepUnfinished" || khongXd || (a.loai === "abortStopNotSent" && (a.chuAbort === "khongXacMinhKhongHan" || a.chuAbort === "khongXacMinh15")); // `stepId` is the listed STOP: nothing happened to it
   // T7b-1d (H26) — a run that never latched and reached another end: no command of it has an unknown outcome, so no word says one has
-  // T7b-3 (H36) — the same for a run that ended with no sweep and never latched
-  const khongChot = (a.loai === "abortStopNotSent" && (a.chuAbort === "daKetThucChuaKhoa" || a.chuAbort === "daKetThucKhongXacMinh")) || a.loai === "stopEndedUnswept" || a.loai === "edgeStreamStuck";
+  // T7b-3 (H36) — the same for a run that ended with no sweep and never latched. X-11 (P3) — `choNut`: at the press the run was not latched, so no word opens with an unknown outcome
+  const khongChot = (a.loai === "abortStopNotSent" && (a.chuAbort === "daKetThucChuaKhoa" || a.chuAbort === "daKetThucKhongXacMinh" || a.chuAbort === "choNut")) || a.loai === "stopEndedUnswept" || a.loai === "edgeStreamStuck";
   const dau = nhanh ? `another command's outcome is unknown — machine state unknown` : a.biet ? `step "${a.stepId}" failed; another command's outcome is unknown — machine state unknown` : `command "${a.stepId}" outcome unknown — machine state unknown`;
   const mo = nhanh
     ? `A command of run ${a.runId} has an UNKNOWN outcome (${ma}); the state of the machine is unknown.`

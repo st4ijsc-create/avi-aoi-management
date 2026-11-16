@@ -327,12 +327,15 @@ export async function docClaimCuaNode(d: PullDb, node: Pick<EdgeNodePrincipal, "
 type AbortRow = { a: RunEdgeAssignment; finishedAt: Date | null };
 
 /**
- * A2(n) T7b-2 (P4, EDGE-VET) — an `abort:<step>` row that lists its run for the node's picture: a STOP central handed over and could not confirm. A central Abort's trace of a STOP it never handed over (`chuaXacMinh`:
- * not verified, T7b-1d H22) is central's own, for a later press: not one. The picture carries only verified STOPs, and a re-send that nobody pressed is no press. Pure.
+ * A2(n) T7b-2 (P4, EDGE-VET) + X-11 P1b (chủ dự án 16/11) — an `abort:<step>` row that lists its run for the node's picture: a STOP central handed over and could not confirm; or the trace of a STOP
+ * central READ as pinned and could not send, its adapter's running connection not central's (`adapterNut`: a run given to a node, whose adapters are the node's), once the node holds no claim of the run
+ * (`hetClaim`: its segment ended, central holds every record of it, so a STOP its walker sent is confirmed here first). The node's send is the first of that press, never a press's re-send. A trace of
+ * a STOP whose pins central could not read (`chuaXacMinh`, no flag) stays central's own, for a later press: not one. Pure.
  */
-export function laHangAbortChoAnh(r: { stepId?: unknown; status?: unknown; resultJson?: unknown }): boolean {
+export function laHangAbortChoAnh(r: { stepId?: unknown; status?: unknown; resultJson?: unknown }, hetClaim = false): boolean {
   if (!String(r.stepId ?? "").startsWith("abort:") || r.status !== "failed") return false;
-  return (r.resultJson as { abortStop?: unknown } | null | undefined)?.abortStop !== "chuaXacMinh";
+  const kq = r.resultJson as { abortStop?: unknown; adapterNut?: unknown } | null | undefined;
+  return kq?.abortStop !== "chuaXacMinh" || (kq?.adapterNut === true && hetClaim);
 }
 
 /**
@@ -373,11 +376,16 @@ export async function docRunAbortCanGuiLaiStop(
   const CO = 200;
   for (let i = 0; i < recent.length; i += CO) {
     const ids = recent.slice(i, i + CO).map((x) => x.a.runId);
+    const hetClaim = new Set(recent.slice(i, i + CO).filter((x) => x.a.claimTokenHash == null).map((x) => x.a.runId));
     const rows = await d
       .select({ runId: orchestrationRunSteps.runId, stepId: orchestrationRunSteps.stepId, status: orchestrationRunSteps.status, resultJson: orchestrationRunSteps.resultJson })
       .from(orchestrationRunSteps)
       .where(and(inArray(orchestrationRunSteps.runId, ids), like(orchestrationRunSteps.stepId, "abort:%"), eq(orchestrationRunSteps.status, "failed")));
-    for (const x of rows) if (laHangAbortChoAnh(x)) failed.add(x.runId);
+    const vet = rows.filter((x) => laHangAbortChoAnh(x, hetClaim.has(x.runId)));
+    // X-11 (a1, thiết kế V3-4) — a trace whose STOP's OWN row is completed / compensated with no unconfirmed mark (the same reading as the picture's prior.completed) lists no run: the picture never re-sends a STOP
+    // confirmed. Its own row failed (L-7), running, absent, or marked: listed as before. One more read per 200 ids, of the traced steps only
+    const xong = new Set(vet.length ? (await d.select({ runId: orchestrationRunSteps.runId, stepId: orchestrationRunSteps.stepId, status: orchestrationRunSteps.status, resultJson: orchestrationRunSteps.resultJson }).from(orchestrationRunSteps).where(and(inArray(orchestrationRunSteps.runId, [...new Set(vet.map((x) => x.runId))]), inArray(orchestrationRunSteps.stepId, [...new Set(vet.map((x) => x.stepId.slice("abort:".length)))])))).filter((x) => (x.status === "completed" || x.status === "compensated") && dauKhongXacNhan(x.resultJson) === null).map((x) => `${x.runId}|${x.stepId}`) : []);
+    for (const x of vet) if (!xong.has(`${x.runId}|${x.stepId.slice("abort:".length)}`)) failed.add(x.runId);
   }
   if (r.catBot) {
     baoDocCatBot({

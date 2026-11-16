@@ -2861,7 +2861,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   // (2) A commit 'held' có chốt (rider BAO_A, applyEdgeSegmentEnd gọi trực tiếp) và XOÁ token claim trong cùng giao dịch (complete: EC advance clearToken); (3) 'aborted' rơi vào; (4) bấm lần hai.
   // Token claim: claimPackage của harness không đặt claimTokenHash; ca đặt nó lúc claim đoạn 2 (như EC claim) và xoá ở (2). Kỳ vọng theo hàng X-11 và thiết kế, không chép mã; tên cờ của vết KHÔNG ghim:
   // ca đọc kết quả của docRunAbortCanGuiLaiStop thật (pull của ca đọc hàng bước qua bộ đọc của FakeDb, với where của chính mã), và ở bộ kiểm STOP chỉ ghim "có ĐÚNG MỘT trường thêm, là tập các STOP ghim đọc được mà thiếu kết nối".
-  // it.fails = đỏ trước sửa; đổi thành it ở commit 2 (X-11).
+  // Năm ca đỏ trước sửa: it.fails ở commit 1 (bfcd42ddd); commit 2 (X-11) đổi thành it và bỏ chữ "it.fails" khỏi tên.
   const NUT62 = { nodeId: NODE, nodeCode: "EDGE-A", credentialId: 1, factoryCode: "F1" } as never;
   const TOKEN62 = "ect_" + "c".repeat(43);
   const PIN62 = async (_d: unknown, i: { commandType: string }) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // chỉ STOP là ghim
@@ -3031,9 +3031,9 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(toiDriver62(c, x.n0), "over the whole chain from segment 2: s9 reached no driver at central").toEqual([]);
     expect(runRow(c).status).toBe("aborted");
   });
-  // đỏ trước sửa; đổi thành it ở commit 2 (X-11). X-11: vết abort:s9 của STOP ghim ĐỌC ĐƯỢC trên adapter của nút, chỉ thiếu kết nối ⇒ run được liệt kê cho ảnh của nút CHỈ khi nút không còn claim;
+  // đỏ ở bfcd42ddd (it.fails của commit 1), it từ commit 2 (X-11). X-11: vết abort:s9 của STOP ghim ĐỌC ĐƯỢC trên adapter của nút, chỉ thiếu kết nối ⇒ run được liệt kê cho ảnh của nút CHỈ khi nút không còn claim;
   // ảnh gửi s9 tới driver của nút một lần, trung tâm xác nhận ⇒ run rời danh sách; lần bấm hai sau đó không xếp thêm gì (STOP đã xác nhận không gửi lại; bất biến 16/11)
-  it.fails("T4-B3-Q1-P1B-LAN-MOT (X-11, it.fails) the same chain: once 'aborted' lands and the node holds no claim, the node's picture lists the run for s9; its send reaches the node's driver once and confirms it; a second press then queues nothing", async () => {
+  it("T4-B3-Q1-P1B-LAN-MOT (X-11) the same chain: once 'aborted' lands and the node holds no claim, the node's picture lists the run for s9; its send reaches the node's driver once and confirms it; a second press then queues nothing", async () => {
     const x = await chuoi62("x11lm");
     const { c, kq1 } = x;
     expect(kq1).toMatchObject({ ok: false, reason: "abortUnconfirmed" });
@@ -3181,13 +3181,13 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     const ra = await lietKeBang62();
     for (const r of BANG_A1_62.filter((x) => x.lietKe)) expect(ra, `${r.run} ${r.ten}: listed`).toContain(r.run);
   });
-  // đỏ trước sửa; đổi thành it ở commit 2 (X-11): hôm nay mọi hàng abort: failed không phải chuaXacMinh đều liệt kê run (T7b-2 P4)
-  it.fails("T4-B3-Q1-X11-A1-LOC (X-11 (a1), it.fails) an abort row whose STOP's own row is completed / compensated with no unconfirmed mark lists no run: the picture never re-sends a STOP confirmed", async () => {
+  // đỏ ở bfcd42ddd (it.fails của commit 1), it từ commit 2 (X-11): trước sửa mọi hàng abort: failed không phải chuaXacMinh đều liệt kê run (T7b-2 P4)
+  it("T4-B3-Q1-X11-A1-LOC (X-11 (a1)) an abort row whose STOP's own row is completed / compensated with no unconfirmed mark lists no run: the picture never re-sends a STOP confirmed", async () => {
     const ra = await lietKeBang62();
     expect([...ra].sort((a, b) => a - b), "exactly the rows of the table marked listed").toEqual(BANG_A1_62.filter((r) => r.lietKe).map((r) => r.run));
   });
-  // ── Chữ (cụm ổn định; chữ cuối cùng do HST duyệt trước commit mã). đỏ trước sửa; đổi thành it ở commit 2 (X-11)
-  it.fails("T4-B3-Q1-X11-CHU-BAM-MOT (X-11, it.fails) press 1 (abortUnconfirmed, s9 left to the node): the answer and an URGENT say s9 was NOT sent from central, what to do now (the machine on site), who sends it (the edge node) and when (within 15 minutes)", async () => {
+  // ── Chữ (cụm ổn định; chữ HST duyệt: tam/x11-chu-duyet.md). Đỏ ở bfcd42ddd (it.fails của commit 1), it từ commit 2 (X-11)
+  it("T4-B3-Q1-X11-CHU-BAM-MOT (X-11) press 1 (abortUnconfirmed, s9 left to the node): the answer and an URGENT say s9 was NOT sent from central, what to do now (the machine on site), who sends it (the edge node) and when (within 15 minutes)", async () => {
     const x = await chuoi62("x11c1");
     const msg = x.m.bam1.message as string;
     expect(x.kq1).toMatchObject({ ok: false, reason: "abortUnconfirmed" });
@@ -3205,7 +3205,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(t, "when").toMatch(/15 minutes/);
     expect(t, "what to do now").toMatch(/direct STOP \/ E-STOP/);
   });
-  it.fails("T4-B3-Q1-X11-CHU-BAM-HAI (X-11, it.fails) press 2 on the latched aborted run: the answer says s9 was queued for the edge node that holds its adapter, never 'refused or not answered: s9'", async () => {
+  it("T4-B3-Q1-X11-CHU-BAM-HAI (X-11) press 2 on the latched aborted run: the answer says s9 was queued for the edge node that holds its adapter, never 'refused or not answered: s9'", async () => {
     const x = await chuoi62("x11c2");
     const b = await bamHai62(x);
     expect(b.m.xepChoNut, "the shape: queued once").toBe(1);
@@ -3229,7 +3229,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   /** s9: adapter 501 by its machine (pins read with the batch); s8: adapter 502 named, outside the batch the verifier was built for: its pins are not read (SC:315) */
   const dA62 = () => def("x11va", [otStop("s9")]);
   const dB62 = () => def("x11vb", [otStop("s9"), otStop("s8", { args: { tagKey: "halt", value: true, adapterId: 502 } })]);
-  it.fails("T4-B3-Q1-X11-SC-CO-KET-NOI (X-11 S-1, it.fails) the verifier: s9 pinned and read, the running connection false or its check failing ⇒ unsure AND marked as 'pinned, read, only the connection'; s8 whose pins were not read ⇒ unsure, not marked", async () => {
+  it("T4-B3-Q1-X11-SC-CO-KET-NOI (X-11 S-1) the verifier: s9 pinned and read, the running connection false or its check failing ⇒ unsure AND marked as 'pinned, read, only the connection'; s8 whose pins were not read ⇒ unsure, not marked", async () => {
     ghimHalt();
     const kq: Array<[string, Record<string, unknown>]> = [];
     for (const kieu of ["false", "nem"] as const) {
@@ -3316,6 +3316,69 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
       expect(a.abortStops?.sent ?? [], "handed over").toEqual(ketNoi ? ["s9"] : []);
       expect(a.message, `connection ${ketNoi}: the 77ec64b0b string`).toBe(CHU_KHONG_NUT_62(c, ketNoi ? 1 : 0));
     }
+  });
+  // ── DO-63 vòng 2 (HST 17/11). (1) Câu (d) của lần bấm trên run đã chốt: viết hoa chữ đầu khi đứng sau một câu khác. Khoá CẢ HAI dạng, gọi chuBamLai trực tiếp với báo cáo tự dựng;
+  // chữ kỳ vọng chép từ tam/x11-chu-duyet.md (d), câu đứng trước chép từ chữ sẵn có "STOP steps sent again: …" (không gọi hàm nào của mã để dựng kỳ vọng).
+  const THAN_D_63 = (s: string) =>
+    `STOP ${s} was given to the edge node that holds its adapter: queued for that node, or, where it could not be queued or the node was unreachable, sent as central's fallback STOP (the step's records say which). Nothing confirms it reached the device: check the machine on site now and use its direct STOP / E-STOP if it is still running. The node's answer is recorded at central when it comes. A further press at central hands it to that node again unless the node has confirmed it by then.`;
+  const BAO_63 = (o: Record<string, string[]>) => ({ sent: [], failed: [], pending: [], unverified: [], untakenBranch: [], notPinned: [], notNeeded: [], ...o });
+  it("T4-B3-Q1-X11-CHU-D-HAI-DANG (X-11 vòng 2, ca thường) the words (d) of a press on a latched run: first in the answer they open with 'it', after another sentence with 'It'; the rest to the character", async () => {
+    const { chuBamLai } = await import("./foeEngine");
+    expect(chuBamLai(7, BAO_63({ failed: ["s9"], xepChoNut: ["s9"] }) as never), "first in the answer").toBe(`Run 7 was already aborted — it records a command whose outcome is unknown. ${THAN_D_63("s9")}`);
+    expect(chuBamLai(7, BAO_63({ sent: ["s8"], failed: ["s9"], xepChoNut: ["s9"] }) as never), "after another sentence").toBe(`Run 7 was already aborted — STOP steps sent again: s8. It records a command whose outcome is unknown. ${THAN_D_63("s9")}`);
+  });
+  // (2) Bấm lần hai trên run CHƯA chốt, vết abort:s9 của lần bấm 1 mang cờ adapter-của-nút (ghim đọc được, trung tâm thiếu kết nối): câu trả lời là câu (b) đã duyệt (x11-chu-duyet (b), bỏ câu
+  // trạng thái "Run N is aborted." vì tiền tố "Run N was already aborted —" đã nói), KHÔNG hứa "a later press … sends it"; lần bấm không gửi gì. Đỏ ở bfcd42ddd (chưa có cờ: chữ cũ), xanh sau sửa.
+  // Đối chứng: vết KHÔNG cờ (ghim không đọc được ở lần bấm 1 và 2, h.classifyLoi) ⇒ câu trả lời trùng TỪNG KÝ TỰ chữ cũ (chép từ chữ sẵn có của chuBamLai, nhánh run chưa chốt).
+  const CAU_B_63 = (s: string) =>
+    `STOP ${s} NOT sent from central: check the machine on site now; if the edge node is offline, use the machine's direct STOP / E-STOP. The edge node that holds its adapter sends it after it next reaches central, and only within 15 minutes from when the run was aborted. A further press at central hands it to that node only if by then the run records a command whose outcome is unknown; otherwise it sends nothing for it.`;
+  const CHU_CU_63 = (run: number, s: string) => `Run ${run} was already aborted — Could not be verified as a pinned STOP: ${s}: not sent; a later press within 15 minutes of when the run was aborted sends it if its read finds a pinned STOP.`;
+  /** the shape of denNut62 (segment 3 the node's, its claim held), press 1 at central with no connection here; khongCo: central's pin read throws at both presses (no node flag on the trace) */
+  async function bamHaiChuaChot63(ref: string, khongCo: boolean) {
+    ghimHalt();
+    h.ghim = PIN62;
+    const e = await edgeAssignedRun(def(ref, [gate(), ot("x"), gate("g2"), move("r1"), tre62("w", 1_500), otStop("s9")]));
+    const c = e.runId;
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    await approveEdgeGate(e);
+    await claimPackage(e, 3);
+    asg62(c).claimTokenHash = hashEdgeSecret(TOKEN62);
+    h.connOk = false;
+    h.chuEdge.set(501, NODE);
+    if (khongCo) h.classifyLoi = true;
+    const n0 = h.sent.length;
+    const kq1 = (await abortRun(c, OWNER, "first")) as Record<string, any>;
+    await wait62(40);
+    const vet1 = hang62(c, "abort:s9");
+    const n1 = h.sent.length;
+    const kq2 = (await abortRun(c, OWNER, "press again")) as Record<string, any>;
+    await wait62(60);
+    const n2 = h.sent.length;
+    h.classifyLoi = false;
+    const m = { khongCo, kq1: { ok: kq1.ok, unverified: kq1.abortStops?.unverified ?? null }, vet1, chot: ((runRow(c).contextJson ?? {}) as Record<string, any>)[KET_CUC_KHONG_RO_CHOT_CTX_KEY] ?? null, kq2: { ok: kq2.ok, resend: kq2.resend ?? null, unverified: kq2.abortStops?.unverified ?? null, sent: kq2.abortStops?.sent ?? null, failed: kq2.abortStops?.failed ?? null, message: String(kq2.message ?? "") }, s9: tomTat62(c, n0, n2) };
+    console.log(`KETLUAN63HC ${ref} ` + JSON.stringify(m));
+    return { c, kq1, kq2, vet1, n0, n1, n2, m };
+  }
+  it("T4-B3-Q1-X11-BAM-HAI-CHUA-CHOT-CO-NUT (X-11 vòng 2, đỏ ở bfcd42ddd) a press again on an aborted run NOT latched, its trace of s9 flagged for the node: the answer says the words (b), the node sends it, never 'a later press … sends it'; nothing sent", async () => {
+    const b = await bamHaiChuaChot63("x11hc", false);
+    expect(b.kq1.ok, "press 1 confirmed").toBe(true);
+    expect({ status: b.vet1?.status, abortStop: b.vet1?.abortStop }, "the trace of press 1").toEqual({ status: "failed", abortStop: "chuaXacMinh" });
+    expect(b.m.chot, "not latched").toBeNull();
+    expect(b.kq2.resend, "the press again").toBe(true);
+    expect(b.kq2.abortStops?.unverified ?? [], "s9 not verified at central").toContain("s9");
+    expect(s9Cua62(b.c, b.n0, b.n2), "neither press sends s9 anywhere").toEqual([]);
+    const msg = String(b.kq2.message ?? "");
+    expect(msg, "no promise that a later press sends it").not.toMatch(/a later press[^.]*sends it/);
+    expect(msg, "the words (b), to the character").toBe(`Run ${b.c} was already aborted — ${CAU_B_63("s9")}`);
+  });
+  it("T4-B3-Q1-X11-BAM-HAI-CHUA-CHOT-KHONG-CO (X-11 vòng 2, đối chứng) the same press again, the trace of s9 with no node flag (pins unreadable at central): the old string, character for character", async () => {
+    const b = await bamHaiChuaChot63("x11hk", true);
+    expect({ status: b.vet1?.status, abortStop: b.vet1?.abortStop }, "the trace of press 1").toEqual({ status: "failed", abortStop: "chuaXacMinh" });
+    expect(b.m.chot, "not latched").toBeNull();
+    expect(s9Cua62(b.c, b.n0, b.n2), "nothing sent").toEqual([]);
+    expect(String(b.kq2.message ?? ""), "the old string").toBe(CHU_CU_63(b.c, "s9"));
   });
   it("T4-B3-R2A-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của ca trên) the same refused POST-SEND result, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never sent again", async () => {
     const e = await edgeAssignedRun(def("ja-e-dc", [gate(), move("r1", { maxAttempts: 2 }), move("r2")]));
@@ -16974,8 +17037,9 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
   });
 
   // ── 0: P4 (EDGE-VET) — central's trace on a run assigned to a node ─────────────────────────────────────────────────────────────────────────────────────────
-  // T7b-2 decides: a central sweep of a run assigned to a node keeps its trace as on any run (H22: a later press reads it). The node's picture route (stopsUnconfirmed) is for a STOP central handed over
-  // and could not confirm: a trace of a STOP never handed over (chuaXacMinh) is not one (the picture carries only verified STOPs, and an automatic re-send is no person's press)
+  // T7b-2 decided, X-11 (chủ dự án 16/11) amends: a central sweep of a run assigned to a node keeps its trace as on any run (H22: a later press reads it). The node's picture route (stopsUnconfirmed) lists
+  // the run for (a) a STOP central handed over and could not confirm, as before; (b) since X-11, a chuaXacMinh trace flagged adapterNut (central READ the pins, only the running connection is not central's),
+  // once the node holds no claim of the run: the node's send is the first of that press. A chuaXacMinh trace with no flag (pins unreadable, a failed batch read) is still not one: these cases hold that part
   /** central's pull, read with this case's rows: the assignments of the node aborted in the window, then the failed abort rows as the SQL selects them (like 'abort:%', status 'failed') */
   const dbPull = (runIds: number[]) => ({
     select: () => ({
