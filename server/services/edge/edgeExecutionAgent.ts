@@ -266,7 +266,7 @@ export interface EdgeWalker {
 }
 
 /** `journaled`: the device front end already wrote the `stop` event (D's edge dispatch) — the agent does not write a second */
-export type EdgeStopOutcome = { outcome: "sent" | "failed" | "simulated"; detail?: string; journaled?: boolean };
+export type EdgeStopOutcome = { outcome: "sent" | "failed" | "simulated"; detail?: string; journaled?: boolean; written?: Array<{ tagKey: string; value: unknown }> };
 export interface EdgeStopContext {
   source: "command" | "anomaly" | "local";
   requestId: number | null;
@@ -357,6 +357,9 @@ export class EdgeExecutionAgent {
   /** fix review 3 (F-3) — executed by the explicit UNSIGNED envelope: de-duplicates unsigned copies only, NEVER a signed one */
   private readonly stopsUnsigned = new Set<string>();
   private readonly stopsEvidence = new Set<string>();
+  private readonly daDung = new Map<string, { tu: number; written?: Array<{ tagKey: string; value: unknown }> }>(); // X-12 — per target: the last STOP executed here with success (tu: answers received before its driver call)
+  private nhan = 0; // X-12 — pull answers received so far
+  private readonly thayHuy = new Map<number, number>(); // X-12 — run → `nhan` of the first answer that listed it with a verified sweep picture
   /** fix review 3/4 (F-3, M-3) — re-acks per STOP request: a time back-off (never a re-delivery count), pruned by age */
   private readonly reacks = new Map<string, { count: number; next: number; at: number }>();
   /** fix review 2 (S-2) — the last answer named a newer config / keyset than the one verified here */
@@ -517,6 +520,8 @@ export class EdgeExecutionAgent {
     this.online = true;
     report.online = true;
     const p = pulled.data;
+    this.nhan++;
+    for (const s of p.stopsUnconfirmed) if (!this.thayHuy.has(s.runId) && edgeTrustAdapter.sweepPicture(this.deps.config.trust(), s.picture, { runId: s.runId, credentialId: this.deps.config.credentialId() }).ok) this.thayHuy.set(s.runId, this.nhan);
     // R1b-2b-2a A2(o) — a newer config announced ⇒ the edge's config is STALE until a refresh adopts it: every non-STOP write is
     // refused meanwhile (edgeNonStopConfigGate); STOPs never look at it
     this.deps.config.noteCentralConfigVersion?.(p.configVersion);
@@ -549,6 +554,7 @@ export class EdgeExecutionAgent {
     const listed = new Set(p.stopsUnconfirmed.map((s) => s.runId));
     // final fix wave (I-1) — a PARTIAL answer may omit a run whose picture could not be built: nothing is inferred from that
     if (!p.runStateUnavailable) for (const id of [...this.resentAt.keys()]) if (!listed.has(id)) this.resentAt.delete(id); // confirmed / window over
+    if (!p.runStateUnavailable) for (const id of [...this.thayHuy.keys()]) if (!listed.has(id)) this.thayHuy.delete(id);
     for (const s of p.stopsUnconfirmed) {
       if (this.segments.has(s.runId)) continue;
       const st = this.resentAt.get(s.runId);
@@ -891,9 +897,11 @@ export class EdgeExecutionAgent {
       }
       this.pendingSince.delete(sk);
       // S-1 / F-3 — EXECUTED here, by THIS copy (even after an evidence or unsigned run); only then acknowledged
+      const tu = this.nhan;
       const r = await this.stopTarget(c.target, "command", c.requestId, `${unsigned ? "unsigned " : ""}central STOP request ${c.requestId}${v.ok && v.expired ? " (overdue — sent anyway)" : ""}`);
       if (r.outcome === "failed") return { requestId: c.requestId, kind: "stop", outcome: `${tag}failed` }; // not acked: re-delivered, retried
       this.remember(unsigned ? this.stopsUnsigned : this.stopsVerified, sk);
+      if (r.outcome === "sent") this.daDung.set("robotId" in c.target ? `r${c.target.robotId}` : `a${c.target.adapterId}`, { tu, written: r.written });
       if (!unsigned) remember();
       await this.ack(c.requestId, "done", null, ackWith);
       return { requestId: c.requestId, kind: "stop", outcome: `${tag}${r.outcome}` };
@@ -940,6 +948,9 @@ export class EdgeExecutionAgent {
 
   private async resendStops(runId: number, env: unknown): Promise<void> {
     const v = edgeTrustAdapter.sweepPicture(this.deps.config.trust(), env, { runId, credentialId: this.deps.config.credentialId() });
+    const { matchPinnedStop } = await import("../ot/stopPin");
+    const phu = (x: EdgeVerifiedStop, d = this.daDung.get(x.kind === "robot" ? `r${x.robotId}` : `a${x.adapterId}`)) => v.ok && d !== undefined && d.tu >= (this.thayHuy.get(runId) ?? Infinity) && (x.kind === "robot" || (d.written !== undefined && matchPinnedStop(d.written, x.pins).ok));
+    if (v.ok) v.picture.prior.abortSentBefore.push(...v.picture.verifiedStops.filter((x) => phu(x)).map((x) => x.stepId));
     let stops: EdgeVerifiedStop[];
     let sentBefore: Set<string>;
     let verifiedPins = true;
@@ -955,6 +966,7 @@ export class EdgeExecutionAgent {
     if (v.ok) {
       stops = v.picture.verifiedStops;
       sentBefore = new Set(v.picture.prior.abortSentBefore);
+      for (const id of v.picture.prior.completed) sentBefore.add(id);
     } else {
       // unverifiable picture: still STOP — robot aborts, OT stops with the VERIFIED config's pins only (never the message's)
       this.anomaly("EDGE_SWEEP_PICTURE_INVALID", runId, `sweep picture refused by verification (${v.reason}) — STOPs sent with the config's pins`);
@@ -1274,6 +1286,7 @@ export function edgeDispatchDevicePort(config: EdgeConfigSource): EdgeDevicePort
       const r = await dispatchOtOnEdge({ adapterId, machineId: a.machineId, commandType: "stop", writes: usePins, idempotencyKey: idem("a", adapterId, ctx), source: ctx.source, requestId: ctx.requestId });
       if (!r.stop) return { outcome: "failed", detail: r.reason ?? r.detail ?? `not a verified pinned STOP (${why})`, journaled: true };
       const outcome = r.ok ? (r.status === "simulated" ? "simulated" : "sent") : "failed";
+      if (outcome === "sent") return { outcome, detail: r.reason ?? why, journaled: true, written: usePins };
       return { outcome, detail: r.reason ?? why, journaled: true };
     },
     async lockRobot(robotId, reason) {

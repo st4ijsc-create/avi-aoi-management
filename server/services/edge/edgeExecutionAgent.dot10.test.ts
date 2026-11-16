@@ -952,7 +952,7 @@ describe("doc 81 Đợt 10 E — agent v2: STOP re-send from the sweep picture (
 // DO-66 vòng 4 (17/11) — lô X-12 commit 1 (chỉ test), theo cách (1) HST trình: nút nhớ theo ĐÍCH, qua các lượt pull, STOP nó đã chạy THÀNH CÔNG
 // (bản ký hoặc bản không ký tường minh; bản bằng chứng không tính — HST (b)), kèm phép so ghim; ảnh kiểm được chữ ký mới được bỏ qua bước.
 // Kỳ vọng theo đặc tả (hàng X-12, bất biến STOP 16/11, "không biết" = cái biết của bên quyết định gửi; vòng 3: TỔNG lần tới driver = 1 qua cả
-// cửa sổ), không theo mã hiện tại. it.fails = hành vi mong muốn chưa có (đỏ trước sửa); it = phủ / đối chứng, xanh trước và sau sửa.
+// cửa sổ), không theo mã hiện tại. Ca hành vi mong muốn: it.fails ở commit 1 (đỏ trước sửa), it từ commit 2 (X-12); ca phủ / đối chứng: it, xanh trước và sau sửa.
 // Vòng 4 (HST: lệch giờ không được là giới hạn): "STOP chạy SAU lúc huỷ" được chứng minh theo THỨ TỰ, không theo giờ — lời gọi driver của STOP bắt
 // đầu sau khi nút đã NHẬN một phản hồi pull liệt run kèm ảnh kiểm được chữ ký. Các ca lệch giờ đặt đồng hồ nút ±10 phút: kết quả không đổi.
 describe("X-12 — the node never re-sends from a sweep picture a STOP it already knows went out (edge half of the A2(n) gate)", () => {
@@ -1064,8 +1064,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     expect(h.devices.calls).toEqual([S9_DRIVER]);
   });
 
-  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
-  it.fails("X12-DU-PHONG-BO-COMPLETED (1) device-port fallback, signed picture: s9 has its own row completed (prior.completed) ⇒ s9 is NOT re-sent; the other unconfirmed STOP s8 still is", async () => {
+  it("X12-DU-PHONG-BO-COMPLETED (1) device-port fallback, signed picture: s9 has its own row completed (prior.completed) ⇒ s9 is NOT re-sent; the other unconfirmed STOP s8 still is", async () => {
     const h = await harness({ claimRuns: false });
     const pic = anh(h, 42, { verifiedStops: [S8_ROBOT, S9], prior: { ...prior0, completed: ["s9"], settled: ["s9"], attempted: ["s9"], startOrder: ["s9"] } });
     h.central.stopsUnconfirmed = [{ runId: 42, picture: h.central.sign("runpkg", pic) }];
@@ -1093,8 +1092,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     expect(eventKinds(h.central)).not.toContain("sweep_stop");
   });
 
-  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
-  it.fails("X12-CUNG-LUOT-BO-STOP-VUA-THANH-CONG (2, đường dự phòng) one pull: the fast path executes a queued signed STOP on adapter 21 with success (pins written ⊇ s9's), then the picture of the aborted run names s9 on adapter 21 ⇒ the picture does NOT send s9: adapter 21 reaches the driver once", async () => {
+  it("X12-CUNG-LUOT-BO-STOP-VUA-THANH-CONG (2, đường dự phòng) one pull: the fast path executes a queued signed STOP on adapter 21 with success (pins written ⊇ s9's), then the picture of the aborted run names s9 on adapter 21 ⇒ the picture does NOT send s9: adapter 21 reaches the driver once", async () => {
     const h = await harness({ claimRuns: false });
     congCoWritten(h);
     h.central.commands = [stopDaXep(h, 90, { adapterId: 21 })];
@@ -1104,8 +1102,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config"]);
   });
 
-  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
-  it.fails("X12-CUNG-LUOT-BO-STOP-VUA-THANH-CONG-MAY (2, đường máy) one pull: the queued signed STOP on adapter 21 succeeds, then the walker re-sends the picture naming s9 on adapter 21 ⇒ s9 does not reach the driver again", async () => {
+  it("X12-CUNG-LUOT-BO-STOP-VUA-THANH-CONG-MAY (2, đường máy) one pull: the queued signed STOP on adapter 21 succeeds, then the walker re-sends the picture naming s9 on adapter 21 ⇒ s9 does not reach the driver again", async () => {
     const wm = walkerMay();
     const h = await harness({ claimRuns: false, walker: wm.walker });
     wm.port = h.devices.port;
@@ -1150,8 +1147,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
   // ── vòng 3: TỔNG qua cả cửa sổ (Map nhớ qua các lượt pull) ─────────────────────────────────────────────────────────────
 
   for (const duong of ["du-phong", "may"] as const) {
-    // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
-    it.fails(`X12-MAP-TONG-MOT-LAN-${duong === "may" ? "MAY" : "DU-PHONG"} (1) the queued STOP on adapter 21 succeeds (pins ⊇ s9's), the picture lists the run until its window ends ⇒ over the whole window adapter 21 reaches the driver ONCE: s9 never again`, async () => {
+    it(`X12-MAP-TONG-MOT-LAN-${duong === "may" ? "MAY" : "DU-PHONG"} (1) the queued STOP on adapter 21 succeeds (pins ⊇ s9's), the picture lists the run until its window ends ⇒ over the whole window adapter 21 reaches the driver ONCE: s9 never again`, async () => {
       const wm = walkerMay();
       const h = await harness({ claimRuns: false, ...(duong === "may" ? { walker: wm.walker } : {}) });
       wm.port = h.devices.port;
@@ -1165,8 +1161,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     });
   }
 
-  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
-  it.fails("X12-MAP-ROBOT-TONG-MOT-LAN (1, robot) the queued STOP on robot 12 is sent (the canonical abort, robotEdgeDispatch.ts:114-115), the picture names s8 on robot 12 ⇒ over the whole window robot 12 reaches the driver ONCE", async () => {
+  it("X12-MAP-ROBOT-TONG-MOT-LAN (1, robot) the queued STOP on robot 12 is sent (the canonical abort, robotEdgeDispatch.ts:114-115), the picture names s8 on robot 12 ⇒ over the whole window robot 12 reaches the driver ONCE", async () => {
     const h = await harness({ claimRuns: false });
     const d = dongHo(h);
     const ab = d.now - 5_000;
@@ -1176,8 +1171,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     expect(h.devices.calls).toEqual(["stopRobot:12"]);
   });
 
-  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
-  it.fails("X12-KHOI-DONG-LAI-GUI-MOT-LAN (1, ngoại lệ 'không biết') the node skipped s9 (its own STOP covered it), then RESTARTS (its memory is gone) while the run is still listed ⇒ the restarted node sends s9 exactly once, central confirms, nothing more", async () => {
+  it("X12-KHOI-DONG-LAI-GUI-MOT-LAN (1, ngoại lệ 'không biết') the node skipped s9 (its own STOP covered it), then RESTARTS (its memory is gone) while the run is still listed ⇒ the restarted node sends s9 exactly once, central confirms, nothing more", async () => {
     const h = await harness({ claimRuns: false });
     congCoWritten(h);
     h.central.commands = [stopDaXep(h, 96, { adapterId: 21 })];
@@ -1238,8 +1232,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", S9_DRIVER]);
   });
 
-  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
-  it.fails("X12-HAI-RUN-MOC-RIENG (1) one STOP on adapter 21, run in the answer that FIRST listed run A (aborted before it); run B is aborted after it and listed in a later answer; both name s9 on adapter 21 ⇒ each run is judged on ITS OWN listing: A is covered, B's s9 is sent once", async () => {
+  it("X12-HAI-RUN-MOC-RIENG (1) one STOP on adapter 21, run in the answer that FIRST listed run A (aborted before it); run B is aborted after it and listed in a later answer; both name s9 on adapter 21 ⇒ each run is judged on ITS OWN listing: A is covered, B's s9 is sent once", async () => {
     const h = await harness({ claimRuns: false });
     congCoWritten(h);
     const d = dongHo(h);
@@ -1275,8 +1268,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
 
   for (const lech of [600_000, -600_000]) {
     const ten = lech > 0 ? "NHANH" : "CHAM";
-    // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
-    it.fails(`X12-LECH-GIO-${ten}-CUNG-LUOT-PHU (1) node clock ${lech > 0 ? "+" : "-"}10 min: the STOP arrives in the answer that first lists the run ⇒ covered whatever the clock: adapter 21 reaches the driver ONCE over the window`, async () => {
+    it(`X12-LECH-GIO-${ten}-CUNG-LUOT-PHU (1) node clock ${lech > 0 ? "+" : "-"}10 min: the STOP arrives in the answer that first lists the run ⇒ covered whatever the clock: adapter 21 reaches the driver ONCE over the window`, async () => {
       const h = await harness({ claimRuns: false });
       congCoWritten(h);
       const d = dongHo(h, lech);
@@ -1301,8 +1293,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     });
   }
 
-  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
-  it.fails("X12-CONSOLE-SAU-HUY-PHU (1) the run is listed, s9's re-send FAILS at the driver (still listed); a console STOP on adapter 21, created after the abort, then succeeds; at the next due re-send s9 is covered ⇒ nothing more reaches adapter 21", async () => {
+  it("X12-CONSOLE-SAU-HUY-PHU (1) the run is listed, s9's re-send FAILS at the driver (still listed); a console STOP on adapter 21, created after the abort, then succeeds; at the next due re-send s9 is covered ⇒ nothing more reaches adapter 21", async () => {
     const h = await harness({ claimRuns: false });
     congCoWritten(h);
     const goc = h.devices.port.stopAdapter;
@@ -1325,8 +1316,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     expect(toiAdapter21(h)).toEqual([S9_DRIVER, "stopAdapter:21:config"]);
   });
 
-  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
-  it.fails("X12-TAO-TRUOC-CHAY-SAU-PHU (1) a STOP request CREATED before the abort (issuedAt 60 s before) is delivered in the answer that first lists the run and runs after it ⇒ it ran after the abort (order proven by the answer): covered, adapter 21 reaches the driver ONCE", async () => {
+  it("X12-TAO-TRUOC-CHAY-SAU-PHU (1) a STOP request CREATED before the abort (issuedAt 60 s before) is delivered in the answer that first lists the run and runs after it ⇒ it ran after the abort (order proven by the answer): covered, adapter 21 reaches the driver ONCE", async () => {
     const h = await harness({ claimRuns: false });
     congCoWritten(h);
     const d = dongHo(h);
@@ -1389,8 +1379,7 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     expect(toiAdapter21(h)).toEqual([S9_DRIVER, "stopAdapter:21:config", S9_DRIVER]);
   });
 
-  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
-  it.fails("X12-THIEU-PHAN-GIU-MOC-PHU (vòng 5) the run is listed, s9 fails; a PARTIAL answer (runStateUnavailable: nothing is inferred from what it omits, edgeExecutionAgent.ts:550-551) carries a STOP on adapter 21 that succeeds; the run is listed again ⇒ the mark of the first listing is kept: covered, nothing more reaches adapter 21", async () => {
+  it("X12-THIEU-PHAN-GIU-MOC-PHU (vòng 5) the run is listed, s9 fails; a PARTIAL answer (runStateUnavailable: nothing is inferred from what it omits, edgeExecutionAgent.ts:550-551) carries a STOP on adapter 21 that succeeds; the run is listed again ⇒ the mark of the first listing is kept: covered, nothing more reaches adapter 21", async () => {
     const h = await harness({ claimRuns: false });
     congCoWritten(h);
     s9Hong(h);

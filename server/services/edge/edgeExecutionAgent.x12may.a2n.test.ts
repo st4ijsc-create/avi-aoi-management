@@ -165,8 +165,7 @@ describe("X-12 — the real engine re-send of a signed sweep picture, robot (edg
     expect(x.central.stopsUnconfirmed).toEqual([]);
   }, 20_000);
 
-  // đỏ trước sửa; đổi thành it ở commit 2 (X-12)
-  it.fails("X12MAY-ROBOT-CUNG-LUOT-TONG-MOT-LAN (1) the answer that first lists the run also carries a signed STOP request on robot 12; it succeeds ⇒ over the window the robot reaches its driver ONCE: the engine never sends s1 again", async () => {
+  it("X12MAY-ROBOT-CUNG-LUOT-TONG-MOT-LAN (1) the answer that first lists the run also carries a signed STOP request on robot 12; it succeeds ⇒ over the window the robot reaches its driver ONCE: the engine never sends s1 again", async () => {
     const x = await dung();
     x.central.commands = [stopXep(x, 120)];
     x.central.stopsUnconfirmed = [anh(x, 82)];
