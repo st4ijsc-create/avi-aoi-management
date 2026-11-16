@@ -520,11 +520,11 @@ export class EdgeExecutionAgent {
     this.online = true;
     report.online = true;
     const p = pulled.data;
-    this.nhan++;
-    for (const s of p.stopsUnconfirmed) if (!this.thayHuy.has(s.runId) && edgeTrustAdapter.sweepPicture(this.deps.config.trust(), s.picture, { runId: s.runId, credentialId: this.deps.config.credentialId() }).ok) this.thayHuy.set(s.runId, this.nhan);
     // R1b-2b-2a A2(o) — a newer config announced ⇒ the edge's config is STALE until a refresh adopts it: every non-STOP write is
     // refused meanwhile (edgeNonStopConfigGate); STOPs never look at it
     this.deps.config.noteCentralConfigVersion?.(p.configVersion);
+    this.nhan++;
+    for (const s of p.stopsUnconfirmed) if (!this.thayHuy.has(s.runId) && edgeTrustAdapter.sweepPicture(this.deps.config.trust(), s.picture, { runId: s.runId, credentialId: this.deps.config.credentialId() }).ok) this.thayHuy.set(s.runId, this.nhan);
     this.refreshPending = p.configVersion > this.deps.config.version() || p.keysetVersion > this.deps.config.trust().version;
     const hold = p.runStateUnavailable === true;
     if (hold && !this.runStateHold) console.warn("[EdgeExec] central's run state is UNAVAILABLE (runStateUnavailable) — every non-STOP work is held; STOPs still go");
