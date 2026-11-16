@@ -38,7 +38,7 @@ vi.mock("../services/aiGgufEngine", async (io) => ({
 import { taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
 import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
 import { ghiNoiKhac, kiemKhongLot, layDbTheoKenh, type KenhGiaoDich } from "./kenhGiaoDich";
-import { trongRollbackPhatLai } from "./trongRollbackPhatLai";
+import { trongRollbackPhatLai } from "./__trongRollbackPhatLai";
 import { chuanHoaSuKien, dongGoi, kiemMauCam, taoStreamPhatLai, type FixturePhatLai } from "./phatLaiLuot";
 
 const CAU = "thêm hàm nhân vào src/b.ts";

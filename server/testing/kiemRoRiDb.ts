@@ -4,10 +4,9 @@
  * Chỉ SELECT; chỉ chạy trên CSDL có tên chứa `aoi_management_test`; kết nối riêng đóng ngay.
  * (Ghi chú đo thật 16/11: bản cổng sai cwd để lại 6 cặp audit_logs + ai_pending_actions mang đúng userId của người dùng thử đã rollback — bảng không có FK nên ghi vẫn thành công.)
  */
-import postgres from "postgres";
+import { vi } from "vitest";
 import { sql, type SQL } from "drizzle-orm";
-import { PgDialect } from "drizzle-orm/pg-core";
-import { tomTatGoi, type KenhGiaoDich } from "./kenhGiaoDich";
+import { LoiKhungThu, tomTatGoi, type KenhGiaoDich } from "./kenhGiaoDich";
 
 export interface HangRoRi {
   audit_logs: number;
@@ -33,29 +32,24 @@ async function demQua(thucThi: BoThucThiDem, userId: number): Promise<HangRoRi> 
   return { audit_logs, ai_pending_actions, tong: audit_logs + ai_pending_actions };
 }
 
+/** Bộ thực thi của kết nối sẵn có của tầng test: `getDb()` THẬT (bản không bị mock) — một kết nối KHÁC với kết nối đang giữ giao dịch của ca (pool mặc định 25; `DB_POOL_MAX=1` sẽ làm phép đếm chờ giao dịch). */
+async function layDbThatChoDem(): Promise<BoThucThiDem | null> {
+  const goc = await vi.importActual<typeof import("../db/connection")>("../db/connection");
+  return (await goc.getDb()) as unknown as BoThucThiDem | null;
+}
+
 /**
- * Mặc định (không `thucThi`): kết nối RIÊNG ⇒ chỉ thấy hàng ĐÃ commit ⇒ mọi hàng đếm được mang userId của người dùng thử = rò rỉ.
+ * Mặc định (không `thucThi`): kết nối SẴN CÓ của tầng test (`layDb`, mặc định `getDb()` thật qua `vi.importActual`) — KHÁC kết nối của giao dịch ⇒ chỉ thấy hàng ĐÃ commit ⇒ mọi hàng đếm được mang userId của người dùng thử = rò rỉ.
  * Có `thucThi` (tx): đếm trong chính giao dịch ⇒ thấy hàng chưa commit (ca kiểm bộ đếm: chèn 1 + 1 rồi đếm phải ra 1 + 1).
- * ★ Hai đường chạy CÙNG `demQua` (một nguồn SQL): ca {1,1} qua tx kiểm đúng mã mà đường đo rò thật chạy — kết nối riêng chỉ là bộ thực thi bọc `postgres`.
+ * ★ Hai đường chạy CÙNG `demQua` (một nguồn SQL): ca {1,1} qua tx kiểm đúng mã mà đường đo rò thật chạy. KHÔNG import driver `postgres` (census edgeDbTrap).
+ * `url` null / "" / khác `aoi_management_test` ⇒ ném TRƯỚC khi mở kết nối; `undefined` ⇒ đọc `DATABASE_URL`.
  */
-export async function demHangRoRi(userId: number, url: string | undefined = process.env.DATABASE_URL, thucThi?: BoThucThiDem): Promise<HangRoRi> {
-  if (!url || !/aoi_management_test/.test(url)) throw new Error("demHangRoRi: chỉ chạy trên CSDL aoi_management_test (DATABASE_URL)");
+export async function demHangRoRi(userId: number, url: string | null | undefined = process.env.DATABASE_URL, thucThi?: BoThucThiDem, layDb: () => Promise<BoThucThiDem | null> = layDbThatChoDem): Promise<HangRoRi> {
+  if (!url || !/aoi_management_test/.test(url)) throw new LoiKhungThu("SAI_CSDL_DO_RO_RI", "demHangRoRi: chỉ chạy trên CSDL aoi_management_test (DATABASE_URL)");
   if (thucThi) return demQua(thucThi, userId);
-  const kn = postgres(url, { max: 1, connect_timeout: 10, idle_timeout: 5, onnotice: () => undefined });
-  try {
-    const phuongNgu = new PgDialect();
-    return await demQua(
-      {
-        execute: async (truyVan) => {
-          const q = phuongNgu.sqlToQuery(truyVan);
-          return await kn.unsafe(q.sql, q.params as never[]);
-        },
-      },
-      userId,
-    );
-  } finally {
-    await kn.end({ timeout: 5 });
-  }
+  const db = await layDb();
+  if (!db) throw new LoiKhungThu("THIEU_CSDL_TEST", "demHangRoRi: không có kết nối CSDL _test để đếm");
+  return demQua(db, userId);
 }
 
 /** Câu báo lỗi cho một lần rò (đưa vào `kenh.lot` ⇒ `kiemKhongLot` làm ca ĐỎ). `goi` = bản tóm tắt "ai gọi getDb qua kênh" để thấy module nào KHÔNG đi qua mock. */

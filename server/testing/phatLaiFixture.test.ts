@@ -24,7 +24,7 @@ import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
 import { banCoKhiPhatLai } from "./coAnhHuongByte";
 import { ghiNoiKhac, kiemKhongLot, layDbTheoKenh, type KenhGiaoDich } from "./kenhGiaoDich";
 import { donDuAnTam, dungDuAn } from "./phatLaiDuAn";
-import { trongRollbackPhatLai } from "./trongRollbackPhatLai";
+import { trongRollbackPhatLai } from "./__trongRollbackPhatLai";
 import { chuanHoaSuKien, soSuKien, taoBoThay, taoStreamPhatLai, TOKEN_GOC, type FixturePhatLai } from "./phatLaiLuot";
 
 const THU_MUC = path.join(__dirname, "fixtures", "phat-lai");

@@ -1,5 +1,5 @@
 /**
- * MỘT vỏ giao dịch ROLLBACK duy nhất cho mọi ca phát lại chạm sổ (`phatLaiFixture.test.ts`, `phatLaiLuot.test.ts`, `phatLaiFixture.epDo.db.test.ts`): ba tệp KHÔNG tự dựng vỏ (khoá AST ở `trongRollbackPhatLai.test.ts`).
+ * MỘT vỏ giao dịch ROLLBACK duy nhất cho mọi ca phát lại chạm sổ (tên `__*.ts` = bộ dựng lưới, đúng quy ước của `permissionsDonCacheCensus` (3)) (`phatLaiFixture.test.ts`, `phatLaiLuot.test.ts`, `phatLaiFixture.epDo.db.test.ts`): ba tệp KHÔNG tự dựng vỏ (khoá AST ở `trongRollbackPhatLai.test.ts`).
  * Việc của vỏ: mở giao dịch trên kết nối THẬT (lấy bằng `vi.importActual` — trong tệp test `../db/connection` bị mock), đặt `kenh.db = tx`, tạo người dùng thử CHỈ trong giao dịch, chạy thân ca,
  * rồi trong `finally` — TRƯỚC khi trả kênh về `null` — đếm rò rỉ theo userId (`ghiNhanRoRi`, cả khi thân ca ném); cuối giao dịch luôn `throw new RollbackPhatLai()` ⇒ ROLLBACK.
  * Ngoài giao dịch, `catch` chỉ nuốt `RollbackPhatLai` (`nuotRollback`): lỗi của thân ca (expect hỏng, lỗi lượt chạy) LAN RA ⇒ ca ĐỎ, không bị nuốt.
@@ -9,7 +9,7 @@
 import { vi } from "vitest";
 import { users } from "../../drizzle/schema";
 import type { getDb } from "../db/connection";
-import { RollbackPhatLai, nuotRollback, type KenhGiaoDich } from "./kenhGiaoDich";
+import { LoiKhungThu, RollbackPhatLai, nuotRollback, type KenhGiaoDich } from "./kenhGiaoDich";
 import { ghiNhanRoRi, type HangRoRi } from "./kiemRoRiDb";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -31,7 +31,7 @@ export interface TuyChonVo {
 
 export async function trongRollbackPhatLai(kenh: KenhGiaoDich, tenNguoi: string, than: (b: BoiCanhRollback) => Promise<void>, tuyChon: TuyChonVo = {}): Promise<void> {
   const dbThat = (await (tuyChon.layDb ?? (async () => (await vi.importActual<typeof import("../db/connection")>("../db/connection")).getDb()))()) as Db | null;
-  if (!dbThat) throw new Error("cần CSDL _test (DATABASE_URL)");
+  if (!dbThat) throw new LoiKhungThu("THIEU_CSDL_TEST", "cần CSDL _test (DATABASE_URL)");
   try {
     await dbThat.transaction(async (tx) => {
       kenh.db = tx;
@@ -44,6 +44,8 @@ export async function trongRollbackPhatLai(kenh: KenhGiaoDich, tenNguoi: string,
       } finally {
         if (nguoiId !== null) await ghiNhanRoRi(kenh, nguoiId, tuyChon.dem);
         kenh.db = null;
+        // census permissionsDonCache: nơi ghi `users` phải dọn auth cache — cache là của TIẾN TRÌNH, ROLLBACK DB không hoàn tác nó.
+        if (nguoiId !== null) await (await import("../services/authSessionCache")).invalidateAuthUser(nguoiId);
       }
       throw new RollbackPhatLai();
     });

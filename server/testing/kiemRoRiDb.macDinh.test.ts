@@ -1,48 +1,53 @@
 /**
- * Đường MẶC ĐỊNH của `demHangRoRi` (kết nối riêng — đường đo rò thật) với `postgres` GIẢ, không DB: nó phải chạy CÙNG hai câu SQL của nhánh bộ thực thi (một nguồn SQL, `demQua`),
- * tham số = userId, theo thứ tự audit_logs rồi ai_pending_actions, đóng kết nối kể cả khi truy vấn ném.
- * ĐỘT BIẾN PHẢI BẮT: đường mặc định có SQL riêng (lệch bảng/cột/userId) · không đóng kết nối · đọc sai cột kết quả.
+ * Đường MẶC ĐỊNH của `demHangRoRi` (kết nối sẵn có của tầng test — đường đo rò thật) với bộ thực thi GIẢ, không DB: nó phải chạy CÙNG hai câu SQL của nhánh bộ thực thi (một nguồn SQL, `demQua`),
+ * tham số = userId, theo thứ tự audit_logs rồi ai_pending_actions; không có kết nối ⇒ ném có mã; URL sai ⇒ ném TRƯỚC khi hỏi kết nối.
+ * ĐỘT BIẾN PHẢI BẮT: đường mặc định có SQL riêng (lệch bảng/cột/userId) · đọc sai cột kết quả · nuốt việc thiếu kết nối · lấy kết nối trước khi kiểm URL.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const gia = vi.hoisted(() => ({ goi: [] as Array<{ sql: string; params: unknown[] }>, daDong: 0, tra: [] as unknown[], nem: false }));
-vi.mock("postgres", () => ({
-  default: () => ({
-    unsafe: async (sql: string, params: unknown[]) => {
-      gia.goi.push({ sql, params });
-      if (gia.nem) throw new Error("truy vấn hỏng");
-      return gia.tra.shift() ?? [];
-    },
-    end: async () => {
-      gia.daDong++;
-    },
-  }),
-}));
-
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
+import { LoiKhungThu } from "./kenhGiaoDich";
 import { demHangRoRi } from "./kiemRoRiDb";
 
 const URL_TEST = "postgresql://u:p@127.0.0.1:5434/aoi_management_test";
-beforeEach(() => {
-  gia.goi = [];
-  gia.daDong = 0;
-  gia.tra = [];
-  gia.nem = false;
-});
+const phuongNgu = new PgDialect();
 
-describe("demHangRoRi — đường mặc định (kết nối riêng) dùng chung nguồn SQL", () => {
-  it("★★★ đúng hai câu SQL theo thứ tự, tham số userId, kết quả cộng đúng, đóng kết nối", async () => {
-    gia.tra = [[{ n: 2 }], [{ n: 5 }]];
-    const r = await demHangRoRi(4242, URL_TEST);
+function hoGia(tra: unknown[]) {
+  const goi: Array<{ sql: string; params: unknown[] }> = [];
+  return {
+    goi,
+    db: {
+      execute: async (q: SQL) => {
+        const t = phuongNgu.sqlToQuery(q);
+        goi.push({ sql: t.sql, params: t.params });
+        return tra.shift() ?? [];
+      },
+    },
+  };
+}
+
+describe("demHangRoRi — đường mặc định (kết nối sẵn có của tầng test) dùng chung nguồn SQL", () => {
+  it("★★★ đúng hai câu SQL theo thứ tự, tham số userId, kết quả cộng đúng", async () => {
+    const h = hoGia([[{ n: 2 }], [{ n: 5 }]]);
+    const r = await demHangRoRi(4242, URL_TEST, undefined, async () => h.db);
     expect(r).toEqual({ audit_logs: 2, ai_pending_actions: 5, tong: 7 });
-    expect(gia.goi).toEqual([
+    expect(h.goi).toEqual([
       { sql: 'select count(*)::int as n from audit_logs where "userId" = $1', params: [4242] },
       { sql: 'select count(*)::int as n from ai_pending_actions where "userId" = $1', params: [4242] },
     ]);
-    expect(gia.daDong).toBe(1);
   });
-  it("★★★ truy vấn ném ⇒ lỗi lan ra VÀ kết nối vẫn đóng", async () => {
-    gia.nem = true;
-    await expect(demHangRoRi(1, URL_TEST)).rejects.toThrow("truy vấn hỏng");
-    expect(gia.daDong).toBe(1);
+  it("★★★ không có kết nối ⇒ ném LoiKhungThu THIEU_CSDL_TEST (không trả 0 im lặng)", async () => {
+    await expect(demHangRoRi(1, URL_TEST, undefined, async () => null)).rejects.toMatchObject({ ma: "THIEU_CSDL_TEST" });
+    await expect(demHangRoRi(1, URL_TEST, undefined, async () => null)).rejects.toBeInstanceOf(LoiKhungThu);
+  });
+  it("★★★ URL sai ⇒ ném TRƯỚC khi hỏi kết nối (bộ lấy kết nối không được gọi)", async () => {
+    let daHoi = 0;
+    await expect(
+      demHangRoRi(1, "postgresql://u:p@127.0.0.1:5434/aoi_management", undefined, async () => {
+        daHoi++;
+        return null;
+      }),
+    ).rejects.toMatchObject({ ma: "SAI_CSDL_DO_RO_RI" });
+    expect(daHoi).toBe(0);
   });
 });

@@ -18,7 +18,7 @@ import { banCoKhiPhatLai } from "./coAnhHuongByte";
 import { ghiNoiKhac, kiemKhongLot, layDbTheoKenh, tomTatGoi, type KenhGiaoDich } from "./kenhGiaoDich";
 import { demHangRoRi } from "./kiemRoRiDb";
 import { donDuAnTam, dungDuAn } from "./phatLaiDuAn";
-import { trongRollbackPhatLai } from "./trongRollbackPhatLai";
+import { trongRollbackPhatLai } from "./__trongRollbackPhatLai";
 import { taoStreamPhatLai, TOKEN_GOC, type FixturePhatLai } from "./phatLaiLuot";
 
 const co = /aoi_management_test/.test(process.env.DATABASE_URL ?? "");
@@ -140,6 +140,8 @@ async function epDo(nemLoi: string | null, kq: Partial<KetQuaEp> = {}, kieu: Kie
         }
       }
     } finally {
+      // census permissionsDonCache: nơi ghi `permissions` phải dọn auth cache (cache là của TIẾN TRÌNH — ROLLBACK DB không hoàn tác nó)
+      await (await import("../services/authSessionCache")).invalidateAuthUser(userId);
       const [d] = await tx.select({ n: count() }).from(auditLogs).where(and(eq(auditLogs.userId, userId), eq(auditLogs.action, "ai_action_denied")));
       kq.daTuChoi = Number(d?.n ?? 0);
       const [dx] = await tx.select({ n: count() }).from(auditLogs).where(and(eq(auditLogs.userId, userId), eq(auditLogs.action, "ai_action_proposed")));

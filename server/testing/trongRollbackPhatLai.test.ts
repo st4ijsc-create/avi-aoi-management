@@ -11,7 +11,7 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import type { KenhGiaoDich } from "./kenhGiaoDich";
 import type { HangRoRi } from "./kiemRoRiDb";
-import { trongRollbackPhatLai } from "./trongRollbackPhatLai";
+import { trongRollbackPhatLai } from "./__trongRollbackPhatLai";
 
 const kenhMoi = (): KenhGiaoDich => ({ db: null, lot: [], goi: { "server/x.ts:1:1": 3 } });
 const khong = async (): Promise<HangRoRi> => ({ audit_logs: 0, ai_pending_actions: 0, tong: 0 });
@@ -127,7 +127,7 @@ function duyet(sf: ts.SourceFile, fn: (n: ts.Node) => void): void {
 }
 
 describe("trongRollbackPhatLai.ts — cấu trúc", () => {
-  const VO = doc("trongRollbackPhatLai.ts");
+  const VO = doc("__trongRollbackPhatLai.ts");
   it("★★★ `.transaction(cb)`: câu CUỐI của cb là `throw new …Rollback…()`; đúng MỘT `catch (e)` và nó chỉ gọi `nuotRollback(e)`", () => {
     let hoanTac = false;
     duyet(VO.sf, (n) => {
@@ -150,7 +150,9 @@ describe("trongRollbackPhatLai.ts — cấu trúc", () => {
     expect(catchs).toEqual(["dung"]);
   });
   it("★★★ `finally`: `if (nguoiId !== null) await ghiNhanRoRi(kenh, nguoiId, …)` TRƯỚC `kenh.db = null`; `insert(users)` gọi trên `tx`; không `.delete(` / DELETE / TRUNCATE; `getDb` thật lấy qua `vi.importActual`", () => {
-    expect(VO.nguon).toMatch(/finally\s*\{\s*if \(nguoiId !== null\) await ghiNhanRoRi\(kenh, nguoiId, tuyChon\.dem\);\s*kenh\.db = null;\s*\}/);
+    expect(VO.nguon).toMatch(/finally\s*\{\s*if \(nguoiId !== null\) await ghiNhanRoRi\(kenh, nguoiId, tuyChon\.dem\);\s*kenh\.db = null;/);
+    // dọn auth cache cho người dùng thử SAU khi trả kênh, vẫn trong finally (census permissionsDonCache)
+    expect(VO.nguon).toMatch(/kenh\.db = null;[\s\S]{0,300}?if \(nguoiId !== null\) await \(await import\("\.\.\/services\/authSessionCache"\)\)\.invalidateAuthUser\(nguoiId\);\s*\}\s*throw new RollbackPhatLai\(\);/);
     expect(VO.nguon).toMatch(/kenh\.db = tx;/);
     let chenQuaTx = false;
     let goiDelete = 0;
@@ -172,7 +174,7 @@ describe("ba tệp phát lại — dùng vỏ chung, không tự dựng vỏ", (
       const T = doc(tep);
       const sach = boChuThich(T.nguon);
       expect((sach.match(/\btrongRollbackPhatLai\(kenh, "/g) ?? []).length).toBe(1);
-      expect(sach).toMatch(/from "\.\/trongRollbackPhatLai"/);
+      expect(sach).toMatch(/from "\.\/__trongRollbackPhatLai"/);
       for (const cam of [/\.transaction\(/, /\bRollbackPhatLai\b/, /\bnuotRollback\b/, /\bcatch\b/, /vi\.importActual/, /\.insert\(users\)/, /\bghiNhanRoRi\b/, /taoNguoiDungTest/]) {
         expect(cam.test(sach), `${tep} tự dựng vỏ: ${cam}`).toBe(false);
       }

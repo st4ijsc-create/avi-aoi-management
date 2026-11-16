@@ -12,6 +12,20 @@ export interface KenhGiaoDich {
   goi?: Record<string, number>;
 }
 
+/**
+ * Lỗi của KHUNG THỬ phát lại (thiếu CSDL _test, sai CSDL, lời gọi lọt ngoài giao dịch, fixture còn mẫu cấm…): lớp lỗi có MÃ, không phải `Error` thô (census `rawErrorCensus` — mọi chỗ ném thô ngoài routers
+ * đều là nợ). `ma` cho người rà phân loại; `message` giữ nguyên lời cũ (test khớp theo lời).
+ */
+export class LoiKhungThu extends Error {
+  constructor(
+    readonly ma: "NGOAI_GIAO_DICH" | "THIEU_CSDL_TEST" | "SAI_CSDL_DO_RO_RI" | "FIXTURE_MAU_CAM" | "FIXTURE_LOI_LUOT",
+    message: string,
+  ) {
+    super(message);
+    this.name = "LoiKhungThu";
+  }
+}
+
 /** Ném ở cuối giao dịch ⇒ ROLLBACK. Tên chứa "rollback" để census `nguoiDungTest` nhận ra giao dịch luôn hoàn tác. */
 export class RollbackPhatLai extends Error {}
 
@@ -70,5 +84,5 @@ export function ghiNoiKhac(kenh: KenhGiaoDich, ten: string): null {
 export function kiemKhongLot(kenh: KenhGiaoDich): void {
   if (kenh.lot.length === 0) return;
   const ds = kenh.lot.splice(0, kenh.lot.length);
-  throw new Error(`getDb() bị gọi NGOÀI giao dịch ROLLBACK ${ds.length} lần (đã trả null, không ghi gì) — một đường ghi / việc nền chưa nằm trong giao dịch. Nơi gọi đầu tiên: ${ds[0]}`);
+  throw new LoiKhungThu("NGOAI_GIAO_DICH", `getDb() bị gọi NGOÀI giao dịch ROLLBACK ${ds.length} lần (đã trả null, không ghi gì) — một đường ghi / việc nền chưa nằm trong giao dịch. Nơi gọi đầu tiên: ${ds[0]}`);
 }

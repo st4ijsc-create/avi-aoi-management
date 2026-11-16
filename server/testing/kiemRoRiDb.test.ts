@@ -7,8 +7,8 @@ import { cauBaoRoRi, demHangRoRi, ghiNhanRoRi, type HangRoRi } from "./kiemRoRiD
 import type { KenhGiaoDich } from "./kenhGiaoDich";
 
 describe("demHangRoRi — chốt CSDL", () => {
-  it("★★★ từ chối mọi URL KHÔNG phải aoi_management_test (và URL vắng) TRƯỚC khi mở kết nối", async () => {
-    for (const url of [undefined, "", "postgresql://u:p@127.0.0.1:5434/aoi_management", "postgresql://u:p@127.0.0.1:5434/aoi_dev", "postgresql://u:p@127.0.0.1:1/none"]) {
+  it("★★★ từ chối mọi URL KHÔNG phải aoi_management_test (và URL vắng: null / rỗng — KHÔNG truyền undefined vì khi đó hàm đọc DATABASE_URL thật của môi trường cổng) TRƯỚC khi mở kết nối", async () => {
+    for (const url of [null, "", "postgresql://u:p@127.0.0.1:5434/aoi_management", "postgresql://u:p@127.0.0.1:5434/aoi_dev", "postgresql://u:p@127.0.0.1:1/none"]) {
       await expect(demHangRoRi(1, url), String(url)).rejects.toThrow(/chỉ chạy trên CSDL aoi_management_test/);
     }
   });
