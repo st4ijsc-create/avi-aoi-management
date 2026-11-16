@@ -136,11 +136,14 @@ describe("đường đề xuất → từ chối: mọi lần ghi audit_logs / a
       }
     });
   });
-  it("★★★ ba tệp phát lại đều thay `getDb` bằng `layDbTheoKenh(kenh)` trong mock của module connection (cùng module mà các tệp trên import)", () => {
+  it("★★★ ba tệp phát lại đều thay `getDb` bằng `layDbTheoKenh(kenh)` và bốn hàm lấy kết nối khác bằng `ghiNoiKhac` trong mock của module connection (cùng module mà các tệp trên import)", () => {
     for (const t of ["phatLaiFixture.test.ts", "phatLaiLuot.test.ts", "phatLaiFixture.epDo.db.test.ts"]) {
       const nguon = fs.readFileSync(path.join(__dirname, t), "utf8");
       expect(nguon, t).toMatch(/vi\.mock\("\.\.\/db\/connection"/);
       expect(nguon, t).toMatch(/getDb:\s*async\s*\(\)\s*=>\s*layDbTheoKenh\(kenh\)/);
+      for (const ten of CACH_LAY_KHAC) {
+        expect(nguon, `${t}: mock ${ten} phải đè bằng ghiNoiKhac`).toMatch(new RegExp(`${ten}:\\s*(async\\s*)?\\(\\)\\s*=>\\s*ghiNoiKhac\\(kenh,\\s*"${ten}"\\)`));
+      }
     }
     expect(path.relative(GOC, MODULE_KET_NOI).replace(/\\/g, "/")).toBe("server/db/connection");
     expect(fs.existsSync(`${MODULE_KET_NOI}.ts`)).toBe(true);
