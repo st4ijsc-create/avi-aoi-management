@@ -13,11 +13,12 @@ import zlib from "node:zlib";
 
 import { congCheckpointThat, taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
 import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
-import { auditLogs, permissions, users } from "../../drizzle/schema";
+import { auditLogs, permissions } from "../../drizzle/schema";
 import { banCoKhiPhatLai } from "./coAnhHuongByte";
-import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, tomTatGoi, type KenhGiaoDich } from "./kenhGiaoDich";
-import { cauBaoRoRi, demHangRoRi } from "./kiemRoRiDb";
+import { ghiNoiKhac, kiemKhongLot, layDbTheoKenh, tomTatGoi, type KenhGiaoDich } from "./kenhGiaoDich";
+import { demHangRoRi } from "./kiemRoRiDb";
 import { donDuAnTam, dungDuAn } from "./phatLaiDuAn";
+import { trongRollbackPhatLai } from "./trongRollbackPhatLai";
 import { taoStreamPhatLai, TOKEN_GOC, type FixturePhatLai } from "./phatLaiLuot";
 
 const co = /aoi_management_test/.test(process.env.DATABASE_URL ?? "");
@@ -87,80 +88,65 @@ interface KetQuaEp {
  */
 type KieuEp = "lech" | "tu-choi-apply-diff";
 
-/** Chạy fixture lệch trong giao dịch ROLLBACK (đúng vỏ của phatLaiFixture.test.ts); `nemLoi` ⇒ ném MỘT lỗi trong thân (mô phỏng `expect` hỏng). Kết quả ghi vào `kq` (có cả khi ném). */
+/** Chạy fixture lệch trong vỏ ROLLBACK DÙNG CHUNG (`trongRollbackPhatLai`); `nemLoi` ⇒ ném MỘT lỗi trong thân (mô phỏng `expect` hỏng). Kết quả ghi vào `kq` (có cả khi ném). */
 async function epDo(nemLoi: string | null, kq: Partial<KetQuaEp> = {}, kieu: KieuEp = "lech"): Promise<KetQuaEp> {
   const { fx } = napFixtureLech();
-  const dbThat = await (await vi.importActual<typeof import("../db/connection")>("../db/connection")).getDb();
-  if (!dbThat) throw new Error("cần CSDL _test");
-  try {
-    await dbThat.transaction(async (tx) => {
-      kenh.db = tx;
+  await trongRollbackPhatLai(kenh, "phatlaifx_epdo", async ({ tx, userId }) => {
+    kq.uid = userId;
+    try {
+      const goc = dungDuAn(fx);
+      const ban = banCoKhiPhatLai(fx.lenh.moiTruong, CO_CO_DINH_KHUNG_THU);
+      const env0 = Object.fromEntries([...Object.keys(ban.dat), ...ban.xoa].map((k) => [k, process.env[k]]));
+      Object.assign(process.env, ban.dat);
+      for (const k of ban.xoa) delete process.env[k];
       try {
-        const [nguoi] = await tx
-          .insert(users)
-          .values({ openId: `phatlaifx_epdo_${process.pid}_${Date.now()}`, username: `phatlaifx_epdo_${process.pid}_${Date.now()}`, name: "người dùng ép đỏ", role: "admin", loginMethod: "local" })
-          .returning({ id: users.id });
-        kq.uid = nguoi!.id;
-        const goc = dungDuAn(fx);
-        const ban = banCoKhiPhatLai(fx.lenh.moiTruong, CO_CO_DINH_KHUNG_THU);
-        const env0 = Object.fromEntries([...Object.keys(ban.dat), ...ban.xoa].map((k) => [k, process.env[k]]));
-        Object.assign(process.env, ban.dat);
-        for (const k of ban.xoa) delete process.env[k];
-        try {
-          process.env.AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture|${goc}`;
-          const p = taoStreamPhatLai(fx, { goc });
-          const tuChoi = kieu === "tu-choi-apply-diff";
-          const uidNguoi = kq.uid;
-          if (tuChoi) {
-            for (const [mod, quyen] of [["ai_repo_read", { canView: true, canEdit: true }], ["ai_repo_exec", { canView: true, canCreate: true }]] as const) {
-              await tx.insert(permissions).values({ userId: uidNguoi, category: "dashboard", moduleName: mod, ...quyen });
-            }
-          }
-          const ql = taoQuanLyLuotChay({
-            goiModel: taoGoiModelMayChu({ chatStream: p.stream, khongGhiDauVet: true }),
-            ...(tuChoi
-              ? {
-                  checkpoint: (userId: number) => {
-                    const that = congCheckpointThat(userId);
-                    return {
-                      chupTruocGhi: async (y: Parameters<typeof that.chupTruocGhi>[0]) => {
-                        // đề xuất ĐÃ qua RBAC lần 1; thu hồi quyền ghi NGAY TRƯỚC bước duyệt ⇒ RBAC lần 2 từ chối
-                        await tx.update(permissions).set({ canEdit: false }).where(and(eq(permissions.userId, uidNguoi), eq(permissions.moduleName, "ai_repo_read")));
-                        return that.chupTruocGhi(y);
-                      },
-                      chotSauGhi: that.chotSauGhi,
-                    };
-                  },
-                }
-              : {}),
-          });
-          const lk = await ql.taoLuotChay({ user: { id: kq.uid, role: tuChoi ? "operator" : "admin" }, cauHoi: fx.lenh.cauHoi.split(TOKEN_GOC).join(goc), projectId: "phatlaifx", cheDo: fx.lenh.cheDo });
-          if (!lk.ok) throw new Error(`${lk.ma} ${lk.thongDiep ?? ""}`);
-          await lk.luot.xong;
-          kq.lech = p.lech.length;
-          kq.luotDaRut = fx.luot.length - p.conLai();
-          if (nemLoi !== null) throw new Error(nemLoi); // mô phỏng một expect hỏng GIỮA giao dịch
-        } finally {
-          for (const [k, v] of Object.entries(env0)) {
-            if (v === undefined) delete process.env[k];
-            else process.env[k] = v;
+        process.env.AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture|${goc}`;
+        const p = taoStreamPhatLai(fx, { goc });
+        const tuChoi = kieu === "tu-choi-apply-diff";
+        const uidNguoi = userId;
+        if (tuChoi) {
+          for (const [mod, quyen] of [["ai_repo_read", { canView: true, canEdit: true }], ["ai_repo_exec", { canView: true, canCreate: true }]] as const) {
+            await tx.insert(permissions).values({ userId: uidNguoi, category: "dashboard", moduleName: mod, ...quyen });
           }
         }
+        const ql = taoQuanLyLuotChay({
+          goiModel: taoGoiModelMayChu({ chatStream: p.stream, khongGhiDauVet: true }),
+          ...(tuChoi
+            ? {
+                checkpoint: (chuLuot: number) => {
+                  const that = congCheckpointThat(chuLuot);
+                  return {
+                    chupTruocGhi: async (y: Parameters<typeof that.chupTruocGhi>[0]) => {
+                      // đề xuất ĐÃ qua RBAC lần 1; thu hồi quyền ghi NGAY TRƯỚC bước duyệt ⇒ RBAC lần 2 từ chối
+                      await tx.update(permissions).set({ canEdit: false }).where(and(eq(permissions.userId, uidNguoi), eq(permissions.moduleName, "ai_repo_read")));
+                      return that.chupTruocGhi(y);
+                    },
+                    chotSauGhi: that.chotSauGhi,
+                  };
+                },
+              }
+            : {}),
+        });
+        const lk = await ql.taoLuotChay({ user: { id: userId, role: tuChoi ? "operator" : "admin" }, cauHoi: fx.lenh.cauHoi.split(TOKEN_GOC).join(goc), projectId: "phatlaifx", cheDo: fx.lenh.cheDo });
+        if (!lk.ok) throw new Error(`${lk.ma} ${lk.thongDiep ?? ""}`);
+        await lk.luot.xong;
+        kq.lech = p.lech.length;
+        kq.luotDaRut = fx.luot.length - p.conLai();
+        if (nemLoi !== null) throw new Error(nemLoi); // mô phỏng một expect hỏng GIỮA giao dịch
       } finally {
-        if (kq.uid !== undefined) {
-          const [d] = await tx.select({ n: count() }).from(auditLogs).where(and(eq(auditLogs.userId, kq.uid), eq(auditLogs.action, "ai_action_denied")));
-          kq.daTuChoi = Number(d?.n ?? 0);
-          const [dx] = await tx.select({ n: count() }).from(auditLogs).where(and(eq(auditLogs.userId, kq.uid), eq(auditLogs.action, "ai_action_proposed")));
-          kq.daDeXuat = Number(dx?.n ?? 0);
+        for (const [k, v] of Object.entries(env0)) {
+          if (v === undefined) delete process.env[k];
+          else process.env[k] = v;
         }
-        kq.roTruocRollback = await demHangRoRi(kq.uid!);
-        kenh.db = null;
       }
-      throw new RollbackPhatLai();
-    });
-  } catch (e) {
-    nuotRollback(e);
-  }
+    } finally {
+      const [d] = await tx.select({ n: count() }).from(auditLogs).where(and(eq(auditLogs.userId, userId), eq(auditLogs.action, "ai_action_denied")));
+      kq.daTuChoi = Number(d?.n ?? 0);
+      const [dx] = await tx.select({ n: count() }).from(auditLogs).where(and(eq(auditLogs.userId, userId), eq(auditLogs.action, "ai_action_proposed")));
+      kq.daDeXuat = Number(dx?.n ?? 0);
+      kq.roTruocRollback = await demHangRoRi(userId);
+    }
+  });
   return kq as KetQuaEp;
 }
 

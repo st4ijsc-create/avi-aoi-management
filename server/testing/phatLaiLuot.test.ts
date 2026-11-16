@@ -37,9 +37,8 @@ vi.mock("../services/aiGgufEngine", async (io) => ({
 
 import { taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
 import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
-import { users } from "../../drizzle/schema";
-import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, type KenhGiaoDich } from "./kenhGiaoDich";
-import { ghiNhanRoRi } from "./kiemRoRiDb";
+import { ghiNoiKhac, kiemKhongLot, layDbTheoKenh, type KenhGiaoDich } from "./kenhGiaoDich";
+import { trongRollbackPhatLai } from "./trongRollbackPhatLai";
 import { chuanHoaSuKien, dongGoi, kiemMauCam, taoStreamPhatLai, type FixturePhatLai } from "./phatLaiLuot";
 
 const CAU = "thêm hàm nhân vào src/b.ts";
@@ -59,34 +58,8 @@ vi.mock("../db/connection", async (importOriginal) => {
   };
 });
 
-/**
- * Chạy `than` TRONG một giao dịch luôn ROLLBACK, với người dùng thử chỉ tồn tại trong giao dịch. Trước khi trả kênh, đếm — bằng kết nối RIÊNG — hàng `audit_logs` / `ai_pending_actions`
- * mang userId người dùng thử (hai bảng không có khoá ngoại tới `users`, nên ghi NGOÀI giao dịch vẫn thành công): kết nối khác không thấy hàng chưa commit ⇒ mọi hàng đếm được là RÒ RỈ ⇒ ca ĐỎ.
- */
-async function trongRollback(than: (userId: number) => Promise<void>): Promise<void> {
-  const dbThat = await (await vi.importActual<typeof import("../db/connection")>("../db/connection")).getDb();
-  if (!dbThat) throw new Error("cần CSDL _test (DATABASE_URL)");
-  try {
-    await dbThat.transaction(async (tx) => {
-      kenh.db = tx;
-      let nguoiId: number | null = null;
-      try {
-        const [nguoi] = await tx
-          .insert(users)
-          .values({ openId: `phatlailuot_${process.pid}_${Date.now()}`, username: `phatlailuot_${process.pid}_${Date.now()}`, name: "người dùng phát lại lượt", role: "admin", loginMethod: "local" })
-          .returning({ id: users.id });
-        nguoiId = nguoi!.id;
-        await than(nguoiId);
-      } finally {
-        if (nguoiId !== null) await ghiNhanRoRi(kenh, nguoiId);
-        kenh.db = null;
-      }
-      throw new RollbackPhatLai();
-    });
-  } catch (e) {
-    nuotRollback(e);
-  }
-}
+/** Vỏ giao dịch ROLLBACK + đếm rò rỉ theo userId dùng CHUNG (`trongRollbackPhatLai.ts`); ba ca chạm sổ của tệp này đều đi qua nó. */
+const trongRollback = (than: (userId: number) => Promise<void>): Promise<void> => trongRollbackPhatLai(kenh, "phatlailuot", ({ userId }) => than(userId));
 
 function taoRepo(): string {
   const r = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "phat-lai-repo-")));

@@ -21,11 +21,10 @@ import zlib from "node:zlib";
 
 import { taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
 import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
-import { users } from "../../drizzle/schema";
 import { banCoKhiPhatLai } from "./coAnhHuongByte";
-import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, type KenhGiaoDich } from "./kenhGiaoDich";
-import { ghiNhanRoRi } from "./kiemRoRiDb";
+import { ghiNoiKhac, kiemKhongLot, layDbTheoKenh, type KenhGiaoDich } from "./kenhGiaoDich";
 import { donDuAnTam, dungDuAn } from "./phatLaiDuAn";
+import { trongRollbackPhatLai } from "./trongRollbackPhatLai";
 import { chuanHoaSuKien, soSuKien, taoBoThay, taoStreamPhatLai, TOKEN_GOC, type FixturePhatLai } from "./phatLaiLuot";
 
 const THU_MUC = path.join(__dirname, "fixtures", "phat-lai");
@@ -73,55 +72,35 @@ describe("H4.2 — phát lại fixture thật", () => {
     it.skip("chưa có fixture nào trong server/testing/fixtures/phat-lai (ghi ở cửa sổ GPU tối B)", () => undefined);
     return;
   }
-  it.each(tep)("%s", async (ten) => {
-    const dbThat = await (await vi.importActual<typeof import("../db/connection")>("../db/connection")).getDb();
-    if (!dbThat) throw new Error("phát lại fixture cần CSDL _test (DATABASE_URL)");
-    try {
-      await dbThat.transaction(async (tx) => {
-        kenh.db = tx;
-        let uid: number | null = null;
-        try {
-          const [nguoi] = await tx
-            .insert(users)
-            .values({ openId: `phatlaifx_${process.pid}`, username: `phatlaifx_${process.pid}`, name: "người dùng phát lại fixture", role: "admin", loginMethod: "local" })
-            .returning({ id: users.id });
-          uid = nguoi!.id;
-          const fx = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(THU_MUC, ten))).toString("utf8")) as FixturePhatLai;
-          const goc = dungDuAn(fx);
-          // Cờ máy chủ LÚC GHI (vitest.setup không nạp .env) — đặt cho ca này rồi trả lại. V1.1: mọi cờ ảnh hưởng byte KHÔNG có trong fixture bị GỠ (mã dùng mặc định thật của nó),
-          // nên cờ `export` trong shell hay cờ mới bật ở môi trường chạy test không làm fixture cũ đỏ oan.
-          const ban = banCoKhiPhatLai(fx.lenh.moiTruong, CO_CO_DINH_KHUNG_THU);
-          const env0 = Object.fromEntries([...Object.keys(ban.dat), ...ban.xoa].map((k) => [k, process.env[k]]));
-          Object.assign(process.env, ban.dat);
-          for (const k of ban.xoa) delete process.env[k];
-          try {
-            process.env.AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture|${goc}`;
-            const p = taoStreamPhatLai(fx, { goc });
-            const ql = taoQuanLyLuotChay({ goiModel: taoGoiModelMayChu({ chatStream: p.stream, khongGhiDauVet: true }) });
-            const kq = await ql.taoLuotChay({ user: { id: uid, role: "admin" }, cauHoi: fx.lenh.cauHoi.split(TOKEN_GOC).join(goc), projectId: "phatlaifx", cheDo: fx.lenh.cheDo });
-            if (!kq.ok) throw new Error(`${kq.ma} ${kq.thongDiep ?? ""}`);
-            await kq.luot.xong;
-            expect(p.lech, "lệch đầu tiên").toEqual([]);
-            expect(p.conLai(), "lượt chưa rút").toBe(0);
-            expect(kq.luot.lyDoDung).toBe(fx.ky.lyDo);
-            const ct = await ql.chiTiet(kq.luot.id, uid);
-            // Công cụ THẬT không tất định (thời gian, thứ tự dòng, chỗ cắt cụt) + siêu dữ liệu bat-dau ⇒ `soSuKien` (lệch đầu tiên hoặc null).
-            expect(soSuKien(fx.ky.suKien, chuanHoaSuKien(ct!.suKien, taoBoThay(goc))), "sự kiện lệch đầu tiên").toBeNull();
-          } finally {
-            for (const [k, v] of Object.entries(env0)) {
-              if (v === undefined) delete process.env[k];
-              else process.env[k] = v;
-            }
-          }
-        } finally {
-          // RÒ RỈ: hàng mang userId người dùng thử thấy được từ kết nối KHÁC khi giao dịch còn mở ⇒ đã ghi NGOÀI giao dịch (xem khối ★ đầu tệp). Đếm cả khi ca đỏ.
-          if (uid !== null) await ghiNhanRoRi(kenh, uid);
-          kenh.db = null;
+  it.each(tep)("%s", (ten) =>
+    trongRollbackPhatLai(kenh, "phatlaifx", async ({ userId: uid }) => {
+      const fx = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(THU_MUC, ten))).toString("utf8")) as FixturePhatLai;
+      const goc = dungDuAn(fx);
+      // Cờ máy chủ LÚC GHI (vitest.setup không nạp .env) — đặt cho ca này rồi trả lại. V1.1: mọi cờ ảnh hưởng byte KHÔNG có trong fixture bị GỠ (mã dùng mặc định thật của nó),
+      // nên cờ `export` trong shell hay cờ mới bật ở môi trường chạy test không làm fixture cũ đỏ oan.
+      const ban = banCoKhiPhatLai(fx.lenh.moiTruong, CO_CO_DINH_KHUNG_THU);
+      const env0 = Object.fromEntries([...Object.keys(ban.dat), ...ban.xoa].map((k) => [k, process.env[k]]));
+      Object.assign(process.env, ban.dat);
+      for (const k of ban.xoa) delete process.env[k];
+      try {
+        process.env.AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture|${goc}`;
+        const p = taoStreamPhatLai(fx, { goc });
+        const ql = taoQuanLyLuotChay({ goiModel: taoGoiModelMayChu({ chatStream: p.stream, khongGhiDauVet: true }) });
+        const kq = await ql.taoLuotChay({ user: { id: uid, role: "admin" }, cauHoi: fx.lenh.cauHoi.split(TOKEN_GOC).join(goc), projectId: "phatlaifx", cheDo: fx.lenh.cheDo });
+        if (!kq.ok) throw new Error(`${kq.ma} ${kq.thongDiep ?? ""}`);
+        await kq.luot.xong;
+        expect(p.lech, "lệch đầu tiên").toEqual([]);
+        expect(p.conLai(), "lượt chưa rút").toBe(0);
+        expect(kq.luot.lyDoDung).toBe(fx.ky.lyDo);
+        const ct = await ql.chiTiet(kq.luot.id, uid);
+        // Công cụ THẬT không tất định (thời gian, thứ tự dòng, chỗ cắt cụt) + siêu dữ liệu bat-dau ⇒ `soSuKien` (lệch đầu tiên hoặc null).
+        expect(soSuKien(fx.ky.suKien, chuanHoaSuKien(ct!.suKien, taoBoThay(goc))), "sự kiện lệch đầu tiên").toBeNull();
+      } finally {
+        for (const [k, v] of Object.entries(env0)) {
+          if (v === undefined) delete process.env[k];
+          else process.env[k] = v;
         }
-        throw new RollbackPhatLai();
-      });
-    } catch (e) {
-      nuotRollback(e);
-    }
-  }, 300_000);
+      }
+    }),
+  300_000);
 });
