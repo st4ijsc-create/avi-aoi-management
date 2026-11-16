@@ -6,6 +6,7 @@
  */
 import postgres from "postgres";
 import { sql, type SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { tomTatGoi, type KenhGiaoDich } from "./kenhGiaoDich";
 
 export interface HangRoRi {
@@ -25,24 +26,33 @@ function docSo(kq: unknown): number {
   return Number((hang[0] as { n?: unknown } | undefined)?.n ?? 0);
 }
 
+/** MỘT nguồn SQL cho cả hai đường đo: hai truy vấn đếm theo userId, qua BẤT KỲ bộ thực thi nào (tx của ca kiểm, hoặc kết nối riêng bọc ở dưới). */
+async function demQua(thucThi: BoThucThiDem, userId: number): Promise<HangRoRi> {
+  const audit_logs = docSo(await thucThi.execute(sql`select count(*)::int as n from audit_logs where "userId" = ${userId}`));
+  const ai_pending_actions = docSo(await thucThi.execute(sql`select count(*)::int as n from ai_pending_actions where "userId" = ${userId}`));
+  return { audit_logs, ai_pending_actions, tong: audit_logs + ai_pending_actions };
+}
+
 /**
  * Mặc định (không `thucThi`): kết nối RIÊNG ⇒ chỉ thấy hàng ĐÃ commit ⇒ mọi hàng đếm được mang userId của người dùng thử = rò rỉ.
  * Có `thucThi` (tx): đếm trong chính giao dịch ⇒ thấy hàng chưa commit (ca kiểm bộ đếm: chèn 1 + 1 rồi đếm phải ra 1 + 1).
+ * ★ Hai đường chạy CÙNG `demQua` (một nguồn SQL): ca {1,1} qua tx kiểm đúng mã mà đường đo rò thật chạy — kết nối riêng chỉ là bộ thực thi bọc `postgres`.
  */
 export async function demHangRoRi(userId: number, url: string | undefined = process.env.DATABASE_URL, thucThi?: BoThucThiDem): Promise<HangRoRi> {
   if (!url || !/aoi_management_test/.test(url)) throw new Error("demHangRoRi: chỉ chạy trên CSDL aoi_management_test (DATABASE_URL)");
-  if (thucThi) {
-    const audit_logs = docSo(await thucThi.execute(sql`select count(*)::int as n from audit_logs where "userId" = ${userId}`));
-    const ai_pending_actions = docSo(await thucThi.execute(sql`select count(*)::int as n from ai_pending_actions where "userId" = ${userId}`));
-    return { audit_logs, ai_pending_actions, tong: audit_logs + ai_pending_actions };
-  }
+  if (thucThi) return demQua(thucThi, userId);
   const kn = postgres(url, { max: 1, connect_timeout: 10, idle_timeout: 5, onnotice: () => undefined });
   try {
-    const [a] = await kn`select count(*)::int as n from audit_logs where "userId" = ${userId}`;
-    const [p] = await kn`select count(*)::int as n from ai_pending_actions where "userId" = ${userId}`;
-    const audit_logs = Number(a?.n ?? 0);
-    const ai_pending_actions = Number(p?.n ?? 0);
-    return { audit_logs, ai_pending_actions, tong: audit_logs + ai_pending_actions };
+    const phuongNgu = new PgDialect();
+    return await demQua(
+      {
+        execute: async (truyVan) => {
+          const q = phuongNgu.sqlToQuery(truyVan);
+          return await kn.unsafe(q.sql, q.params as never[]);
+        },
+      },
+      userId,
+    );
   } finally {
     await kn.end({ timeout: 5 });
   }
