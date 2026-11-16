@@ -8,13 +8,12 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, count, eq } from "drizzle-orm";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 
-import { taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
+import { congCheckpointThat, taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
 import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
-import { auditLogs, users } from "../../drizzle/schema";
+import { auditLogs, permissions, users } from "../../drizzle/schema";
 import { banCoKhiPhatLai } from "./coAnhHuongByte";
 import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, tomTatGoi, type KenhGiaoDich } from "./kenhGiaoDich";
 import { cauBaoRoRi, demHangRoRi } from "./kiemRoRiDb";
@@ -75,9 +74,17 @@ interface KetQuaEp {
   roTruocRollback: Awaited<ReturnType<typeof demHangRoRi>>;
   /** số hàng audit_logs `ai_action_denied` mang userId người dùng thử, đếm TRONG giao dịch (chứng minh đường từ chối đã chạy thật) */
   daTuChoi: number;
+  /** số hàng audit_logs `ai_action_proposed` mang userId thử, đếm TRONG giao dịch (cặp proposed → denied) */
+  daDeXuat: number;
 }
 
-/** `lech`: chỉ làm lệch một lượt. `tu-choi-apply-diff`: thêm — NGAY lúc lượt bắt đầu, gốc hộp cát (`AI_REPO_SANDBOX_ROOTS`) bị đổi sang thư mục KHÁC dự án ⇒ gốc dự án không còn thuộc gốc hộp cát ⇒ lượt ghi `apply_diff` bị TỪ CHỐI. */
+/**
+ * `lech`: chỉ làm lệch một lượt (người gọi `admin`, ghi tệp được ĐỀ XUẤT rồi tự duyệt).
+ * `tu-choi-apply-diff`: thêm — tái hiện đúng kiểu rò sáng 16/11 (cặp `ai_action_proposed` → `ai_action_denied` + hàng `ai_pending_actions` của `apply_diff`):
+ * người gọi là vai `operator` có hàng quyền `ai_repo_read` (canView + canEdit) và `ai_repo_exec` ⇒ lượt chạy được và ĐỀ XUẤT được; rồi cổng checkpoint (tiêm) THU HỒI `canEdit` ngay trước bước duyệt
+ * ⇒ `confirmAction` bị từ chối ở RBAC lần 2 (`MISSING_PERMISSION`, stage execute): audit denied mang userId người dùng thử, hàng pending chuyển `denied`.
+ * `edit_file` / `write_file` đều đi qua `apply_diff`; `apply_diff` được MIỄN phạm vi nhà máy nên không dùng được `OUT_OF_SCOPE`. Chỉ UPDATE trong giao dịch ROLLBACK, không DELETE.
+ */
 type KieuEp = "lech" | "tu-choi-apply-diff";
 
 /** Chạy fixture lệch trong giao dịch ROLLBACK (đúng vỏ của phatLaiFixture.test.ts); `nemLoi` ⇒ ném MỘT lỗi trong thân (mô phỏng `expect` hỏng). Kết quả ghi vào `kq` (có cả khi ném). */
@@ -102,17 +109,32 @@ async function epDo(nemLoi: string | null, kq: Partial<KetQuaEp> = {}, kieu: Kie
         try {
           process.env.AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture|${goc}`;
           const p = taoStreamPhatLai(fx, { goc });
-          let daDoiGoc = false;
-          const stream: typeof p.stream = (o) => {
-            if (kieu === "tu-choi-apply-diff" && !daDoiGoc) {
-              daDoiGoc = true;
-              const ngoai = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "phat-lai-ngoai-hop-cat-")));
-              process.env.AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture|${ngoai}`;
+          const tuChoi = kieu === "tu-choi-apply-diff";
+          const uidNguoi = kq.uid;
+          if (tuChoi) {
+            for (const [mod, quyen] of [["ai_repo_read", { canView: true, canEdit: true }], ["ai_repo_exec", { canView: true, canCreate: true }]] as const) {
+              await tx.insert(permissions).values({ userId: uidNguoi, category: "dashboard", moduleName: mod, ...quyen });
             }
-            return p.stream(o);
-          };
-          const ql = taoQuanLyLuotChay({ goiModel: taoGoiModelMayChu({ chatStream: stream, khongGhiDauVet: true }) });
-          const lk = await ql.taoLuotChay({ user: { id: kq.uid, role: "admin" }, cauHoi: fx.lenh.cauHoi.split(TOKEN_GOC).join(goc), projectId: "phatlaifx", cheDo: fx.lenh.cheDo });
+          }
+          const ql = taoQuanLyLuotChay({
+            goiModel: taoGoiModelMayChu({ chatStream: p.stream, khongGhiDauVet: true }),
+            ...(tuChoi
+              ? {
+                  checkpoint: (userId: number) => {
+                    const that = congCheckpointThat(userId);
+                    return {
+                      chupTruocGhi: async (y: Parameters<typeof that.chupTruocGhi>[0]) => {
+                        // đề xuất ĐÃ qua RBAC lần 1; thu hồi quyền ghi NGAY TRƯỚC bước duyệt ⇒ RBAC lần 2 từ chối
+                        await tx.update(permissions).set({ canEdit: false }).where(and(eq(permissions.userId, uidNguoi), eq(permissions.moduleName, "ai_repo_read")));
+                        return that.chupTruocGhi(y);
+                      },
+                      chotSauGhi: that.chotSauGhi,
+                    };
+                  },
+                }
+              : {}),
+          });
+          const lk = await ql.taoLuotChay({ user: { id: kq.uid, role: tuChoi ? "operator" : "admin" }, cauHoi: fx.lenh.cauHoi.split(TOKEN_GOC).join(goc), projectId: "phatlaifx", cheDo: fx.lenh.cheDo });
           if (!lk.ok) throw new Error(`${lk.ma} ${lk.thongDiep ?? ""}`);
           await lk.luot.xong;
           kq.lech = p.lech.length;
@@ -128,6 +150,8 @@ async function epDo(nemLoi: string | null, kq: Partial<KetQuaEp> = {}, kieu: Kie
         if (kq.uid !== undefined) {
           const [d] = await tx.select({ n: count() }).from(auditLogs).where(and(eq(auditLogs.userId, kq.uid), eq(auditLogs.action, "ai_action_denied")));
           kq.daTuChoi = Number(d?.n ?? 0);
+          const [dx] = await tx.select({ n: count() }).from(auditLogs).where(and(eq(auditLogs.userId, kq.uid), eq(auditLogs.action, "ai_action_proposed")));
+          kq.daDeXuat = Number(dx?.n ?? 0);
         }
         kq.roTruocRollback = await demHangRoRi(kq.uid!);
         kenh.db = null;
@@ -164,8 +188,9 @@ describe.skipIf(!co)("phát lại — ép một ca ĐỎ: KHÔNG rò hàng ra ng
     kiemKhongLot(kenh);
   }, 300_000);
 
-  it("★★★ ép lượt GHI TỆP bị TỪ CHỐI (`edit_file` / `write_file` đều đi qua `apply_diff`; gốc dự án KHÔNG thuộc gốc hộp cát): đường từ chối đã chạy thật (có hàng `ai_action_denied` trong giao dịch) và KHÔNG hàng audit_logs / ai_pending_actions nào mang userId người dùng thử rò ra ngoài — trước lẫn sau ROLLBACK", async () => {
+  it("★★★ ép lượt GHI TỆP bị TỪ CHỐI (`edit_file` / `write_file` đều đi qua `apply_diff`; người gọi thiếu quyền ghi ⇒ `proposeAction` MISSING_PERMISSION): đường từ chối đã chạy thật (có hàng `ai_action_denied` trong giao dịch) và KHÔNG hàng audit_logs / ai_pending_actions nào mang userId người dùng thử rò ra ngoài — trước lẫn sau ROLLBACK", async () => {
     const k = await epDo(null, {}, "tu-choi-apply-diff");
+    expect(k.daDeXuat, "phải đã ĐỀ XUẤT (cặp proposed → denied)").toBeGreaterThan(0);
     expect(k.daTuChoi, "đường từ chối PHẢI đã chạy (nếu 0 ⇒ ca không ép được từ chối, không phải bằng chứng không rò)").toBeGreaterThan(0);
     const sau = await demHangRoRi(k.uid);
     const thongTin = `ai đã gọi getDb qua kênh: ${tomTatGoi(kenh)}; lot: ${kenh.lot.join(" | ").slice(0, 400)}`;

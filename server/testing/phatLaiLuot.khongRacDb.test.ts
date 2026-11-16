@@ -92,14 +92,19 @@ describe("phatLaiLuot.test.ts — không để lại hàng nào trong CSDL", () 
 
 describe("phatLaiFixture.epDo.db.test.ts — ca ép `apply_diff` bị từ chối, đếm theo userId", () => {
   const ep = fs.readFileSync(path.join(__dirname, "phatLaiFixture.epDo.db.test.ts"), "utf8");
-  it("★★★ ca thứ 3: đổi gốc hộp cát NGAY LÚC lượt bắt đầu, khẳng định đường từ chối đã chạy thật (đếm `ai_action_denied` theo userId TRONG giao dịch) rồi mới đo rò rỉ trước/sau ROLLBACK", () => {
-    expect(ep).toMatch(/kieu === "tu-choi-apply-diff" && !daDoiGoc/);
-    expect(ep).toMatch(/process\.env\.AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture\|\$\{ngoai\}`/);
+  it("★★★ ca thứ 3: ép từ chối THẬT ở RBAC lần 2 (cặp proposed → denied), khẳng định đường từ chối đã chạy thật (đếm `ai_action_denied` theo userId TRONG giao dịch) rồi mới đo rò rỉ trước/sau ROLLBACK", () => {
+    // đường từ chối THẬT: vai operator có hàng quyền, cổng checkpoint (tiêm) thu hồi canEdit giữa đề xuất và duyệt ⇒ cặp proposed → denied
+    expect(ep).toMatch(/role: tuChoi \? "operator" : "admin"/);
+    expect(ep).toMatch(/tx\.insert\(permissions\)/);
+    expect(ep).toMatch(/set\(\{ canEdit: false \}\)\.where\(and\(eq\(permissions\.userId, uidNguoi\), eq\(permissions\.moduleName, "ai_repo_read"\)\)\)[\s\S]{0,120}?return that\.chupTruocGhi\(y\)/);
+    expect(ep).toMatch(/eq\(auditLogs\.action, "ai_action_proposed"\)/);
+    expect(ep).toMatch(/expect\(k\.daDeXuat[\s\S]{0,120}?\)\.toBeGreaterThan\(0\)/);
+    expect(/AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture\|\$\{ngoai\}`/.test(ep), "không còn cách ép bằng đổi gốc hộp cát (không gây từ chối)").toBe(false);
     expect(ep).toMatch(/eq\(auditLogs\.action, "ai_action_denied"\)/);
     expect(ep).toMatch(/epDo\(null, \{\}, "tu-choi-apply-diff"\)/);
     expect(ep).toMatch(/expect\(k\.daTuChoi[\s\S]{0,200}?\)\.toBeGreaterThan\(0\)/);
     // đếm rò rỉ nằm TRƯỚC khi trả kênh
-    expect(ep).toMatch(/kq\.daTuChoi = [\s\S]{0,200}?kq\.roTruocRollback = await demHangRoRi\(kq\.uid!\);\s*kenh\.db = null;/);
+    expect(ep).toMatch(/kq\.daTuChoi = [\s\S]{0,500}?kq\.roTruocRollback = await demHangRoRi\(kq\.uid!\);\s*kenh\.db = null;/);
     expect(/\.delete\(|DELETE\s+FROM|TRUNCATE/i.test(boChuThich(ep))).toBe(false);
   });
 });
