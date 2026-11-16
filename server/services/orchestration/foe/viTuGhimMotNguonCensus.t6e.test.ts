@@ -76,6 +76,7 @@ const KIEM_KE: Record<string, string> = {
   "epKieuGiaTri\tserver/services/scada/kenhScada.ts\tkiemGiaTriGhi": "SCADA write check (range, step): not a pinned question",
   "epKieuKenh\tserver/services/ot/commandDispatcher.ts\tcongKenhSom": "dispatcher step 3b pass 1: the same coercion as gate (1)",
   "epKieuKenh\tserver/services/ot/commandDispatcher.ts\tepKieuGhiTheoTag": "THE coercion",
+  "matchPinnedStop\tserver/services/edge/edgeExecutionAgent.ts\tphu": "X-12 edge re-send from the verified sweep picture: matchPinnedStop(written, x.pins), arguments SWAPPED on purpose — first = what this node's own STOP wrote with success (usePins: pins of the verified config), second = the step's pins in the verified picture ⇒ the written set holds every pin of the step with the same value (X12-GHI-MOT-PHAN-GHIM-VAN-GUI / X12-GHI-DU-GHIM-THEM-TAG-PHU lock the order); both sides are pins (no coercion, not a second pin source); it only decides to SKIP a re-send, no match ⇒ re-sent",
   "matchPinnedStop\tserver/services/ot/aiControlGate.safety.ts\tmucKenhChoAi": "AI control gate (HMI pins): outside FOE, listed for the kiểm kê (T13/T16)",
   "matchPinnedStop\tserver/services/ot/commandDispatcher.ts\tclassifyOtStop": "the rule itself",
   "matchPinnedStop\tserver/services/ot/commandDispatcher.ts\tdispatchCore": "dispatcher, step-3 rows",

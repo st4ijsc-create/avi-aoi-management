@@ -1240,6 +1240,32 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", S9_DRIVER]);
   });
 
+  // HST 17/11 (sau khe nặng X-12): khoá THỨ TỰ đối số của matchPinnedStop trong `phu` (edgeExecutionAgent.ts, resendStops). Chữ ký là (pins, writes);
+  // X-12 gọi matchPinnedStop(written, x.pins) — ĐẢO có chủ ý ⇒ kiểm "tập tag đã ghi thành công chứa đủ ghim của bước, cùng giá trị" (hàng X-12).
+  // Gọi theo thứ tự chữ ký thì chỉ kiểm "tập đã ghi nằm trong tập ghim": một STOP ghi MỘT PHẦN ghim của bước sẽ bị coi là đã phủ (sai theo hướng mở).
+  const S9_HAI_GHIM = { ...S9, pins: [{ tagKey: "run", value: false }, { tagKey: "halt", value: true }] };
+  it("X12-GHI-MOT-PHAN-GHIM-VAN-GUI (1-đối chứng, thứ tự đối số) s9 has TWO pins (run=false, halt=true); the queued STOP on adapter 21 succeeded but wrote only run=false ⇒ not every pin of s9 was written: not covered, s9 is sent (both pins)", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h, () => ({ written: [{ tagKey: "run", value: false }] }));
+    const d = dongHo(h);
+    const ab = d.now - 5_000;
+    h.central.commands = [stopDaXep(h, 120, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 80, picture: h.central.sign("runpkg", anh(h, 80, { verifiedStops: [S9_HAI_GHIM], abortedAt: ab })) }];
+    await quaCuaSo(h, d, new Map([[80, ab]]));
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", 'stopAdapter:21:[{"tagKey":"run","value":false},{"tagKey":"halt","value":true}]']);
+  });
+
+  it("X12-GHI-DU-GHIM-THEM-TAG-PHU (1, thứ tự đối số) s9 has one pin (run=false); the queued STOP on adapter 21 succeeded and wrote run=false AND another tag (halt=true) ⇒ every pin of s9 was written with its value: covered, adapter 21 reaches the driver once", async () => {
+    const h = await harness({ claimRuns: false });
+    congCoWritten(h, () => ({ written: [{ tagKey: "run", value: false }, { tagKey: "halt", value: true }] }));
+    const d = dongHo(h);
+    const ab = d.now - 5_000;
+    h.central.commands = [stopDaXep(h, 121, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 81, picture: h.central.sign("runpkg", anh(h, 81, { abortedAt: ab })) }];
+    await quaCuaSo(h, d, new Map([[81, ab]]));
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config"]);
+  });
+
   it("X12-SIMULATED-VAN-GUI (1-đối chứng) the queued STOP on adapter 21 was only SIMULATED ⇒ nothing was written: s9 is sent", async () => {
     const h = await harness({ claimRuns: false });
     congCoWritten(h, () => ({ outcome: "simulated" })); // the port even says what it would have written: simulated is still no STOP

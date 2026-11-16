@@ -9,6 +9,12 @@
  *   failed / chuaXacMinh / adapterNut; hàm liệt kê trả run sau 3 123 ms, quá cửa sổ thì không; lần bấm hai: resend ok sau 282 ms, đúng 1 hàng yêu cầu STOP cho nút (giao sau 237 ms),
  *   câu (d) đúng phần mở đầu. Mọi khẳng định X-11 xanh. ĐỎ đúng ba tên dự kiến (expect.soft): hai Q1-PG-STOP-TRONG-CUA-SO và Q1-PG-X11-CHU-D-DUOI (đuôi thật: "Could not be verified as
  *   a pinned STOP: r1, r2, c1: …"; nguyên nhân: fixture, xem chú thích tại khẳng định đó và tam/do64-bao-cao.md mục 11).
+ * SỬA SAU LƯỢT 6 (17/11, HST duyệt sau khe nặng X-12 ở e273de8d6): HAI chỗ đổi MÃ (không chỉ chú thích) so với tệp đã chạy ở lượt 6; KHÔNG đổi câu SQL, giá trị chèn hay
+ *   khẳng định nào. (1) seed, lệnh chèn `runEdgeAssignments`: bỏ `as never` ở đối số của values(...) và viết `runId: ids.run!` — đối tượng là literal không có cột id, nay census
+ *   wormIdTuongMinhCensus ĐỌC được điều đó (trước: ép kiểu che literal ⇒ `drizzle_bien`, không biết có id hay không); cùng cách viết với edgeHeldConsume / edgeJournalStallAlert /
+ *   edgeListDocHet .db.test.ts. (2) khai báo `kq1`: `let kq1 = null as T | null` thay cho `let kq1: T | null = null` — kq1 được gán trong closure, kiểu khai cũ bị TS thu hẹp về `null`
+ *   ⇒ TS2339 trên `never` ở hai khẳng định Q1-PG-X11-BAM-MOT-CHO-NUT / Q1-PG-X11-CHU-A (tsc -p tsconfig.tests.json). Bằng chứng lượt 6 vẫn áp cho HÀNH VI; lần chạy tay kế tiếp theo
+ *   Y-01 mới xác nhận lại tệp sau sửa.
  * KHI CHẠY TAY (HST 17/11, phương án A): ba khẳng định ĐỎ có chủ ý — hai Q1-PG-STOP-TRONG-CUA-SO đỏ là ĐÚNG THIẾT KẾ X-11 (lần bấm một để STOP của adapter nút cho nút gửi, trung tâm
  *   không gửi); Q1-PG-X11-CHU-D-DUOI đỏ do FIXTURE (r1 `set_value` trên máy AUTOMATION, chèn thẳng bỏ qua validateWorkflow; sửa 1 dòng đã biết: `set_machine_param` trong helper ot(),
  *   để dành cho lượt sau). Ca là describe.skip có tên khi vắng Q1_PG_CHAY (cổng thường bỏ qua) và CHỈ chạy tay theo Y-01 trong lượt của phiên điều phối; mỗi lượt để lại ~7 hàng WORM.
@@ -241,7 +247,7 @@ async function dungFixture(db: Db) {
   ids.run = run!.id;
   // eslint-disable-next-line no-console
   console.log("Q1PG ids", JSON.stringify({ run: ids.run, workflow: ids.workflow, node: ids.node, adapter: ids.adapter, tag: ids.tag, nhan: NHAN }));
-  await db.insert(runEdgeAssignments).values({ runId: ids.run, edgeNodeId: ids.node!, workflowId: wf!.id, workflowVersion: 1, defHash: hashWorkflowDefinition(def as never), assignedBy: USER_Q1_PG } as never);
+  await db.insert(runEdgeAssignments).values({ runId: ids.run!, edgeNodeId: ids.node!, workflowId: wf!.id, workflowVersion: 1, defHash: hashWorkflowDefinition(def as never), assignedBy: USER_Q1_PG });
   // 0370:125-141 (edge_run_assignment_insert_guard): assignment chỉ chèn được khi run đang 'queued' ⇒ đưa run sang 'running' SAU khi gán nút
   await db.execute(sql`UPDATE orchestration_runs SET status = 'running' WHERE id = ${ids.run} AND "workflowRef" LIKE ${NHAN + "%"}`);
   // hàng của cổng và của r1 (đã gửi, kết quả mất): như một đoạn 2 mà r1 trả kết cục không rõ
@@ -420,7 +426,7 @@ if (!CHAY) console.info(`[Q1-PG] describe.skip: ${LY_DO_SKIP}`);
   it("★ held() waits at its end gate holding the run row lock (only its URGENT hangs); an Abort pressed meanwhile answers abortUnconfirmed within 18·D and hands the owed STOP over once within 7·D while A still holds the lock, with no deadlock and nothing left behind; after X-11, once 'aborted' lands the node's listing carries the run for s9 and a second press queues s9 for the node exactly once", async () => {
     let tongWorm = 0;
     // bản 8 — giá trị của lần bấm một, giữ ra ngoài khối đo để khẳng định SAU khi đo xong hình sau X-11 (đo trước, khẳng định sau: một khẳng định đỏ không cắt mất phần đo còn lại)
-    let kq1: { ok?: boolean; reason?: string; message?: string; abortStops?: { choNut?: string[]; sent?: string[]; unverified?: string[] } } | null = null;
+    let kq1 = null as { ok?: boolean; reason?: string; message?: string; abortStops?: { choNut?: string[]; sent?: string[]; unverified?: string[] } } | null;
     let t0Bam = "";
     let urgentBam1: Array<{ kind: string; dedupKey: string; title: string; treo: boolean; luc: string }> = [];
     let soUyQuyen = -1; // -1 = chưa đếm được
