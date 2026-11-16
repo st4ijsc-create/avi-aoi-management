@@ -2855,6 +2855,468 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(hang46(e.runId, "cst")).toMatchObject({ status: "compensated" });
     expect(runRow(e.runId).status).toBe("failed");
   });
+  // ── DO-62 / lô X-11 commit 1 (chỉ test; scada-master 17/11). Căn cứ: hàng X-11 của AGENTS-ngoai-le.md (main a1eac8465, dòng 21) + thiết kế tam/p1b-thiet-ke.md (S-1..S-3; V3-4 (a1); chữ V2-4, V2-8, V3-2).
+  // Hình Q-1 của PG lượt 5 (run 172469) trên FakeDb, gọi TUẦN TỰ (FakeDb không khoá: for() là no-op, giao dịch không cách ly):
+  // (1) Abort khi run còn 'running', chưa chốt, walker của nút đã hết, kết nối chạy KHÔNG xác nhận được ở trung tâm (h.connOk = false), adapter 501 của nút (h.chuEdge), lần ghi 'aborted' trễ 3·D;
+  // (2) A commit 'held' có chốt (rider BAO_A, applyEdgeSegmentEnd gọi trực tiếp) và XOÁ token claim trong cùng giao dịch (complete: EC advance clearToken); (3) 'aborted' rơi vào; (4) bấm lần hai.
+  // Token claim: claimPackage của harness không đặt claimTokenHash; ca đặt nó lúc claim đoạn 2 (như EC claim) và xoá ở (2). Kỳ vọng theo hàng X-11 và thiết kế, không chép mã; tên cờ của vết KHÔNG ghim:
+  // ca đọc kết quả của docRunAbortCanGuiLaiStop thật (pull của ca đọc hàng bước qua bộ đọc của FakeDb, với where của chính mã), và ở bộ kiểm STOP chỉ ghim "có ĐÚNG MỘT trường thêm, là tập các STOP ghim đọc được mà thiếu kết nối".
+  // it.fails = đỏ trước sửa; đổi thành it ở commit 2 (X-11).
+  const NUT62 = { nodeId: NODE, nodeCode: "EDGE-A", credentialId: 1, factoryCode: "F1" } as never;
+  const TOKEN62 = "ect_" + "c".repeat(43);
+  const PIN62 = async (_d: unknown, i: { commandType: string }) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }); // chỉ STOP là ghim
+  const asg62 = (id: number): Row => rows("orchestration_run_edge_assignments").find((r) => r.runId === id)!;
+  /** central's pull with this case's rows: the assignment row as it stands (its claim token included), then the step rows through the fake's own reader, filtered by the code's own where (mocked operators) */
+  const dbPull62 = (runIds: number[]) => ({
+    select: (pr?: unknown) => ({
+      from: (t: any) =>
+        t?.[Symbol.for("drizzle:Name")] === "orchestration_run_edge_assignments"
+          ? { innerJoin: () => ({ where: () => ({ orderBy: () => ({ limit: async () => runIds.map((id) => ({ a: { ...asg62(id) }, finishedAt: runRow(id).finishedAt })) }) }) }) }
+          : (fake as any).select(pr).from(t),
+    }),
+  });
+  const lietKe62 = async (runIds: number[]) => (await docRunAbortCanGuiLaiStop(dbPull62(runIds) as never, NUT62)).hang.map((r) => r.a.runId);
+  const s9Cua62 = (c: number, tu = 0, den?: number) => h.sent.slice(tu, den).filter((x) => x.runId === c && x.stepId === "s9");
+  /** central's dispatcher queued it for the node (routeEdgeOwnedAdapterCommand of the mock: h.chuEdge) */
+  const xepChoNut62 = (c: number, tu = 0, den?: number) => s9Cua62(c, tu, den).filter((x) => x.xepChoNut === true);
+  /** reached a driver: not a no-write answer */
+  const toiDriver62 = (c: number, tu = 0, den?: number) => s9Cua62(c, tu, den).filter((x) => x.khongGhi !== true);
+  const tomTat62 = (c: number, tu = 0, den?: number) => s9Cua62(c, tu, den).map((x) => ({ key: String(x.key).replace(/run\d+/, "run#").replace(/#stop-.*/, "#stop-…"), edge: x.edge != null, khongGhi: x.khongGhi === true, xepChoNut: x.xepChoNut === true }));
+  const hang62 = (c: number, id: string) => {
+    const r = stepRows(c).find((x) => x.stepId === id);
+    return r ? { status: r.status, abortStop: (r.resultJson as any)?.abortStop ?? null, kq: (r.resultJson as any)?.status ?? null, error: r.error ? String(r.error).slice(0, 160) : null } : null;
+  };
+  const cho62 = async (dk: () => boolean, tran: number, buoc = 25) => {
+    for (let t = 0; !dk() && t < tran; t += buoc) await vi.advanceTimersByTimeAsync(buoc);
+    return dk();
+  };
+  const wait62 = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const tre62 = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+  /** (1)–(3) of the PG shape. ghimLoi: at press 1 central's pin read throws (h.classifyLoi, as T7B2-P4-VET) or its batch read of the pins fails (device_tags, SC:308) */
+  async function chuoi62(ref: string, o: { ghimLoi?: "classify" | "lo" } = {}) {
+    const D = STOP_DB_STEP_DEADLINE_MS;
+    ghimHalt();
+    h.ghim = PIN62;
+    const d = def(ref, [gate(), move("r1", { compensation: ot("c1") }), move("r2"), otStop("s9")]);
+    const e = await edgeAssignedRun(d);
+    const c = e.runId;
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const n0 = h.sent.length;
+    // segment 2 as the PG case seeds it: claimed ('running', claimSeq 2, the node's claim token set), r1 handed over and running; the node's walker already gone; its complete (held) is A's, step (2)
+    const goi = await claimPackage(e, 2);
+    asg62(c).claimTokenHash = hashEdgeSecret(TOKEN62);
+    await recordEdgeStepRows(fake as never, c, [{ stepId: "r1", stepType: "command", status: "running", attempt: 1, startedAt: new Date(), finishedAt: null, error: null, result: { routedTo: "robot-dispatcher" } }] as never);
+    const m: Record<string, any> = { ref, D, ghimLoi: o.ghimLoi ?? null };
+    expect(runRow(c).status, "A not applied yet: the run reads 'running'").toBe("running");
+    expect(((runRow(c).contextJson ?? {}) as Record<string, any>)[KET_CUC_KHONG_RO_CHOT_CTX_KEY] ?? null, "no latch at central yet").toBeNull();
+    expect(coWalkerSongTrongProcess(c), "the node's walker is gone (no liveRuns entry)").toBe(false);
+    // (1) the press, unconfirmed
+    const n1 = h.sent.length;
+    const l1 = h.chuEdgeLan;
+    const u0 = h.alerts.length;
+    h.connOk = false;
+    h.chuEdge.set(501, NODE);
+    if (o.ghimLoi === "classify") h.classifyLoi = true;
+    if (o.ghimLoi === "lo") h.docNem = { bang: "device_tags", lan: Number.POSITIVE_INFINITY };
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    h.treAborted = 3 * D;
+    const tBam = Date.now();
+    let xong1 = false;
+    const ab1 = abortRun(c, OWNER, "checked on site").finally(() => {
+      xong1 = true;
+    });
+    expect(await cho62(() => xong1, 2 * D), "press 1 answered before the late write").toBe(true);
+    const kq1 = (await ab1) as Record<string, any>;
+    const n2 = h.sent.length;
+    const u1 = h.alerts.length;
+    const urg1 = h.alerts.slice(u0, u1).map((a) => `${a.title ?? ""} ${a.message ?? ""}`);
+    m.docNemLan = h.docNemLan;
+    h.classifyLoi = false;
+    h.docNem = null;
+    m.bam1 = { ms: Date.now() - tBam, ok: kq1.ok, reason: kq1.reason ?? null, sent: kq1.abortStops?.sent ?? null, failed: kq1.abortStops?.failed ?? null, unverified: kq1.abortStops?.unverified ?? null, xepChoNut: xepChoNut62(c, n1, n2).length, toiDriver: toiDriver62(c, n1, n2).length, chuEdgeLan: h.chuEdgeLan - l1, runStatus: runRow(c).status, vet: hang62(c, "abort:s9"), message: String(kq1.message ?? ""), urg: urg1 };
+    // (2) A commits 'held' with its latch, the token cleared in the same transaction: the end of the PG case (heldReason journalFull, the rider BAO_A: held r1 / c1, EDGE_OUTCOME_UNKNOWN, claim 2), as the wire carries it
+    const { ganBaoCaoKhongRoEdge, TRAN_LOI_EDGE } = await import("./foeKetCucKhongRo");
+    const loiA = ganBaoCaoKhongRoEdge("EDGE_OUTCOME_UNKNOWN(r1): sent, but the result could not be recorded (journal: journal_full) — never sent again; the run is held.", [{ loai: "held", stepId: "r1", compId: "c1", ma: "EDGE_OUTCOME_UNKNOWN", claimSeq: 2 }], TRAN_LOI_EDGE);
+    let xong2 = false;
+    const ap = (async () => {
+      const end2 = await quaDayThat({ outcome: "held", heldReason: "journalFull", error: loiA }, 2);
+      const ket = await applyEdgeSegmentEnd(fake as never, c, { ...(end2 as any), nodeCode: "EDGE-A", claimSeq: 2, def: d });
+      asg62(c).claimTokenHash = null;
+      await baoKetThucKhongQuetSauDoanEdge(c, ket);
+    })().finally(() => {
+      xong2 = true;
+    });
+    expect(await cho62(() => xong2, Math.max(0, tBam + 3 * D - Date.now() - 50)), "A committed before the late write").toBe(true);
+    await ap;
+    const n3 = h.sent.length;
+    m.sauA = { status: runRow(c).status, chot: ((runRow(c).contextJson ?? {}) as Record<string, any>)[KET_CUC_KHONG_RO_CHOT_CTX_KEY] ?? null, token: asg62(c).claimTokenHash ?? null, s9: tomTat62(c, n2, n3) };
+    // (3) the late 'aborted' lands
+    expect(await cho62(() => runRow(c).status === "aborted", 4 * D), "the late write landed").toBe(true);
+    await vi.advanceTimersByTimeAsync(50);
+    const n4 = h.sent.length;
+    const lap = await lietKe62([c]);
+    // the same moment, had the node still held a claim of the run
+    asg62(c).claimTokenHash = hashEdgeSecret(TOKEN62);
+    const lapGiu = await lietKe62([c]);
+    asg62(c).claimTokenHash = null;
+    m.sauTre = { status: runRow(c).status, finishedAt: runRow(c).finishedAt ? "co" : null, lap, lapGiu, vet: hang62(c, "abort:s9"), s9: tomTat62(c, n3, n4) };
+    vi.useRealTimers();
+    console.log("KETLUAN62 " + JSON.stringify(m));
+    return { c, d, e, goi, kq1, urg1, n0, n1, n2, n3, n4, lap, lapGiu, m };
+  }
+  /** (4) the second press, real timers */
+  async function bamHai62(x: Awaited<ReturnType<typeof chuoi62>>) {
+    const { c } = x;
+    const n4 = h.sent.length;
+    const l4 = h.chuEdgeLan;
+    const kq2 = (await abortRun(c, OWNER, "press again")) as Record<string, any>;
+    await new Promise((r) => setTimeout(r, 80));
+    const n5 = h.sent.length;
+    await new Promise((r) => setTimeout(r, 150));
+    const m = { ok: kq2.ok, reason: kq2.reason ?? null, resend: kq2.resend ?? null, sent: kq2.abortStops?.sent ?? null, failed: kq2.abortStops?.failed ?? null, unverified: kq2.abortStops?.unverified ?? null, xepChoNut: xepChoNut62(c, n4, n5).length, toiDriver: toiDriver62(c, n4, n5).length, chuEdgeLan: h.chuEdgeLan - l4, vongTuDong: h.sent.length - n5, runStatus: runRow(c).status, vet: hang62(c, "abort:s9"), message: String(kq2.message ?? "") };
+    console.log(`KETLUAN62B2 ${x.m.ref} ` + JSON.stringify(m));
+    return { kq2, n4, n5, m };
+  }
+  /** the node's signed picture, once: the package of segment 2 (its verifiedStops, central's analyseDefinition checks no connection) + the prior of central's rows; sent as the agent does (resendStopsOfAbortedRun +
+   * createEdgeSweepStore); its record applied at central as applySweepStop does (completed / simulated ⇒ abort:s9 completed; failed ⇒ no row change) */
+  async function anh62(x: Awaited<ReturnType<typeof chuoi62>>) {
+    const { c } = x;
+    const finishedAt = new Date(runRow(c).finishedAt).getTime();
+    const anh = { ...(x.goi as unknown as Record<string, unknown>), kind: "sweep_picture", prior: edgePriorPictureOf(stepRows(c) as unknown as Parameters<typeof edgePriorPictureOf>[0]), issuedAt: Date.now(), abortedAt: finishedAt } as unknown as import("../../edge/edgeProtocol").EdgeSweepPicture;
+    const recs: Array<Record<string, any>> = [];
+    const { resendStopsOfAbortedRun } = await import("./foeEngine");
+    const { createEdgeSweepStore } = await import("../../edge/edgeRunStore");
+    const m0 = h.sent.length;
+    const kq = (await resendStopsOfAbortedRun(anh, { id: 0, role: "system", name: "edge: agent" }, createEdgeSweepStore(anh, { abortStop: (rec) => void recs.push(rec as never) }))) as Record<string, any>;
+    await new Promise((r) => setTimeout(r, 50));
+    const m1 = h.sent.length;
+    for (const rec of recs) {
+      if (rec.stepId !== "s9" || rec.status !== "completed") continue;
+      const sim = (rec.result as { status?: unknown } | null)?.status === "simulated";
+      await recordEdgeStepRows(fake as never, c, [{ stepId: "abort:s9", stepType: "command", status: "completed", attempt: 0, startedAt: new Date(), finishedAt: new Date(), error: null, result: { abortStop: sim ? "simulated" : "sent", stepId: "s9", via: "sweep_picture" } }] as never);
+    }
+    const ra = { ok: kq.ok ?? null, reason: kq.reason ?? null, rec: recs.map((r) => `${r.stepId}:${r.status}`), s9: tomTat62(c, m0, m1), vet: hang62(c, "abort:s9") };
+    console.log(`KETLUAN62ANH ${x.m.ref} ` + JSON.stringify(ra));
+    return { m0, m1, ...ra };
+  }
+  it("T4-B3-Q1-HAI-LAN-BAM-HIEN-TRANG (X-11 commit 1, ca thường: phần KHÔNG đổi ở commit 2) Abort chưa xác nhận lúc A còn giữ khoá, walker của nút đã hết ⇒ trung tâm không gửi gì, abortUnconfirmed; A commit 'held' có chốt; 'aborted' rơi vào muộn; bấm lần hai ⇒ s9 xếp cho nút ĐÚNG một lần, không tới driver nào", async () => {
+    const x = await chuoi62("x11hb");
+    const { c, kq1 } = x;
+    // (1)
+    expect(kq1).toMatchObject({ ok: false, reason: "abortUnconfirmed" });
+    expect(kq1.abortStops?.sent ?? [], "handed: 0").toEqual([]);
+    expect(kq1.abortStops?.unverified ?? [], "s9 not verified at central").toContain("s9");
+    expect(xepChoNut62(c, x.n1, x.n2), "press 1: nothing queued for the node").toEqual([]);
+    expect(x.m.bam1.chuEdgeLan, "press 1: central's route to the node's adapter never asked").toBe(0);
+    expect(toiDriver62(c, x.n1, x.n2), "press 1: s9 reached no driver").toEqual([]);
+    expect({ status: x.m.bam1.vet?.status, abortStop: x.m.bam1.vet?.abortStop }, "the trace of the unverified STOP").toEqual({ status: "failed", abortStop: "chuaXacMinh" });
+    expect(x.m.bam1.runStatus, "the late write not landed at the answer").toBe("running");
+    // (2)
+    expect(x.m.sauA.status).toBe("held");
+    expect(x.m.sauA.chot, "held WITH its latch").toBeTruthy();
+    expect(x.m.sauA.token, "A's complete cleared the node's claim").toBeNull();
+    expect(x.m.sauA.s9, "A sends nothing").toEqual([]);
+    // (3) — DO-60 khẳng định thêm "x.lap = []" (P4 EDGE-VET); commit 2 đổi nó thành [c]: kỳ vọng mới nằm ở T4-B3-Q1-P1B-LAN-MOT, không khẳng định ở đây
+    expect(x.m.sauTre.status).toBe("aborted");
+    expect(x.lapGiu, "the node still holding a claim: not listed for its picture (before X-11 and after)").toEqual([]);
+    expect(x.m.sauTre.s9, "nobody sends s9 when 'aborted' lands").toEqual([]);
+    // (4)
+    const b = await bamHai62(x);
+    expect(b.kq2.resend, "the second press is the resend of an aborted run").toBe(true);
+    expect(xepChoNut62(c, b.n4, b.n5).length, "press 2: s9 queued for the node exactly once").toBe(1);
+    expect(b.m.chuEdgeLan, "press 2: one answer of the node's route").toBe(1);
+    expect(toiDriver62(c, b.n4, b.n5), "press 2: no other hand-over reached a driver").toEqual([]);
+    expect(b.m.vongTuDong, "no automatic loop after it").toBe(0);
+    expect(toiDriver62(c, x.n0), "over the whole chain from segment 2: s9 reached no driver at central").toEqual([]);
+    expect(runRow(c).status).toBe("aborted");
+  });
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-11). X-11: vết abort:s9 của STOP ghim ĐỌC ĐƯỢC trên adapter của nút, chỉ thiếu kết nối ⇒ run được liệt kê cho ảnh của nút CHỈ khi nút không còn claim;
+  // ảnh gửi s9 tới driver của nút một lần, trung tâm xác nhận ⇒ run rời danh sách; lần bấm hai sau đó không xếp thêm gì (STOP đã xác nhận không gửi lại; bất biến 16/11)
+  it.fails("T4-B3-Q1-P1B-LAN-MOT (X-11, it.fails) the same chain: once 'aborted' lands and the node holds no claim, the node's picture lists the run for s9; its send reaches the node's driver once and confirms it; a second press then queues nothing", async () => {
+    const x = await chuoi62("x11lm");
+    const { c, kq1 } = x;
+    expect(kq1).toMatchObject({ ok: false, reason: "abortUnconfirmed" });
+    expect(x.m.bam1.xepChoNut + x.m.bam1.toiDriver, "press 1: central sends s9 nowhere").toBe(0);
+    expect(x.m.sauTre.status).toBe("aborted");
+    expect(x.lapGiu, "the node still holds a claim: not listed").toEqual([]);
+    expect(x.lap, "X-11: the trace of s9 (the node's adapter, pins read, only the connection not central's) lists the run for the node's signed picture").toEqual([c]);
+    const a = await anh62(x);
+    expect(toiDriver62(c, a.m0, a.m1).length, "the picture's send reaches a driver once").toBe(1);
+    expect(toiDriver62(c, a.m0, a.m1)[0]?.edge, "by the node's own dispatcher").not.toBeNull();
+    expect(a.vet?.status, "central confirmed it").toBe("completed");
+    expect(await lietKe62([c]), "confirmed: off the list").toEqual([]);
+    const b = await bamHai62(x);
+    expect(xepChoNut62(c, b.n4, b.n5), "press 2: a STOP confirmed is not queued again").toEqual([]);
+    expect(toiDriver62(c, b.n4, b.n5)).toEqual([]);
+    expect(toiDriver62(c, x.n0).length, "over the chain: s9 reached a driver once (16/11)").toBe(1);
+    expect(xepChoNut62(c, x.n0)).toEqual([]);
+  });
+  /** a run whose segment 3 is the node's: g1, x (acts), g2, then r1, w, s9 on the node; the node claimed segment 3 (token set); central's press sees no walker of its own (it lives on the node) */
+  async function denNut62(ref: string) {
+    ghimHalt();
+    h.ghim = PIN62;
+    const e = await edgeAssignedRun(def(ref, [gate(), ot("x"), gate("g2"), move("r1"), tre62("w", 1_500), otStop("s9")]));
+    const c = e.runId;
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    await edgeSegment(e, 2);
+    await approveEdgeGate(e);
+    const n0 = h.sent.length;
+    await claimPackage(e, 3);
+    asg62(c).claimTokenHash = hashEdgeSecret(TOKEN62);
+    h.connOk = false;
+    h.chuEdge.set(501, NODE);
+    const kq1 = (await abortRun(c, OWNER, "the walker on the node")) as Record<string, any>;
+    await wait62(40);
+    const vet1 = hang62(c, "abort:s9");
+    const lapGiu = await lietKe62([c]);
+    const truoc = { status: runRow(c).status, finishedAt: runRow(c).finishedAt };
+    h.connOk = true; // the node's package: central's analyseDefinition checks no connection (EAn:171-177); h.chuEdge stays (central's route only)
+    return { e, c, n0, kq1, vet1, lapGiu, truoc };
+  }
+  it("T4-B3-Q1-DOI-CHUNG-WALKER-SONG (X-11, đối chứng, cổng hetClaim) central's Abort while the node still holds the run's claim (its walker walks there): the trace of s9 lists NO run for the picture; the walker's own sweep sends s9; s9 reaches a driver ONCE, central queues nothing; once the segment's records land and the claim is cleared: still not listed", async () => {
+    const x = await denNut62("x11ws");
+    const { e, c, n0 } = x;
+    expect(runRow(c).status).toBe("aborted");
+    expect(x.kq1.abortStops?.unverified ?? [], "s9 not verified at central (no connection here)").toContain("s9");
+    expect(s9Cua62(c, n0), "central's press sends s9 nowhere").toEqual([]);
+    expect({ status: x.vet1?.status, abortStop: x.vet1?.abortStop }, "the trace of the press").toEqual({ status: "failed", abortStop: "chuaXacMinh" });
+    expect(x.lapGiu, "the node holds a claim of the run: not listed (X-11: only once the node holds no claim)").toEqual([]);
+    const song: { v: Awaited<ReturnType<typeof stopLiveRunForCentralAbort>> | null; walker: boolean | null; lap: number[] | null } = { v: null, walker: null, lap: null };
+    await edgeSegment(e, 3, {
+      beforeEnd: async () => {
+        runRow(c).status = x.truoc.status; // the harness's claimPackage wrote 'running': central's row stays 'aborted'
+        runRow(c).finishedAt = x.truoc.finishedAt;
+        await waitFor(() => e.records.some((r: any) => r.kind === "step" && r.stepId === "w" && r.status === "running"), "the walker in w");
+        song.walker = coWalkerSongTrongProcess(c);
+        song.v = await stopLiveRunForCentralAbort(c, EDGE_CENTRAL_ABORT_USER);
+        song.lap = await lietKe62([c]);
+      },
+    });
+    await wait62(150);
+    asg62(c).claimTokenHash = null; // the segment's complete: every record of it at central, the token cleared
+    const lapSau = await lietKe62([c]);
+    console.log("KETLUAN62DC " + JSON.stringify({ walker: song.walker, live: song.v?.live ?? null, sent: song.v?.abortStops?.sent ?? null, lapGiu: x.lapGiu, lapSong: song.lap, lapSau, s9: tomTat62(c, n0), vet: hang62(c, "abort:s9"), status: runRow(c).status }));
+    expect(song.walker, "the walker is live at its sweep").toBe(true);
+    expect(song.v?.live).toBe(true);
+    expect(song.lap, "the walker live, the claim held: not listed").toEqual([]);
+    expect(toiDriver62(c, n0).length, "s9 reaches a driver exactly once (the 16/11 invariant)").toBe(1);
+    expect(toiDriver62(c, n0)[0]?.edge, "by the node's own dispatcher").not.toBeNull();
+    expect(xepChoNut62(c, n0), "central queued nothing for the node").toEqual([]);
+    expect(h.chuEdgeLan).toBe(0);
+    expect(hang62(c, "abort:s9")?.status, "the walker's answer confirms it at central").toBe("completed");
+    expect(lapSau, "confirmed: not listed once the claim is cleared").toEqual([]);
+    expect(runRow(c).status).toBe("aborted");
+  });
+  it("T4-B3-Q1-X11-A1-VET-CO-HANG-XONG (X-11 (a1), ca thường; lưới cho bộ lọc lúc liệt kê) central's Abort leaves its trace of s9 (pins read, no connection here); the node's walker, not told yet, sends s9 as its forward step and it completes; the claim cleared: the run is NOT listed (a STOP whose own row is completed is not re-sent); s9 reached a driver once", async () => {
+    const x = await denNut62("x11vx");
+    const { e, c, n0 } = x;
+    expect({ status: x.vet1?.status, abortStop: x.vet1?.abortStop }).toEqual({ status: "failed", abortStop: "chuaXacMinh" });
+    await edgeSegment(e, 3, {
+      beforeEnd: async () => {
+        runRow(c).status = x.truoc.status;
+        runRow(c).finishedAt = x.truoc.finishedAt;
+      },
+    });
+    await wait62(150);
+    asg62(c).claimTokenHash = null;
+    const lap = await lietKe62([c]);
+    console.log("KETLUAN62VX " + JSON.stringify({ lap, s9: tomTat62(c, n0), vet: hang62(c, "abort:s9"), hangS9: hang62(c, "s9"), status: runRow(c).status }));
+    expect(hang62(c, "s9")?.status, "s9's own row: completed by the walker").toBe("completed");
+    expect(hang62(c, "abort:s9")?.status, "the press's trace is still there").toBe("failed");
+    expect(toiDriver62(c, n0).length, "s9 reached a driver once").toBe(1);
+    expect(lap, "its own row completed, no unconfirmed mark: not listed").toEqual([]);
+    expect(runRow(c).status).toBe("aborted");
+  });
+  it("T4-B3-Q1-X11-GHIM-KHONG-DOC (X-11, ca thường; giữ T7B2-P4-VET) the same chain, central's pin read throws at press 1 (h.classifyLoi): its trace stays central's own (chuaXacMinh, no node flag), the run NOT listed for the picture even with the claim cleared; nothing sent", async () => {
+    const x = await chuoi62("x11gk", { ghimLoi: "classify" });
+    const { c } = x;
+    expect(x.kq1).toMatchObject({ ok: false, reason: "abortUnconfirmed" });
+    expect({ status: x.m.bam1.vet?.status, abortStop: x.m.bam1.vet?.abortStop }, "the trace exists").toEqual({ status: "failed", abortStop: "chuaXacMinh" });
+    expect(x.m.sauTre.status).toBe("aborted");
+    expect(x.m.sauA.token, "no claim").toBeNull();
+    expect(x.lap, "pins not read: not listed").toEqual([]);
+    expect(toiDriver62(c, x.n0)).toEqual([]);
+    expect(xepChoNut62(c, x.n0)).toEqual([]);
+  });
+  it("T4-B3-Q1-X11-LOI-LO (X-11, ca thường) the same chain, central's batch read of the pins fails at press 1 (device_tags, SC:308): its trace stays central's own, the run NOT listed even with the claim cleared; nothing sent", async () => {
+    const x = await chuoi62("x11ll", { ghimLoi: "lo" });
+    const { c } = x;
+    expect(x.m.docNemLan, "the pin read reached its failure").toBeGreaterThan(0);
+    expect(x.kq1).toMatchObject({ ok: false, reason: "abortUnconfirmed" });
+    expect({ status: x.m.bam1.vet?.status, abortStop: x.m.bam1.vet?.abortStop }, "the trace exists").toEqual({ status: "failed", abortStop: "chuaXacMinh" });
+    expect(x.m.sauTre.status).toBe("aborted");
+    expect(x.m.sauA.token).toBeNull();
+    expect(x.lap, "batch read failed: not listed").toEqual([]);
+    expect(toiDriver62(c, x.n0)).toEqual([]);
+    expect(xepChoNut62(c, x.n0)).toEqual([]);
+  });
+  // ── (a1): một hàng `abort:<id>` failed mà hàng của CHÍNH bước <id> đã completed/compensated, không mang dấu không xác nhận ⇒ không liệt kê (không gửi lại STOP đã xác nhận). Bảng tự đặt hàng, mỗi dòng một run.
+  const seed62 = (runId: number, buoc: Array<Record<string, unknown>>, token: string | null) => {
+    fake.store.set("orchestration_runs", [...rows("orchestration_runs"), { id: runId, status: "aborted", startedAt: new Date(), finishedAt: new Date(), contextJson: {} }]);
+    fake.store.set("orchestration_run_edge_assignments", [...rows("orchestration_run_edge_assignments"), { runId, edgeNodeId: NODE, claimSeq: 1, claimTokenHash: token }]);
+    fake.store.set("orchestration_run_steps", [...rows("orchestration_run_steps"), ...buoc.map((r) => ({ runId, stepType: "command", attempt: 1, error: null, startedAt: new Date(), finishedAt: new Date(), ...r }))]);
+  };
+  const vet62 = (id: string, abortStop = "failed") => ({ stepId: `abort:${id}`, status: "failed", attempt: 0, resultJson: { abortStop, stepId: id } });
+  const BANG_A1_62: Array<{ run: number; ten: string; buoc: Array<Record<string, unknown>>; token?: string; lietKe: boolean }> = [
+    { run: 9101, ten: "own row completed, no mark", buoc: [vet62("s"), { stepId: "s", status: "completed", resultJson: { status: "simulated" } }], lietKe: false },
+    { run: 9102, ten: "own row compensated", buoc: [vet62("s"), { stepId: "s", status: "compensated", resultJson: {} }], lietKe: false },
+    { run: 9103, ten: "an abort row of no answer (chuaTraLoi), own row completed", buoc: [vet62("s", "chuaTraLoi"), { stepId: "s", status: "completed", resultJson: { status: "acked" } }], lietKe: false },
+    { run: 9104, ten: "own row completed WITH the unconfirmed mark docLoi", buoc: [vet62("s"), { stepId: "s", status: "completed", resultJson: { status: "simulated", stopKhongXacNhan: "docLoi" } }], lietKe: true },
+    { run: 9105, ten: "own row completed WITH the unconfirmed mark ghimLech", buoc: [vet62("s"), { stepId: "s", status: "completed", resultJson: { status: "simulated", stopKhongXacNhan: "ghimLech" } }], lietKe: true },
+    { run: 9106, ten: "own row failed (a STOP that failed goes again, L-7)", buoc: [vet62("s"), { stepId: "s", status: "failed", error: "DRIVER_WRITE_FAILED: write failed (test)", resultJson: {} }], lietKe: true },
+    { run: 9107, ten: "no own row", buoc: [vet62("s")], lietKe: true },
+    { run: 9108, ten: "own row running (handed over)", buoc: [vet62("s"), { stepId: "s", status: "running", resultJson: { routedTo: "ot-dispatcher" } }], lietKe: true },
+    { run: 9109, ten: "two traces: s1's own row completed, s2 none", buoc: [vet62("s1"), vet62("s2"), { stepId: "s1", status: "completed", resultJson: {} }], lietKe: true },
+    { run: 9110, ten: "a trace the old rule lists, the node holding a claim (no own row)", buoc: [vet62("s")], token: "x", lietKe: true },
+  ];
+  const lietKeBang62 = async () => {
+    for (const r of BANG_A1_62) seed62(r.run, r.buoc, r.token ? hashEdgeSecret(TOKEN62) : null);
+    const ra = await lietKe62(BANG_A1_62.map((r) => r.run));
+    console.log("KETLUAN62A1 " + JSON.stringify({ lietKe: ra, mong: BANG_A1_62.filter((r) => r.lietKe).map((r) => r.run) }));
+    return ra;
+  };
+  it("T4-B3-Q1-X11-A1-DOI-CHUNG (X-11 (a1), ca thường) the rows the filter must keep: own row completed WITH an unconfirmed mark, failed, running, none, a second trace of the run still owed, a trace of the old rule under a claim: each still listed", async () => {
+    const ra = await lietKeBang62();
+    for (const r of BANG_A1_62.filter((x) => x.lietKe)) expect(ra, `${r.run} ${r.ten}: listed`).toContain(r.run);
+  });
+  // đỏ trước sửa; đổi thành it ở commit 2 (X-11): hôm nay mọi hàng abort: failed không phải chuaXacMinh đều liệt kê run (T7b-2 P4)
+  it.fails("T4-B3-Q1-X11-A1-LOC (X-11 (a1), it.fails) an abort row whose STOP's own row is completed / compensated with no unconfirmed mark lists no run: the picture never re-sends a STOP confirmed", async () => {
+    const ra = await lietKeBang62();
+    expect([...ra].sort((a, b) => a - b), "exactly the rows of the table marked listed").toEqual(BANG_A1_62.filter((r) => r.lietKe).map((r) => r.run));
+  });
+  // ── Chữ (cụm ổn định; chữ cuối cùng do HST duyệt trước commit mã). đỏ trước sửa; đổi thành it ở commit 2 (X-11)
+  it.fails("T4-B3-Q1-X11-CHU-BAM-MOT (X-11, it.fails) press 1 (abortUnconfirmed, s9 left to the node): the answer and an URGENT say s9 was NOT sent from central, what to do now (the machine on site), who sends it (the edge node) and when (within 15 minutes)", async () => {
+    const x = await chuoi62("x11c1");
+    const msg = x.m.bam1.message as string;
+    expect(x.kq1).toMatchObject({ ok: false, reason: "abortUnconfirmed" });
+    expect(msg, "what to do now").toMatch(/check the machine on site/);
+    expect(msg, "names s9").toMatch(/\bs9\b/);
+    expect(msg, "not sent from central").toMatch(/\bNOT sent\b/);
+    expect(msg, "who sends it").toMatch(/edge node[^.]*\bsends\b/);
+    expect(msg, "when: the window").toMatch(/within 15 minutes/);
+    const u = x.urg1.filter((t) => /\bs9\b/.test(t));
+    expect(u.length, "an URGENT names s9 at press 1").toBeGreaterThanOrEqual(1);
+    const t = u.join(" | ");
+    expect(t, "not sent from central").toMatch(/\bNOT sen(d|t)\b/);
+    expect(t, "who").toMatch(/edge node/);
+    expect(t, "the node sends it").toMatch(/\bsends it\b/);
+    expect(t, "when").toMatch(/15 minutes/);
+    expect(t, "what to do now").toMatch(/direct STOP \/ E-STOP/);
+  });
+  it.fails("T4-B3-Q1-X11-CHU-BAM-HAI (X-11, it.fails) press 2 on the latched aborted run: the answer says s9 was queued for the edge node that holds its adapter, never 'refused or not answered: s9'", async () => {
+    const x = await chuoi62("x11c2");
+    const b = await bamHai62(x);
+    expect(b.m.xepChoNut, "the shape: queued once").toBe(1);
+    const msg = b.m.message;
+    expect(msg, "not 'refused'").not.toMatch(/refused or not answered: s9/);
+    expect(msg, "names s9").toMatch(/\bs9\b/);
+    expect(msg, "the edge node").toMatch(/edge node/);
+    expect(msg, "queued for it").toMatch(/queued/);
+    expect(msg, "what to do now").toMatch(/check the machine on site/);
+  });
+  // ── Bộ kiểm STOP của trung tâm (foeStepClass.makeStopVerifier qua mock của harness: hàng FakeDb, classifyOtStop thật, h.connOk là kết nối chạy). X-11 / thiết kế S-1: CHỈ STOP ghim đọc được và khớp mà thiếu kết nối
+  // (false hoặc lỗi) mang đánh dấu; ghim không đọc được (SC:315), lỗi lô (SC:308), không DB: không. Không ghim tên trường: "đúng một trường thêm ngoài ids / failed / unsure, là tập các id đó".
+  const may62 = () => new Map<number, MachineForValidation>(rows("machines").map((m) => [m.id, { id: m.id, machineType: m.machineType, capabilities: m.capabilities }] as const));
+  const kiem62 = async (coDb: boolean, defs: WorkflowDefinition[], hoi: WorkflowDefinition) => {
+    const { makeStopVerifier } = await import("./foeStepClass");
+    const map = may62();
+    const v = await makeStopVerifier(coDb ? (fake as never) : null, defs, map);
+    return (await v.verified(hoi, map)) as unknown as Record<string, unknown>;
+  };
+  const them62 = (v: Record<string, unknown>) => Object.keys(v).filter((k) => !["ids", "failed", "unsure"].includes(k) && v[k] !== undefined);
+  /** s9: adapter 501 by its machine (pins read with the batch); s8: adapter 502 named, outside the batch the verifier was built for: its pins are not read (SC:315) */
+  const dA62 = () => def("x11va", [otStop("s9")]);
+  const dB62 = () => def("x11vb", [otStop("s9"), otStop("s8", { args: { tagKey: "halt", value: true, adapterId: 502 } })]);
+  it.fails("T4-B3-Q1-X11-SC-CO-KET-NOI (X-11 S-1, it.fails) the verifier: s9 pinned and read, the running connection false or its check failing ⇒ unsure AND marked as 'pinned, read, only the connection'; s8 whose pins were not read ⇒ unsure, not marked", async () => {
+    ghimHalt();
+    const kq: Array<[string, Record<string, unknown>]> = [];
+    for (const kieu of ["false", "nem"] as const) {
+      h.connOk = false;
+      const lan0 = h.connLan;
+      h.connCho = kieu === "nem" ? ({ then: (_ok: unknown, loi: (e: unknown) => void) => loi(new Error("connection check failed (test)")) } as never) : null;
+      const v = await kiem62(true, [dA62()], dB62());
+      h.connCho = null;
+      expect(h.connLan - lan0, `${kieu}: the connection check was asked once`).toBe(1);
+      expect(v.ids, kieu).toEqual(new Set());
+      expect(v.unsure, kieu).toEqual(new Set(["s9", "s8"]));
+      expect(v.failed, kieu).toBe(true);
+      kq.push([kieu, v]);
+    }
+    for (const [kieu, v] of kq) {
+      const k = them62(v);
+      expect(k.length, `${kieu}: one field more than ids / failed / unsure`).toBe(1);
+      expect(new Set([...(v[k[0]!] as Iterable<string>)]), `${kieu}: it holds s9 only`).toEqual(new Set(["s9"]));
+    }
+  });
+  it("T4-B3-Q1-X11-SC-KHONG-CO (X-11 S-1, ca thường) the verifier marks nothing when the pins were not read (SC:315), the batch read failed (SC:308), there is no database, or the connection is confirmed: exactly ids / failed / unsure", async () => {
+    ghimHalt();
+    h.connOk = true;
+    expect(await kiem62(true, [dA62()], dB62()), "s9 confirmed, s8's pins not read").toEqual({ ids: new Set(["s9"]), failed: true, unsure: new Set(["s8"]) });
+    expect(await kiem62(true, [dA62()], dA62()), "s9 confirmed").toEqual({ ids: new Set(["s9"]), failed: false, unsure: new Set() });
+    h.connOk = false;
+    h.docNem = { bang: "device_tags", lan: 1 };
+    expect(await kiem62(true, [dA62()], dA62()), "the batch read of the pins failed").toEqual({ ids: new Set(), failed: true, unsure: new Set(["s9"]) });
+    expect(h.docNemLan, "the failure was reached").toBe(1);
+    h.docNem = null;
+    expect(await kiem62(false, [dA62()], dA62()), "no database").toEqual({ ids: new Set(), failed: true, unsure: new Set(["s9"]) });
+  });
+  // ── DO-62 vòng 2 (HST 17/11). (1) Cách đọc đã duyệt: lần bấm 2 không xếp lại STOP mà nút đã gửi và ĐÃ xác nhận; nút CHƯA xác nhận ⇒ lần bấm 2 xếp thêm ĐÚNG 1 lần (lần gửi riêng của người).
+  // Ca thường: hiện trạng 77ec64b0b đã đúng như vậy (đo DO-62 lượt 7). Đếm: hàng đợi cho nút (mock routeEdgeOwnedAdapterCommand) và lần tới driver của nút qua ảnh. Lần yêu cầu đã xếp tới driver của nút ở lần pull
+  // kế tiếp (EA:528-545): FakeDb KHÔNG chạy nút, nên không đếm được ở đây; cùng lượt pull đó ảnh có thể gửi thêm (V3-3, thuộc X-12 phía nút).
+  it("T4-B3-Q1-X11-BAM-HAI-CHUA-XAC-NHAN (X-11 vòng 2, ca thường: hiện trạng đã đúng) press 2 comes BEFORE the node confirms s9: s9 queued for the node exactly once (never twice), central reaches no driver; the picture then sends it once and central confirms it; a third press queues nothing", async () => {
+    const x = await chuoi62("x11bc");
+    const { c } = x;
+    expect(x.m.sauTre.status).toBe("aborted");
+    expect(hang62(c, "abort:s9")?.status, "nothing confirms s9 yet").toBe("failed");
+    const b = await bamHai62(x);
+    expect(xepChoNut62(c, b.n4, b.n5).length, "press 2 before the node's confirmation: queued for the node exactly once").toBe(1);
+    expect(toiDriver62(c, b.n4, b.n5), "central reached no driver").toEqual([]);
+    expect(b.m.vongTuDong, "no automatic loop").toBe(0);
+    // the node's picture after press 2: the trace is now a hand-over central could not confirm (ADAPTER_OWNED_BY_EDGE), listed by the old rule (before X-11 and after)
+    const lap = await lietKe62([c]);
+    const a = lap.includes(c) ? await anh62(x) : null;
+    const lapSau = await lietKe62([c]);
+    const b3 = await bamHai62(x);
+    console.log("KETLUAN62BC " + JSON.stringify({ lap, anh: a ? { s9: a.s9, vet: a.vet } : null, lapSau, bam3: { xepChoNut: b3.m.xepChoNut, toiDriver: b3.m.toiDriver }, tong: { xepChoNut: xepChoNut62(c, x.n0).length, toiDriverTrungTam: toiDriver62(c, x.n0).filter((y) => y.edge == null).length, toiDriverQuaAnh: toiDriver62(c, x.n0).filter((y) => y.edge != null).length } }));
+    expect(lap, "listed for the node's picture").toEqual([c]);
+    expect(toiDriver62(c, a!.m0, a!.m1).length, "the picture's send reaches the node's driver once").toBe(1);
+    expect(toiDriver62(c, a!.m0, a!.m1)[0]?.edge, "by the node's own dispatcher").not.toBeNull();
+    expect(lapSau, "confirmed: off the list").toEqual([]);
+    expect(xepChoNut62(c, b3.n4, b3.n5), "a third press: confirmed, nothing queued").toEqual([]);
+    expect(xepChoNut62(c, x.n0).length, "over the chain: queued once, never twice").toBe(1);
+    expect(toiDriver62(c, x.n0).filter((y) => y.edge == null), "central reached no driver over the chain").toEqual([]);
+  });
+  // (2) Khoá chuỗi: không có STOP nào của nút (run của trung tâm, adapter trung tâm), Abort chưa xác nhận ⇒ câu trả lời trùng TỪNG KÝ TỰ với hiện trạng 77ec64b0b. Câu mới (V3-2) CHỈ khi choNut khác rỗng (HST 17/11).
+  // Hằng chép nguyên văn từ lần chạy ở mã hiện tại (DO-62 lượt 1, KETLUAN62 x11hb: run 3, số 0), chỉ thay số run và số bước đã giao; không gọi hàm nào của mã. Xanh trước và sau sửa.
+  const CHU_KHONG_NUT_62 = (run: number, n: number) =>
+    `Abort of run ${run} not confirmed by the database in time — STOP steps handed to the dispatcher (the machine has not confirmed them): ${n}; check the run and retry, but no retry can be counted on after 15 minutes from when the run was aborted: check the machine on site and use its direct STOP / E-STOP.`;
+  it("T4-B3-Q1-X11-CHU-KHONG-CO-NUT (X-11 vòng 2, ca thường; khoá chuỗi) a central run, no STOP of a node, its Abort unconfirmed: the answer is the 77ec64b0b string, character for character — the connection confirmed (s9 handed over) and not confirmed (s9 not verified, the run given to no node)", async () => {
+    const D = STOP_DB_STEP_DEADLINE_MS;
+    ghimHalt();
+    h.ghim = PIN62;
+    for (const ketNoi of [true, false] as const) {
+      h.connOk = true;
+      const c = await centralRun(def(`x11kn${ketNoi ? "t" : "f"}`, [gate(), ot("x"), gate("g2"), otStop("s9")]), 1);
+      expect(runRow(c).status, "paused at g2").toBe("awaiting_confirm");
+      h.connOk = ketNoi;
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+      h.treAborted = 3 * D;
+      let xong = false;
+      const ab = abortRun(c, OWNER, "checked on site").finally(() => {
+        xong = true;
+      });
+      expect(await cho62(() => xong, 2 * D), "answered before the late write").toBe(true);
+      const a = (await ab) as Record<string, any>;
+      expect(await cho62(() => runRow(c).status === "aborted", 4 * D), "the late write landed").toBe(true);
+      vi.useRealTimers();
+      console.log("KETLUAN62KN " + JSON.stringify({ c, ketNoi, reason: a.reason ?? null, sent: a.abortStops?.sent ?? null, unverified: a.abortStops?.unverified ?? null, message: String(a.message ?? "") }));
+      expect(a.reason).toBe("abortUnconfirmed");
+      expect(a.abortStops?.sent ?? [], "handed over").toEqual(ketNoi ? ["s9"] : []);
+      expect(a.message, `connection ${ketNoi}: the 77ec64b0b string`).toBe(CHU_KHONG_NUT_62(c, ketNoi ? 1 : 0));
+    }
+  });
   it("T4-B3-R2A-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của ca trên) the same refused POST-SEND result, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never sent again", async () => {
     const e = await edgeAssignedRun(def("ja-e-dc", [gate(), move("r1", { maxAttempts: 2 }), move("r2")]));
     await edgeSegment(e, 1);
