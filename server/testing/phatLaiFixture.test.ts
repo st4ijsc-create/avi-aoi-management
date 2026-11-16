@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import { taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
 import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
 import { users } from "../../drizzle/schema";
+import { banCoKhiPhatLai } from "./coAnhHuongByte";
 import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, type KenhGiaoDich } from "./kenhGiaoDich";
 import { chuanHoaSuKien, soSuKien, taoBoThay, taoStreamPhatLai, TOKEN_GOC, type FixturePhatLai } from "./phatLaiLuot";
 
@@ -27,6 +28,8 @@ const THU_MUC = path.join(__dirname, "fixtures", "phat-lai");
 const GOC_REPO = path.join(__dirname, "..", "..");
 const tep = fs.existsSync(THU_MUC) ? fs.readdirSync(THU_MUC).filter((t) => t.endsWith(".json.gz")).sort() : [];
 const ENV0 = { ...process.env };
+/** Cờ CỐ ĐỊNH của khung thử (đặt ở beforeAll): fixture khai cờ nào thì fixture thắng; cờ ảnh hưởng byte KHÔNG nằm ở đây và không trong fixture bị GỠ (V1.1). */
+const CO_CO_DINH_KHUNG_THU = { AI_AGENT_THEO_VAI_TRO: "0", AI_CODING_TU_TRI_GHI: "1" } as const;
 
 /** Kênh tới giao dịch của ca đang chạy; ngoài ca ⇒ `null` VÀ ghi lại, `afterEach` làm ca ĐỎ nếu có lời gọi lọt ngoài (xem `kenhGiaoDich.ts`). */
 const kenh = vi.hoisted((): KenhGiaoDich => ({ db: null, lot: [] }));
@@ -126,9 +129,12 @@ describe("H4.2 — phát lại fixture thật", () => {
           const uid = nguoi!.id;
           const fx = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(THU_MUC, ten))).toString("utf8")) as FixturePhatLai;
           const goc = dungDuAn(fx);
-          // Cờ máy chủ LÚC GHI (vitest.setup không nạp .env) — đặt cho ca này rồi trả lại.
-          const env0 = Object.fromEntries(Object.keys(fx.lenh.moiTruong ?? {}).map((k) => [k, process.env[k]]));
-          Object.assign(process.env, fx.lenh.moiTruong ?? {});
+          // Cờ máy chủ LÚC GHI (vitest.setup không nạp .env) — đặt cho ca này rồi trả lại. V1.1: mọi cờ ảnh hưởng byte KHÔNG có trong fixture bị GỠ (mã dùng mặc định thật của nó),
+          // nên cờ `export` trong shell hay cờ mới bật ở môi trường chạy test không làm fixture cũ đỏ oan.
+          const ban = banCoKhiPhatLai(fx.lenh.moiTruong, CO_CO_DINH_KHUNG_THU);
+          const env0 = Object.fromEntries([...Object.keys(ban.dat), ...ban.xoa].map((k) => [k, process.env[k]]));
+          Object.assign(process.env, ban.dat);
+          for (const k of ban.xoa) delete process.env[k];
           try {
             process.env.AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture|${goc}`;
             const p = taoStreamPhatLai(fx, { goc });
