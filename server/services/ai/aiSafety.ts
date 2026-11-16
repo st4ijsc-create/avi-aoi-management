@@ -28,7 +28,7 @@
 
 import { scanForInjection, scanUntrustedContent, type InjectionRisk } from "../../../shared/quetMenhLenh";
 import { RE_TOKEN_CO_TIEN_TO, RE_TOKEN_CO_TIEN_TO_DANG_GO } from "../../../shared/mauBiMat";
-import { cheChuoiKetNoi, cheEmail, chePem } from "./cheTuyenTinh";
+import { cheChuoiKetNoi, cheEmail, chePemDayDu } from "./cheTuyenTinh";
 
 // Kiểu + bộ quét mệnh lệnh sống ở `shared/quetMenhLenh.ts` (nguyên văn, thuần) — xuất lại để người gọi cũ không đổi.
 export type { InjectionRisk, InjectionScanResult } from "../../../shared/quetMenhLenh";
@@ -196,7 +196,7 @@ const REDACT_PATTERNS: RedactPattern[] = [
     type: "private_key",
     re: /-----BEGIN[ A-Z]*PRIVATE KEY-----[\s\S]*?-----END[ A-Z]*PRIVATE KEY-----/g,
     placeholder: "[REDACTED_SECRET]",
-    ham: chePem,
+    ham: chePemDayDu, // (HST 16/11) cặp BEGIN…END như regex + BEGIN thiếu END có thân (cheTuyenTinh.ts chePemThieuEnd)
   },
   // scheme://user:pass@host — generic DB/broker connection string with embedded credentials.
   {

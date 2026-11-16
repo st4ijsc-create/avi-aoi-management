@@ -482,10 +482,19 @@ describe("StreamingSecretRedactor — long secrets streamed in tiny chunks (doc6
     const remaining = redactor.flush();
     if (remaining) emitted.push(remaining);
 
-    // Forced at least one flush before the natural end (cap reached), and never dropped or
-    // duplicated any content along the way (nothing to redact since the block never closed).
+    // Forced at least one flush before the natural end (cap reached).
     expect(emitted.length).toBeGreaterThan(1);
-    expect(emitted.join("")).toBe(fullInput);
+    // (HST 16/11, lô PEM thiếu END) TRƯỚC: không có END ⇒ không che gì, cả khối nhả NGUYÊN VĂN (test cũ ghim đúng điều đó).
+    // NAY: lần xả cưỡng bức ở trần đi qua `redactSecretsOnly` ⇒ header + phần thân đã giữ bị che (`chePemThieuEnd`, cheTuyenTinh.ts).
+    // ⚠ GIỚI HẠN ĐÃ BIẾT (còn mở, báo HST): các mẩu SAU lần xả không còn header đi kèm ⇒ phần thân vượt `STREAM_HOLD_CAP` vẫn nhả nguyên văn.
+    const joined = emitted.join("");
+    expect(joined).not.toContain(openPem.trim());
+    expect(joined.startsWith("[REDACTED_SECRET]")).toBe(true);
+    const duoi = joined.slice("[REDACTED_SECRET]".length);
+    expect(/^A+$/.test(duoi)).toBe(true);
+    // đuôi còn hiện = toàn bộ đầu vào trừ bộ đệm lúc xả (bội số đầu tiên của cỡ mẩu 200 đạt trần 8 192 ⇒ 8 200 ký tự)
+    const xaTai = Math.ceil(STREAM_HOLD_CAP / filler.length) * filler.length;
+    expect(duoi.length).toBe(fullInput.length - xaTai);
   });
 
   it("fail-safe: push/flush never throw on empty or unusual input", () => {
