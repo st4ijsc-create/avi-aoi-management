@@ -4,12 +4,11 @@
  * Kỳ vọng: không lệch, rút hết lượt, sự kiện chuẩn hoá trùng, cây tệp trùng. Đổi một tệp dự án trước khi phát ⇒ LỆCH đúng ở lượt đọc nó.
  * ĐỘT BIẾN PHẢI BẮT: so bỏ qua nội dung tin tool · không thay đường gốc · không đếm lượt thừa · đóng gói bỏ qua mẫu cấm.
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { eq } from "drizzle-orm";
 
 vi.hoisted(() => {
   process.env.SECRET_ENCRYPTION_KEY ??= "khoa-thu-phat-lai-0123456789"; // checkpoint ký manifest (không phải khoá thật)
@@ -38,17 +37,60 @@ vi.mock("../services/aiGgufEngine", async (io) => ({
 
 import { taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
 import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
-import { getDb } from "../db/connection";
-import { aiAgentRuns } from "../../drizzle/schema";
-import { taoNguoiDungTest } from "./nguoiDungTest";
+import { users } from "../../drizzle/schema";
+import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, tomTatGoi, type KenhGiaoDich } from "./kenhGiaoDich";
+import { cauBaoRoRi, demHangRoRi } from "./kiemRoRiDb";
 import { chuanHoaSuKien, dongGoi, kiemMauCam, taoStreamPhatLai, type FixturePhatLai } from "./phatLaiLuot";
 
 const CAU = "thêm hàm nhân vào src/b.ts";
 const ENV0 = { ...process.env };
-let uid = 0;
-let GHI = "";
-let fx: FixturePhatLai;
-let cayGhi: Record<string, string> = {};
+
+/** Kênh tới giao dịch ROLLBACK của ca đang chạy (xem `kenhGiaoDich.ts`): mọi ghi của `quanLyLuotChay` (ai_agent_runs, audit_logs — WORM —, ai_pending_actions) nằm trong giao dịch và biến mất lúc ROLLBACK. */
+const kenh = vi.hoisted((): KenhGiaoDich => ({ db: null, lot: [], goi: {} }));
+vi.mock("../db/connection", async (importOriginal) => {
+  const goc = await importOriginal<typeof import("../db/connection")>();
+  return {
+    ...goc,
+    getDb: async () => layDbTheoKenh(kenh),
+    getJobsDb: async () => ghiNoiKhac(kenh, "getJobsDb"),
+    getReadDb: async () => ghiNoiKhac(kenh, "getReadDb"),
+    openSessionClient: () => ghiNoiKhac(kenh, "openSessionClient"),
+    getNotifyClient: () => ghiNoiKhac(kenh, "getNotifyClient"),
+  };
+});
+
+/**
+ * Chạy `than` TRONG một giao dịch luôn ROLLBACK, với người dùng thử chỉ tồn tại trong giao dịch. Trước khi trả kênh, đếm — bằng kết nối RIÊNG — hàng `audit_logs` / `ai_pending_actions`
+ * mang userId người dùng thử (hai bảng không có khoá ngoại tới `users`, nên ghi NGOÀI giao dịch vẫn thành công): kết nối khác không thấy hàng chưa commit ⇒ mọi hàng đếm được là RÒ RỈ ⇒ ca ĐỎ.
+ */
+async function trongRollback(than: (userId: number) => Promise<void>): Promise<void> {
+  const dbThat = await (await vi.importActual<typeof import("../db/connection")>("../db/connection")).getDb();
+  if (!dbThat) throw new Error("cần CSDL _test (DATABASE_URL)");
+  try {
+    await dbThat.transaction(async (tx) => {
+      kenh.db = tx;
+      let nguoiId: number | null = null;
+      try {
+        const [nguoi] = await tx
+          .insert(users)
+          .values({ openId: `phatlailuot_${process.pid}_${Date.now()}`, username: `phatlailuot_${process.pid}_${Date.now()}`, name: "người dùng phát lại lượt", role: "admin", loginMethod: "local" })
+          .returning({ id: users.id });
+        nguoiId = nguoi!.id;
+        await than(nguoiId);
+      } finally {
+        if (nguoiId !== null) {
+          const r = await demHangRoRi(nguoiId).catch((e: unknown) => (e instanceof Error ? e : new Error(String(e))));
+          if (r instanceof Error) kenh.lot.push(`kiểm rò rỉ KHÔNG chạy được (${r.message.slice(0, 160)}) — không đo được ca này`);
+          else if (r.tong > 0) kenh.lot.push(cauBaoRoRi(r, nguoiId, tomTatGoi(kenh)));
+        }
+        kenh.db = null;
+      }
+      throw new RollbackPhatLai();
+    });
+  } catch (e) {
+    nuotRollback(e);
+  }
+}
 
 function taoRepo(): string {
   const r = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "phat-lai-repo-")));
@@ -66,7 +108,7 @@ function taoRepo(): string {
 const docCay = (r: string) =>
   Object.fromEntries(fs.readdirSync(path.join(r, "src")).sort().map((t) => [t, fs.readFileSync(path.join(r, "src", t), "utf8")]));
 
-async function chay(goc: string, duAn: string, goiModel?: ReturnType<typeof taoGoiModelMayChu>) {
+async function chay(uid: number, goc: string, duAn: string, goiModel?: ReturnType<typeof taoGoiModelMayChu>) {
   process.env.AI_REPO_SANDBOX_ROOTS = `${duAn}=Phat lai|${goc}`;
   const ql = taoQuanLyLuotChay(goiModel ? { goiModel } : {});
   const kq = await ql.taoLuotChay({ user: { id: uid, role: "admin" }, cauHoi: CAU, projectId: duAn, cheDo: "tu-dong" });
@@ -76,32 +118,42 @@ async function chay(goc: string, duAn: string, goiModel?: ReturnType<typeof taoG
   return { id: kq.luot.id, suKien: ct!.suKien, lyDo: kq.luot.lyDoDung };
 }
 
-beforeAll(async () => {
+/** GHI một lượt (engine giả, bộ ghi thật) ⇒ đóng gói thành fixture. Gọi TRONG `trongRollback` (ghi sổ nằm trong giao dịch). */
+async function ghiFixture(uid: number): Promise<{ fx: FixturePhatLai; cayGhi: Record<string, string> }> {
+  dem.k = 0;
+  const GHI = fs.mkdtempSync(path.join(os.tmpdir(), "phat-lai-tho-"));
+  process.env.AI_GHI_LUOT_DIR = GHI;
+  try {
+    const goc = taoRepo();
+    const r = await chay(uid, goc, "phatlaighi");
+    const tho = fs.readFileSync(path.join(GHI, `${r.id}.jsonl`), "utf8").trim().split("\n").map((d) => JSON.parse(d) as Record<string, unknown>);
+    const fx = dongGoi(tho, { goc, duAnTuongDoi: ".", cauHoi: CAU, cheDo: "tu-dong", suKien: r.suKien, lyDo: r.lyDo });
+    return { fx, cayGhi: docCay(goc) };
+  } finally {
+    delete process.env.AI_GHI_LUOT_DIR;
+    fs.rmSync(GHI, { recursive: true, force: true });
+  }
+}
+
+beforeAll(() => {
   process.env.AI_AGENT_THEO_VAI_TRO = "0";
   process.env.AI_CODING_TU_TRI_GHI = "1";
-  uid = (await taoNguoiDungTest("phatlai", "admin")).id;
-  // ── GHI
-  GHI = fs.mkdtempSync(path.join(os.tmpdir(), "phat-lai-tho-"));
-  process.env.AI_GHI_LUOT_DIR = GHI;
-  const goc = taoRepo();
-  const r = await chay(goc, "phatlaighi");
-  delete process.env.AI_GHI_LUOT_DIR;
-  cayGhi = docCay(goc);
-  const tho = fs.readFileSync(path.join(GHI, `${r.id}.jsonl`), "utf8").trim().split("\n").map((d) => JSON.parse(d) as Record<string, unknown>);
-  fx = dongGoi(tho, { goc, duAnTuongDoi: ".", cauHoi: CAU, cheDo: "tu-dong", suKien: r.suKien, lyDo: r.lyDo });
-}, 120_000);
+});
 
-afterAll(async () => {
+/** Một lời gọi `getDb()` rơi NGOÀI giao dịch hoặc một RÒ RỈ đo được ⇒ ca ĐỎ có tên, không bị nuốt. */
+afterEach(() => kiemKhongLot(kenh));
+
+afterAll(() => {
+  kiemKhongLot(kenh);
   for (const k of ["AI_AGENT_THEO_VAI_TRO", "AI_CODING_TU_TRI_GHI", "AI_GHI_LUOT_DIR", "AI_REPO_SANDBOX_ROOTS"]) {
     if (ENV0[k] === undefined) delete process.env[k];
     else process.env[k] = ENV0[k];
   }
-  const db = await getDb();
-  if (db && uid) await db.delete(aiAgentRuns).where(eq(aiAgentRuns.userId, uid));
-}, 60_000);
+});
 
 describe("H4.2 — ghi ⇒ đóng gói ⇒ phát lại", () => {
-  it("bản ghi thật có đủ 3 lượt; fixture không còn đường gốc / mẫu cấm; ghi đã tạo src/b.ts", async () => {
+  it("bản ghi thật có đủ 3 lượt; fixture không còn đường gốc / mẫu cấm; ghi đã tạo src/b.ts", () => trongRollback(async (uid) => {
+    const { fx, cayGhi } = await ghiFixture(uid);
     expect(fx.luot.map((l) => l.n)).toEqual([1, 2, 3]);
     // phiên bản 2: lượt sau chỉ mang phần MỚI của lịch sử (chỉ-nối-thêm) ⇒ tinChung tăng, tinMoi ngắn
     expect(fx.phienBan).toBe(2);
@@ -112,13 +164,14 @@ describe("H4.2 — ghi ⇒ đóng gói ⇒ phát lại", () => {
     expect(JSON.stringify(fx)).not.toContain(os.tmpdir());
     expect(Object.keys(cayGhi)).toEqual(["a.ts", "b.ts"]);
     expect(fx.ky.lyDo).toBe("hoan-thanh");
-  });
+  }), 120_000);
 
-  it("★★★ phát lại ở ĐƯỜNG KHÁC: không lệch, rút hết lượt, sự kiện chuẩn hoá trùng, cây tệp trùng — không gọi engine", async () => {
+  it("★★★ phát lại ở ĐƯỜNG KHÁC: không lệch, rút hết lượt, sự kiện chuẩn hoá trùng, cây tệp trùng — không gọi engine", () => trongRollback(async (uid) => {
+    const { fx, cayGhi } = await ghiFixture(uid);
     const goc2 = taoRepo();
     const p = taoStreamPhatLai(fx, { goc: goc2 });
     const k0 = dem.k;
-    const r = await chay(goc2, "phatlaiphat", taoGoiModelMayChu({ chatStream: p.stream, khongGhiDauVet: true }));
+    const r = await chay(uid, goc2, "phatlaiphat", taoGoiModelMayChu({ chatStream: p.stream, khongGhiDauVet: true }));
     expect(p.lech).toEqual([]);
     expect(p.conLai()).toBe(0);
     expect(dem.k).toBe(k0); // engine giả KHÔNG được gọi khi phát lại
@@ -126,17 +179,18 @@ describe("H4.2 — ghi ⇒ đóng gói ⇒ phát lại", () => {
     const { taoBoThay } = await import("./phatLaiLuot");
     expect(chuanHoaSuKien(r.suKien, taoBoThay(goc2))).toEqual(fx.ky.suKien);
     expect(docCay(goc2)).toEqual(cayGhi);
-  }, 120_000);
+  }), 120_000);
 
-  it("dự án đổi trước khi phát (a.ts khác) ⇒ LỆCH ở lượt 2 (tin kết quả read_file), lượt dừng lỗi", async () => {
+  it("dự án đổi trước khi phát (a.ts khác) ⇒ LỆCH ở lượt 2 (tin kết quả read_file), lượt dừng lỗi", () => trongRollback(async (uid) => {
+    const { fx } = await ghiFixture(uid);
     const goc3 = taoRepo();
     fs.writeFileSync(path.join(goc3, "src/a.ts"), "export const cong = (a: number, b: number) => b + a;\n");
     const p = taoStreamPhatLai(fx, { goc: goc3 });
-    const r = await chay(goc3, "phatlailech", taoGoiModelMayChu({ chatStream: p.stream, khongGhiDauVet: true }));
+    const r = await chay(uid, goc3, "phatlailech", taoGoiModelMayChu({ chatStream: p.stream, khongGhiDauVet: true }));
     expect(p.lech[0]).toMatchObject({ n: 2 });
     expect(p.lech[0]!.truong).toMatch(/^tin\[\d+\]$/);
     expect(r.lyDo).not.toBe("hoan-thanh");
-  }, 120_000);
+  }), 120_000);
 
   it("đóng gói NÉM khi còn mẫu cấm (đường ổ đĩa ngoài gốc / khoá)", () => {
     const tho = [{ loai: "dau" }, { loai: "luot", n: 1, options: { messages: [{ role: "user", content: "xem C:\\Khac\\bi-mat.txt" }] }, manh: [] }];

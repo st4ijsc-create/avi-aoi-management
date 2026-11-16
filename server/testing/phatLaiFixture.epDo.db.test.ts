@@ -6,13 +6,15 @@
  * CSDL: chỉ `aoi_management_test` (skipIf). Mọi ghi nằm trong giao dịch ROLLBACK; kết nối đếm chỉ SELECT. Không DELETE / TRUNCATE.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { and, count, eq } from "drizzle-orm";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 
 import { taoQuanLyLuotChay } from "../services/ai/agent/quanLyLuotChay";
 import { taoGoiModelMayChu } from "../services/ai/agent/goiModelMayChu";
-import { users } from "../../drizzle/schema";
+import { auditLogs, users } from "../../drizzle/schema";
 import { banCoKhiPhatLai } from "./coAnhHuongByte";
 import { RollbackPhatLai, ghiNoiKhac, kiemKhongLot, layDbTheoKenh, nuotRollback, tomTatGoi, type KenhGiaoDich } from "./kenhGiaoDich";
 import { cauBaoRoRi, demHangRoRi } from "./kiemRoRiDb";
@@ -71,10 +73,15 @@ interface KetQuaEp {
   lech: number;
   luotDaRut: number;
   roTruocRollback: Awaited<ReturnType<typeof demHangRoRi>>;
+  /** số hàng audit_logs `ai_action_denied` mang userId người dùng thử, đếm TRONG giao dịch (chứng minh đường từ chối đã chạy thật) */
+  daTuChoi: number;
 }
 
+/** `lech`: chỉ làm lệch một lượt. `tu-choi-apply-diff`: thêm — NGAY lúc lượt bắt đầu, gốc hộp cát (`AI_REPO_SANDBOX_ROOTS`) bị đổi sang thư mục KHÁC dự án ⇒ gốc dự án không còn thuộc gốc hộp cát ⇒ lượt ghi `apply_diff` bị TỪ CHỐI. */
+type KieuEp = "lech" | "tu-choi-apply-diff";
+
 /** Chạy fixture lệch trong giao dịch ROLLBACK (đúng vỏ của phatLaiFixture.test.ts); `nemLoi` ⇒ ném MỘT lỗi trong thân (mô phỏng `expect` hỏng). Kết quả ghi vào `kq` (có cả khi ném). */
-async function epDo(nemLoi: string | null, kq: Partial<KetQuaEp> = {}): Promise<KetQuaEp> {
+async function epDo(nemLoi: string | null, kq: Partial<KetQuaEp> = {}, kieu: KieuEp = "lech"): Promise<KetQuaEp> {
   const { fx } = napFixtureLech();
   const dbThat = await (await vi.importActual<typeof import("../db/connection")>("../db/connection")).getDb();
   if (!dbThat) throw new Error("cần CSDL _test");
@@ -95,7 +102,16 @@ async function epDo(nemLoi: string | null, kq: Partial<KetQuaEp> = {}): Promise<
         try {
           process.env.AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture|${goc}`;
           const p = taoStreamPhatLai(fx, { goc });
-          const ql = taoQuanLyLuotChay({ goiModel: taoGoiModelMayChu({ chatStream: p.stream, khongGhiDauVet: true }) });
+          let daDoiGoc = false;
+          const stream: typeof p.stream = (o) => {
+            if (kieu === "tu-choi-apply-diff" && !daDoiGoc) {
+              daDoiGoc = true;
+              const ngoai = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "phat-lai-ngoai-hop-cat-")));
+              process.env.AI_REPO_SANDBOX_ROOTS = `phatlaifx=Phat lai fixture|${ngoai}`;
+            }
+            return p.stream(o);
+          };
+          const ql = taoQuanLyLuotChay({ goiModel: taoGoiModelMayChu({ chatStream: stream, khongGhiDauVet: true }) });
           const lk = await ql.taoLuotChay({ user: { id: kq.uid, role: "admin" }, cauHoi: fx.lenh.cauHoi.split(TOKEN_GOC).join(goc), projectId: "phatlaifx", cheDo: fx.lenh.cheDo });
           if (!lk.ok) throw new Error(`${lk.ma} ${lk.thongDiep ?? ""}`);
           await lk.luot.xong;
@@ -109,6 +125,10 @@ async function epDo(nemLoi: string | null, kq: Partial<KetQuaEp> = {}): Promise<
           }
         }
       } finally {
+        if (kq.uid !== undefined) {
+          const [d] = await tx.select({ n: count() }).from(auditLogs).where(and(eq(auditLogs.userId, kq.uid), eq(auditLogs.action, "ai_action_denied")));
+          kq.daTuChoi = Number(d?.n ?? 0);
+        }
         kq.roTruocRollback = await demHangRoRi(kq.uid!);
         kenh.db = null;
       }
@@ -140,6 +160,16 @@ describe.skipIf(!co)("phát lại — ép một ca ĐỎ: KHÔNG rò hàng ra ng
     const sau = await demHangRoRi(kq.uid!);
     const thongTin = `ai đã gọi getDb qua kênh: ${tomTatGoi(kenh)}; lot: ${kenh.lot.join(" | ").slice(0, 400)}`;
     expect(kq.roTruocRollback, `RÒ trước rollback — ${thongTin}`).toEqual({ audit_logs: 0, ai_pending_actions: 0, tong: 0 });
+    expect(sau, `RÒ sau rollback — ${thongTin}`).toEqual({ audit_logs: 0, ai_pending_actions: 0, tong: 0 });
+    kiemKhongLot(kenh);
+  }, 300_000);
+
+  it("★★★ ép `apply_diff` bị TỪ CHỐI (gốc dự án KHÔNG thuộc gốc hộp cát): đường từ chối đã chạy thật (có hàng `ai_action_denied` trong giao dịch) và KHÔNG hàng audit_logs / ai_pending_actions nào mang userId người dùng thử rò ra ngoài — trước lẫn sau ROLLBACK", async () => {
+    const k = await epDo(null, {}, "tu-choi-apply-diff");
+    expect(k.daTuChoi, "đường từ chối PHẢI đã chạy (nếu 0 ⇒ ca không ép được từ chối, không phải bằng chứng không rò)").toBeGreaterThan(0);
+    const sau = await demHangRoRi(k.uid);
+    const thongTin = `ai đã gọi getDb qua kênh: ${tomTatGoi(kenh)}; lot: ${kenh.lot.join(" | ").slice(0, 400)}`;
+    expect(k.roTruocRollback, `RÒ trước rollback — ${thongTin}`).toEqual({ audit_logs: 0, ai_pending_actions: 0, tong: 0 });
     expect(sau, `RÒ sau rollback — ${thongTin}`).toEqual({ audit_logs: 0, ai_pending_actions: 0, tong: 0 });
     kiemKhongLot(kenh);
   }, 300_000);
