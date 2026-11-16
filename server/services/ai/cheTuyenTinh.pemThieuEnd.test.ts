@@ -4,6 +4,7 @@
  * ĐỘT BIẾN PHẢI ĐỎ: "che tới hết văn bản" · "bỏ trần" · "che header trơ" · "không che khi thiếu END" · "bỏ luật dừng ở dòng không thuộc thân".
  */
 import { describe, expect, it } from "vitest";
+import { StreamingSecretRedactor } from "./aiSafety";
 import { chePem, chePemDayDu, chePemThieuEnd, TRAN_DONG_THAN_PEM, TRAN_KY_TU_THAN_PEM } from "./cheTuyenTinh";
 
 const T = "[REDACTED_SECRET]";
@@ -115,5 +116,30 @@ describe("chePemThieuEnd — KHÔNG che oan (không đổi byte)", () => {
   it("BEGIN không END nằm SAU một khối có END ⇒ khối có END che như cũ, phần sau che theo luật mới", () => {
     const s = ["a", DAU, ...than(2), CUOI, "giữa", DAU, ...than(3), "sau"].join("\n");
     expect(chePemDayDu(s, T).text).toBe(["a", T, "giữa", T, "sau"].join("\n"));
+  });
+});
+
+// Giới hạn đã biết G1–G4: định nghĩa ở MỘT chỗ (cheTuyenTinh.ts, khối "GIỚI HẠN ĐÃ BIẾT"); các ca dưới đo đúng con số.
+describe("giới hạn đã biết (G1–G4, cheTuyenTinh.ts)", () => {
+  it("G1 phần vượt trần còn hiện: xem hai ca TRẦN ở trên (44 dòng cuối / từ dòng thứ 9)", () => {
+    expect(TRAN_DONG_THAN_PEM * 64).toBe(TRAN_KY_TU_THAN_PEM);
+  });
+  it("G2 dòng ngắn sau thân, không chia hết 4 và < 16 ký tự ⇒ còn hiện (15 ký tự)", () => {
+    const duoi = dongGia(31, 15);
+    expect(chePemDayDu(["x", DAU, ...than(3), duoi, "sau"].join("\n"), T).text).toBe(["x", T, duoi, "sau"].join("\n"));
+  });
+  it.each([4, 8, 12])("G3 từ toàn base64 dài %i ngay sau thân bị NUỐT làm dòng cuối (che oan một dòng)", (dai) => {
+    const tu = "dataDATAdata".slice(0, dai);
+    expect(chePemDayDu(["x", DAU, ...than(3), tu, "sau"].join("\n"), T).text).toBe(["x", T, "sau"].join("\n"));
+  });
+  // G4: kỳ vọng ĐÚNG là lọt 0. Hiện SAI (lô 2 chưa làm) ⇒ it.fails; khi lô 2 sửa xong ca này sẽ đỏ ⇒ đổi về `it`.
+  it.fails("G4 luồng: thân 200 dòng (> STREAM_HOLD_CAP) phát theo mẩu 64 ký tự ⇒ KHÔNG dòng thân nào lọt", () => {
+    const d = than(200);
+    const text = ["dau", DAU, ...d, "het."].join("\n");
+    const r = new StreamingSecretRedactor();
+    let out = "";
+    for (let i = 0; i < text.length; i += 64) out += r.push(text.slice(i, i + 64));
+    out += r.flush();
+    expect(d.filter((x) => out.includes(x)).length).toBe(0);
   });
 });

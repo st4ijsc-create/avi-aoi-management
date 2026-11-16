@@ -175,7 +175,14 @@ export function chePem(text: string, thay: string): KetQuaThay {
 /**
  * (HST 16/11) trần THÂN khoá được che khi BEGIN thiếu END. Căn cứ số học (DER ASN.1, trường hợp xấu): RSA-8192 PKCS#8 = 98 dòng × 64 /
  * 6 244 ký tự base64; RSA-16384 PKCS#8 = 194 dòng / 12 388 ký tự (12 582 kèm xuống dòng) ⇒ 256 dòng / 16 384 ký tự phủ RSA-16384 có dư.
- * GIỚI HẠN ĐÃ BIẾT: thân dài hơn trần ⇒ phần SAU trần (dòng thứ 257 trở đi, hoặc từ dòng làm tổng vượt 16 384 ký tự) còn HIỆN.
+ *
+ * ═══ GIỚI HẠN ĐÃ BIẾT của "PEM thiếu END" (MỘT chỗ duy nhất; ca đo đúng con số ở cheTuyenTinh.pemThieuEnd.test.ts, khối "giới hạn đã biết") ═══
+ *   G1. Thân dài hơn trần ⇒ phần SAU trần (dòng thứ 257 trở đi, hoặc từ dòng làm tổng vượt 16 384 ký tự) còn HIỆN.
+ *   G2. Dòng ngắn sau thân mà KHÔNG chia hết cho 4 và < 16 ký tự ⇒ không nhận là thân ⇒ còn hiện, tối đa 15 ký tự (khoá thật luôn bội 4 nên
+ *       dòng cuối thật vẫn bị che; G2 chỉ là ranh để không nuốt chữ thường).
+ *   G3. Một "từ" toàn ký tự base64 dài 4 / 8 / 12 ký tự đứng NGAY dòng sau thân bị nuốt làm dòng cuối (che oan một dòng).
+ *   G4. Luồng (`StreamingSecretRedactor`, aiSafety.ts): thân dài hơn `STREAM_HOLD_CAP` (8 192) ⇒ lần xả cưỡng bức che phần đã giữ, nhưng các
+ *       mẩu SAU lần xả không còn header ⇒ phần thân còn lại nhả NGUYÊN VĂN (đo: khoá giả 200 dòng ⇒ 134–138 dòng lọt). Lô 2 (HST) — ca `it.fails`.
  */
 export const TRAN_DONG_THAN_PEM = 256;
 export const TRAN_KY_TU_THAN_PEM = 16_384;
