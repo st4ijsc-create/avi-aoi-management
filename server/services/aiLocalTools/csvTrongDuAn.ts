@@ -98,15 +98,23 @@ export function catCsv(noiDung: string): KetQuaCatCsv {
   return { noiDung: ds.slice(0, TRAN_DONG_DOC_CSV).join("\n") + "\n", dong: TRAN_DONG_DOC_CSV, catTheoDong: true };
 }
 
+/** Dấu thay cho phần bị che: từ DÒNG `-----BEGIN …` không có END tương ứng tới hết phần được đọc. Cố định, không chứa BEGIN / END. */
+export const DAU_CHE_PEM_THIEU_END = "[REDACTED_PEM_BLOCK_WITHOUT_END]";
+
 /**
- * Khối khoá nhiều dòng (`-----BEGIN …-----` … `-----END …-----`) bị cắt ngang ranh giới đọc: `redactSecretsOnly` chỉ khớp khi có CẢ BEGIN lẫn END, nên phần đã đọc mà thiếu END sẽ hiện nguyên
- * dòng BEGIN + thân cho model. ⇒ Nếu BEGIN cuối cùng chưa có END nào sau nó, cắt TỪ DÒNG BEGIN đó trở đi. Gọi SAU `boDongDoDang`, CHỈ khi đọc bị cắt theo byte. Thuần.
+ * Khối khoá nhiều dòng (`-----BEGIN <nhãn>-----` … `-----END <nhãn>-----`): `redactSecretsOnly` chỉ che khi có CẢ BEGIN lẫn END ĐÚNG NHÃN. Phần được đọc mà có BEGIN không có END tương ứng
+ * (tệp bị cắt theo byte; hoặc tệp nhỏ vốn thiếu END / END lệch nhãn / tiêu đề dở) sẽ hiện nguyên dòng BEGIN + thân cho model. ⇒ Với BEGIN ĐẦU TIÊN không có `-----END <cùng nhãn>-----` ở SAU nó,
+ * thay từ ĐẦU DÒNG BEGIN tới hết bằng `DAU_CHE_PEM_THIEU_END`. Khối ĐỦ để nguyên cho `redactSecretsOnly`. Chỉ dùng ở đường đọc `.csv`; bộ che chung KHÔNG đổi. Thuần.
  */
-export function boKhoiPemDoDang(noiDung: string): string {
-  const b = noiDung.lastIndexOf("-----BEGIN");
-  if (b < 0) return noiDung;
-  if (noiDung.indexOf("-----END", b) >= 0) return noiDung;
-  return noiDung.slice(0, noiDung.lastIndexOf("\n", b) + 1);
+export function cheKhoiPemThieuEnd(noiDung: string): { text: string; daChe: boolean } {
+  const re = /-----BEGIN/g;
+  for (let m = re.exec(noiDung); m !== null; m = re.exec(noiDung)) {
+    const b = m.index;
+    const hdr = /^-----BEGIN ([A-Z0-9 ]+)-----/.exec(noiDung.slice(b, b + 120));
+    const coEnd = hdr !== null && noiDung.indexOf(`-----END ${hdr[1]}-----`, b + hdr[0].length) >= 0;
+    if (!coEnd) return { text: noiDung.slice(0, noiDung.lastIndexOf("\n", b) + 1) + DAU_CHE_PEM_THIEU_END + "\n", daChe: true };
+  }
+  return { text: noiDung, daChe: false };
 }
 
 /** Bỏ dòng dở dang ở cuối khi đọc bị cắt theo BYTE (không để một chuỗi bí mật bị chặt ngang đúng ranh giới rồi lọt lưới che). */
