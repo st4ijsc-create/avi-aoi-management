@@ -2018,7 +2018,7 @@ export { EDGE_HELD_CTX_KEY };
  * a2n round C — the end of a held run's error: what a person may do with it. Every hold keeps "Continue to resume it", except two. MIX ends failed without its forward STOP: it says
  * Abort, because Abort is the way out there. B5 fails the step, the run is latched by it and the walk's STOP pass sends the verified STOPs behind it (measured): it says so.
  */
-function heldAdvice(error: string | undefined): string {
+function heldAdvice(error: string | undefined, stopDaDi = false): string {
   // A2(n) T5 (N9, H1) — state C carries its own way out, Abort: "Continue to resume it" would be false
   if (error?.startsWith(`${FOE_STOP_NOT_SENT}:`)) return "";
   const mark = edgeHoldMarkOf(error);
@@ -2026,7 +2026,8 @@ function heldAdvice(error: string | undefined): string {
   if (mark === EDGE_HOLD_CONSUME_OVERRUN) return " A compensation may already have run. For a STOP still due use Abort: Continue may end the run without sending it.";
   // data-raw-ok: as above
   if (mark === EDGE_HOLD_UNUSED_NOT_REPORTED) return " Central counts that step as possibly sent. Continue fails that step, sends nothing forward, and sends the verified STOPs behind it. Abort sends them too.";
-  return " — nothing further was sent; Continue to resume it.";
+  // data-raw-ok: as above. QĐ-O20a — a STOP of this run went (its row says so: a held segment's pass sends the STOPs due), so "nothing further" alone would be false
+  return stopDaDi ? " — nothing further was sent except the run's STOPs due (each STOP's row and URGENT say whether it reached the device or was only simulated); Continue to resume it, or Abort to send the run's STOPs again." : " — nothing further was sent; Continue to resume it.";
 }
 
 /**
@@ -2083,7 +2084,7 @@ export function quyetDinhKetDoanEdge(v: {
   const tapU = new Set([...coTheDi.map((s) => s.id), ...ctxU.filter((id) => !v.stops.has(id))]);
   const khongRo = [...new Set([...tat.map((s) => s.id).filter((id) => tapU.has(id)), ...tapU])];
   const daChot = v.ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] != null; // (4)
-  const b0 = v.bao.find((b) => b.loai !== "forwardNotSent"); // QĐ4 (HST 15/11) — the report that sets the latch: never a forwardNotSent (a step that did NOT go), as chotTuBao
+  const b0 = v.bao.find((b) => b.loai !== "forwardNotSent" && !b.biet); // QĐ4 (HST 15/11) + QĐ-O20a — the report that sets the latch: never a forwardNotSent (a step that did NOT go), and a `biet` report sets no latch either (its step's own failure is KNOWN), as chotTuBao
   const chot = coTheDi[0] && !daChot && !b0 ? { stepId: coTheDi[0].id, ma: MA_KET_DOAN_EDGE } : null;
   const chotBao = !daChot && b0 ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: b0.stepId, ma: b0.ma } } : {}; // (5)
   const sauChot = { ...v.ctx, ...chotBao, ...(chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: chot } : {}), [OUTCOME_UNKNOWN_KEY]: [...ctxU, ...khongRo] };
@@ -2174,7 +2175,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     return { ok: true, status: ok ? status : run.status, changed: ok };
   };
   // A2(n) (b, C-C) — a report on the end is the fact itself, whatever the rows lost (a full journal): the latch is central's from here on
-  const b0 = baoKhongRo.find((x) => x.loai !== "forwardNotSent"); // QĐ4 (HST 15/11) — a forwardNotSent names a step that did NOT go: it sets no latch (only forwardNotSent ⇒ as no report)
+  const b0 = baoKhongRo.find((x) => x.loai !== "forwardNotSent" && !x.biet); // QĐ4 (HST 15/11) + QĐ-O20a — a forwardNotSent names a step that did NOT go: it sets no latch; a `biet` report sets no latch either (its step's own failure is KNOWN)
   const chotTuBao = ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] == null && b0 ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: b0.stepId, ma: b0.ma, at: new Date().toISOString() } } : {};
   const held = async (reason: string, error: string | undefined) => {
     const at = new Date().toISOString();
@@ -2208,7 +2209,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     return write("held", {
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
-      error: `${chuGiuEdge(end.nodeCode, runId, reason, loiHien)}${heldAdvice(loiHien)}`,
+      error: `${chuGiuEdge(end.nodeCode, runId, reason, loiHien)}${heldAdvice(loiHien, hang.some((r) => stops.has(r.stepId) && (r.status === "completed" || r.status === "compensated" || (r.status === "failed" && loiLaKetCucKhongRo((r as { error?: string | null }).error)))))}`,
       contextJson: {
         ...ctx,
         [EDGE_HELD_CTX_KEY]: reason,

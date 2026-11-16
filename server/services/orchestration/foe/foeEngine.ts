@@ -1041,6 +1041,7 @@ async function execStep(rc: RunContext, step: WorkflowStep, quaCua = false): Pro
     }
     // A2(n) (m-J) — on a re-walk too: the containers' STOPs go from here, never behind a slower sibling
     if (kr.khongRo && !rc.aborting) await stopToTienMoi(rc, step, loiCoMaKhongRo(rs.error));
+    if (rs.state === "doneFailed" && kr.khongRo && step.type === "command" && rc.store.kind === "edge" && rc.prior.attempted.has(step.id) && !rc.prior.settled.has(step.id)) await giuCoKhongRo(true, rc, step.id, rc.store.upsertStep(rc.runId, step.id, step.type, { status: "failed", error: loiCoMaKhongRo(rs.error), finishedAt: new Date() })); // F4 (QĐ-O20a) — its row was left running (a journal refused its result): this walk writes its last word, as an unknown step's (:1211)
     if (giuLai) return giuLai;
     return { kind: "failed", error: rs.error || `Step "${step.id}" failed in an earlier segment.`, ...kr, ...(laLoiKhongGuiChot(rs.error) ? { khongGuiChot: true as const } : {}) };
   }
@@ -1613,6 +1614,10 @@ async function lapKeHoachStop(rc: RunContext, src: AbortSweepSource, v: StopVeri
   // this walk's own: handed over here, its unknown, a pass has it. A compensation entered is not one (F3): a STOP behind a failed step of its body is due all the same, and a STOP the body
   // and a pass reach together has one hand-over (stopDangGiao); one that went to the hold did not walk at all (chặn 4)
   const tuLuotNay = (id: string) => rc.attempted.has(id) || rc.khongRoTai?.has(id) === true || rc.diStop?.has(id) === true || rc.buTruDaGui?.has(id) === true;
+  // THE invariant (chủ dự án 16/11): walker and Continue do not send a pinned STOP twice; "send" means it reached a driver, an attempt refused before a driver does not count and is tried
+  // again. Exception: when it is not known whether the STOP went out (the journal could not record the STOP's own record, the send met a driver error, or the send got no answer) the STOP
+  // is sent again, one STOP too many rather than one too few (L-7). An Abort is a person's own send: it sends again only a STOP not confirmed (acked_verified). The boot's own re-send keeps
+  // its rule (T10).
   // a STOP that failed in an EARLIER walk is due again; one of this walk had its attempts. A row is the last word when there is one; on an edge the rest is its package's picture
   const coHang = new Set((src.hang ?? []).map((r) => r.stepId));
   const hongTruoc = (id: string) => (coHang.has(id) || rc.store.kind === "central" ? hong.has(id) : rc.prior.settled.has(id) && !rc.completed.has(id) && !chuBuTruCua(rc, id));
@@ -2109,7 +2114,7 @@ async function lopChuaRa(rc: RunContext, step: Extract<WorkflowStep, { type: "co
   if (tt.vi.nguon === "driverLoi" && !rc.stopCoTheRa?.has(step.id)) (rc.stopCoTheRa ??= new Map()).set(step.id, tt.vi.ma);
   const maRa = rc.stopCoTheRa?.get(step.id);
   const vi: ViChuaRa = maRa !== undefined ? { nguon: "driverLoi", ma: maRa } : tt.vi;
-  if (!daChotKhongRo(rc)) {
+  if (!daChotKhongRo(rc) && !rc.khongRoTai?.size) { // QĐ-O20a (F6) — the pass of an edge journalFull end (khongRoTai, :3606) reads a refusal as a latched run does: state C now
     (rc.stopTuChoiTruocKhoa ??= new Map()).set(step.id, { attempt, vi });
     return o;
   }
@@ -3598,13 +3603,19 @@ async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<Orches
     await rc.store.persistContext(rc);
     return "aborted";
   }
-  // T4 bước 3 (iv) (HST QĐ1 15/11) — an edge segment whose journal refused the result of a command it sent ends with that command unknown, the walk not latched: the forward work a Continue
-  // drops is told now, by THE rule (buocTienBiBo, reported below by baoBuocTienBiBo), as baoH13KhiAbort does; never duongKetThuc here: its STOP pass would change when a STOP goes (HST (d))
+  // T4 bước 3 (iv) (HST QĐ1 15/11) + QĐ-O20a (chủ dự án 16/11) — an edge segment whose journal refused the result of a command it sent ends with that command unknown, the walk not latched:
+  // its STOP pass of the hold now runs HERE, step by step (last pass, state C, ONE reading, buocTienBiBo, giuStopChuaRa); never duongKetThuc here: the rest of it is a latched run's
   const khongRoDoan = daChotKhongRo(rc) ? undefined : rc.store.buocKhongRoDoan?.();
   if (daChotKhongRo(rc)) out = await duongKetThuc(rc, out);
   else if (khongRoDoan?.size) {
     for (const id of khongRoDoan) (rc.khongRoTai ??= new Map()).set(id, `EDGE_OUTCOME_UNKNOWN: command "${id}" was sent and its result could not be recorded.`);
-    rc.khongGuiDs = await buocTienBiBo(rc, await rc.store.sweepSource({ live: rc, hasLiveDriver: () => true }).catch(() => null));
+    await guiStopSauChot(rc, true).catch((err: unknown) => console.error(`[FOE] run ${rc.runId}: final STOP pass failed: ${(err as Error)?.message ?? err}`));
+    await Promise.allSettled(rc.stopNen ?? []);
+    await vaoChuaRaTuTruocKhoa(rc);
+    const src = await rc.store.sweepSource({ live: rc, hasLiveDriver: () => true }).catch(() => null);
+    rc.khongGuiDs = await buocTienBiBo(rc, src);
+    const giuChuaRa = await giuStopChuaRa(rc, src);
+    if (giuChuaRa && out.kind !== "paused" && !(out.kind === "held" && out.reason === "outcomeUnknown")) out = giuChuaRa; // F1 — the walker's own hold here is the journal's (no authorisation): state C's words, as central's
   }
   // R1b-2b-2a A2(n) (R-4) — an unknown outcome with no compensation due anywhere: nothing was split, nobody was told yet
   // (C-A) — the same on a paused / held / aborted end: the flag rode on it. T4 bước 3 (#18) — a step whose compensation a Continue approved and that went: told already, nothing more
