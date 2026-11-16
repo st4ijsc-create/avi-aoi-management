@@ -58,7 +58,7 @@
  */
 import path from "node:path";
 import { redactSecretsOnly } from "../ai/aiSafety";
-import { TRAN_BYTE_DOC_CSV, boDongDoDang, boKhoiPemDoDang, catCsv, csvDuocPhep } from "./csvTrongDuAn";
+import { TRAN_BYTE_DOC_CSV, boDongDoDang, catCsv, cheKhoiPemThieuEnd, csvDuocPhep } from "./csvTrongDuAn";
 import {
   confineDirUnder,
   confineTargetUnder,
@@ -436,8 +436,9 @@ export function moTepTrongHopCat(duongDan: unknown, tuyChon: TuyChonDocTep = {})
   if (tuyChon.khoaNganSach) tieuNganSach(tuyChon.khoaNganSach, rd.content.length);
   // `.csv` (B1): đọc bị cắt theo BYTE ⇒ bỏ dòng dở dang TRƯỚC khi che (khoá bị chặt ngang ranh giới không lọt lưới), rồi cắt theo trần SỐ DÒNG.
   if (laCsv) {
-    const duocDoc = rd.truncated ? boKhoiPemDoDang(boDongDoDang(rd.content)) : rd.content;
-    const cheCsv = redactSecretsOnly(duocDoc);
+    const duocDoc = rd.truncated ? boDongDoDang(rd.content) : rd.content;
+    const pemDo = cheKhoiPemThieuEnd(duocDoc);
+    const cheCsv = redactSecretsOnly(pemDo.text);
     const c = catCsv(cheCsv.text);
     return {
       ok: true,
@@ -445,7 +446,7 @@ export function moTepTrongHopCat(duongDan: unknown, tuyChon: TuyChonDocTep = {})
       noiDung: c.noiDung,
       byteTrenDia: rd.size,
       catBot: rd.truncated || c.catTheoDong,
-      daChe: cheCsv.text !== duocDoc,
+      daChe: pemDo.daChe || cheCsv.text !== pemDo.text,
       csv: { dongTra: c.dong, catTheoDong: c.catTheoDong },
     };
   }

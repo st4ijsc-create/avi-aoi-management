@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TRAN_BYTE_DOC_CSV, TRAN_DONG_DOC_CSV, boKhoiPemDoDang, catCsv, csvBat, csvDuocPhep, laTepCsv } from "./csvTrongDuAn";
+import { TRAN_BYTE_DOC_CSV, TRAN_DONG_DOC_CSV, DAU_CHE_PEM_THIEU_END, catCsv, cheKhoiPemThieuEnd, csvBat, csvDuocPhep, laTepCsv } from "./csvTrongDuAn";
 
 const chr10 = String.fromCharCode(10);
 let goc: string; // "gốc repo" giả
@@ -105,28 +105,60 @@ describe("csvDuocPhep — phán quyết theo ĐƯỜNG THẬT (realpath), fail-c
   });
 });
 
-describe("boKhoiPemDoDang — khối PEM bị cắt ngang ranh giới đọc", () => {
-  const pem = (so: number) => ["-----BEGIN PRIVATE KEY-----", ...Array.from({ length: so }, (_, i) => `THAN${i}` + "A".repeat(60)), "-----END PRIVATE KEY-----", ""].join(chr10);
-  it("★★★ BEGIN chưa có END sau nó ⇒ cắt TỪ DÒNG BEGIN trở đi, giữ phần trước nguyên văn", () => {
-    const truoc = ["ma,ghi_chu", "A,ok", ""].join(chr10);
-    const dem = pem(10).split(chr10).slice(0, 6).join(chr10) + chr10; // BEGIN + 5 dòng thân, chưa có END
-    expect(boKhoiPemDoDang(truoc + dem)).toBe(truoc);
+describe("cheKhoiPemThieuEnd — BEGIN không có END TƯƠNG ỨNG tới hết phần được đọc ⇒ che từ BEGIN tới hết", () => {
+  const khoi = (nhan: string, so: number) => [`-----BEGIN ${nhan}-----`, ...Array.from({ length: so }, (_, i) => `THAN${i}` + "A".repeat(60)), `-----END ${nhan}-----`, ""].join(chr10);
+  const dau = ["ma,ghi_chu", "A,ok", ""].join(chr10);
+  it("★★★ BEGIN chưa có END (tệp nhỏ, đọc trọn) ⇒ giữ phần trước nguyên văn, từ DÒNG BEGIN tới hết thay bằng dấu cố định; không còn chữ BEGIN hay dòng thân", () => {
+    const dở = khoi("PRIVATE KEY", 5).split(chr10).slice(0, 4).join(chr10) + chr10 + "B,sau" + chr10;
+    const r = cheKhoiPemThieuEnd(dau + dở);
+    expect(r.daChe).toBe(true);
+    expect(r.text).toBe(dau + DAU_CHE_PEM_THIEU_END + chr10);
+    expect(r.text).not.toContain("BEGIN");
+    expect(r.text).not.toContain("THAN0");
+    expect(r.text).not.toContain("B,sau");
   });
-  it("★★★ BEGIN đã có END sau nó (khối đủ) ⇒ KHÔNG đổi; nhiều khối, khối cuối dở ⇒ chỉ bỏ khối cuối", () => {
-    const du = pem(3);
-    expect(boKhoiPemDoDang(du)).toBe(du);
-    const dở = pem(10).split(chr10).slice(0, 5).join(chr10) + chr10;
-    expect(boKhoiPemDoDang(du + dở)).toBe(du);
+  it("★★★ khối ĐỦ (cùng nhãn) ⇒ KHÔNG đổi (để redactSecretsOnly che); hai khối đủ ⇒ không đổi; khối đủ rồi khối dở ⇒ chỉ khối dở bị che", () => {
+    const du = khoi("PRIVATE KEY", 3);
+    expect(cheKhoiPemThieuEnd(dau + du)).toEqual({ text: dau + du, daChe: false });
+    const hai = du + khoi("RSA PRIVATE KEY", 2);
+    expect(cheKhoiPemThieuEnd(hai)).toEqual({ text: hai, daChe: false });
+    const dở = khoi("OPENSSH PRIVATE KEY", 6).split(chr10).slice(0, 3).join(chr10) + chr10;
+    expect(cheKhoiPemThieuEnd(dau + du + dở)).toEqual({ text: dau + du + DAU_CHE_PEM_THIEU_END + chr10, daChe: true });
   });
-  it("★★★ BEGIN nằm GIỮA dòng (ô CSV có nháy, `A,\"-----BEGIN…`) ⇒ cắt từ ĐẦU DÒNG đó (cả tiền tố `A,` của dòng), không chỉ từ chữ BEGIN", () => {
-    const truoc = ["ma,x", "A,1", ""].join(chr10);
-    const dở = ["B,\"-----BEGIN PRIVATE KEY-----", "THANTHANTHAN", ""].join(chr10);
-    expect(boKhoiPemDoDang(truoc + dở)).toBe(truoc);
+  it("★★★ khối ĐỦ với nhãn KHÁC (CERTIFICATE, RSA PRIVATE KEY, PGP PRIVATE KEY BLOCK, nhãn có số) ⇒ KHÔNG đổi (để redactSecretsOnly lo); nhãn không theo mẫu chữ HOA/số (chữ thường, ký tự lạ) ⇒ không nhận ra ⇒ che (fail-closed)", () => {
+    for (const nhan of ["CERTIFICATE", "RSA PRIVATE KEY", "PGP PRIVATE KEY BLOCK", "EC PARAMETERS", "X509 CRL"]) {
+      const du = khoi(nhan, 2);
+      expect(cheKhoiPemThieuEnd(dau + du), nhan).toEqual({ text: dau + du, daChe: false });
+    }
+    for (const nhan of ["private key", "Private-Key", "KEY_1"]) {
+      const du = [`-----BEGIN ${nhan}-----`, "THANTHAN" + "A".repeat(40), `-----END ${nhan}-----`, ""].join(chr10);
+      expect(cheKhoiPemThieuEnd(dau + du), nhan).toEqual({ text: dau + DAU_CHE_PEM_THIEU_END + chr10, daChe: true });
+    }
   });
-  it("★★ không có BEGIN ⇒ nguyên văn; chuỗi rỗng ⇒ rỗng; BEGIN ở đầu tệp, không END ⇒ rỗng", () => {
-    expect(boKhoiPemDoDang("a,b" + chr10)).toBe("a,b" + chr10);
-    expect(boKhoiPemDoDang("")).toBe("");
-    expect(boKhoiPemDoDang(pem(10).split(chr10).slice(0, 4).join(chr10) + chr10)).toBe("");
+  it("★★★ END LỆCH NHÃN (BEGIN PRIVATE KEY … END CERTIFICATE) = không tương ứng ⇒ che từ BEGIN (bộ che chung KHÔNG che ca này)", () => {
+    const lech = ["-----BEGIN PRIVATE KEY-----", "THANTHAN" + "A".repeat(40), "-----END CERTIFICATE-----", ""].join(chr10);
+    const r = cheKhoiPemThieuEnd(dau + lech);
+    expect(r).toEqual({ text: dau + DAU_CHE_PEM_THIEU_END + chr10, daChe: true });
+  });
+  it("★★★ END nằm TRƯỚC BEGIN (không phải của nó) ⇒ BEGIN vẫn thiếu END ⇒ che", () => {
+    const t = ["-----END PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----", "THAN" + "A".repeat(40), ""].join(chr10);
+    expect(cheKhoiPemThieuEnd(t)).toEqual({ text: ["-----END PRIVATE KEY-----", DAU_CHE_PEM_THIEU_END, ""].join(chr10), daChe: true });
+  });
+  it("★★★ tiêu đề BEGIN dở (`-----BEGIN PRIV` bị cắt, hoặc không có dấu `-----` đóng) ⇒ che", () => {
+    expect(cheKhoiPemThieuEnd(dau + "-----BEGIN PRIV").daChe).toBe(true);
+    expect(cheKhoiPemThieuEnd(dau + "-----BEGIN PRIVATE KEY" + chr10 + "THAN").daChe).toBe(true);
+  });
+  it("★★★ BEGIN nằm GIỮA dòng (ô CSV có nháy) ⇒ che từ ĐẦU DÒNG đó (cả tiền tố `B,\"`)", () => {
+    const dở = ["B,\"-----BEGIN PRIVATE KEY-----", "THANTHAN", ""].join(chr10);
+    expect(cheKhoiPemThieuEnd(dau + dở)).toEqual({ text: dau + DAU_CHE_PEM_THIEU_END + chr10, daChe: true });
+  });
+  it("★★ không có BEGIN ⇒ nguyên văn; rỗng ⇒ rỗng; BEGIN ở đầu tệp, không END ⇒ chỉ còn dấu che", () => {
+    expect(cheKhoiPemThieuEnd("a,b" + chr10)).toEqual({ text: "a,b" + chr10, daChe: false });
+    expect(cheKhoiPemThieuEnd("")).toEqual({ text: "", daChe: false });
+    expect(cheKhoiPemThieuEnd("-----BEGIN PRIVATE KEY-----" + chr10 + "x")).toEqual({ text: DAU_CHE_PEM_THIEU_END + chr10, daChe: true });
+  });
+  it("★★ dấu che cố định, không chứa BEGIN / END", () => {
+    expect(DAU_CHE_PEM_THIEU_END).toBe("[REDACTED_PEM_BLOCK_WITHOUT_END]");
   });
 });
 
