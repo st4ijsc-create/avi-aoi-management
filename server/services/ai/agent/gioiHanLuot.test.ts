@@ -64,12 +64,16 @@ describe("hopGioiHanLuot", () => {
 describe("nối vào quanLyLuotChay (đọc nguồn: quanLyLuotChay cần DB nên không nạp ở đây)", () => {
   const nguon = fs.readFileSync(path.join(__dirname, "quanLyLuotChay.ts"), "utf8");
   it("★★★ cả ba nhánh của `gioiHan` đều đi qua hopGioiHanLuot(phuThuoc.gioiHan, process.env); không còn `phuThuoc.gioiHan` trần trong biểu thức đó", () => {
-    const i = nguon.indexOf("gioiHan: capNgoai");
+    // (HST 15/11, lô cờ ép) biểu thức tính MỘT lần vào `gioiHanLuot` (lõi và bản ghi `bat-dau.model.nganSachNguCanh` đọc cùng số), rồi truyền `gioiHan: gioiHanLuot`.
+    const i = nguon.indexOf("const gioiHanLuot = capNgoai");
     expect(i).toBeGreaterThan(0);
     const khoi = nguon.slice(i, i + 600);
     expect(khoi.match(/hopGioiHanLuot\(phuThuoc\.gioiHan, process\.env\)/g)).toHaveLength(3);
     expect(khoi).not.toMatch(/\.\.\.phuThuoc\.gioiHan/);
     expect(khoi).not.toMatch(/: phuThuoc\.gioiHan,/);
+    // lõi nhận ĐÚNG biến đó, một chỗ; không còn biểu thức nội tuyến thứ hai
+    expect(nguon.match(/gioiHan: gioiHanLuot,/g)).toHaveLength(1);
+    expect(nguon).not.toContain("gioiHan: capNgoai");
   });
   it("★★ import có thật", () => {
     expect(nguon).toContain('import { hopGioiHanLuot } from "./gioiHanLuot";');

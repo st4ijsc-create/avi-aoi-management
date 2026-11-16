@@ -83,6 +83,7 @@ export const CO_ANH_HUONG_BYTE: readonly CoAnhHuongByte[] = [
   db("AI_AGENT_MAX_TOKENS_MOT_LUOT", "khong-dat", "trần token ra mỗi lượt model (tham số yêu cầu)"),
   db("AI_AGENT_NEN_MOC", "khong-dat", "đích nén ngữ cảnh (mức < ngưỡng ⇒ nén sâu một lần)"),
   db("AI_AGENT_NEN_SO_THAT", "tat", "nén dựa số token THẬT của lượt trước thay vì ước lượng"),
+  db("AI_AGENT_NGAN_SACH_EP", "khong-dat", "ÉP ĐO: chỉ HẠ ngân sách ngữ cảnh agent, kẹp [8 192, ngân sách thật] (nganSachNguCanh.ts); vắng ⇒ ngân sách thật; chỉ đặt cho :3013, không bật ở sản xuất"),
   db("AI_AGENT_NGHI", "bat", "bật chế độ suy luận của model (tham số yêu cầu)", "mac-dinh-tu-dau"),
   db("AI_AGENT_SO_LUOT_TOI_DA", "khong-dat", "trần số lượt chạy ⇒ lý do dừng `het-luot`"),
   db("AI_AGENT_THEO_VAI_TRO", "bat", "chọn model/vai theo loại dự án (PLC / phần mềm)", "mac-dinh-tu-dau"),
