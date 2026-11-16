@@ -1064,12 +1064,32 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     expect(h.devices.calls).toEqual([S9_DRIVER]);
   });
 
-  it("X12-DU-PHONG-BO-COMPLETED (1) device-port fallback, signed picture: s9 has its own row completed (prior.completed) ⇒ s9 is NOT re-sent; the other unconfirmed STOP s8 still is", async () => {
+  // HST 17/11, X-12 bỏ vế (1), hướng đóng: gửi thừa một STOP đã completed thật trên đường dự phòng là chấp nhận; bộ lọc X-11 ở trung tâm chặn phần lớn
+  // trước khi tới nút (edgeExecutionCentral.ts docRunAbortCanGuiLaiStop). Tên cũ: X12-DU-PHONG-BO-COMPLETED (kỳ vọng cũ: s9 không gửi) ⇒ tên mới dưới đây
+  // đỏ trước sửa; đổi thành it ở commit 6 (X-12)
+  it.fails("X12-DU-PHONG-COMPLETED-VAN-GUI (1, bỏ) device-port fallback, signed picture: s9 has its own row completed (prior.completed, attempted) ⇒ the fallback does not skip by prior.completed (the picture carries no per-row outcome): s9 is re-sent exactly once, s8 too", async () => {
     const h = await harness({ claimRuns: false });
     const pic = anh(h, 42, { verifiedStops: [S8_ROBOT, S9], prior: { ...prior0, completed: ["s9"], settled: ["s9"], attempted: ["s9"], startOrder: ["s9"] } });
     h.central.stopsUnconfirmed = [{ runId: 42, picture: h.central.sign("runpkg", pic) }];
     expect((await h.agent.tick()).stopsResent).toEqual([42]);
-    expect(h.devices.calls).toEqual(["stopRobot:12"]);
+    expect((await h.agent.tick()).stopsResent, "back-off: not again in the next pull").toEqual([]);
+    expect(h.devices.calls).toEqual(["stopRobot:12", S9_DRIVER]);
+  });
+
+  // HST 17/11 (DO-66 vòng 8, giới hạn đã nêu): re-walk — lần trước đã giao s9 cho dispatcher (resultJson.routedTo), lần sau precondition sai ⇒ hàng 'skipped'
+  // (foeEngine.ts:1071-1077) giữ resultJson cũ (foeRunStore.ts:1184-1186): completed VÀ attempted đều có s9 — lần giao trước có thể đã hỏng: vẫn phải gửi lại
+  // đỏ trước sửa; đổi thành it ở commit 6 (X-12)
+  it.fails("X12-DU-PHONG-SKIPPED-ROUTED-VAN-GUI (1-đối chứng) device-port fallback, signed picture: s9's own row 'skipped' but still carrying the routedTo of an earlier hand-over — edgePriorPictureOf lists it in `completed` AND `attempted` ⇒ s9 is still re-sent, once", async () => {
+    const { edgePriorPictureOf } = await import("../orchestration/foe/foeRunStore");
+    const prior = edgePriorPictureOf([{ stepId: "s9", status: "skipped", resultJson: { routedTo: "edge", status: "failed" }, startedAt: null }]);
+    expect(prior.completed, "the producer: a skipped row is completed").toEqual(["s9"]);
+    expect(prior.attempted, "the producer: its routedTo makes it attempted (foeRunStore.ts:320)").toEqual(["s9"]);
+    const h = await harness({ claimRuns: false });
+    const pic = anh(h, 69, { verifiedStops: [S9], prior });
+    h.central.stopsUnconfirmed = [{ runId: 69, picture: h.central.sign("runpkg", pic) }];
+    expect((await h.agent.tick()).stopsResent).toEqual([69]);
+    expect((await h.agent.tick()).stopsResent).toEqual([]);
+    expect(h.devices.calls).toEqual([S9_DRIVER]);
   });
 
   // rà soát bảo mật 17/11 + DO-68: prior.completed của edgePriorPictureOf gồm cả hàng 'skipped' (foeRunStore.ts:2314) — STOP có precondition sai với
