@@ -183,6 +183,11 @@ export function chePem(text: string, thay: string): KetQuaThay {
  *   G3. Một "từ" toàn ký tự base64 dài 4 / 8 / 12 ký tự đứng NGAY dòng sau thân bị nuốt làm dòng cuối (che oan một dòng).
  *   G4. Luồng (`StreamingSecretRedactor`, aiSafety.ts): thân dài hơn `STREAM_HOLD_CAP` (8 192) ⇒ lần xả cưỡng bức che phần đã giữ, nhưng các
  *       mẩu SAU lần xả không còn header ⇒ phần thân còn lại nhả NGUYÊN VĂN (đo: khoá giả 200 dòng ⇒ 134–138 dòng lọt). Lô 2 (HST) — ca `it.fails`.
+ *   G5. (kiem-dinh 16/11, probe tay) dạng KHÔNG chuẩn PEM không được nhận là thân:
+ *       (a) khoá viết CÙNG DÒNG với header, ngăn bằng khoảng trắng (biến môi trường / một ô CSV) ⇒ header không đứng cuối dòng ⇒ không che;
+ *       (b) độ dài dòng không đều (dòng đầu ngắn hơn dòng sau, dòng trống chen giữa, dòng 2 dài hơn dòng 1) ⇒ chỉ che tới chỗ đổi độ dài;
+ *       (c) base64url (`-` `_`) hoặc chú thích ngay cuối dòng thân đầu ⇒ không nhận thân. (a)(b): ca `it.fails` giữ kỳ vọng đúng (che);
+ *       (c): loại CÓ CHỦ ĐÍCH (không phải PEM RFC 7468), không ca.
  */
 export const TRAN_DONG_THAN_PEM = 256;
 export const TRAN_KY_TU_THAN_PEM = 16_384;

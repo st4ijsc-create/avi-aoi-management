@@ -143,3 +143,48 @@ describe("giới hạn đã biết (G1–G4, cheTuyenTinh.ts)", () => {
     expect(d.filter((x) => out.includes(x)).length).toBe(0);
   });
 });
+
+// (kiem-dinh 16/11) ca biên cho các đột biến còn sống S1–S7 + G5.
+describe("ca biên (kiem-dinh S1–S7) + G5", () => {
+  it("S1 tổng thân ĐÚNG 16 384 ký tự ⇒ che trọn; thêm một dòng cuối làm vượt ⇒ dòng đó còn hiện", () => {
+    const d = than(8, 2_048);
+    expect(d.join("").length).toBe(16_384);
+    expect(chePemDayDu(["x", DAU, ...d, "sau"].join("\n"), T).text).toBe(["x", T, "sau"].join("\n"));
+    expect(chePemDayDu(["x", DAU, ...d, "AbCd", "sau"].join("\n"), T).text).toBe(["x", T, "AbCd", "sau"].join("\n"));
+  });
+  it("S2 dòng đầu sau header dài ĐÚNG 15 ⇒ không phải thân; ĐÚNG 16 ⇒ thân", () => {
+    const d15 = ["x", DAU, dongGia(1, 15), "sau"].join("\n");
+    expect(chePemDayDu(d15, T).text).toBe(d15);
+    expect(chePemDayDu(["x", DAU, dongGia(1, 16), "sau"].join("\n"), T).text).toBe(["x", T, "sau"].join("\n"));
+  });
+  it("S3 gọi TRỰC TIẾP chePemThieuEnd trên khối CÓ END ⇒ không đổi byte (khối có END là việc của chePem)", () => {
+    const s = ["a", DAU, ...than(4), CUOI, "b"].join("\n");
+    expect(chePemThieuEnd(s, T)).toEqual({ text: s, n: 0 });
+  });
+  it("S4 header GIỮA dòng (theo sau là chữ trong câu) ⇒ không che, kể cả khi dòng sau là base64", () => {
+    const s = ["abc -----BEGIN PRIVATE KEY----- chữ thường trong câu", ...than(3), "sau"].join("\n");
+    expect(chePemDayDu(s, T).text).toBe(s);
+  });
+  it("S5 một dòng có \\r\\n thoát (chuỗi JSON Windows) ⇒ che tới trước ký tự lạ", () => {
+    const tho = `{"k":"${DAU}\\r\\n${than(3).join("\\r\\n")}\\r\\nAB==","z":1}`;
+    expect(chePemDayDu(tho, T).text).toBe(`{"k":"${T}","z":1}`);
+  });
+  it("S6 thân có '/' và '+' ở dòng đầu và dòng giữa ⇒ che trọn", () => {
+    const d1 = "+/" + dongGia(3, 60) + "/+";
+    const d2 = dongGia(4, 30) + "//++" + dongGia(5, 30);
+    expect(d1.length).toBe(64);
+    expect(d2.length).toBe(64);
+    expect(chePemDayDu(["x", DAU, d1, d2, ...than(2), "sau"].join("\n"), T).text).toBe(["x", T, "sau"].join("\n"));
+  });
+  it("S7 dòng TRỐNG ngay sau thân ⇒ giữ nguyên dòng trống (không nuốt xuống dòng)", () => {
+    expect(chePemDayDu(["x", DAU, ...than(3), "", "chữ"].join("\n"), T).text).toBe(["x", T, "", "chữ"].join("\n"));
+  });
+  it.fails("G5a khoá CÙNG DÒNG với header, ngăn bằng khoảng trắng ⇒ kỳ vọng ĐÚNG: che (hiện chưa)", () => {
+    const s = `KEY=-----BEGIN PRIVATE KEY----- ${dongGia(1)} ${dongGia(2)}`;
+    expect(chePemDayDu(s, T).text).not.toContain(dongGia(1));
+  });
+  it.fails("G5b độ dài dòng không đều (64 rồi 76) ⇒ kỳ vọng ĐÚNG: che trọn (hiện chỉ che tới chỗ đổi độ dài)", () => {
+    const d = [dongGia(1), dongGia(2, 76), dongGia(3, 76)];
+    expect(chePemDayDu(["x", DAU, ...d, "sau"].join("\n"), T).text).toBe(["x", T, "sau"].join("\n"));
+  });
+});
