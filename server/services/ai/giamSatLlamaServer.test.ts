@@ -685,3 +685,32 @@ describe("choLlamaServerHoiPhuc — chờ có trần cho giám sát dựng lại
     expect(b.message).toMatch(/không khởi động được/);
   });
 });
+
+// ═══ KHOÁ NGUỒN: ca THẬT phải chờ bằng `choSoPidTrongTep`, không quay lại vòng chờ chỉ-existsSync ═══════════════════════════════════════════
+describe("khoá nguồn — ca THẬT chờ SỐ trong cuoi.txt, không chỉ chờ tệp xuất hiện", () => {
+  /** Các mẫu được GHÉP từ mảnh để chính mã của ca khoá này không tự khớp mẫu của nó (mọi chuỗi bị tìm đều không xuất hiện nguyên văn ở đây). */
+  const TIEU_DE_CA_THAT = "★★★ THẬT " + "(không mock spawn)";
+  const HET_CA_THAT = "\n    40_" + "000,\n"; // hạn riêng của ca THẬT — dòng kết thúc lời gọi `it.runIf(...)(…)`
+  const LOI_GOI = "choSoPidTrongTep" + "(cuoi,";
+
+  /** Thân ca THẬT: từ tiêu đề của nó tới dòng hạn `40_000,` kết thúc chính ca ấy (không lấn sang các ca thuần của `choSoPidTrongTep`). Chuẩn hoá CRLF → LF trước để không đỏ giả trên bản sao autocrlf. */
+  function thanCaThat(): string {
+    const nguon = fs.readFileSync(__filename, "utf8").replace(/\r\n/g, "\n");
+    const dau = nguon.indexOf(TIEU_DE_CA_THAT);
+    const cuoi = nguon.indexOf(HET_CA_THAT, dau + 1);
+    expect(dau, "không thấy tiêu đề ca THẬT").toBeGreaterThan(0);
+    expect(cuoi, "không thấy dòng hạn kết thúc ca THẬT").toBeGreaterThan(dau);
+    return nguon.slice(dau, cuoi);
+  }
+
+  it("★★★ thân ca THẬT chứa lời gọi `choSoPidTrongTep(cuoi, …)` và KHÔNG còn vòng chờ nào có điều kiện dùng existsSync (đột biến: hoàn lại `while (!fs.existsSync(cuoi) …)` phải ĐỎ)", () => {
+    const than = thanCaThat();
+    expect(than.length, "thân ca THẬT phải đủ dài (cắt đúng đoạn)").toBeGreaterThan(400);
+    expect(than.split(LOI_GOI).length - 1, "đúng MỘT lời gọi choSoPidTrongTep(cuoi, …) trong ca THẬT").toBe(1);
+    const vongChoExistsSync = new RegExp("while\\s*\\([^\\n]*" + "exists" + "Sync");
+    expect(vongChoExistsSync.test(than), "ca THẬT không được quay lại vòng chờ theo existsSync").toBe(false);
+    // các khẳng định sau vòng chờ còn nguyên: tệp tồn tại + pid > 0 (không nới)
+    expect(than).toContain("expect(fs.existsSync(cuoi)).toBe(true);");
+    expect(than).toMatch(/expect\(pidCha\)\.toBeGreaterThan\(0\);/);
+  });
+});
