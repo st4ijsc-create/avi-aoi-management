@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { chonThoiDiemTrongChunkSanCo, coChunkChuaThoiDiem, viTriTrongChunk, type ChayTruyVan } from "./__chunkSanCo";
+import { chonMocTheoDb, chonThoiDiemTrongChunkSanCo, coChunkChuaThoiDiem, viTriTrongChunk, type ChayTruyVan } from "./__chunkSanCo";
 
 const MAC_DINH = new Date("2017-11-08T05:00:00.000Z");
 const BAY_GIO = new Date("2026-11-17T09:00:00.000Z");
@@ -201,5 +201,115 @@ describe("statisticsScope.test.ts — dùng chunk có sẵn, không tự đặt 
     expect(nguon).toMatch(/beforeAll\(async \(\) => \{\s*\/\/[^\n]*\n\s*if \(THOI_DIEM\.nguon !== "chunk-san-co" \|\| THOI_DIEM\.coChunkHomNay === false\)[\s\S]{0,400}?await moGiaoDichHoanTac\(\);/);
     // đọc chunk dùng kết nối riêng, đóng ngay, không phải tx
     expect(nguon).toMatch(/const cli = postgres\(url, \{ max: 1[^}]*\}\);[\s\S]{0,700}?finally \{\s*await cli\.end\(/);
+  });
+});
+
+// ═══ Nhiều hypertable cùng mốc (`cungBang`) và bọc theo `db` drizzle (`chonMocTheoDb`) — dùng cho reportServiceScope (product_inspections + oee_metrics) ═══
+describe("chonThoiDiemTrongChunkSanCo — cungBang (mốc nằm trong chunk có sẵn của CẢ HAI bảng)", () => {
+  const MUON = new Date(BAY_GIO.getTime() - 86_400_000);
+  const tuyChon = (ts: number, cungBang: string[]) => ({ bang: "product_inspections", cot: "inspectionTime", ts, macDinh: MAC_DINH, bayGio: BAY_GIO, cungBang });
+  /** Bộ chạy giả: chunk của bảng chính + chunk của bảng khác theo khoảng [dau, cuoi) (rỗng ⇒ bảng không có chunk nào). */
+  function giaHaiBang(chinh: Array<Record<string, unknown>>, khac: { dau: Date; cuoi: Date } | null) {
+    const goiKhac: Array<{ p: unknown[] }> = [];
+    const chay: ChayTruyVan = async (q, p) => {
+      if (/range_start <= \$2 and range_end > \$3/.test(q)) {
+        goiKhac.push({ p });
+        if (!khac) return [];
+        const a = new Date(p[1] as string).getTime();
+        const b = new Date(p[2] as string).getTime();
+        return a >= khac.dau.getTime() && b <= khac.cuoi.getTime() ? [{ co: 1 }] : [];
+      }
+      if (/timescaledb_information\.chunks/.test(q)) return chinh;
+      return [{ n: 0 }];
+    };
+    return { chay, goiKhac };
+  }
+
+  it("★★★ bảng khác có chunk phủ MỘT PHẦN chunk chính ⇒ mốc chọn được luôn nằm trong phần giao (đủ nhiều ts), cả hai đầu cửa sổ nằm trong chunk của bảng khác", async () => {
+    const khac = { dau: new Date("2026-10-10T00:00:00.000Z"), cuoi: new Date("2026-10-20T00:00:00.000Z") }; // chỉ 10 ngày trong chunk chính 10/2026
+    let dungChunk = 0;
+    for (let ts = 1_800_000_000_000; ts < 1_800_000_000_000 + 400; ts += 13) {
+      const { chay } = giaHaiBang([CHUNK_10], khac);
+      const r = await chonThoiDiemTrongChunkSanCo(chay, tuyChon(ts, ["oee_metrics"]));
+      if (r.nguon === "chunk-san-co") {
+        dungChunk++;
+        expect(r.at.getTime() - 30_000).toBeGreaterThanOrEqual(khac.dau.getTime());
+        expect(r.at.getTime() + 30_000).toBeLessThanOrEqual(khac.cuoi.getTime());
+      } else {
+        expect(r.nguon).toBe("mac-dinh:khong-co-chunk-phu-hop");
+      }
+    }
+    expect(dungChunk, "phần giao ~1/3 chunk, 5 lần thử ⇒ đa số lượt phải chọn được").toBeGreaterThan(20);
+  });
+  it("★★★ HAI BẢNG KHÔNG CÓ KHOẢNG CHUNG (bảng khác không có chunk nào, hoặc chunk không giao) ⇒ MẶC ĐỊNH 'khong-co-chunk-phu-hop' (người gọi cảnh báo), không chọn mốc ngoài chunk của bảng khác", async () => {
+    const khongCo = giaHaiBang([CHUNK_10, CHUNK_09], null);
+    const r1 = await chonThoiDiemTrongChunkSanCo(khongCo.chay, tuyChon(7, ["oee_metrics"]));
+    expect(r1).toEqual({ at: MAC_DINH, nguon: "mac-dinh:khong-co-chunk-phu-hop" });
+    expect(khongCo.goiKhac.length, "đã thử kiểm bảng khác ở mọi vị trí (2 chunk × 5)").toBe(10);
+    const khongGiao = giaHaiBang([CHUNK_10], { dau: new Date("2025-01-01T00:00:00.000Z"), cuoi: new Date("2025-02-01T00:00:00.000Z") });
+    expect((await chonThoiDiemTrongChunkSanCo(khongGiao.chay, tuyChon(7, ["oee_metrics"]))).nguon).toBe("mac-dinh:khong-co-chunk-phu-hop");
+  });
+  it("bảng khác phủ trọn ⇒ chọn như không có cungBang; truy vấn bảng khác dùng đúng tên + cửa sổ ±nửa-độ-trống quanh `at`; tên bảng khác không hợp lệ ⇒ mặc định không truy vấn", async () => {
+    const { chay, goiKhac } = giaHaiBang([CHUNK_10], { dau: new Date("2026-09-01T00:00:00.000Z"), cuoi: new Date("2026-12-01T00:00:00.000Z") });
+    const r = await chonThoiDiemTrongChunkSanCo(chay, tuyChon(11, ["oee_metrics"]));
+    expect(r.nguon).toBe("chunk-san-co");
+    expect(goiKhac[0]!.p[0]).toBe("oee_metrics");
+    expect(new Date(goiKhac[0]!.p[2] as string).getTime() - new Date(goiKhac[0]!.p[1] as string).getTime()).toBe(60_000);
+    const xau = giaHaiBang([CHUNK_10], null);
+    const rx = await chonThoiDiemTrongChunkSanCo(xau.chay, tuyChon(11, ["oee_metrics; drop table machines"]));
+    expect(rx.nguon).toBe("mac-dinh:ten-bang-cot-khong-hop-le");
+    expect(xau.goiKhac).toHaveLength(0);
+  });
+  it("lát bị chiếm ở bảng chính thì KHÔNG hỏi bảng khác (không phí truy vấn, không chọn lát bẩn)", async () => {
+    const goi: string[] = [];
+    const chay: ChayTruyVan = async (q) => {
+      goi.push(q);
+      if (/timescaledb_information\.chunks where hypertable_name = \$1 and not is_compressed and range_start </.test(q)) return [CHUNK_10];
+      if (/count\(\*\)/.test(q)) return [{ n: 3 }];
+      return [{ co: 1 }];
+    };
+    const r = await chonThoiDiemTrongChunkSanCo(chay, tuyChon(5, ["oee_metrics"]));
+    expect(r.nguon).toBe("mac-dinh:khong-co-chunk-phu-hop");
+    expect(goi.filter((q) => /range_start <= \$2 and range_end > \$3/.test(q))).toHaveLength(0);
+  });
+});
+
+describe("chonMocTheoDb — bọc db drizzle (`$client.unsafe`), test không phải import driver", () => {
+  it("★★★ db vắng / không có $client.unsafe ⇒ mặc định 'khong-co-ket-noi' (không ném)", async () => {
+    for (const db of [null, undefined, {}, { $client: {} }, { $client: { unsafe: 5 } }]) {
+      expect(await chonMocTheoDb(db, { bang: "product_inspections", cot: "inspectionTime", ts: 1, macDinh: MAC_DINH, bayGio: BAY_GIO })).toEqual({ at: MAC_DINH, nguon: "mac-dinh:khong-co-ket-noi" });
+    }
+  });
+  it("★★★ có $client.unsafe ⇒ dùng nó (giữ ràng buộc `this`), truyền đúng câu lệnh + tham số, chọn mốc trong chunk", async () => {
+    const goi: Array<{ q: string; p: unknown[] }> = [];
+    const client = {
+      tenDaGoi: 0,
+      unsafe(this: { tenDaGoi: number }, q: string, p: unknown[]) {
+        this.tenDaGoi++;
+        goi.push({ q, p });
+        return Promise.resolve(/timescaledb_information/.test(q) ? [CHUNK_10] : [{ n: 0 }]);
+      },
+    };
+    const r = await chonMocTheoDb({ $client: client }, { bang: "product_inspections", cot: "inspectionTime", ts: 99, macDinh: MAC_DINH, bayGio: BAY_GIO });
+    expect(r.nguon).toBe("chunk-san-co");
+    expect(client.tenDaGoi).toBe(goi.length);
+    expect(goi[0]!.p[0]).toBe("product_inspections");
+  });
+});
+
+describe("reportExportScope / reportServiceScope — mốc lấy từ chunk có sẵn (không còn giờ ngẫu nhiên 2001–2024)", () => {
+  const doc = (t: string) => readFileSync(join(__dirname, "..", "routers", t), "utf8");
+  it("★★★ cả hai tệp: INSPECTED_AT = MOC_CHON.at từ `chonMocTheoDb` (cửa sổ ±60 s), công thức cũ chỉ còn là mặc định rơi về + cảnh báo; reportServiceScope còn đòi chunk của oee_metrics", () => {
+    for (const t of ["reportExportScope.test.ts", "reportServiceScope.test.ts"]) {
+      const n = doc(t);
+      expect(n, t).toMatch(/const MOC_MAC_DINH = new Date\(1_000_000_000_000 \+ \(ts % 200_000\) \* 3_600_000\);/);
+      expect(n, t).toMatch(/const MOC_CHON = await chonMocTheoDb\(await getDb\(\), \{[\s\S]{0,260}?nuaDoTrongMs: 60_000,/);
+      expect(n, t).toMatch(/const INSPECTED_AT = MOC_CHON\.at;/);
+      expect(/const INSPECTED_AT = new Date\(1_000_000_000_000/.test(n), `${t}: INSPECTED_AT không được tính thẳng từ công thức cũ`).toBe(false);
+      expect(n, t).toMatch(/MOC_CHON\.nguon !== "chunk-san-co"\) console\.warn\(/);
+      expect(n, t).toMatch(/const WINDOW_START = new Date\(INSPECTED_AT\.getTime\(\) - 60_000\);/);
+    }
+    expect(doc("reportServiceScope.test.ts")).toMatch(/cungBang: \["oee_metrics"\],/);
+    expect(/cungBang/.test(doc("reportExportScope.test.ts").replace(/\/\*[\s\S]*?\*\//g, ""))).toBe(false);
   });
 });
