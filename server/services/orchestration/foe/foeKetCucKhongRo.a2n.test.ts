@@ -2269,6 +2269,74 @@ describe("A2(n) T5 — state C, the pure parts", () => {
   });
 });
 
+// ═══ ĐOẠN 2 → server/services/orchestration/foe/foeKetCucKhongRo.a2n.test.ts, mức trên cùng, chèn NGAY TRƯỚC dòng chú thích `// A2(n) T7b-3 (H36, chu du an 10/11) — the words of
+// ═══        a STOP a run that acted, never latc…` (dòng 2272, đứng trước `describe("A2(n) T7b-3 — the words of a pinned STOP a run ended with, unswept (H36)"` ở dòng 2273).
+// ═══        Dùng import có sẵn: noiDungCanhBaoKhongRo (dòng 233), KHONG_CO_BU_TRU (dòng 239), describe / it / expect (dòng 9). Không import mới.
+// X13-CHU — DO-70 / lô X-13 commit 1 (chỉ test). Số quyết định: chủ dự án 17/11, X-13 phương án (C) + G1' (HST 17/11 vòng 10); HST 17/11 duyệt tên ca. Chữ HST duyệt 17/11 bản 2:
+// tam/x13-chu-de-nghi.md (sha16 06e9d8bf83734949), chép NGUYÊN VĂN, MỘT chỗ khai cho chữ URGENT (câu trả lời khai ở foeRunStoreParity.dot10.test.ts, khối X-13). Không gọi hàm nào để dựng kỳ vọng.
+// Thứ tự bản duyệt (HST 17/11 (1)): hành động trước, điều kiện sau — câu "… did NOT send …" rồi câu "Check the machine on site … direct STOP / E-STOP." đứng đầu thân.
+/** x13-chu-de-nghi.md §2: tiêu đề (không tiền tố "Run N: " mà noiDungCanhBaoKhongRo đặt) và thân, nguyên văn; `id` là id IN RA (≤ 14 ký tự thì nguyên) */
+const X13_URGENT = {
+  chuaKhoaKhongXacMinh: {
+    tieuDe: (id: string) => `step "${id}" NOT sent: its pins could not be read`,
+    hai: (run: number, id: string) => `Central's Abort of run ${run} did NOT send step "${id}": its pins could not be read, so it was not verified as a pinned STOP and nothing was written to the device for it. Check the machine on site and use its direct STOP / E-STOP.`,
+    than: (run: number, id: string) =>
+      `Central's Abort of run ${run} did NOT send step "${id}": its pins could not be read, so it was not verified as a pinned STOP and nothing was written to the device for it. Check the machine on site and use its direct STOP / E-STOP. A further press of Abort can send it only if its pins are then read as a pinned STOP (on an edge node's adapter: queued for or left to that node, or sent as central's fallback STOP), within 15 minutes from when the run was aborted, or with no time limit once the run records a command whose outcome is unknown, while it stays owed. Otherwise no press sends it.`,
+  },
+  chuaKhoaKetNoi: {
+    tieuDe: (id: string) => `STOP "${id}" NOT sent: central could not confirm the connection to its adapter`,
+    hai: (run: number, id: string) => `Central's Abort of run ${run} did NOT send STOP "${id}": its pins were read, but central could not confirm the running connection to its adapter, so it was not verified and nothing was written to the device for it. Check the machine on site and use its direct STOP / E-STOP.`,
+    than: (run: number, id: string) =>
+      `Central's Abort of run ${run} did NOT send STOP "${id}": its pins were read, but central could not confirm the running connection to its adapter, so it was not verified and nothing was written to the device for it. Check the machine on site and use its direct STOP / E-STOP. A further press of Abort can send it only if its pins are then read as a pinned STOP and that connection is then confirmed (on an edge node's adapter: queued for or left to that node, or sent as central's fallback STOP), within 15 minutes from when the run was aborted, or with no time limit once the run records a command whose outcome is unknown, while it stays owed. Otherwise no press sends it; central does not send it on its own when the connection comes back.`,
+  },
+  chuaKhoaKhongBen: {
+    tieuDe: (id: string) => `step "${id}" NOT sent: its record could not be written`,
+    hai: (run: number, id: string) => `Central's Abort of run ${run} did NOT send step "${id}", and the record of it could not be written, so a further press may not reach it. The STOP was not sent: check the machine on site and use its direct STOP / E-STOP.`,
+    than: (run: number, id: string) => `Central's Abort of run ${run} did NOT send step "${id}", and the record of it could not be written, so a further press may not reach it. The STOP was not sent: check the machine on site and use its direct STOP / E-STOP.`,
+  },
+} as const;
+type ChuX13 = keyof typeof X13_URGENT;
+/** the URGENT of the press on a run not latched, as the engine raises it (lan `xm`, chuAbort of X-13); the new values read through a wide type: tsc stays clean before the fix */
+const urgentX13 = (chu: ChuX13, runId: number, stepId: string) =>
+  noiDungCanhBaoKhongRo({ loai: "abortStopNotSent", runId, stepId, compId: KHONG_CO_BU_TRU, error: "FOE_STOP_NOT_SENT", lan: "xm", biet: true, vi: { nguon: "doc", ma: "NOT_CONFIRMED" }, chuAbort: chu, tuTrungTam: true } as never);
+describe("X-13 — the URGENT of a STOP an Abort did not send on a run not latched (G1, G1', khongBen): the approved words", () => {
+  // CHU-TRUNG-DUYET — chữ trong mã trùng tệp duyệt TỪNG KÝ TỰ (cách X-11 khoá x11-chu-duyet.md: KD-k1, P:3578-3583), cả ba biến thể
+  it.fails("T4-B3-LO2A-CHU-TRUNG-DUYET (X-13, chữ duyệt 06e9d8bf83734949) the three URGENTs of X-13 (G1, G1', khongBen): title and body exactly the approved words, the event tag after", () => {
+    for (const chu of Object.keys(X13_URGENT) as ChuX13[]) {
+      const n = urgentX13(chu, 7, "s9");
+      expect(n.title, `${chu}: the approved title`).toBe(`Run 7: ${X13_URGENT[chu].tieuDe("s9")}`);
+      expect(n.message, `${chu}: the approved body, the event tag after`).toBe(`${X13_URGENT[chu].than(7, "s9")} [event xm]`);
+      expect(n.dedupKey, `${chu}: the key of the press on a run not latched`).toBe(`${n.kind}:7:s9:-:xm`);
+    }
+  });
+  // A8 — G1 and khongBen: the order of the approved words (action, then condition), ≤ 800 with a long id, no opening of an unknown outcome (khongChot)
+  it.fails("T4-B3-LO2A-THUAN-CHU (X-13 A8: chuaKhoaKhongXacMinh, chuaKhoaKhongBen) the first two sentences open the body; title and body ≤ 800 with a 200-character id; never the words of an unknown outcome", () => {
+    const dai = "s".repeat(200);
+    for (const chu of ["chuaKhoaKhongXacMinh", "chuaKhoaKhongBen"] as const) {
+      const n = urgentX13(chu, 2_147_483_647, "s9");
+      expect(n.message.startsWith(X13_URGENT[chu].hai(2_147_483_647, "s9")), `${chu}: '… did NOT send …' then 'Check the machine on site … direct STOP / E-STOP.' first`).toBe(true);
+      expect(`${n.title} ${n.message}`, `${chu}: no unknown outcome (khongChot)`).not.toMatch(/unknown outcome|outcome unknown|UNKNOWN/);
+      const d = urgentX13(chu, 2_147_483_647, dai);
+      expect(d.title.length, `${chu}: title ≤ 800`).toBeLessThanOrEqual(800);
+      expect(d.message.length, `${chu}: message ≤ 800`).toBeLessThanOrEqual(800);
+      expect(d.message, `${chu}: the action first, whatever the id`).toMatch(/^Central's Abort of run 2147483647 did NOT send step "[^"]+"/);
+      expect(d.message, `${chu}: the safe act whole`).toMatch(/[Cc]heck the machine on site and use its direct STOP \/ E-STOP\./);
+      expect(d.dedupKey, `${chu}: the key keeps the whole id`).toBe(`${d.kind}:2147483647:${dai}:-:xm`);
+    }
+  });
+  // A19 — G1' (HST 17/11 vòng 10): the same for chuaKhoaKetNoi
+  it.fails("T4-B3-LO2A-THUAN-CHU-G1P (X-13 A19: chuaKhoaKetNoi) the first two sentences open the body; title and body ≤ 800 with a 200-character id; never 'pins could not be read', never an unknown outcome", () => {
+    const n = urgentX13("chuaKhoaKetNoi", 2_147_483_647, "s9");
+    expect(n.message.startsWith(X13_URGENT.chuaKhoaKetNoi.hai(2_147_483_647, "s9")), "'… did NOT send STOP …' then 'Check the machine on site … direct STOP / E-STOP.' first").toBe(true);
+    expect(`${n.title} ${n.message}`).not.toMatch(/pins could not be read/);
+    expect(`${n.title} ${n.message}`).not.toMatch(/unknown outcome|outcome unknown|UNKNOWN/);
+    const d = urgentX13("chuaKhoaKetNoi", 2_147_483_647, "s".repeat(200));
+    expect(d.title.length, "title ≤ 800").toBeLessThanOrEqual(800);
+    expect(d.message.length, "message ≤ 800").toBeLessThanOrEqual(800);
+    expect(d.message).toMatch(/^Central's Abort of run 2147483647 did NOT send STOP "[^"]+": its pins were read/);
+    expect(d.message).toContain("Check the machine on site and use its direct STOP / E-STOP.");
+  });
+});
 // A2(n) T7b-3 (H36, chu du an 10/11) — the words of a STOP a run that acted, never latched, ended with and no sweep sent: pure
 describe("A2(n) T7b-3 — the words of a pinned STOP a run ended with, unswept (H36)", () => {
   const n = (ketThuc: "aborted" | "failed" | "completed", extra: Record<string, unknown> = {}) =>
