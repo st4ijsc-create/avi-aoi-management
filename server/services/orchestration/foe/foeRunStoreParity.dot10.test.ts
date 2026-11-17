@@ -3812,6 +3812,16 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(xm.length).toBe(1);
     expect(xm[0]!.title).toContain(`STOP "s9" NOT sent: central could not confirm the connection to its adapter`);
   });
+  // REJECT-DC (HST 17/11 16:00; kiem-dinh x20 "resumeRun từ chối: luôn có message") — đối chứng A13 / REJECT-G1P: a person's rejection at the gate with nothing left behind
+  // answers as before X-13 (33f82920f E:4715: ok false, enabled, runId, status, abortStops), no `message` key at all (E:4722 adds one only when chuChuaKhoa has words)
+  it("T4-B3-LO2A-REJECT-DC (X-13 (3), đối chứng; xanh trước và sau) a person rejects g2 of the central run NOT latched, s9 verified and handed over (nothing left behind): the answer is the old one, key for key, with NO message; none of the fields, no `xm`", async () => {
+    const x = await tt13("x13rjd", { tuChoi: true });
+    expect(x.kq.abortStops?.sent ?? [], "handed over").toEqual(["s9"]);
+    expect(truong13(x.kq), "none of the fields").toEqual({ khongXacMinhChuaKhoa: undefined, ketNoiChuaKhoa: undefined, giaoNutChuaKhoa: undefined });
+    expect(x.urg.filter(laXm13), "no xm").toEqual([]);
+    expect(Object.keys(x.kq).sort(), "the keys of the answer before X-13 (33f82920f E:4715): no message").toEqual(["abortStops", "enabled", "ok", "runId", "status"]);
+    expect({ ok: x.kq.ok, enabled: x.kq.enabled, runId: x.kq.runId, status: x.kq.status }).toEqual({ ok: false, enabled: true, runId: x.c, status: "aborted" });
+  });
   // REJECT-QT-CHUA-XAC-NHAN (HST 17/11 quyết 2) — foeEngine.ts:4711: a rejection WITH a business hook (QT: hooks.compensate) whose final 'aborted' write lands late (confirmed = false).
   // Khuôn có sẵn: P:15718-15760 (`T7B1D-THU-LAI-QT`: resumeRun(…, OTHER, { compensate }) + h.treAborted = 1_600). The old string of E:4711 to the character FIRST, then " " and the words G1
   // (V9-1: E:4711 appends like E:7350, only when there is something to say); its control: nothing left behind ⇒ the old string alone, to the character
