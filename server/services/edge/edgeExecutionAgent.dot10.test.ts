@@ -1266,6 +1266,68 @@ describe("X-12 — the node never re-sends from a sweep picture a STOP it alread
     expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config"]);
   });
 
+  // kiem-dinh 17/11 (y11): mốc của STOP là lúc lời gọi driver BẮT ĐẦU (hàng X-12: "lời gọi driver của STOP đó bắt đầu SAU khi nút đã nhận một phản hồi pull
+  // liệt run đó"). Pull single-flight có giới hạn (2 × requestTimeoutMs + 1 s, edgeExecutionAgent.ts pullPhase) ⇒ một phản hồi mới có thể tới TRONG lúc STOP còn chạy.
+  // Answer 1 is PARTIAL (runStateUnavailable): when it resumes after the STOP it infers nothing from what it omits, so the mark of answer 2 stays
+  // (a FULL answer 1 resuming late would drop that mark — X12-ROI-DANH-SACH-DAT-LAI-MOC-VAN-GUI — and hide the start-vs-end question).
+  it("X12-BAT-DAU-TRUOC-LIET-KE-XONG-SAU-VAN-GUI (1-đối chứng, y11) the queued STOP on adapter 21 STARTS its driver call in answer 1 (partial, run not listed) and hangs; answer 2 (past the single-flight bound) lists the run, s9's re-send fails; then the STOP ends with success ⇒ it began BEFORE the node knew of the abort: not covered, s9 is sent again", async () => {
+    const h = await harness({ claimRuns: false, requestTimeoutMs: 100 });
+    const goc = h.devices.port.stopAdapter;
+    let tha: () => void = () => undefined;
+    const cho = new Promise<void>((r) => (tha = r));
+    let lanS9 = 0;
+    h.devices.port.stopAdapter = async (id, pins, why, ctx) => {
+      const r = await goc(id, pins, why, ctx);
+      if (pins === null) {
+        await cho; // the queued STOP's driver call has started (recorded above) and is still running
+        return { ...r, outcome: "sent" as const, written: [{ tagKey: "run", value: false }] };
+      }
+      return ++lanS9 === 1 ? { ...r, outcome: "failed" as const, detail: "driver error (test)" } : r;
+    };
+    const d = dongHo(h);
+    h.central.commands = [stopDaXep(h, 122, { adapterId: 21 })];
+    h.central.handlers.pull = phanThieu(h);
+    const t1 = h.agent.tick(); // answer 1 (partial): nothing listed; STOP 122 starts and hangs
+    await new Promise((r) => setTimeout(r, 1_400)); // past the bound (2 × 100 ms + 1 s), as the N-4 case above
+    delete h.central.handlers.pull;
+    h.central.commands = [];
+    const ab = d.now - 5_000;
+    h.central.stopsUnconfirmed = [{ runId: 82, picture: h.central.sign("runpkg", anh(h, 82, { abortedAt: ab })) }];
+    await h.agent.tick(); // answer 2 lists the run: s9 re-sent, FAILS; STOP 122 still running
+    tha();
+    await t1; // STOP 122 ends with success — it began before answer 2
+    await h.shipper.flushAll();
+    d.now += 10_500;
+    await quaCuaSo(h, d, new Map([[82, ab]]));
+    expect(toiAdapter21(h)).toEqual(["stopAdapter:21:config", S9_DRIVER, S9_DRIVER]);
+  });
+
+  // kiem-dinh 17/11 (y12): khoá đích phân biệt robot và adapter (`r<id>` / `a<id>`): robot 21 và adapter 21 là HAI đích.
+  async function haiDich21() {
+    const c = new FakeCentral();
+    const base = c.makeConfig();
+    c.setConfig({ robots: [...base.robots, { ...base.robots[0], id: 21, code: "rb-21", name: "Robot 21", endpoint: "sim://21" }] });
+    return harness({ central: c, claimRuns: false });
+  }
+  it("X12-ROBOT-ADAPTER-CUNG-SO-VAN-GUI (1-đối chứng, y12) robot 21 and adapter 21 both exist; the queued STOP on ADAPTER 21 succeeds (pins written), the picture names s8 on ROBOT 21 ⇒ another target: s8 is sent to robot 21", async () => {
+    const h = await haiDich21();
+    congCoWritten(h);
+    h.central.commands = [stopDaXep(h, 123, { adapterId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 83, picture: h.central.sign("runpkg", anh(h, 83, { verifiedStops: [{ kind: "robot" as const, stepId: "s8", robotId: 21 }] })) }];
+    const t = await h.agent.tick();
+    expect(t.commands.map((c) => [c.requestId, c.outcome])).toEqual([[123, "sent"]]);
+    expect(h.devices.calls).toEqual(["stopAdapter:21:config", "stopRobot:21"]);
+  });
+  it("X12-ADAPTER-ROBOT-CUNG-SO-VAN-GUI (1-đối chứng, y12 ngược) robot 21 and adapter 21 both exist; the queued STOP on ROBOT 21 is sent, the picture names s9 on ADAPTER 21 ⇒ another target: s9 is sent to adapter 21", async () => {
+    const h = await haiDich21();
+    congCoWritten(h);
+    h.central.commands = [stopDaXep(h, 124, { robotId: 21 })];
+    h.central.stopsUnconfirmed = [{ runId: 84, picture: h.central.sign("runpkg", anh(h, 84)) }];
+    const t = await h.agent.tick();
+    expect(t.commands.map((c) => [c.requestId, c.outcome])).toEqual([[124, "sent"]]);
+    expect(h.devices.calls).toEqual(["stopRobot:21", S9_DRIVER]);
+  });
+
   it("X12-SIMULATED-VAN-GUI (1-đối chứng) the queued STOP on adapter 21 was only SIMULATED ⇒ nothing was written: s9 is sent", async () => {
     const h = await harness({ claimRuns: false });
     congCoWritten(h, () => ({ outcome: "simulated" })); // the port even says what it would have written: simulated is still no STOP
