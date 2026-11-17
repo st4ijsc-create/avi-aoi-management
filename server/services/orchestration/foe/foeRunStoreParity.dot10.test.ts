@@ -3495,7 +3495,8 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(x.kq1.abortStops?.xepChoNut, "a run not latched: no xepChoNut").toBeUndefined();
     const msg = String(x.kq1.message ?? "");
     expect(msg).not.toMatch(/was given to the edge node/);
-    expect(msg).not.toMatch(/records a command whose outcome is unknown/);
+    // HST 17/11: chữ (e) có vế điều kiện 'once the run records…'; cấm hai dạng câu đã chốt E:7356/E:6400
+    expect(msg).not.toMatch(/(?:aborted and|\b[Ii]t) records a command whose outcome is unknown/);
   });
   // n10b — xepChoNut bỏ `!ok`: lần gửi ok (dù chi tiết mang mã ADAPTER_OWNED_BY_EDGE) là đã giao, không phải "given to the edge node". Đối chứng (b). h.okKemMa: bộ điều phối thật không bao giờ trả ok kèm mã này.
   // CA HỢP ĐỒNG PHÒNG XA (HST 17/11): hình này KHÔNG có ở dispatcher thật — đường giao cho nút luôn trả ok:false (commandDispatcher.ts:3356); kiem-dinh tự quyết n10b là "tương đương" hay "đã bắt".
@@ -3718,7 +3719,8 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     const msg = String(x.kq1.message ?? "");
     expect(msg, "x13-chu-de-nghi.md §6 (e) bản 2").toBe(`Run ${x.c} is aborted. ${X13_CAU_E("s9")}`);
     expect(msg).not.toMatch(/was given to the edge node/);
-    expect(msg).not.toMatch(/records a command whose outcome is unknown/);
+    // HST 17/11: chữ (e) có vế điều kiện 'once the run records…'; cấm hai dạng câu đã chốt E:7356/E:6400
+    expect(msg).not.toMatch(/(?:aborted and|\b[Ii]t) records a command whose outcome is unknown/);
     expect(x.urg1.filter((a) => a.dedupKey === KHOA_XM_13(x.c, "s9")), "no URGENT of the engine for (e)").toEqual([]);
   });
   // A5 — đối chứng: the press on the LATCHED run (chuoi62's press 2) is no X-13 shape: no `xm`, none of the three new fields
@@ -3898,6 +3900,59 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     await wait62(40);
     expect(kq2.reason).toBe("resendTooOld");
     expect(s9Cua62(x.c, n2), "nothing sent").toEqual([]);
+  });
+  // ── DO-71 / lô X-13 commit 1b (chỉ test; HST 17/11 quyết: ba ca cho hành vi mà mã X-13 có, chưa có ca). Chữ: tam/x13-chu-de-nghi.md (sha16 06e9d8bf83734949), qua các hằng
+  // X13_CAU_G1 / X13_CAU_KHONG_BEN / CHU_KHONG_NUT_62 / CHU_TU_CHOI_CHUA_XAC_NHAN_13 ở trên; cách nối theo V9-1 (chuỗi cũ, " ", chữ; câu mở "Run N is rejected and aborted." của từ chối). Đỏ trước sửa.
+  // DL — G1 qua đường đọc lại (foeEngine.ts:6998, :7016): bộ kiểm đọc ghim s9 là "không phải STOP ghim" (halt không có giá trị STOP), lần đọc lại của trace KHÔNG trả lời (PIN_BAD, P:738)
+  // ⇒ vết `chuaXacMinh` (khuôn T7B1D-CHUA-KHONG-CO-ADAPTER). HST 17/11: G1 = chưa xác minh VÀ có vết chuaXacMinh ⇒ cùng URGENT `xm`, cùng chữ G1
+  it.fails("T4-B3-LO2A-G1-DOC-LAI (X-13 (1), G1 qua đường đọc lại; HST 17/11) press 1 on the central run NOT latched, the verifier reads s9 as no pinned STOP and the trace's read again gets no answer: its trace `chuaXacMinh`, ONE URGENT under `xm` with the title G1, the answer 'Run N is aborted.' and the words G1, to the character", async () => {
+    const x = await tt13("x13dl", {
+      truoc: () => {
+        fake.seed(deviceTags, rows("device_tags").map((t) => (t.tagKey === "halt" ? { ...t, stopValue: null } : t)));
+        h.ghim = PIN_BAD;
+      },
+    });
+    expect(x.kq.ok, "the Abort confirmed").toBe(true);
+    expect(x.kq.abortStops?.notPinned ?? [], "the verifier: no pinned STOP").toContain("s9");
+    expect({ status: x.vet?.status, abortStop: x.vet?.abortStop }, "its read again unanswered: a trace").toEqual({ status: "failed", abortStop: "chuaXacMinh" });
+    expect(truong13(x.kq).khongXacMinhChuaKhoa).toEqual(["s9"]);
+    expect(truong13(x.kq).ketNoiChuaKhoa, "not G1'").toBeUndefined();
+    const xm = xmCua13(x.urg, x.c);
+    expect(xm.length, "one URGENT of s9 under xm").toBe(1);
+    expect(xm[0]!.title).toContain(`step "s9" NOT sent: its pins could not be read`);
+    expect(x.kq.message, "x13-chu-de-nghi.md G1").toBe(`Run ${x.c} is aborted. ${X13_CAU_G1("s9")}`);
+    expect(s9Cua62(x.c, x.n0, x.n1), "nothing sent").toEqual([]);
+  });
+  // KB-CXN — khongBen (vết không ghi được) trong câu trả lời CHƯA xác nhận: của Abort (foeEngine.ts:7350) và của từ chối có hook QT (:4711): chuỗi cũ từng ký tự, " ", chữ chuKhongBen nguyên văn
+  it.fails("T4-B3-LO2A-KHONG-BEN-CHUA-XAC-NHAN (X-13 (1)/(3), khongBen; HST 17/11) the central run NOT latched, s9's pins unreadable and its trace NOT written: the unconfirmed Abort answers the 77ec64b0b string, ' ', the words of a trace not recorded; the unconfirmed rejection through a business hook (QT) the same", async () => {
+    const loi = () => {
+      h.classifyLoi = true;
+      h.hangNem = (v) => v.stepId === "abort:s9";
+    };
+    const x = await tt13("x13kbu", { tre: true, truoc: loi });
+    expect(x.hangNemLan, "the trace's write reached its failure").toBeGreaterThan(0);
+    expect(x.kq.reason).toBe("abortUnconfirmed");
+    expect(x.kq.abortStops?.khongBen, "the lost write named").toEqual(["s9"]);
+    expect(x.kq.message, "Abort: the old string, then the words khongBen").toBe(`${CHU_KHONG_NUT_62(x.c, 0)} ${X13_CAU_KHONG_BEN("s9")}`);
+    const q = await tuChoiQt13("x13kbq", loi);
+    h.hangNem = null;
+    expect(q.a.reason).toBe("abortUnconfirmed");
+    expect(q.a.abortStops?.khongBen, "the lost write named").toEqual(["s9"]);
+    expect(q.a.message, "rejection: the old string, then the words khongBen").toBe(`${CHU_TU_CHOI_CHUA_XAC_NHAN_13(q.c, 0)} ${X13_CAU_KHONG_BEN("s9")}`);
+  });
+  // RJ-KB — từ chối ở cổng người (foeEngine.ts:4715), chỉ có khongBen: câu trả lời có lời (hàng X-13 (3)), mở bằng trạng thái run, rồi chữ chuKhongBen nguyên văn
+  it.fails("T4-B3-LO2A-REJECT-KHONG-BEN (X-13 (3), khongBen; HST 17/11) a person rejects g2 of the central run NOT latched, s9's pins unreadable and its trace NOT written: the answer is 'Run N is rejected and aborted.' and the words of a trace not recorded, to the character; never the words G1", async () => {
+    const x = await tt13("x13rjk", {
+      tuChoi: true,
+      truoc: () => {
+        h.classifyLoi = true;
+        h.hangNem = (v) => v.stepId === "abort:s9";
+      },
+    });
+    expect(x.hangNemLan, "the trace's write reached its failure").toBeGreaterThan(0);
+    expect(x.kq.status).toBe("aborted");
+    expect(x.kq.abortStops?.khongBen).toEqual(["s9"]);
+    expect(x.kq.message, "x13-chu-de-nghi.md KhongBen").toBe(`Run ${x.c} is rejected and aborted. ${X13_CAU_KHONG_BEN("s9")}`);
   });
 
   it("T4-B3-R2A-DOI-CHUNG (chủ dự án 14/11, R2 (a), đối chứng của ca trên) the same refused POST-SEND result, the command has NO compensation: no outcome-unknown mark, a plain Continue as before, r1 never sent again", async () => {
