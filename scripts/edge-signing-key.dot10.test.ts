@@ -13,11 +13,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { edgeAuthSigningKeys } from "../server/services/edge/edgeControlSchema";
 import { EdgeTrustStore, buildEdgeKeysetFromKeyring, generateEdgeSigningKey, loadEdgeSigningKey, readEdgeKeyring, signEdgeObject, verifyEdgeObject } from "../server/services/edge/edgeSigning";
 import { runEdgeSigningKeyCli, type SigningKeyAuditEntry, type SigningKeyCliDeps } from "./edge-signing-key";
 
+// X-17: wrap (not replace) the driver so the pure cases can COUNT connection constructions without opening any.
+vi.mock("postgres", async (importOriginal) => {
+  const m = await importOriginal<{ default: (...a: unknown[]) => unknown }>();
+  return { default: vi.fn((...a: unknown[]) => m.default(...a)) };
+});
 const root = mkdtempSync(path.join(tmpdir(), "edge-signing-key-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const f = (n: string) => path.join(root, n);
@@ -370,8 +375,11 @@ describe("X-17 — no hard-coded owner defaults", () => {
       [{}, ["MIGRATION_DB_USER", "MIGRATION_DB_PASSWORD"]],
       [{ MIGRATION_DB_USER: MARK }, ["MIGRATION_DB_PASSWORD"]],
       [{ MIGRATION_DB_PASSWORD: MARK }, ["MIGRATION_DB_USER"]],
+      [{ MIGRATION_DB_USER: "", MIGRATION_DB_PASSWORD: "" }, ["MIGRATION_DB_USER", "MIGRATION_DB_PASSWORD"]], // empty = MISSING (fail-closed)
+      [{ MIGRATION_DB_USER: MARK, MIGRATION_DB_PASSWORD: "" }, ["MIGRATION_DB_PASSWORD"]],
     ] as Array<[NodeJS.ProcessEnv, string[]]>) {
       const dir = f(`x17-${thieu.join("")}`);
+      vi.mocked(postgres).mockClear();
       const t = io(undefined, { DATABASE_URL: `postgres://nobody@127.0.0.1:1/none?c=${MARK}`, ...env });
       expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, ...A], t.io, deps({ mirrorDb: undefined }).d)).toBe(2);
       const msg = t.errs.join("\n");
@@ -379,7 +387,50 @@ describe("X-17 — no hard-coded owner defaults", () => {
       expect(msg).not.toContain(MARK);
       expect(msg).not.toContain("postgres://");
       expect(existsSync(dir)).toBe(false);
+      expect(vi.mocked(postgres), "the refusal comes BEFORE any connection is constructed").not.toHaveBeenCalled();
     }
+  });
+  it("★ EVERY command (pin, list, generate, rotate) is refused with exit 2 when DATABASE_URL is set without the owner variables — no connection, no file, keyring untouched; without DATABASE_URL the same commands run as before (files only)", async () => {
+    const dir = f("x17-all");
+    const seed = deps({ mirrorDb: null }).d;
+    expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, ...A], io().io, seed)).toBe(0);
+    expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, ...A], io().io, seed)).toBe(0);
+    const next = readEdgeKeyring(dir).keys[1].kid;
+    const pinFile = f("x17-all.pin.json");
+    const cmds: Array<[string, string[]]> = [
+      ["pin", ["pin", "--dir", dir, "--out", pinFile, ...A]],
+      ["list", ["list", "--dir", dir]],
+      ["generate", ["generate", "--dir", dir, ...A]],
+      ["rotate", ["rotate", "--dir", dir, "--activate", next, ...A]],
+    ];
+    const versionBefore = readEdgeKeyring(dir).version;
+    const filesBefore = readdirSync(dir).sort();
+    for (const [name, argv] of cmds) {
+      vi.mocked(postgres).mockClear();
+      const t = io(undefined, { DATABASE_URL: "postgres://nobody@127.0.0.1:1/none" });
+      expect(await runEdgeSigningKeyCli(argv, t.io, deps({ mirrorDb: undefined }).d), name).toBe(2);
+      expect(t.errs.join("\n"), name).toMatch(/MIGRATION_DB_USER, MIGRATION_DB_PASSWORD/);
+      expect(vi.mocked(postgres), `${name}: no connection`).not.toHaveBeenCalled();
+    }
+    expect(existsSync(pinFile), "pin wrote no file").toBe(false);
+    expect(readdirSync(dir).sort(), "no key file added").toEqual(filesBefore);
+    expect(readEdgeKeyring(dir).version, "keyring untouched").toBe(versionBefore);
+    // contrast: no DATABASE_URL ⇒ files only, every command runs as before
+    for (const [name, argv] of cmds) {
+      const t = io(undefined, {});
+      expect(await runEdgeSigningKeyCli(argv, t.io, deps({ mirrorDb: undefined }).d), `${name} (files only)`).toBe(0);
+    }
+    expect(existsSync(pinFile), "pin wrote its file when files-only").toBe(true);
+  });
+  it("MIGRATION_DB_URL set (owner URL given whole) ⇒ the owner-variable check does NOT refuse, and the mirror connection IS attempted (stubbed to fail ⇒ files only)", async () => {
+    vi.mocked(postgres).mockClear();
+    vi.mocked(postgres).mockImplementationOnce((() => {
+      throw new Error("stubbed driver");
+    }) as never);
+    const t = io(undefined, { DATABASE_URL: "postgres://nobody@127.0.0.1:1/none", MIGRATION_DB_URL: "postgres://nobody@127.0.0.1:1/none" });
+    expect(await runEdgeSigningKeyCli(["generate", "--dir", f("x17-url"), ...A], t.io, deps({ mirrorDb: undefined }).d)).toBe(0);
+    expect(t.errs.join("\n")).not.toMatch(/missing required environment variable/);
+    expect(vi.mocked(postgres)).toHaveBeenCalledTimes(1);
   });
   it("no DATABASE_URL (files only) or an injected mirrorDb ⇒ the owner-variable check does not refuse and opens nothing (unchanged behaviour)", async () => {
     for (const [env, over] of [
