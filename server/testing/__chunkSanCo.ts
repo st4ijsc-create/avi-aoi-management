@@ -28,6 +28,11 @@ export interface TuyChonChonChunk {
   dayLuiToiDa?: number;
   /** nửa bề rộng cần TRỐNG quanh thời điểm chọn (mặc định 30 s) */
   nuaDoTrongMs?: number;
+  /**
+   * Các hypertable KHÁC cũng bị ghi tại đúng mốc này (vd. `oee_metrics`): mốc phải nằm trong một chunk CHƯA NÉN có sẵn của MỖI bảng (cả hai đầu của cửa sổ ±nửa-độ-trống) — biên chunk của các bảng khác nhau.
+   * Không bảng nào thoả ⇒ thử vị trí khác; hết vị trí ⇒ mặc định (như cũ).
+   */
+  cungBang?: readonly string[];
 }
 
 export interface KetQuaChonChunk {
@@ -63,6 +68,8 @@ export async function chonThoiDiemTrongChunkSanCo(chay: ChayTruyVan, tuyChon: Tu
   const muon = new Date(bayGio.getTime() - (tuyChon.daySauToiThieu ?? 1) * ngay);
   const som = new Date(bayGio.getTime() - (tuyChon.dayLuiToiDa ?? 3500) * ngay);
   const nua = tuyChon.nuaDoTrongMs ?? 30_000;
+  const cungBang = tuyChon.cungBang ?? [];
+  if (cungBang.some((b) => !TEN_BANG.test(b))) return macDinhVi("ten-bang-cot-khong-hop-le");
   try {
     // Chỉ ĐỌC. Chunk đã nén bị bỏ (chèn vào chunk nén chậm / bị cấm tuỳ bản).
     // ★ Phương án A (HST duyệt 17/11): nhận cả chunk HIỆN HÀNH — chính sách nén (compress_after 30 ngày) nén chunk k đúng lúc chunk k+1 mới thành "đã qua", nên điều kiện `range_end <= hôm qua` để hở cửa sổ 0–1 ngày mỗi tháng.
@@ -91,7 +98,19 @@ export async function chonThoiDiemTrongChunkSanCo(chay: ChayTruyVan, tuyChon: Tu
       for (let k = 0; k < 5; k++) {
         const at = viTriTrongChunk(batDau, ketThuc, ts, k, 2 * nua);
         const dem = await chay(`select count(*)::int as n from ${bang} where "${cot}" >= $1 and "${cot}" < $2`, [new Date(at.getTime() - nua).toISOString(), new Date(at.getTime() + nua).toISOString()]);
-        if (Number(dem[0]?.n ?? 1) === 0) return { at, nguon: "chunk-san-co", chunk: { batDau, ketThuc } };
+        if (Number(dem[0]?.n ?? 1) !== 0) continue;
+        let duMoiBang = true;
+        for (const khac of cungBang) {
+          const co = await chay(
+            "select 1 as co from timescaledb_information.chunks where hypertable_name = $1 and not is_compressed and range_start <= $2 and range_end > $3 limit 1",
+            [khac, new Date(at.getTime() - nua).toISOString(), new Date(at.getTime() + nua).toISOString()],
+          );
+          if (co.length === 0) {
+            duMoiBang = false;
+            break;
+          }
+        }
+        if (duMoiBang) return { at, nguon: "chunk-san-co", chunk: { batDau, ketThuc } };
       }
     }
     // Không ứng viên nào dùng được vì phần ĐÃ QUA quá ngắn (ngày đầu chunk mới, chunk cũ đã nén) ⇒ nói thẳng lý do riêng.
@@ -111,4 +130,15 @@ export async function coChunkChuaThoiDiem(chay: ChayTruyVan, bang: string, t: Da
   } catch {
     return null;
   }
+}
+
+/**
+ * Dùng với một đối tượng `db` của drizzle-postgres-js (có `$client.unsafe`) — để tệp test KHÔNG phải import driver. `db` vắng / không có `$client` ⇒ mặc định (không ném).
+ * Chỉ ĐỌC (xem `chonThoiDiemTrongChunkSanCo`).
+ */
+export async function chonMocTheoDb(db: unknown, tuyChon: TuyChonChonChunk): Promise<KetQuaChonChunk> {
+  const client = (db as { $client?: { unsafe?: (q: string, p: unknown[]) => Promise<unknown> } } | null | undefined)?.$client;
+  if (!client || typeof client.unsafe !== "function") return { at: tuyChon.macDinh, nguon: "mac-dinh:khong-co-ket-noi" };
+  const unsafe = client.unsafe.bind(client);
+  return chonThoiDiemTrongChunkSanCo(async (q, p) => (await unsafe(q, p)) as unknown as Array<Record<string, unknown>>, tuyChon);
 }
