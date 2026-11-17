@@ -54,6 +54,38 @@ afterEach(() => {
   }
 });
 
+/** Đọc một số nguyên dương từ tệp (bỏ BOM, khoảng trắng); tệp vắng / rỗng / không phải số ⇒ 0. */
+function docSoTrongTep(duong: string): number {
+  try {
+    let t = fs.readFileSync(duong, "utf8");
+    if (t.charCodeAt(0) === 0xfeff) t = t.slice(1);
+    const n = Number(t.trim());
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Chờ tới khi NỘI DUNG tệp là một số > 0, hoặc hết `hanMs`. Trả số đọc được (0 nếu hết hạn).
+ * ★ `Out-File` (PowerShell) TẠO tệp trước khi ghi xong ⇒ chỉ chờ `existsSync` là đọc ra chuỗi rỗng ⇒ pid = 0 (cổng 06/11 và 17/11 đỏ đúng chỗ này).
+ * Đồng hồ và giấc ngủ TIÊM được (mặc định thật) để ca thuần chạy tất định không cần PowerShell, không cần đồng hồ thật.
+ */
+async function choSoPidTrongTep(
+  duong: string,
+  tuyChon: { hanMs: number; nhipMs?: number; bayGio?: () => number; ngu?: (ms: number) => Promise<void> },
+): Promise<number> {
+  const bayGio = tuyChon.bayGio ?? (() => Date.now());
+  const ngu = tuyChon.ngu ?? ((ms: number) => new Promise<void>((xong) => setTimeout(xong, ms)));
+  const han = bayGio() + tuyChon.hanMs;
+  for (;;) {
+    const so = docSoTrongTep(duong);
+    if (so > 0) return so;
+    if (bayGio() >= han) return 0;
+    await ngu(Math.max(1, tuyChon.nhipMs ?? 200)); // nhịp >= 1 ms: mọi nhánh còn lại đều TIẾN đồng hồ (nhịp 0 sẽ lặp vô hạn với đồng hồ giả)
+  }
+}
+
 function cfgTest(over: Partial<CauHinhGiamSat> = {}): CauHinhGiamSat {
   return {
     bat: true,
@@ -513,18 +545,9 @@ describe("khoiDongTachRoi — PowerShell tách rời, không giữ ống", () =>
       );
       let maThoat: number | null | undefined;
       khoiDongTachRoi(kichBan, { cwd: thuMuc, khiKetThuc: (c) => { maThoat = c; } });
-      const han = Date.now() + 20_000;
-      // ★ Chờ tới khi NỘI DUNG cuoi.txt là một số > 0 (hoặc hết hạn 20 s), KHÔNG chỉ chờ tệp xuất hiện: `Out-File` tạo tệp TRƯỚC khi ghi xong nên đọc ngay có thể ra chuỗi rỗng ⇒ pid = 0 (cổng 06/11 và 17/11 09:37 đỏ đúng chỗ này).
+      // ★ Chờ tới khi NỘI DUNG cuoi.txt là một số > 0 (hoặc hết hạn 20 s), KHÔNG chỉ chờ tệp xuất hiện — xem `choSoPidTrongTep`.
       // Hết hạn mà vẫn chưa có số thì các khẳng định bên dưới (tệp tồn tại, pid > 0) vẫn đỏ như cũ — không nới gì.
-      const docPidCuoi = (): number => {
-        try {
-          const n = Number(fs.readFileSync(cuoi, "utf8").replace(/^﻿/, "").trim());
-          return Number.isFinite(n) ? n : 0;
-        } catch {
-          return 0;
-        }
-      };
-      while (!(docPidCuoi() > 0) && Date.now() < han) await new Promise((r) => setTimeout(r, 200));
+      await choSoPidTrongTep(cuoi, { hanMs: 20_000 });
       expect(fs.existsSync(dau)).toBe(true);
       expect(fs.existsSync(cuoi)).toBe(true);
       const pidCha = Number(fs.readFileSync(cuoi, "utf8").replace(/^﻿/, "").trim());
@@ -539,6 +562,64 @@ describe("khoiDongTachRoi — PowerShell tách rời, không giữ ống", () =>
     },
     40_000,
   );
+
+  describe("choSoPidTrongTep — vòng chờ của ca THẬT (đồng hồ + ghi tệp GIẢ, tất định, không PowerShell)", () => {
+    /** Đồng hồ giả: mỗi lần "ngủ" cộng thời gian và thực hiện các việc ghi đã hẹn. */
+    function maGia(lichGhi: Array<{ luc: number; viec: () => void }>) {
+      const m = { t: 0, lanNgu: 0 };
+      const bayGio = () => m.t;
+      const ngu = async (ms: number) => {
+        // Chốt chống treo: vòng chờ hợp lệ chỉ cần ≤ 100 nhịp (20 s / 200 ms); quá 1000 ⇒ vòng lặp KHÔNG dừng (vd. đột biến bỏ hạn) ⇒ NÉM để ca ĐỎ thay vì treo cả lượt.
+        if (++m.lanNgu > 1000) throw new Error("vòng chờ không dừng (>1000 nhịp)");
+        m.t += ms;
+        for (const g of lichGhi) if (g.luc <= m.t) { g.viec(); g.luc = Number.POSITIVE_INFINITY; }
+      };
+      return { m, bayGio, ngu };
+    }
+
+    it("★★★ tệp tạo RỖNG trước, số ghi sau ~300 ms ⇒ vòng chờ KHÔNG trả sớm: trả đúng số, sau mốc ghi (chỉ chờ existsSync sẽ trả sớm với nội dung rỗng ⇒ pid 0 — đột biến phải đỏ)", async () => {
+      const cuoi = path.join(thuMuc, "cuoi.txt");
+      fs.writeFileSync(cuoi, ""); // Out-File: tệp đã tồn tại nhưng CHƯA có nội dung
+      expect(fs.existsSync(cuoi)).toBe(true);
+      const { m, bayGio, ngu } = maGia([{ luc: 300, viec: () => fs.writeFileSync(cuoi, "\uFEFF4242\r\n") }]);
+      const pid = await choSoPidTrongTep(cuoi, { hanMs: 20_000, nhipMs: 200, bayGio, ngu });
+      expect(pid).toBe(4242);
+      expect(m.t, "phải chờ qua mốc ghi 300 ms (hai nhịp 200 ms), không trả ngay khi tệp mới xuất hiện").toBe(400);
+    }, 5_000);
+
+    it("★★★ số không bao giờ được ghi ⇒ hết hạn đúng 20 s, trả 0 (khẳng định pid > 0 của ca thật sẽ ĐỎ như cũ — không nới)", async () => {
+      const cuoi = path.join(thuMuc, "cuoi.txt");
+      fs.writeFileSync(cuoi, "");
+      const { m, bayGio, ngu } = maGia([]);
+      expect(await choSoPidTrongTep(cuoi, { hanMs: 20_000, nhipMs: 200, bayGio, ngu })).toBe(0);
+      expect(m.t).toBe(20_000);
+    }, 5_000);
+
+    it("nhịp mặc định 200 ms khi không truyền; nhịp 0 / âm vẫn TIẾN đồng hồ (kẹp ≥ 1 ms) nên vẫn hết hạn đúng hạn, không lặp vô hạn", async () => {
+      const cuoi = path.join(thuMuc, "cuoi.txt");
+      fs.writeFileSync(cuoi, "");
+      const macDinh = maGia([{ luc: 300, viec: () => fs.writeFileSync(cuoi, "9") }]);
+      expect(await choSoPidTrongTep(cuoi, { hanMs: 20_000, bayGio: macDinh.bayGio, ngu: macDinh.ngu })).toBe(9);
+      expect(macDinh.m.t, "nhịp mặc định 200 ms ⇒ ghi lúc 300 ms được thấy lúc 400 ms").toBe(400);
+      for (const nhip of [0, -5]) {
+        fs.writeFileSync(cuoi, "");
+        const g = maGia([]);
+        expect(await choSoPidTrongTep(cuoi, { hanMs: 50, nhipMs: nhip, bayGio: g.bayGio, ngu: g.ngu })).toBe(0);
+        expect(g.m.t, `nhịp ${nhip} bị kẹp về 1 ms ⇒ 50 nhịp tới hạn`).toBe(50);
+      }
+    }, 5_000);
+
+    it("tệp vắng hẳn rồi mới xuất hiện có số ⇒ trả số; nội dung rác / 0 / âm không bao giờ được coi là xong", async () => {
+      const cuoi = path.join(thuMuc, "cuoi.txt");
+      const { bayGio, ngu } = maGia([
+        { luc: 200, viec: () => fs.writeFileSync(cuoi, "abc") },
+        { luc: 400, viec: () => fs.writeFileSync(cuoi, "0") },
+        { luc: 600, viec: () => fs.writeFileSync(cuoi, "-5") },
+        { luc: 800, viec: () => fs.writeFileSync(cuoi, "  77  ") },
+      ]);
+      expect(await choSoPidTrongTep(cuoi, { hanMs: 20_000, nhipMs: 200, bayGio, ngu })).toBe(77);
+    }, 5_000);
+  });
 
   it("kịch bản vắng ⇒ ném trước khi spawn", () => {
     const spawnFn = vi.fn();
