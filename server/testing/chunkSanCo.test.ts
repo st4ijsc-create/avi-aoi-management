@@ -88,7 +88,7 @@ describe("chonThoiDiemTrongChunkSanCo", () => {
     const khong = await chonThoiDiemTrongChunkSanCo(gia([], []).chay, { bang: "product_inspections", cot: "inspectionTime", ts: 1, macDinh: MAC_DINH, bayGio: BAY_GIO });
     expect(khong).toEqual({ at: MAC_DINH, nguon: "mac-dinh:khong-co-chunk-phu-hop" });
     const ngan = await chonThoiDiemTrongChunkSanCo(gia([{ range_start: new Date("2026-10-01T00:00:00Z"), range_end: new Date("2026-10-01T00:01:00Z") }], []).chay, { bang: "product_inspections", cot: "inspectionTime", ts: 1, macDinh: MAC_DINH, bayGio: BAY_GIO });
-    expect(ngan.nguon).toBe("mac-dinh:khong-co-chunk-phu-hop");
+    expect(ngan.nguon).toBe("mac-dinh:chunk-qua-ngan");
     const la = await chonThoiDiemTrongChunkSanCo(gia([{ range_start: "khong-phai-ngay", range_end: null }], []).chay, { bang: "product_inspections", cot: "inspectionTime", ts: 1, macDinh: MAC_DINH, bayGio: BAY_GIO });
     expect(la.nguon).toBe("mac-dinh:khong-co-chunk-phu-hop");
     const hong = await chonThoiDiemTrongChunkSanCo(
@@ -107,6 +107,72 @@ describe("chonThoiDiemTrongChunkSanCo", () => {
       expect(r.nguon, `${bang} / ${cot}`).toBe("mac-dinh:ten-bang-cot-khong-hop-le");
       expect(goi).toHaveLength(0);
     }
+  });
+});
+
+// ═══ Phương án A (HST duyệt 17/11): nhận chunk HIỆN HÀNH ở phần đã qua. Giờ là THAM SỐ (`bayGio`), không dùng đồng hồ thật, không dùng fake timers. ═══
+describe("chonThoiDiemTrongChunkSanCo — chunk hiện hành (phương án A)", () => {
+  const NGAY = 86_400_000;
+  const MUON = new Date(BAY_GIO.getTime() - NGAY); // hôm qua: mút trên cho phép của mọi vị trí
+  const CHUNK_11_HIEN_HANH = { range_start: new Date("2026-11-01T00:00:00.000Z"), range_end: new Date("2026-12-01T00:00:00.000Z") };
+  const tuyChon = (ts: number) => ({ bang: "product_inspections", cot: "inspectionTime", ts, macDinh: MAC_DINH, bayGio: BAY_GIO });
+
+  it("★★★ (b) chunk ĐÃ QUA và chunk HIỆN HÀNH cùng hợp lệ ⇒ chọn chunk ĐÃ QUA (đủ nhiều ts để không thể do tình cờ)", async () => {
+    for (let ts = 1_800_000_000_000; ts < 1_800_000_000_000 + 600; ts += 31) {
+      const { chay } = gia([CHUNK_11_HIEN_HANH, CHUNK_10], [0]); // thứ tự truy vấn: mới nhất trước ⇒ hiện hành đứng ĐẦU
+      const r = await chonThoiDiemTrongChunkSanCo(chay, tuyChon(ts));
+      expect(r.nguon).toBe("chunk-san-co");
+      expect(r.chunk).toEqual({ batDau: CHUNK_10.range_start, ketThuc: CHUNK_10.range_end });
+      expect(r.at.getTime()).toBeGreaterThan(CHUNK_10.range_start.getTime());
+      expect(r.at.getTime()).toBeLessThan(CHUNK_10.range_end.getTime());
+    }
+  });
+  it("★★★ (c) chỉ còn chunk hiện hành (chunk cũ đã nén) và range_end > bây giờ − 1 ngày ⇒ mút trên ĐÚNG BẰNG bây giờ − 1 ngày; mọi vị trí (cả cửa sổ ±30 s) nằm trong [đầu, bây giờ − 1 ngày]", async () => {
+    let max = 0;
+    for (let ts = 1_800_000_000_000; ts < 1_800_000_000_000 + 3000; ts += 7) {
+      const { chay } = gia([CHUNK_11_HIEN_HANH], [0]);
+      const r = await chonThoiDiemTrongChunkSanCo(chay, tuyChon(ts));
+      expect(r.nguon).toBe("chunk-san-co");
+      expect(r.chunk!.ketThuc.getTime(), "mút trên bị cắt đúng về bây giờ − 1 ngày").toBe(MUON.getTime());
+      expect(r.chunk!.batDau).toEqual(CHUNK_11_HIEN_HANH.range_start);
+      expect(r.at.getTime() + 30_000, "cửa sổ ±30 s không vượt hôm qua").toBeLessThanOrEqual(MUON.getTime());
+      expect(r.at.getTime() - 30_000).toBeGreaterThanOrEqual(CHUNK_11_HIEN_HANH.range_start.getTime());
+      max = Math.max(max, r.at.getTime());
+    }
+    expect(max, "vị trí phải phủ phần lớn đoạn đã qua, không dồn một đầu").toBeGreaterThan(CHUNK_11_HIEN_HANH.range_start.getTime() + 10 * NGAY);
+  });
+  it("★★★ (a) NGÀY ĐẦU của chunk mới: phần đã qua < 2 phút ⇒ về MẶC ĐỊNH với lý do riêng 'chunk-qua-ngan', không chạy truy vấn đếm nào", async () => {
+    const dauChunk = { range_start: new Date(MUON.getTime() - 119_999), range_end: new Date(MUON.getTime() + 30 * NGAY) }; // phần đã qua 119,999 s < 4 × 30 s
+    const { chay, goi } = gia([dauChunk], [0]);
+    const r = await chonThoiDiemTrongChunkSanCo(chay, tuyChon(5));
+    expect(r).toEqual({ at: MAC_DINH, nguon: "mac-dinh:chunk-qua-ngan" });
+    expect(goi.filter((g) => !/timescaledb_information/.test(g.q))).toHaveLength(0);
+  });
+  it("biên: phần đã qua ĐÚNG 2 phút ⇒ dùng được (at = đầu + lề 60 s); thiếu 1 ms ⇒ mặc định", async () => {
+    const dung = { range_start: new Date(MUON.getTime() - 120_000), range_end: new Date(MUON.getTime() + 30 * NGAY) };
+    const r = await chonThoiDiemTrongChunkSanCo(gia([dung], [0]).chay, tuyChon(5));
+    expect(r.nguon).toBe("chunk-san-co");
+    expect(r.at.getTime()).toBe(dung.range_start.getTime() + 60_000);
+    const thieu = { range_start: new Date(MUON.getTime() - 119_999), range_end: new Date(MUON.getTime() + 30 * NGAY) };
+    expect((await chonThoiDiemTrongChunkSanCo(gia([thieu], [0]).chay, tuyChon(5))).nguon).toBe("mac-dinh:chunk-qua-ngan");
+  });
+  it("chunk ngắn VÀ chunk khác dùng được ⇒ bỏ chunk ngắn, vẫn chọn chunk dùng được (không về mặc định oan)", async () => {
+    const ngan = { range_start: new Date(MUON.getTime() - 60_000), range_end: new Date(MUON.getTime() + 30 * NGAY) };
+    const r = await chonThoiDiemTrongChunkSanCo(gia([ngan, CHUNK_10], [0]).chay, tuyChon(9));
+    expect(r.nguon).toBe("chunk-san-co");
+    expect(r.chunk).toEqual({ batDau: CHUNK_10.range_start, ketThuc: CHUNK_10.range_end });
+  });
+  it("truy vấn chunk: chunk hiện hành lọt được (điều kiện theo range_start < hôm qua, KHÔNG còn theo range_end), vẫn lọc chưa nén và cận sớm nhất", async () => {
+    const { chay, goi } = gia([CHUNK_11_HIEN_HANH], [0]);
+    await chonThoiDiemTrongChunkSanCo(chay, tuyChon(1));
+    expect(goi[0]!.q).toContain("range_start < $2");
+    expect(goi[0]!.q).not.toContain("range_end <=");
+    expect(goi[0]!.q).toContain("not is_compressed");
+    expect(goi[0]!.p[1]).toBe(MUON.toISOString());
+  });
+  it("cửa sổ lát của chunk hiện hành bị chiếm hết ⇒ mặc định 'khong-co-chunk-phu-hop' (không phải 'chunk-qua-ngan')", async () => {
+    const r = await chonThoiDiemTrongChunkSanCo(gia([CHUNK_11_HIEN_HANH], Array(5).fill(4)).chay, tuyChon(3));
+    expect(r).toEqual({ at: MAC_DINH, nguon: "mac-dinh:khong-co-chunk-phu-hop" });
   });
 });
 
