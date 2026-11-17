@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { chonMocTheoDb, chonThoiDiemTrongChunkSanCo, coChunkChuaThoiDiem, viTriTrongChunk, type ChayTruyVan } from "./__chunkSanCo";
+import { chonMocTheoDb, chonThoiDiemTrongChunkSanCo, coChunkChuaThoiDiem, cuaSoChuaGioTron, viTriTrongChunk, type ChayTruyVan } from "./__chunkSanCo";
 
 const MAC_DINH = new Date("2017-11-08T05:00:00.000Z");
 const BAY_GIO = new Date("2026-11-17T09:00:00.000Z");
@@ -377,4 +377,81 @@ describe("defectHeatmapSavedScope / inspectionKhongKhop.db / defectSpatialHeatma
       expect(/\bconst INSPECTED_AT = new Date\(|\bconst T = new Date\(/.test(n), "mốc không được đặt thẳng").toBe(false);
     });
   }
+});
+
+describe("X-16 · khongChuaGioTron + kiểm trống bảng phụ", () => {
+  const H = 3_600_000;
+  const NUA = 30_000;
+  it("★★★ cuaSoChuaGioTron: cửa sổ chứa ranh giờ (kể cả đúng đầu / đúng cuối) ⇒ true; nằm giữa hai ranh ⇒ false", () => {
+    const mocGio = Date.UTC(2026, 9, 10, 10, 0, 0);
+    expect(cuaSoChuaGioTron(new Date(mocGio + 15_000), NUA), "ranh 10:00 nằm TRONG cửa sổ 09:59:45–10:00:45").toBe(true);
+    expect(cuaSoChuaGioTron(new Date(mocGio + NUA), NUA), "cửa sổ BẮT ĐẦU đúng 10:00:00.000").toBe(true);
+    expect(cuaSoChuaGioTron(new Date(mocGio - NUA), NUA), "cửa sổ KẾT THÚC đúng 10:00:00.000 (thận trọng)").toBe(true);
+    expect(cuaSoChuaGioTron(new Date(mocGio + NUA + 1), NUA), "đầu cửa sổ vừa quá ranh 1 ms").toBe(false);
+    expect(cuaSoChuaGioTron(new Date(mocGio + H / 2), NUA)).toBe(false);
+    expect(cuaSoChuaGioTron(new Date(mocGio + H - NUA - 1), NUA), "cuối cửa sổ cách ranh kế 1 ms").toBe(false);
+  });
+  const CH = { range_start: new Date("2026-10-01T00:00:00.000Z"), range_end: new Date("2026-11-01T00:00:00.000Z") };
+  /** Bộ chạy giả: bảng chính luôn trống; `oee_metrics` bận khi tâm cửa sổ nằm trong NỬA ĐẦU chunk; đếm số truy vấn trống của bảng phụ. */
+  function giaPhu() {
+    const hoiPhu: string[] = [];
+    const chay: ChayTruyVan = async (q, p) => {
+      if (/range_start <= \$2 and range_end > \$3/.test(q)) return [{ co: 1 }];
+      if (/timescaledb_information\.chunks/.test(q)) return [CH];
+      if (/from oee_metrics where "timestamp"/.test(q)) {
+        hoiPhu.push(q);
+        const tam = (new Date(p[0] as string).getTime() + new Date(p[1] as string).getTime()) / 2;
+        return [{ n: tam < (CH.range_start.getTime() + CH.range_end.getTime()) / 2 ? 2 : 0 }];
+      }
+      return [{ n: 0 }];
+    };
+    return { chay, hoiPhu };
+  }
+  const goc = (ts: number, them: object = {}) => ({ bang: "product_inspections", cot: "inspectionTime", ts, macDinh: MAC_DINH, bayGio: BAY_GIO, cungBang: ["oee_metrics"], ...them });
+  it("★★★ cotCungBang: bảng phụ phải TRỐNG ±nửa-độ-trống — mốc chọn được luôn ở nửa chunk mà bảng phụ trống; không có cotCungBang ⇒ KHÔNG hỏi đếm bảng phụ (hành vi cũ)", async () => {
+    const giuaChunk = (CH.range_start.getTime() + CH.range_end.getTime()) / 2;
+    let chon = 0;
+    for (let ts = 1_800_000_000_000; ts < 1_800_000_000_000 + 400; ts += 3) {
+      const { chay } = giaPhu();
+      const r = await chonThoiDiemTrongChunkSanCo(chay, goc(ts, { cotCungBang: { oee_metrics: "timestamp" } }));
+      if (r.nguon === "chunk-san-co") {
+        chon++;
+        expect(r.at.getTime(), "bảng phụ bận ở nửa đầu").toBeGreaterThan(giuaChunk);
+      }
+    }
+    expect(chon, "nửa sau trống ⇒ phần lớn lượt chọn được").toBeGreaterThan(100);
+    const cu = giaPhu();
+    await chonThoiDiemTrongChunkSanCo(cu.chay, goc(1_800_000_000_123));
+    expect(cu.hoiPhu, "không khai cột ⇒ không đếm bảng phụ").toHaveLength(0);
+  });
+  it("★★★ bảng phụ bận khắp chunk ⇒ mặc định 'khong-co-chunk-phu-hop'; tên bảng/cột phụ sai ⇒ mặc định và KHÔNG truy vấn", async () => {
+    const chayBan: ChayTruyVan = async (q) => (/range_start <= \$2 and range_end > \$3/.test(q) ? [{ co: 1 }] : /timescaledb_information\.chunks/.test(q) ? [CH] : /oee_metrics/.test(q) ? [{ n: 1 }] : [{ n: 0 }]);
+    expect(await chonThoiDiemTrongChunkSanCo(chayBan, goc(5, { cotCungBang: { oee_metrics: "timestamp" } }))).toEqual({ at: MAC_DINH, nguon: "mac-dinh:khong-co-chunk-phu-hop" });
+    // đếm bảng phụ trả MẢNG RỖNG (không đọc được số) ⇒ coi là BẬN (fail-closed), không coi là trống
+    const chayMu: ChayTruyVan = async (q) => (/range_start <= \$2 and range_end > \$3/.test(q) ? [{ co: 1 }] : /timescaledb_information\.chunks/.test(q) ? [CH] : /oee_metrics/.test(q) ? [] : [{ n: 0 }]);
+    expect((await chonThoiDiemTrongChunkSanCo(chayMu, goc(5, { cotCungBang: { oee_metrics: "timestamp" } }))).nguon).toBe("mac-dinh:khong-co-chunk-phu-hop");
+    for (const cotCungBang of [{ oee_metrics: 'timestamp" or 1=1 --' }, { "oee_metrics;x": "timestamp" }]) {
+      const { chay, hoiPhu } = giaPhu();
+      const goi: string[] = [];
+      const r = await chonThoiDiemTrongChunkSanCo(async (q, p) => (goi.push(q), chay(q, p)), goc(5, { cotCungBang }));
+      expect(r.nguon).toBe("mac-dinh:ten-bang-cot-khong-hop-le");
+      expect(goi).toHaveLength(0);
+      expect(hoiPhu).toHaveLength(0);
+    }
+  });
+  it("★★★ khongChuaGioTron: mọi mốc chọn được có cửa sổ KHÔNG chứa ranh giờ; đối chứng: không bật thì có lượt chọn mốc chứa ranh giờ (ca không rỗng)", async () => {
+    let coGioKhiTat = 0;
+    let chonKhiBat = 0;
+    for (let ts = 1_800_000_000_000; ts < 1_800_000_000_000 + 6000; ts += 7) {
+      const tat = await chonThoiDiemTrongChunkSanCo(giaPhu().chay, goc(ts, { cungBang: [] }));
+      if (tat.nguon === "chunk-san-co" && cuaSoChuaGioTron(tat.at, NUA)) coGioKhiTat++;
+      const bat = await chonThoiDiemTrongChunkSanCo(giaPhu().chay, goc(ts, { cungBang: [], khongChuaGioTron: true }));
+      if (bat.nguon === "chunk-san-co") {
+        chonKhiBat++;
+        expect(cuaSoChuaGioTron(bat.at, NUA), `ts=${ts} at=${bat.at.toISOString()}`).toBe(false);
+      }
+    }
+    expect(coGioKhiTat, "tắt tuỳ chọn thì phải có lượt rơi vào cửa sổ chứa ranh giờ (xác suất ~1/60)").toBeGreaterThan(5);
+    expect(chonKhiBat, "bật vẫn chọn được phần lớn lượt (thử 5 vị trí)").toBeGreaterThan(800);
+  });
 });
