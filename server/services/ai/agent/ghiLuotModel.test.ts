@@ -188,7 +188,7 @@ describe("census — AI_GHI_LUOT_DIR", () => {
       expect(choNhac, `${tep}: số chỗ nhắc tên biến`).toBe(SO_CHO_NHAC_TEN_NGOAI_LE);
       const viPham: string[] = [];
       const di = (n: ts.Node) => {
-        if (ts.isIdentifier(n) && ["process", "env", "globalThis", "require", "Reflect", "eval"].includes(n.text)) viPham.push(`định danh ${n.text}`);
+        if (ts.isIdentifier(n) && ["process", "env", "globalThis", "require", "Reflect", "eval", "Function"].includes(n.text)) viPham.push(`định danh ${n.text}`);
         if (ts.isMetaProperty(n)) viPham.push("import.meta");
         if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) viPham.push("import động");
         if (ts.isImportDeclaration(n) && !ts.isStringLiteral(n.moduleSpecifier)) viPham.push("import lạ");
