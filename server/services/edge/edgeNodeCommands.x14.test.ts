@@ -241,7 +241,7 @@ describe("X-14 khuôn — the fixtures, read by the code that exists", () => {
 // ── the behaviour (red before the code) ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
   // 1 — which traces
-  it.fails("X14-1-CHON-VET node run: a failed hand-over and a flagged trace are the node's (:som); an unflagged trace is not the node's; a trace whose STOP's own row completed is not (a1)", async () => {
+  it("X14-1-CHON-VET node run: a failed hand-over and a flagged trace are the node's (:som); an unflagged trace is not the node's; a trace whose STOP's own row completed is not (a1)", async () => {
     run(41, 20_000, { nut: true });
     vet(41, "s9", VET_NUT);
     vet(41, "s8", VET_G1P);
@@ -253,7 +253,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect(khoaCua().sort()).toEqual([khoa(41, "s8", "som"), khoa(41, "s9", "som")].sort());
   });
   // 2 — the early mark m4
-  it.fails("X14-2-MOC-M4 :som at max(finishedAt, lastProgressAt) + 16 s with no claim: 15 s ⇒ none, 16 s + 1 ms ⇒ one; a fresh claim ⇒ none; a stale claim ⇒ from finishedAt", async () => {
+  it("X14-2-MOC-M4 :som at max(finishedAt, lastProgressAt) + 16 s with no claim: 15 s ⇒ none, 16 s + 1 ms ⇒ one; a fresh claim ⇒ none; a stale claim ⇒ from finishedAt", async () => {
     run(41, 60_000, { nut: true, tienDoTruocMs: 15_000 }); // m4 = 15 s ago
     vet(41, "s9", VET_NUT);
     run(42, 60_000, { nut: true, tienDoTruocMs: HAN_SOM + 1 }); // m4 = 16 s + 1 ms ago
@@ -266,7 +266,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     await quet(NOW);
     expect(khoaCua().sort()).toEqual([khoa(42, "s9", "som"), khoa(44, "s9", "som")].sort());
   });
-  it.fails("X14-2B-PHUT-CON-LAI <minutesLeft> = ceil(left / 60 000), never 0 or less: 1 ms ⇒ 1, 60 000 ⇒ 1, 60 001 ⇒ 2; 0 left ⇒ no :som; the words [A] to the character", async () => {
+  it("X14-2B-PHUT-CON-LAI <minutesLeft> = ceil(left / 60 000), never 0 or less: 1 ms ⇒ 1, 60 000 ⇒ 1, 60 001 ⇒ 2; 0 left ⇒ no :som; the words [A] to the character", async () => {
     run(51, ABORT_RESEND_WINDOW_MS - 1, { nut: true });
     vet(51, "s9", VET_NUT);
     run(52, ABORT_RESEND_WINDOW_MS - PHUT, { nut: true });
@@ -285,7 +285,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect(khoaCua().filter((k) => k.startsWith("stop_undelivered:run:54:")), "0 left: neither :som nor (not past 15 min) :het").toEqual([]);
   });
   // 3 — the 15-minute mark
-  it.fails("X14-3-MOC-HET :het past 15 minutes: exactly 15 min ⇒ none, 15 min + 1 ms ⇒ one ([C] to the character), 15 min + 24 h + 1 ms ⇒ none", async () => {
+  it("X14-3-MOC-HET :het past 15 minutes: exactly 15 min ⇒ none, 15 min + 1 ms ⇒ one ([C] to the character), 15 min + 24 h + 1 ms ⇒ none", async () => {
     run(61, ABORT_RESEND_WINDOW_MS, { nut: true });
     vet(61, "s9", VET_NUT);
     run(62, ABORT_RESEND_WINDOW_MS + 1, { nut: true });
@@ -302,7 +302,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect([...(a.recipients ?? [])].sort(), "the run's owner and the active admins").toEqual([ADMIN, OWNER].sort());
   });
   // 4 — the durable marker
-  it.fails("X14-4-DAU-BEN two passes ⇒ one alert per key; the inbox row never lands ⇒ still one (the process memory); the marker read fails ⇒ still alerted", async () => {
+  it("X14-4-DAU-BEN two passes ⇒ one alert per key; the inbox row never lands ⇒ still one (the process memory); the marker read fails ⇒ still alerted", async () => {
     run(71, 20_000, { nut: true });
     vet(71, "s9", VET_NUT);
     nap();
@@ -324,8 +324,21 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     await quet(NOW);
     expect(khoaCua(), "the marker read failed: never silent").toEqual([khoa(71, "s9", "som")]);
   });
+  // 4B (scada-master 17/11, đột biến X14-M3-DAU sống) — the marker is the inbox row, not this process's memory: a restart never alerts a key again
+  it("X14-4B-DAU-BEN-KHOI-DONG-LAI a restart (a fresh process memory) reads the inbox rows: a key alerted before is not alerted again", async () => {
+    run(72, 20_000, { nut: true });
+    vet(72, "s9", VET_NUT);
+    nap();
+    await quet(NOW);
+    expect(khoaCua()).toEqual([khoa(72, "s9", "som")]);
+    H.alerts = [];
+    vi.resetModules(); // the process restarts: its memory is gone, the inbox row stays
+    nap();
+    await quet(NOW + 2_000);
+    expect(khoaCua(), "the durable marker, not the memory").toEqual([]);
+  });
   // 5 — two marks
-  it.fails("X14-5-HAI-MOC :som then :het of the same (run, step): two alerts, two keys; :het alone when :som never fired (the first pass past 15 min)", async () => {
+  it("X14-5-HAI-MOC :som then :het of the same (run, step): two alerts, two keys; :het alone when :som never fired (the first pass past 15 min)", async () => {
     run(81, 20_000, { nut: true });
     vet(81, "s9", VET_NUT);
     run(82, ABORT_RESEND_WINDOW_MS + 5_000, { nut: true });
@@ -336,7 +349,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect(khoaCua().sort()).toEqual([khoa(81, "s9", "som"), khoa(81, "s9", "het"), khoa(82, "s9", "het")].sort());
   });
   // 6 — the lighter words (G19)
-  it.fails("X14-6-CHU-NHE the node acknowledged a STOP request for the same adapter after the abort ⇒ still alerted, words [B] with the request; before the abort, failed, central's, unresolved ⇒ [A]", async () => {
+  it("X14-6-CHU-NHE the node acknowledged a STOP request for the same adapter after the abort ⇒ still alerted, words [B] with the request; before the abort, failed, central's, unresolved ⇒ [A]", async () => {
     const ack = new Date(NOW - 10_000);
     run(91, 20_000, { nut: true });
     vet(91, "s9", VET_NUT);
@@ -369,7 +382,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     await quet(NOW);
     expect(String(motCanhBao(khoa(91, "s9", "som")).title), "the adapter not resolved: the usual words").toBe(CHU.A.tieuDe(91, "s9", NUT.code));
   });
-  it.fails("X14-6B-CHU-NHE-HET the lighter words past 15 minutes: [B]'s opening, then the :het ending [D]", async () => {
+  it("X14-6B-CHU-NHE-HET the lighter words past 15 minutes: [B]'s opening, then the :het ending [D]", async () => {
     const ack = new Date(NOW - ABORT_RESEND_WINDOW_MS);
     run(92, ABORT_RESEND_WINDOW_MS + 5_000, { nut: true });
     vet(92, "s9", VET_NUT);
@@ -382,7 +395,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect(String(a.message)).toBe(CHU.B.dau(92, "s9", NUT.code, Math.round((ABORT_RESEND_WINDOW_MS + 5_000) / 1000), 7002, 501, ack.toISOString()) + CHU.B.duoiHet);
   });
   // 7 — central runs, latched
-  it.fails("X14-7-TRUNG-TAM-CHOT a central run latched (by its context, or by its rows) gets no :het ([E]/[F]/[G] say 'Nothing sends it any more': a press still sends it there)", async () => {
+  it("X14-7-TRUNG-TAM-CHOT a central run latched (by its context, or by its rows) gets no :het ([E]/[F]/[G] say 'Nothing sends it any more': a press still sends it there)", async () => {
     run(101, ABORT_RESEND_WINDOW_MS + 5_000, { ctx: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { at: "x" } } });
     vet(101, "s9", VET_G1P);
     run(102, ABORT_RESEND_WINDOW_MS + 5_000);
@@ -394,7 +407,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     await quet(NOW);
     expect(khoaCua()).toEqual([khoa(103, "s9", "het")]);
   });
-  it.fails("X14-7B-TRUNG-TAM-CHU central run not latched, past 15 min: a flagged trace ⇒ [E], an unflagged one ⇒ [F] (title 'Step not sent'), to the character; never a :som", async () => {
+  it("X14-7B-TRUNG-TAM-CHU central run not latched, past 15 min: a flagged trace ⇒ [E], an unflagged one ⇒ [F] (title 'Step not sent'), to the character; never a :som", async () => {
     run(111, ABORT_RESEND_WINDOW_MS + 5_000);
     vet(111, "s9", VET_G1P);
     run(112, ABORT_RESEND_WINDOW_MS + 5_000);
@@ -408,7 +421,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect([String(motCanhBao(khoa(112, "s9", "het")).title), String(motCanhBao(khoa(112, "s9", "het")).message)]).toEqual([CHU.F.tieuDe(112, "s9"), CHU.F.than(112, "s9")]);
   });
   // 8 — no starvation
-  it.fails("X14-8A-KHONG-BO-DOI 11 runs due: pass 1 alerts the 10 aborted first, pass 2 the 11th, and nothing twice", async () => {
+  it("X14-8A-KHONG-BO-DOI 11 runs due: pass 1 alerts the 10 aborted first, pass 2 the 11th, and nothing twice", async () => {
     for (let i = 0; i < 11; i++) {
       run(200 + i, ABORT_RESEND_WINDOW_MS + 60_000 - i * 1_000, { nut: true }); // run 200 aborted first
       vet(200 + i, "s9", VET_NUT);
@@ -420,7 +433,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect(khoaCua().length).toBe(11);
     expect(khoaCua()[10]).toBe(khoa(210, "s9", "het"));
   });
-  it.fails("X14-8B-KHONG-BO-DOI-KHONG-DAU the same with no inbox row ever landing: pass 2 still alerts the 11th, nothing twice", async () => {
+  it("X14-8B-KHONG-BO-DOI-KHONG-DAU the same with no inbox row ever landing: pass 2 still alerts the 11th, nothing twice", async () => {
     H.rowsLand = false;
     for (let i = 0; i < 11; i++) {
       run(220 + i, ABORT_RESEND_WINDOW_MS + 60_000 - i * 1_000, { nut: true });
@@ -432,7 +445,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect(khoaCua().length).toBe(11);
     expect(new Set(khoaCua()).size).toBe(11);
   });
-  it.fails("X14-8C-NGAN-SACH the analysis budget (~300 queries, 3 + k a run) spent: every run is still alerted, the later ones with the usual words", async () => {
+  it("X14-8C-NGAN-SACH the analysis budget (~300 queries, 3 + k a run) spent: every run is still alerted, the later ones with the usual words", async () => {
     DEF_HIEN = { steps: Array.from({ length: 150 }, (_, i) => ({ id: i === 0 ? "s9" : `m${i}`, type: "command", machineId: 1, command: "stop" })) }; // k = 150 ⇒ 153 a run
     H.adapterOf.set("s9", 501);
     for (const id of [231, 232]) {
@@ -450,7 +463,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect(tieuDe.filter((t) => t.startsWith("STOP not confirmed yet")).length, "one with the usual words").toBe(1);
   });
   // 9 — G17
-  it.fails("X14-9-G17 a node run latched after the press (its context), its flagged trace still failed: :som and :het are both raised, words [A] / [C]", async () => {
+  it("X14-9-G17 a node run latched after the press (its context), its flagged trace still failed: :som and :het are both raised, words [A] / [C]", async () => {
     run(241, 20_000, { nut: true, ctx: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { at: "x" } } });
     vet(241, "s9", VET_G1P);
     nap();
@@ -460,7 +473,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect(String(motCanhBao(khoa(241, "s9", "het")).message)).toBe(CHU.C.than(241, "s9", NUT.code));
   });
   // 10 — the lengths (G22)
-  it.fails("X14-10-DO-DAI every title ≤ 200 and every body ≤ 800 with a 200-character step id, runId 2 147 483 647, a 128-character node code, the largest request / adapter ids", async () => {
+  it("X14-10-DO-DAI every title ≤ 200 and every body ≤ 800 with a 200-character step id, runId 2 147 483 647, a 128-character node code, the largest request / adapter ids", async () => {
     const DAI = "s".repeat(200);
     const R = 2_147_483_647;
     const ack = new Date(NOW - 10_000);
@@ -486,7 +499,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     }
   });
   // 11 — reads only
-  it.fails("X14-11-CHI-DOC the sweep writes nothing through the database (no insert / update / delete): its only effects are the alerts", async () => {
+  it("X14-11-CHI-DOC the sweep writes nothing through the database (no insert / update / delete): its only effects are the alerts", async () => {
     run(251, 20_000, { nut: true });
     vet(251, "s9", VET_NUT);
     run(252, ABORT_RESEND_WINDOW_MS + 5_000);
@@ -499,7 +512,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
   });
   // 16 — G1 on a run given to the node (HST 17/11: gồm vào X-14): an unflagged `chuaXacMinh` trace is central's own, the node never sends it (laHangAbortChoAnh), central's window
   // is over ⇒ [F] at :het, under the same "not latched when swept" rule as a central run; never also [C]/[D] for the same step
-  it.fails("X14-16-G1-NUT a node run NOT latched, an unflagged chuaXacMinh trace, past 15 min: exactly one [F] at :het (no [C]/[D] for that step); the same run latched: none", async () => {
+  it("X14-16-G1-NUT a node run NOT latched, an unflagged chuaXacMinh trace, past 15 min: exactly one [F] at :het (no [C]/[D] for that step); the same run latched: none", async () => {
     run(281, ABORT_RESEND_WINDOW_MS + 5_000, { nut: true });
     vet(281, "s9", VET_G1);
     run(282, ABORT_RESEND_WINDOW_MS + 5_000, { nut: true, ctx: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { at: "x" } } });
@@ -513,14 +526,14 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect(H.alerts.filter((x) => /^STOP not confirmed/.test(String(x.title))), "never [C]/[D] for it").toEqual([]);
   });
   // 13 — refused STOPs of a central run (HST 17/11 câu 2)
-  it.fails("X14-13A-TU-CHOI-CHOT-KHONG-HET a central run LATCHED whose STOP was refused (its URGENT 'chot' was the press's): no :het", async () => {
+  it("X14-13A-TU-CHOI-CHOT-KHONG-HET a central run LATCHED whose STOP was refused (its URGENT 'chot' was the press's): no :het", async () => {
     run(261, ABORT_RESEND_WINDOW_MS + 5_000, { ctx: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { at: "x" } } });
     vet(261, "s9", { abortStop: "failed" }, LOI_TU_CHOI);
     nap();
     await quet(NOW);
     expect(khoaCua()).toEqual([]);
   });
-  it.fails("X14-13B-TU-CHOI-CHUA-CHOT a central run NOT latched whose STOP was refused: exactly one :het, no other key of that STOP", async () => {
+  it("X14-13B-TU-CHOI-CHUA-CHOT a central run NOT latched whose STOP was refused: exactly one :het, no other key of that STOP", async () => {
     run(262, ABORT_RESEND_WINDOW_MS + 5_000);
     vet(262, "s9", { abortStop: "failed" }, LOI_TU_CHOI);
     nap();
@@ -529,7 +542,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect(khoaCua()).toEqual([khoa(262, "s9", "het")]);
   });
   // 15 — [G1] / [G2] by the shape (phanLoaiStopAbort), never by reading the error text
-  it.fails("X14-15A-G1 shape 1 (refused before a driver) ⇒ [G1] to the character", async () => {
+  it("X14-15A-G1 shape 1 (refused before a driver) ⇒ [G1] to the character", async () => {
     run(271, ABORT_RESEND_WINDOW_MS + 5_000);
     vet(271, "s9", { abortStop: "failed" }, LOI_TU_CHOI);
     nap();
@@ -537,7 +550,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     const a = motCanhBao(khoa(271, "s9", "het"));
     expect([String(a.title), String(a.message)]).toEqual([CHU.E.tieuDe(271, "s9"), CHU.G1.than(271, "s9")]);
   });
-  it.fails("X14-15B-G2-LOI shape 2 (a timeout) ⇒ [G2] to the character", async () => {
+  it("X14-15B-G2-LOI shape 2 (a timeout) ⇒ [G2] to the character", async () => {
     run(272, ABORT_RESEND_WINDOW_MS + 5_000);
     vet(272, "s9", VET_TIMEOUT);
     nap();
@@ -545,7 +558,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     const a = motCanhBao(khoa(272, "s9", "het"));
     expect([String(a.title), String(a.message)]).toEqual([CHU.E.tieuDe(272, "s9"), CHU.G2.than(272, "s9")]);
   });
-  it.fails("X14-15C-G2-CHUA-TRA-LOI shape 3 (no answer: a chuaTraLoi trace) ⇒ [G2] to the character", async () => {
+  it("X14-15C-G2-CHUA-TRA-LOI shape 3 (no answer: a chuaTraLoi trace) ⇒ [G2] to the character", async () => {
     run(273, ABORT_RESEND_WINDOW_MS + 5_000);
     vet(273, "s9", VET_CHUA_TRA_LOI);
     nap();
@@ -557,7 +570,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
 
 // 14 — the reads-only shape of the code (AST; kiem-dinh's census style)
 describe("X-14 — the sweep's source: no dispatcher, no driver, no write of another table", () => {
-  it.fails("X14-14-AST the body of canhBaoStopRunQuaHan calls none of insert / update / delete / execute / dispatch / dispatchRobotJob / enqueueEdgeDeviceRequest / stopTarget / sendCommand / abortRun / resendAbortStops / abortStopSweep / sendNotification / createNotification", () => {
+  it("X14-14-AST the body of canhBaoStopRunQuaHan calls none of insert / update / delete / execute / dispatch / dispatchRobotJob / enqueueEdgeDeviceRequest / stopTarget / sendCommand / abortRun / resendAbortStops / abortStopSweep / sendNotification / createNotification", () => {
     const src = readFileSync(resolve(__dirname, "edgeNodeCommands.ts"), "utf8");
     const sf = ts.createSourceFile("edgeNodeCommands.ts", src, ts.ScriptTarget.Latest, true);
     let than: ts.Node | null = null;

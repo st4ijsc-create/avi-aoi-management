@@ -47,7 +47,7 @@ describe("final fix wave I-3 — the undelivered-STOP sweep timer", () => {
     }
   });
   // X-14 ca 12 (tam/x14-thiet-ke.md mục 5; HST 17/11: alertUndeliveredStops runs first) — red before edgeNodeHealthScheduler.ts calls the new sweep
-  it.fails("X14-12-HS every tick runs canhBaoStopRunQuaHan AFTER alertUndeliveredStops (never before, never instead); the new sweep throwing never stops the next ticks", async () => {
+  it("X14-12-HS every tick runs canhBaoStopRunQuaHan AFTER alertUndeliveredStops (never before, never instead); the new sweep throwing never stops the next ticks", async () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const saved = process.env.EDGE_NODE_HEALTH_INTERVAL_MS;

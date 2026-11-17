@@ -654,6 +654,157 @@ export async function alertUndeliveredStops(now: number = Date.now()): Promise<n
   return raised;
 }
 
+// ── X-14 (main:AGENTS-ngoai-le.md:24; buoc3/tam/x14-thiet-ke.md, words approved by HST 17/11) — the TIMED alerts of a STOP an Abort left unconfirmed ──────────
+/** Most aborted runs with a due timed alert one pass raises; the rest wait for the next passes, the earliest abort first (none starved: ⌈R/10⌉ passes, G26). */
+export const TRAN_RUN_X14_MOI_LUOT = 10;
+/** The queries one pass may spend analysing definitions for the lighter words (3 + k a run, DO-67; G25); past it, the usual words — never one alert fewer. */
+export const NGAN_SACH_PHAN_TICH_X14 = 300;
+/** Timed alerts raised by THIS process (bridges the gap until the inbox row, the durable marker, lands); bounded. */
+const daBaoX14 = new Map<string, number>();
+type ViecX14 = { run: { id: number; startedBy: number | null }; id: string; moc: "som" | "het"; chu: "A" | "C" | "E" | "F" | "G1" | "G2"; ageS: number; conLai: number };
+
+/**
+ * X-14 — the words (tam/x14-thiet-ke.md mục 3, verbatim). `q`: the node acknowledged a STOP request for the step's adapter after the abort (G19): the lighter
+ * words [B] / [D], never silence. Ids printed short (idGonCua / rutGonGiua): the title stays far under notifications.title's 255 (G22), the body under 800. Pure.
+ */
+function chuX14(v: ViecX14, id: string, ma: string, q: { id: number; adapterId: number | null; ackedAt: Date | string | null } | undefined, boundS: number): [string, string] {
+  const r = v.run.id;
+  const phut = Math.ceil(v.conLai / 60_000);
+  const tay = "Check the machine on site and use its direct STOP / E-STOP.";
+  const het = "Nothing sends it any more: 15 minutes from when the run was aborted have passed.";
+  const khong = `${v.chu === "F" ? "Step" : "STOP"} not sent — run ${r} step ${id}`;
+  if (q && (v.chu === "A" || v.chu === "C"))
+    return [`STOP not confirmed on the run — run ${r} step ${id} (edge node ${ma})`, `The run's STOP "${id}" (aborted run ${r}) is NOT confirmed on the run ${v.ageS} s after it became edge node ${ma}'s to send. Edge node ${ma} did acknowledge an adapter STOP request #${q.id} for the same adapter ${q.adapterId} at ${new Date(q.ackedAt ?? 0).toISOString()}, after the abort: that STOP request may come from this Abort or from a console / interlock STOP, and its acknowledgement does not say whether it reached the device or was only simulated. ${v.moc === "som" ? `The node can still send the run's STOP for about ${phut} more minute(s).` : "Nothing sends the run's STOP on its own any more (the node's re-send window is over)."} Check the machine on site and use its direct STOP / E-STOP if it is still running.`];
+  if (v.chu === "A")
+    return [`STOP not confirmed yet — run ${r} step ${id} (edge node ${ma})`, `STOP "${id}" of aborted run ${r} is NOT confirmed ${v.ageS} s after it became edge node ${ma}'s to send (bound ${boundS} s). Central did not send it: its adapter belongs to that node, and central has no connection to it. The node can still send it for about ${phut} more minute(s) (until 15 minutes from when the run was aborted), once it reaches central; it may be offline, or its STOP may have failed (a failed STOP has its own alert). Check the machine on site now and use its direct STOP / E-STOP if it is still running. A further press of Abort at central hands it to that node only if the run records a command whose outcome is unknown.`];
+  if (v.chu === "C")
+    return [`STOP not confirmed — run ${r} step ${id} (edge node ${ma})`, `STOP "${id}" of aborted run ${r} was NOT confirmed within 15 minutes from when the run was aborted. Central did not send it: its adapter belongs to edge node ${ma}, and central has no connection to it. The node did not confirm sending it either: it may be offline, or its STOP may have failed. Nothing sends it on its own any more: the node's re-send window is over. A further press of Abort at central hands it to that node only if the run records a command whose outcome is unknown. ${tay}`];
+  if (v.chu === "E") return [khong, `STOP "${id}" of aborted run ${r} was NOT sent: central could not confirm the connection to its adapter at the Abort, and no press since sent it. ${het.slice(0, -1)}, and nothing sends it on its own when the connection comes back. ${tay}`];
+  if (v.chu === "F") return [khong, `Step "${id}" of aborted run ${r} was NOT sent: its pins could not be read at the Abort, so it could not be verified as a pinned STOP, and no press since sent it. ${het} ${tay}`];
+  if (v.chu === "G1") return [khong, `STOP "${id}" of aborted run ${r} was refused when the Abort handed it over, so it was NOT sent, and no press since sent it. ${het} ${tay}`];
+  return [khong, `STOP "${id}" of aborted run ${r} got an error or no answer when the Abort handed it over: it may or may not have reached the device, and no press since sent it again. ${het} ${tay}`];
+}
+
+/**
+ * X-14 — the timed sweep (after alertUndeliveredStops, same tick: edgeNodeHealthScheduler). READS ONLY; its only effects are the alerts (raiseCriticalStopAlert:
+ * the inbox row = the durable marker, the alert stream) and this process's memory. One alert per (run, step, mark), key `stop_undelivered:run:<run>:<step>:<som|het>`:
+ *   • `:som` — a run given to an edge node, a STOP the node is to send (the picture's own reading, laHangAbortChoAnh, less a STOP whose own row completed: a1),
+ *     not confirmed past the early bound from m4 = max(finishedAt, lastProgressAt) when no claim holds it (a claim gone stale: from finishedAt; a fresh claim: its
+ *     walker sweeps), while the node can still send it (inside ABORT_RESEND_WINDOW_MS);
+ *   • `:het` — past the window (and under 24 h more), when nothing sends it on its own: that node STOP; and, on a run NOT latched when swept (a press there still
+ *     sends, no window, B2), central's own traces: unverified ([E] its connection / [F] its pins, a node run's unflagged one too) and refused or unanswered ([G1] /
+ *     [G2] by phanLoaiStopAbort, never by reading the text).
+ * A trace that never landed (khongBen) is not seen (G18). Read failures throw (the caller logs); the marker read failing ⇒ alert from memory, never silent.
+ */
+export async function canhBaoStopRunQuaHan(now: number = Date.now()): Promise<number> {
+  const d = await centralDb();
+  const [{ inArray, gte, like }, S, { runEdgeAssignments: A }, { laHangAbortChoAnh, edgeClaimStaleMs }, { phanLoaiStopAbort, dauKhongXacNhan }, F, { ABORT_RESEND_WINDOW_MS: CUA }, { docHetTheoTrang, baoDocCatBot }, { allStepsOf }] = await Promise.all([
+    import("drizzle-orm"),
+    import("../../../drizzle/schema"),
+    import("./edgeExecutionSchema"),
+    import("./edgeExecutionCentral"),
+    import("../orchestration/foe/foeRunStore"),
+    import("../orchestration/foe/foeKetCucKhongRo"),
+    import("@shared/foeAbortResend"),
+    import("./docHetTheoTrang"),
+    import("../orchestration/foe/foeStepClass"),
+  ]);
+  const R = S.orchestrationRuns;
+  const RS = S.orchestrationRunSteps;
+  const NGAY = 86_400_000;
+  // the SQL window is wide (a naive timestamp may read hours off); the rule below is exact
+  const doc = await docHetTheoTrang(
+    (sau, n) => d.select().from(R).where(and(eq(R.status, "aborted"), gte(R.finishedAt, new Date(now - CUA - 2 * NGAY)), sau === null ? undefined : gt(R.id, sau))).orderBy(asc(R.id)).limit(n) as unknown as Promise<Array<typeof R.$inferSelect>>,
+    (r) => r.id,
+  );
+  if (doc.catBot) baoDocCatBot({ kind: "stop_undelivered_run_list_cut", title: "Timed STOP alert sweep could not read every aborted run", message: `The sweep of aborted runs whose STOPs are not confirmed read ${doc.hang.length} runs and stopped at its page budget — the rest are unread this pass. Check the machines on site; use their direct STOP / E-STOP where needed.`, dedupKey: "stop_undelivered_run_list_cut" });
+  const theoLo = async <T>(ids: number[], f: (lo: number[]) => Promise<T[]>): Promise<T[]> => {
+    const out: T[] = [];
+    for (let i = 0; i < ids.length; i += 200) out.push(...(await f(ids.slice(i, i + 200))));
+    return out;
+  };
+  const vetAll = await theoLo(doc.hang.map((r) => r.id), (lo) => d.select().from(RS).where(and(inArray(RS.runId, lo), like(RS.stepId, "abort:%"), eq(RS.status, "failed"))));
+  const coVet = [...new Set(vetAll.map((v) => v.runId))];
+  if (!coVet.length) return 0;
+  const [hangAll, asgs, dau] = await Promise.all([
+    theoLo(coVet, (lo) => d.select().from(RS).where(inArray(RS.runId, lo))),
+    theoLo(coVet, (lo) => d.select().from(A).where(inArray(A.runId, lo))),
+    theoLo(coVet, (lo) => d.select().from(S.notifications).where(and(eq(S.notifications.type, "ALERT"), eq(S.notifications.entityType, "orchestration_run"), inArray(S.notifications.entityId, lo), gte(S.notifications.createdAt, new Date(now - CUA - 2 * NGAY))))).then(
+      (rs) => new Set(rs.map((n) => String((n.metadata as { dedupKey?: unknown } | null)?.dedupKey ?? ""))),
+      (err: unknown) => (console.error(`[EdgeCommands] timed STOP sweep: the durable-marker read failed (${String((err as Error)?.message ?? err).slice(0, 160)}) — alerting from this process's memory`), new Set<string>()),
+    ),
+  ]);
+  const asgOf = new Map(asgs.map((a) => [a.runId, a] as const));
+  const hanSom = Math.max(2 * edgeStopAckDeadlineMs(), edgeStopAckDeadlineMs() + 2 * edgeNodePullMs());
+  const viec: ViecX14[] = [];
+  for (const run of doc.hang.filter((r) => r.finishedAt && coVet.includes(r.id)).sort((x, y) => +new Date(x.finishedAt!) - +new Date(y.finishedAt!))) {
+    const fin = new Date(run.finishedAt!).getTime();
+    const hang = hangAll.filter((h) => h.runId === run.id);
+    const ctx = (run.contextJson ?? {}) as Record<string, unknown>;
+    const chot = F.runDaChotKhongRo(ctx) || F.chotTuHang(hang, ctx.foeResumeState as never) !== null;
+    const het = now - fin > CUA && now - fin <= CUA + NGAY;
+    const a = asgOf.get(run.id);
+    const tuoi = a?.claimTokenHash != null && now - new Date(a.lastProgressAt ?? a.claimedAt ?? 0).getTime() < edgeClaimStaleMs();
+    const moc = a?.claimTokenHash == null && a?.lastProgressAt ? Math.max(fin, new Date(a.lastProgressAt).getTime()) : fin;
+    for (const v of vetAll.filter((x) => x.runId === run.id)) {
+      const kq = (v.resultJson ?? {}) as { stepId?: unknown; abortStop?: unknown; adapterNut?: unknown };
+      const id = String(kq.stepId ?? v.stepId.slice("abort:".length));
+      const cua = hang.find((h) => h.stepId === id);
+      const them = (m: ViecX14["moc"], chu: ViecX14["chu"]) => viec.push({ run, id, moc: m, chu, ageS: Math.round((now - moc) / 1000), conLai: fin + CUA - now });
+      if (a && laHangAbortChoAnh(v, true)) {
+        if ((cua?.status === "completed" || cua?.status === "compensated") && dauKhongXacNhan(cua.resultJson) === null) continue; // a1: its own row went
+        if (fin + CUA - now > 0 && !tuoi && now >= moc + hanSom) them("som", "A");
+        if (het) them("het", "C");
+      } else if (het && !chot && kq.abortStop === "chuaXacMinh") them("het", kq.adapterNut === true ? "E" : "F");
+      else if (het && !chot && !a && (kq.abortStop === "failed" || kq.abortStop === "chuaTraLoi")) {
+        const p = phanLoaiStopAbort(id, { hang, ctx });
+        them("het", p.lop === "coTheDaRa" || p.truoc === "coTheDaRa" ? "G2" : "G1");
+      }
+    }
+  }
+  const khoaX14 = (v: ViecX14) => `stop_undelivered:run:${v.run.id}:${v.id}:${v.moc}`;
+  const con = viec.filter((v) => !dau.has(khoaX14(v)) && !daBaoX14.has(khoaX14(v)));
+  const tatCa = [...new Set(con.map((v) => v.run.id))];
+  const chon = tatCa.slice(0, TRAN_RUN_X14_MOI_LUOT);
+  if (tatCa.length > chon.length) console.error(`[EdgeCommands] ${tatCa.length - chon.length} more aborted run(s) with a due timed STOP alert past the per-pass budget (${TRAN_RUN_X14_MOI_LUOT}) — alerted on the next pass(es)`);
+  // G19 — the lighter words: a STOP request the node acknowledged (done, its own, a chain head) for the step's adapter after the abort; one cheap read first
+  const nutChon = chon.filter((r) => asgOf.has(r));
+  const maNut = [...new Set(nutChon.map((r) => asgOf.get(r)!.edgeNodeId))];
+  const yc = maNut.length ? await d.select().from(robotMotionLockRequests).where(and(eq(robotMotionLockRequests.kind, "stop"), eq(robotMotionLockRequests.outcome, "done"), isNull(robotMotionLockRequests.centralExecutionId), isNull(robotMotionLockRequests.carriedToId), inArray(robotMotionLockRequests.edgeNodeId, maNut))) : [];
+  const nhe = new Map<string, (typeof yc)[number]>();
+  let ngan = NGAN_SACH_PHAN_TICH_X14;
+  for (const r of nutChon) {
+    const a = asgOf.get(r)!;
+    const fin = new Date(doc.hang.find((x) => x.id === r)!.finishedAt!).getTime();
+    const sau = yc.filter((q) => q.edgeNodeId === a.edgeNodeId && q.ackedAt != null && new Date(q.ackedAt).getTime() >= fin && new Date(q.createdAt).getTime() >= fin);
+    if (!sau.length) continue;
+    const { assignedDefinition } = await import("./edgeReportsCentral");
+    const { loadMachineMap, analyseDefinition } = await import("./edgeRunAnalysis");
+    const def = await assignedDefinition(d, a).catch(() => null);
+    const chiPhi = 3 + allStepsOf(def?.steps).filter((s) => s.type === "command" && typeof (s as { args?: { adapterId?: unknown } }).args?.adapterId !== "number").length;
+    if (!def || chiPhi > ngan) continue; // past the budget: the usual words ("in doubt, still alert")
+    ngan -= chiPhi;
+    const an = await analyseDefinition(d, r, def, await loadMachineMap(d, def)).catch(() => null);
+    for (const ra of an?.resolvedAdapters ?? []) {
+      const q = sau.filter((x) => x.adapterId === ra.adapterId).sort((x, y) => new Date(y.ackedAt!).getTime() - new Date(x.ackedAt!).getTime())[0];
+      if (q) nhe.set(`${r}|${ra.stepId}`, q);
+    }
+  }
+  const admins = (await d.select().from(S.users).where(and(eq(S.users.role, "admin"), eq(S.users.isActive, true))).limit(10)).map((u) => u.id);
+  const nuts = new Map(maNut.length ? (await d.select().from(S.edgeNodes).where(inArray(S.edgeNodes.id, maNut))).map((n) => [n.id, n.code] as const) : []);
+  const { raiseCriticalStopAlert } = await import("../robot/criticalStopAlert");
+  if (daBaoX14.size > 20_000) daBaoX14.clear();
+  let raised = 0;
+  for (const v of con.filter((x) => chon.includes(x.run.id))) {
+    const a = asgOf.get(v.run.id);
+    const [title, message] = chuX14(v, F.idGonCua(v.id), F.rutGonGiua(nuts.get(a?.edgeNodeId ?? -1) ?? `#${a?.edgeNodeId}`, F.TRAN_TEN_NUT), a ? nhe.get(`${v.run.id}|${v.id}`) : undefined, Math.round(hanSom / 1000));
+    daBaoX14.set(khoaX14(v), now);
+    void raiseCriticalStopAlert({ kind: "stop_undelivered", title, message, recipients: [...new Set([...(v.run.startedBy ? [v.run.startedBy] : []), ...admins])], dedupKey: khoaX14(v), source: "ot", entityType: "orchestration_run", entityId: v.run.id, retryUntilPersisted: { everyMs: 30_000, attempts: 20 }, khuTrungBenVung: {} });
+    raised++;
+  }
+  return raised;
+}
+
 /** Unacked STOP heads past their expiry (still delivered; reported, never expired). */
 export async function overdueStops(d: Db): Promise<Array<{ id: number; edgeNodeId: number }>> {
   return d

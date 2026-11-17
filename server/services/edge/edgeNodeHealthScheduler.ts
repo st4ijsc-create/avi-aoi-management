@@ -39,6 +39,16 @@ function startUndeliveredStopSweep(): void {
             console.warn("[EdgeNodeHealth] undelivered-STOP sweep: edge control schema (0374) not available — retried silently until it is");
           }
         })
+        // X-14 (HST 17/11) — the timed STOP alerts of aborted runs, AFTER the sweep above, same tick; its failure is its own (logged), never the tick's end
+        .then(() =>
+          m.canhBaoStopRunQuaHan().then(
+            (n) => void (n > 0 && console.error(`[EdgeNodeHealth] ${n} timed STOP alert(s) raised: an aborted run's STOP not confirmed`)),
+            async (err: unknown) => {
+              const { isEdgeUnavailableError } = await import("./edgeCentralCommon");
+              if (!isEdgeUnavailableError(err)) console.error("[EdgeNodeHealth] timed STOP alert sweep failed:", (err as Error)?.message || err);
+            },
+          ),
+        )
         .finally(() => {
           stopSweepBusy = false;
         });
