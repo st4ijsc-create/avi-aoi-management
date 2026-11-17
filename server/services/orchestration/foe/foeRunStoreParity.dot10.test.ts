@@ -3299,7 +3299,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   // NGUYÊN VĂN (X13_CAU_G1P, chữ duyệt tam/x13-chu-de-nghi.md sha16 06e9d8bf83734949). Vòng ketNoi = true giữ nguyên. Đỏ trước sửa (it.fails ở commit 1), it từ commit sửa.
   const CHU_KHONG_NUT_62 = (run: number, n: number) =>
     `Abort of run ${run} not confirmed by the database in time — STOP steps handed to the dispatcher (the machine has not confirmed them): ${n}; check the run and retry, but no retry can be counted on after 15 minutes from when the run was aborted: check the machine on site and use its direct STOP / E-STOP.`;
-  it.fails("T4-B3-Q1-X11-CHU-KHONG-CO-NUT (X-11 vòng 2, ca thường; khoá chuỗi) a central run, no STOP of a node, its Abort unconfirmed: the answer is the 77ec64b0b string, character for character — the connection confirmed (s9 handed over) and not confirmed (s9 not verified, the run given to no node)", async () => {
+  it("T4-B3-Q1-X11-CHU-KHONG-CO-NUT (X-11 vòng 2, ca thường; khoá chuỗi) a central run, no STOP of a node, its Abort unconfirmed: the answer is the 77ec64b0b string, character for character — the connection confirmed (s9 handed over) and not confirmed (s9 not verified, the run given to no node)", async () => {
     const D = STOP_DB_STEP_DEADLINE_MS;
     ghimHalt();
     h.ghim = PIN62;
@@ -3659,7 +3659,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   const xmCua13 = <T extends { dedupKey: string }>(urg: readonly T[], c: number, s = "s9"): T[] => urg.filter((a) => a.dedupKey === KHOA_XM_13(c, s));
 
   // A1 — G1 on a central run: ONE durable URGENT at the press, its own key `xm`, the words of pins not read (hàng X-13 (1))
-  it.fails("T4-B3-LO2A-G1-TRUNG-TAM (X-13 (1), G1) a central run NOT latched, s9's pins unreadable at press 1 (confirmed): exactly ONE URGENT of s9 under `…:s9:-:xm`, the words of pins not read; none under `chot` / `nut`; s9 reaches no driver", async () => {
+  it("T4-B3-LO2A-G1-TRUNG-TAM (X-13 (1), G1) a central run NOT latched, s9's pins unreadable at press 1 (confirmed): exactly ONE URGENT of s9 under `…:s9:-:xm`, the words of pins not read; none under `chot` / `nut`; s9 reaches no driver", async () => {
     const x = await tt13("x13g1t", { truoc: () => (h.classifyLoi = true) });
     expect(x.kq.ok, "the Abort confirmed").toBe(true);
     expect({ status: x.vet?.status, abortStop: x.vet?.abortStop }, "the trace").toEqual({ status: "failed", abortStop: "chuaXacMinh" });
@@ -3673,7 +3673,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(s9Cua62(x.c, x.n0, x.n1), "nothing sent").toEqual([]);
   });
   // A2 — G1 on a node's run: the same URGENT, with the node's clause of the approved words (HST 17/11 (4): kỳ vọng A2 đổi theo vế mới của nút)
-  it.fails("T4-B3-LO2A-G1-NUT (X-13 (1), G1; HST 17/11: vế của nút bản 2) a run given to a node, NOT latched, central's pin read throws: ONE URGENT of s9 under `xm` naming the node's road as the approved words do; not left to the node (no choNut, no `nut` URGENT)", async () => {
+  it("T4-B3-LO2A-G1-NUT (X-13 (1), G1; HST 17/11: vế của nút bản 2) a run given to a node, NOT latched, central's pin read throws: ONE URGENT of s9 under `xm` naming the node's road as the approved words do; not left to the node (no choNut, no `nut` URGENT)", async () => {
     const x = await kd65("x13g1n", { truocBam1: () => (h.classifyLoi = true) });
     expect(x.kq1.ok).toBe(true);
     expect(x.chot).toBeNull();
@@ -3686,7 +3686,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(x.urg1.filter(laUrgentNut65)).toEqual([]);
   });
   // A3 — khongBen: the trace of a STOP not verified could not be written: the URGENT says so (its own title), never the 15 minutes (V9-2)
-  it.fails("T4-B3-LO2A-G1-KHONG-BEN (X-13 (1), khongBen) a central run NOT latched, s9 not verified and its trace `abort:s9` NOT written: ONE URGENT of s9 under `xm` with the words of a record not written; the answer keeps the words of chuKhongBen, never the words G1", async () => {
+  it("T4-B3-LO2A-G1-KHONG-BEN (X-13 (1), khongBen) a central run NOT latched, s9 not verified and its trace `abort:s9` NOT written: ONE URGENT of s9 under `xm` with the words of a record not written; the answer keeps the words of chuKhongBen, never the words G1", async () => {
     const x = await tt13("x13kb", {
       truoc: () => {
         h.classifyLoi = true;
@@ -3709,7 +3709,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   });
   // A4 — (e): on a run NOT latched, central handed s9 over and its dispatcher queued it for the node (ADAPTER_OWNED_BY_EDGE): the answer says so (hàng X-13 (2)); no URGENT of the engine.
   // Chữ (e) bản 2, HST 17/11 xác nhận: X13_CAU_E (x13-chu-de-nghi.md §6, sha16 06e9d8bf83734949)
-  it.fails("T4-B3-LO2A-G2-CHU-E (X-13 (2); chữ (e) bản 2, HST 17/11 xác nhận) press 1 on a run NOT latched, s9 verified at central and queued for the node: giaoNutChuaKhoa names s9, the answer is 'Run N is aborted.' and the words (e), to the character; never the latched words; no URGENT under `xm`", async () => {
+  it("T4-B3-LO2A-G2-CHU-E (X-13 (2); chữ (e) bản 2, HST 17/11 xác nhận) press 1 on a run NOT latched, s9 verified at central and queued for the node: giaoNutChuaKhoa names s9, the answer is 'Run N is aborted.' and the words (e), to the character; never the latched words; no URGENT under `xm`", async () => {
     const x = await kd65("x13e", { truocBam1: () => (h.connOk = true) });
     expect(x.kq1.ok).toBe(true);
     expect(x.chot).toBeNull();
@@ -3748,7 +3748,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   // A7 — a press again (in the window, same fault) raises no second URGENT: its trace stands, no new trace (them, E:7003). HST 17/11 (6): G1 and G1' only;
   // khongBen raises again under the SAME key: its dedup is the durable alert's (foeKetCucKhongRo.ts:870 khuTrungBenVung → criticalStopAlert.ts:36-53, :102), not simulated by this harness (P:207)
   for (const vi13 of ["G1", "G1P"] as const) {
-    it.fails(`T4-B3-LO2A-BAM-HAI ${vi13} (X-13, bấm lần hai không phát lại) two presses on the run NOT latched, the same fault at both: over both presses exactly ONE URGENT of s9 under \`xm\``, async () => {
+    it(`T4-B3-LO2A-BAM-HAI ${vi13} (X-13, bấm lần hai không phát lại) two presses on the run NOT latched, the same fault at both: over both presses exactly ONE URGENT of s9 under \`xm\``, async () => {
       const loi = () => (vi13 === "G1" ? (h.classifyLoi = true) : (h.connOk = false));
       const x = await tt13(`x13bh${vi13.toLowerCase()}`, { truoc: loi });
       loi();
@@ -3764,7 +3764,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     });
   }
   // A9 — a person's rejection at the gate of a run not latched is the same sweep: its URGENT (hàng X-13 (1) "hoặc từ chối ở cổng người")
-  it.fails("T4-B3-LO2A-REJECT-G1 (X-13 (1)/(3), G1) a person rejects g2 of the central run NOT latched, s9's pins unreadable: aborted, exactly ONE URGENT of s9 under `xm`", async () => {
+  it("T4-B3-LO2A-REJECT-G1 (X-13 (1)/(3), G1) a person rejects g2 of the central run NOT latched, s9's pins unreadable: aborted, exactly ONE URGENT of s9 under `xm`", async () => {
     const x = await tt13("x13rj1", { tuChoi: true, truoc: () => (h.classifyLoi = true) });
     expect(x.kq.status, "rejected and aborted").toBe("aborted");
     expect(x.kq.abortStops?.unverified ?? []).toContain("s9");
@@ -3773,7 +3773,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(xm[0]!.title).toContain(`step "s9" NOT sent: its pins could not be read`);
   });
   // A10 — the answer of the Abort, G1, to the character (bản duyệt)
-  it.fails("T4-B3-LO2A-G1-LOI-TRUNG-TAM (X-13 (1), lời) press 1 confirmed on the central run NOT latched, s9's pins unreadable: the answer is 'Run N is aborted.' and the words G1, to the character; khongXacMinhChuaKhoa = [s9]", async () => {
+  it("T4-B3-LO2A-G1-LOI-TRUNG-TAM (X-13 (1), lời) press 1 confirmed on the central run NOT latched, s9's pins unreadable: the answer is 'Run N is aborted.' and the words G1, to the character; khongXacMinhChuaKhoa = [s9]", async () => {
     const x = await tt13("x13l1t", { truoc: () => (h.classifyLoi = true) });
     expect(x.kq.ok).toBe(true);
     expect(truong13(x.kq).khongXacMinhChuaKhoa).toEqual(["s9"]);
@@ -3781,7 +3781,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(x.kq.message, "x13-chu-de-nghi.md G1").toBe(`Run ${x.c} is aborted. ${X13_CAU_G1("s9")}`);
   });
   // A11 — the same on a node's run: the words G1 carry no node words (KD-n8, P:3463)
-  it.fails("T4-B3-LO2A-G1-LOI-NUT (X-13 (1), lời) press 1 on the run given to the node, central's pin read throws: the answer is 'Run N is aborted.' and the words G1, to the character; no node words; not choNut", async () => {
+  it("T4-B3-LO2A-G1-LOI-NUT (X-13 (1), lời) press 1 on the run given to the node, central's pin read throws: the answer is 'Run N is aborted.' and the words G1, to the character; no node words; not choNut", async () => {
     const x = await kd65("x13l1n", { truocBam1: () => (h.classifyLoi = true) });
     expect(x.kq1.ok).toBe(true);
     expect(x.kq1.abortStops?.choNut).toBeUndefined();
@@ -3790,20 +3790,20 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(String(x.kq1.message ?? "")).not.toMatch(/edge node/);
   });
   // A12 — the Abort not confirmed in time: the old string to the character, then " " and the words G1 (V9-1: E:7350 appends only when there is something)
-  it.fails("T4-B3-LO2A-G1-LOI-CHUA-XAC-NHAN (X-13 (1), lời) the Abort of the central run NOT latched, unconfirmed (late write), s9's pins unreadable: the answer is the 77ec64b0b string, ' ', the words G1", async () => {
+  it("T4-B3-LO2A-G1-LOI-CHUA-XAC-NHAN (X-13 (1), lời) the Abort of the central run NOT latched, unconfirmed (late write), s9's pins unreadable: the answer is the 77ec64b0b string, ' ', the words G1", async () => {
     const x = await tt13("x13l1u", { tre: true, truoc: () => (h.classifyLoi = true) });
     expect(x.kq.reason).toBe("abortUnconfirmed");
     expect(x.kq.message).toBe(`${CHU_KHONG_NUT_62(x.c, 0)} ${X13_CAU_G1("s9")}`);
   });
   // A13 — the rejection's answer has the words of the Abort's (hàng X-13 (3)), opened by the run's state
-  it.fails("T4-B3-LO2A-REJECT-LOI (X-13 (3), lời) a person rejects g2 of the central run NOT latched, s9's pins unreadable: the answer is 'Run N is rejected and aborted.' and the words G1, to the character; one URGENT under `xm`", async () => {
+  it("T4-B3-LO2A-REJECT-LOI (X-13 (3), lời) a person rejects g2 of the central run NOT latched, s9's pins unreadable: the answer is 'Run N is rejected and aborted.' and the words G1, to the character; one URGENT under `xm`", async () => {
     const x = await tt13("x13rjl", { tuChoi: true, truoc: () => (h.classifyLoi = true) });
     expect(x.kq.status).toBe("aborted");
     expect(x.kq.message, "x13-chu-de-nghi.md G1").toBe(`Run ${x.c} is rejected and aborted. ${X13_CAU_G1("s9")}`);
     expect(xmCua13(x.urg, x.c).length).toBe(1);
   });
   // REJECT-G1P (scada-master 17/11) — the rejection's answer and URGENT for G1' (khuôn A13, the connection not confirmed instead of the pins unreadable)
-  it.fails("T4-B3-LO2A-REJECT-G1P (X-13 (1)/(3), G1') a person rejects g2 of the central run NOT latched, s9's pins read, central's connection NOT confirmed: the answer is 'Run N is rejected and aborted.' and the words G1', to the character; one URGENT under `xm` with the title of a connection not confirmed", async () => {
+  it("T4-B3-LO2A-REJECT-G1P (X-13 (1)/(3), G1') a person rejects g2 of the central run NOT latched, s9's pins read, central's connection NOT confirmed: the answer is 'Run N is rejected and aborted.' and the words G1', to the character; one URGENT under `xm` with the title of a connection not confirmed", async () => {
     const x = await tt13("x13rjp", { tuChoi: true, truoc: () => (h.connOk = false) });
     h.connOk = true;
     expect(x.kq.status).toBe("aborted");
@@ -3832,7 +3832,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     console.log(`KETLUAN13QT ${ref} ` + JSON.stringify({ reason: a.reason ?? null, sent: a.abortStops?.sent ?? null, unverified: a.abortStops?.unverified ?? null, moi: truong13(a), message: String(a.message ?? "") }));
     return { c, a, n0 };
   }
-  it.fails("T4-B3-LO2A-REJECT-QT-CHUA-XAC-NHAN (X-13 (3), E:4711) a person rejects g2 of the central run NOT latched through a business hook (QT), its final 'aborted' write late, s9's pins unreadable: the answer is the 77ec64b0b rejection string to the character, then ' ', then the words G1", async () => {
+  it("T4-B3-LO2A-REJECT-QT-CHUA-XAC-NHAN (X-13 (3), E:4711) a person rejects g2 of the central run NOT latched through a business hook (QT), its final 'aborted' write late, s9's pins unreadable: the answer is the 77ec64b0b rejection string to the character, then ' ', then the words G1", async () => {
     const x = await tuChoiQt13("x13rjq", () => (h.classifyLoi = true));
     expect(x.a.reason).toBe("abortUnconfirmed");
     expect(x.a.abortStops?.unverified ?? []).toContain("s9");
@@ -3856,7 +3856,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(x.kq.message, "the ok answer: nothing to say").toBeUndefined();
   });
   // A15 — G1' (HST 17/11 vòng 10): the answer, to the character; never "pins could not be read"
-  it.fails("T4-B3-LO2A-G1P-LOI (X-13 (1), G1', lời) press 1 confirmed on the central run NOT latched, s9's pins read, central's connection to adapter 501 NOT confirmed: the answer is 'Run N is aborted.' and the words G1', to the character; ketNoiChuaKhoa = [s9]", async () => {
+  it("T4-B3-LO2A-G1P-LOI (X-13 (1), G1', lời) press 1 confirmed on the central run NOT latched, s9's pins read, central's connection to adapter 501 NOT confirmed: the answer is 'Run N is aborted.' and the words G1', to the character; ketNoiChuaKhoa = [s9]", async () => {
     const x = await tt13("x13pl", { truoc: () => (h.connOk = false) });
     expect(x.kq.ok).toBe(true);
     expect({ status: x.vet?.status, abortStop: x.vet?.abortStop }).toEqual({ status: "failed", abortStop: "chuaXacMinh" });
@@ -3866,7 +3866,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(String(x.kq.message ?? "")).not.toMatch(/pins could not be read/);
   });
   // A16 — G1': its URGENT (title of the approved words; the body is locked in foeKetCucKhongRo.a2n.test.ts)
-  it.fails("T4-B3-LO2A-G1P-URGENT (X-13 (1), G1') the same press: exactly ONE URGENT of s9 under `xm`, the title of a connection not confirmed, never 'pins could not be read'", async () => {
+  it("T4-B3-LO2A-G1P-URGENT (X-13 (1), G1') the same press: exactly ONE URGENT of s9 under `xm`, the title of a connection not confirmed, never 'pins could not be read'", async () => {
     const x = await tt13("x13pu", { truoc: () => (h.connOk = false) });
     h.connOk = true;
     const xm = xmCua13(x.urg, x.c);
@@ -3905,7 +3905,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   // X13_CAU_G1 / X13_CAU_KHONG_BEN / CHU_KHONG_NUT_62 / CHU_TU_CHOI_CHUA_XAC_NHAN_13 ở trên; cách nối theo V9-1 (chuỗi cũ, " ", chữ; câu mở "Run N is rejected and aborted." của từ chối). Đỏ trước sửa.
   // DL — G1 qua đường đọc lại (foeEngine.ts:6998, :7016): bộ kiểm đọc ghim s9 là "không phải STOP ghim" (halt không có giá trị STOP), lần đọc lại của trace KHÔNG trả lời (PIN_BAD, P:738)
   // ⇒ vết `chuaXacMinh` (khuôn T7B1D-CHUA-KHONG-CO-ADAPTER). HST 17/11: G1 = chưa xác minh VÀ có vết chuaXacMinh ⇒ cùng URGENT `xm`, cùng chữ G1
-  it.fails("T4-B3-LO2A-G1-DOC-LAI (X-13 (1), G1 qua đường đọc lại; HST 17/11) press 1 on the central run NOT latched, the verifier reads s9 as no pinned STOP and the trace's read again gets no answer: its trace `chuaXacMinh`, ONE URGENT under `xm` with the title G1, the answer 'Run N is aborted.' and the words G1, to the character", async () => {
+  it("T4-B3-LO2A-G1-DOC-LAI (X-13 (1), G1 qua đường đọc lại; HST 17/11) press 1 on the central run NOT latched, the verifier reads s9 as no pinned STOP and the trace's read again gets no answer: its trace `chuaXacMinh`, ONE URGENT under `xm` with the title G1, the answer 'Run N is aborted.' and the words G1, to the character", async () => {
     const x = await tt13("x13dl", {
       truoc: () => {
         fake.seed(deviceTags, rows("device_tags").map((t) => (t.tagKey === "halt" ? { ...t, stopValue: null } : t)));
@@ -3924,7 +3924,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(s9Cua62(x.c, x.n0, x.n1), "nothing sent").toEqual([]);
   });
   // KB-CXN — khongBen (vết không ghi được) trong câu trả lời CHƯA xác nhận: của Abort (foeEngine.ts:7350) và của từ chối có hook QT (:4711): chuỗi cũ từng ký tự, " ", chữ chuKhongBen nguyên văn
-  it.fails("T4-B3-LO2A-KHONG-BEN-CHUA-XAC-NHAN (X-13 (1)/(3), khongBen; HST 17/11) the central run NOT latched, s9's pins unreadable and its trace NOT written: the unconfirmed Abort answers the 77ec64b0b string, ' ', the words of a trace not recorded; the unconfirmed rejection through a business hook (QT) the same", async () => {
+  it("T4-B3-LO2A-KHONG-BEN-CHUA-XAC-NHAN (X-13 (1)/(3), khongBen; HST 17/11) the central run NOT latched, s9's pins unreadable and its trace NOT written: the unconfirmed Abort answers the 77ec64b0b string, ' ', the words of a trace not recorded; the unconfirmed rejection through a business hook (QT) the same", async () => {
     const loi = () => {
       h.classifyLoi = true;
       h.hangNem = (v) => v.stepId === "abort:s9";
@@ -3941,7 +3941,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(q.a.message, "rejection: the old string, then the words khongBen").toBe(`${CHU_TU_CHOI_CHUA_XAC_NHAN_13(q.c, 0)} ${X13_CAU_KHONG_BEN("s9")}`);
   });
   // RJ-KB — từ chối ở cổng người (foeEngine.ts:4715), chỉ có khongBen: câu trả lời có lời (hàng X-13 (3)), mở bằng trạng thái run, rồi chữ chuKhongBen nguyên văn
-  it.fails("T4-B3-LO2A-REJECT-KHONG-BEN (X-13 (3), khongBen; HST 17/11) a person rejects g2 of the central run NOT latched, s9's pins unreadable and its trace NOT written: the answer is 'Run N is rejected and aborted.' and the words of a trace not recorded, to the character; never the words G1", async () => {
+  it("T4-B3-LO2A-REJECT-KHONG-BEN (X-13 (3), khongBen; HST 17/11) a person rejects g2 of the central run NOT latched, s9's pins unreadable and its trace NOT written: the answer is 'Run N is rejected and aborted.' and the words of a trace not recorded, to the character; never the words G1", async () => {
     const x = await tt13("x13rjk", {
       tuChoi: true,
       truoc: () => {
@@ -14188,7 +14188,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
       const loi = cotLoi.endsWith("TU-CHOI") ? "TU-CHOI" : "DOC-LOI";
       const cot = cotLoi.slice(0, -loi.length - 1);
       // X-13: ô "Uxm" đỏ trước sửa (it.fails ở commit 1), it từ commit sửa
-      (oCua[i]![1] === "Uxm" ? it.fails : it)(`T7B1D-BANG ${cotLoi} ${ten}`, async () => {
+      it(`T7B1D-BANG ${cotLoi} ${ten}`, async () => {
         const [dau, urg, lai] = oCua[i]!;
         const { c, a } = await dung(cot, ten, cay, loi, `b${i}${ten}`.replace(/-/g, ""));
         const st = a.abortStops!;
@@ -14509,7 +14509,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
   };
   // X-13 (chủ dự án 17/11, X-13 phương án (C); HST 17/11 duyệt tên ca) — D2: the press came before the latch (run not latched at its sweep): its own URGENT of s under `xm`, then the latch's (no time limit). Two, each under its own key. Đỏ trước sửa
   for (const ngoai of [false, true]) {
-    it.fails(`T7B1D-KS-UNV not verified, the latch after the sweep: an URGENT names s in the true words; it goes ${ngoai ? "past" : "in"} the window`, async () => {
+    it(`T7B1D-KS-UNV not verified, the latch after the sweep: an URGENT names s in the true words; it goes ${ngoai ? "past" : "in"} the window`, async () => {
       const c = await ksUnv(`d1dku${ngoai ? "n" : "t"}`);
       expect(no(c)).toEqual(["s"]);
       const chu = chuCua("abortStopNotSent");
@@ -14572,7 +14572,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(chuCua("abortStopNotSent")).not.toMatch(/no time limit/);
   });
   // X-13 (chủ dự án 17/11, X-13 phương án (C); HST 17/11 duyệt tên ca) — D1: the first press, the run not latched, s not verified (pins unreadable), its trace written: ONE URGENT of s under `xm` (was "H23: no URGENT"; H23's "no debt" stands). Đỏ trước sửa
-  it.fails("T7B1D-CHUA-DOC-LAI a run not latched, not verified: a press whose read answers 'no pinned STOP' sends nothing, the trace goes; a read still lost sends nothing, the trace stays", async () => {
+  it("T7B1D-CHUA-DOC-LAI a run not latched, not verified: a press whose read answers 'no pinned STOP' sends nothing, the trace goes; a read still lost sends nothing, the trace stays", async () => {
     const { c, di } = await moDi(def("d1dcd", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
     await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
     await wait(20);

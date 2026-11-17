@@ -2301,7 +2301,7 @@ const urgentX13 = (chu: ChuX13, runId: number, stepId: string) =>
   noiDungCanhBaoKhongRo({ loai: "abortStopNotSent", runId, stepId, compId: KHONG_CO_BU_TRU, error: "FOE_STOP_NOT_SENT", lan: "xm", biet: true, vi: { nguon: "doc", ma: "NOT_CONFIRMED" }, chuAbort: chu, tuTrungTam: true } as never);
 describe("X-13 — the URGENT of a STOP an Abort did not send on a run not latched (G1, G1', khongBen): the approved words", () => {
   // CHU-TRUNG-DUYET — chữ trong mã trùng tệp duyệt TỪNG KÝ TỰ (cách X-11 khoá x11-chu-duyet.md: KD-k1, P:3578-3583), cả ba biến thể
-  it.fails("T4-B3-LO2A-CHU-TRUNG-DUYET (X-13, chữ duyệt 06e9d8bf83734949) the three URGENTs of X-13 (G1, G1', khongBen): title and body exactly the approved words, the event tag after", () => {
+  it("T4-B3-LO2A-CHU-TRUNG-DUYET (X-13, chữ duyệt 06e9d8bf83734949) the three URGENTs of X-13 (G1, G1', khongBen): title and body exactly the approved words, the event tag after", () => {
     for (const chu of Object.keys(X13_URGENT) as ChuX13[]) {
       const n = urgentX13(chu, 7, "s9");
       expect(n.title, `${chu}: the approved title`).toBe(`Run 7: ${X13_URGENT[chu].tieuDe("s9")}`);
@@ -2310,7 +2310,7 @@ describe("X-13 — the URGENT of a STOP an Abort did not send on a run not latch
     }
   });
   // A8 — G1 and khongBen: the order of the approved words (action, then condition), ≤ 800 with a long id, no opening of an unknown outcome (khongChot)
-  it.fails("T4-B3-LO2A-THUAN-CHU (X-13 A8: chuaKhoaKhongXacMinh, chuaKhoaKhongBen) the first two sentences open the body; title and body ≤ 800 with a 200-character id; never the words of an unknown outcome", () => {
+  it("T4-B3-LO2A-THUAN-CHU (X-13 A8: chuaKhoaKhongXacMinh, chuaKhoaKhongBen) the first two sentences open the body; title and body ≤ 800 with a 200-character id; never the words of an unknown outcome", () => {
     const dai = "s".repeat(200);
     for (const chu of ["chuaKhoaKhongXacMinh", "chuaKhoaKhongBen"] as const) {
       const n = urgentX13(chu, 2_147_483_647, "s9");
@@ -2325,7 +2325,7 @@ describe("X-13 — the URGENT of a STOP an Abort did not send on a run not latch
     }
   });
   // A19 — G1' (HST 17/11 vòng 10): the same for chuaKhoaKetNoi
-  it.fails("T4-B3-LO2A-THUAN-CHU-G1P (X-13 A19: chuaKhoaKetNoi) the first two sentences open the body; title and body ≤ 800 with a 200-character id; never 'pins could not be read', never an unknown outcome", () => {
+  it("T4-B3-LO2A-THUAN-CHU-G1P (X-13 A19: chuaKhoaKetNoi) the first two sentences open the body; title and body ≤ 800 with a 200-character id; never 'pins could not be read', never an unknown outcome", () => {
     const n = urgentX13("chuaKhoaKetNoi", 2_147_483_647, "s9");
     expect(n.message.startsWith(X13_URGENT.chuaKhoaKetNoi.hai(2_147_483_647, "s9")), "'… did NOT send STOP …' then 'Check the machine on site … direct STOP / E-STOP.' first").toBe(true);
     expect(`${n.title} ${n.message}`).not.toMatch(/pins could not be read/);
