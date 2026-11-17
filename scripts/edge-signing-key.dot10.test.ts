@@ -302,13 +302,15 @@ describe("edge-signing-key — files are the source of trust (no DB)", () => {
 
 const DB_URL = process.env.DATABASE_URL ?? "";
 const onTest = /_test\b/.test(DB_URL);
+const thieuOwner = ["MIGRATION_DB_USER", "MIGRATION_DB_PASSWORD"].filter((n) => !process.env[n]);
+if (onTest && thieuOwner.length) console.warn(`edge-signing-key.dot10: DB case skipped — missing ${thieuOwner.join(", ")}`);
 class Rollback extends Error {}
 
-describe.skipIf(!onTest)("edge-signing-key — the DB is a MIRROR only (owner connection, rolled back)", () => {
+describe.skipIf(!onTest || thieuOwner.length > 0)("edge-signing-key — the DB is a MIRROR only (owner connection, rolled back)", () => {
   it("★ R-10-c: a key row PLANTED in the DB is flagged by list and is never pinned or published", async () => {
     const u = new URL(DB_URL);
-    u.username = process.env.MIGRATION_DB_USER ?? "aoi";
-    u.password = process.env.MIGRATION_DB_PASSWORD ?? "aoi";
+    u.username = process.env.MIGRATION_DB_USER as string;
+    u.password = process.env.MIGRATION_DB_PASSWORD as string;
     const client = postgres(u.toString(), { max: 1, onnotice: () => {} });
     const owner = drizzle(client);
     const seen: Record<string, unknown> = {};
@@ -359,4 +361,34 @@ describe.skipIf(!onTest)("edge-signing-key — the DB is a MIRROR only (owner co
     expect(t.errs.join("\n")).toMatch(/refused \((notVerified|dbUnavailable)\)/);
     expect(existsSync(dir)).toBe(false);
   }, 60_000);
+});
+
+describe("X-17 — no hard-coded owner defaults", () => {
+  const MARK = "sentinel-env-value-must-not-leak";
+  it("★ DATABASE_URL set but MIGRATION_DB_USER / MIGRATION_DB_PASSWORD missing ⇒ exit 2, the message names ONLY the missing variables, no connection is opened, nothing is written", async () => {
+    for (const [env, thieu] of [
+      [{}, ["MIGRATION_DB_USER", "MIGRATION_DB_PASSWORD"]],
+      [{ MIGRATION_DB_USER: MARK }, ["MIGRATION_DB_PASSWORD"]],
+      [{ MIGRATION_DB_PASSWORD: MARK }, ["MIGRATION_DB_USER"]],
+    ] as Array<[NodeJS.ProcessEnv, string[]]>) {
+      const dir = f(`x17-${thieu.join("")}`);
+      const t = io(undefined, { DATABASE_URL: `postgres://nobody@127.0.0.1:1/none?c=${MARK}`, ...env });
+      expect(await runEdgeSigningKeyCli(["generate", "--dir", dir, ...A], t.io, deps({ mirrorDb: undefined }).d)).toBe(2);
+      const msg = t.errs.join("\n");
+      for (const n of ["MIGRATION_DB_USER", "MIGRATION_DB_PASSWORD"]) expect(msg.includes(n), `${n} in message`).toBe(thieu.includes(n));
+      expect(msg).not.toContain(MARK);
+      expect(msg).not.toContain("postgres://");
+      expect(existsSync(dir)).toBe(false);
+    }
+  });
+  it("no DATABASE_URL (files only) or an injected mirrorDb ⇒ the owner-variable check does not refuse and opens nothing (unchanged behaviour)", async () => {
+    for (const [env, over] of [
+      [{}, { mirrorDb: undefined }],
+      [{ DATABASE_URL: "postgres://nobody@127.0.0.1:1/none" }, { mirrorDb: null }],
+    ] as Array<[NodeJS.ProcessEnv, Partial<SigningKeyCliDeps>]>) {
+      const t = io(undefined, env);
+      expect(await runEdgeSigningKeyCli(["generate", "--dir", f(`x17-ok-${Object.keys(env).length}`), ...A], t.io, deps(over).d)).toBe(0);
+      expect(t.errs.join("\n")).not.toMatch(/missing required environment variable/);
+    }
+  });
 });
