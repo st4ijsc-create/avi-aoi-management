@@ -256,7 +256,7 @@ describe("X-19 — prompt wording: a stop step never carries a precondition", ()
 
   it("★ design prompt: states that a stop / abort step NEVER carries a precondition or interlock, and puts preconditions on START steps only", async () => {
     const p = await design();
-    expect(p.toLowerCase()).toContain(NEVER);
+    expect(p).toContain(NEVER); // verbatim, case-sensitive
     expect(p).toContain("Add a precondition/interlock only on START steps");
     // the OLD wording (precondition advised alongside start/stop/abort) is gone
     expect(p).not.toContain("start/stop/abort, and a precondition/interlock");
@@ -264,7 +264,7 @@ describe("X-19 — prompt wording: a stop step never carries a precondition", ()
 
   it("★ optimize prompt: same rule; interlocks/preconditions are for START steps only", async () => {
     const p = await optimize();
-    expect(p.toLowerCase()).toContain(NEVER);
+    expect(p).toContain(NEVER); // verbatim, case-sensitive
     expect(p).toContain("interlocks/preconditions on START steps only");
     expect(p).not.toMatch(/add missing safety\s+interlocks\/preconditions, add hitl_gate/);
   });
@@ -281,8 +281,8 @@ describe("X-19 — prompt wording: a stop step never carries a precondition", ()
       const sentences = flat.split(/(?<=[.;])\s+/);
       for (const sen of sentences) {
         if (!/precondition|interlock/i.test(sen) || !/stop|abort/i.test(sen)) continue;
-        // a sentence mentioning both must be the prohibition (or the start/stop/abort human-gate sentence that does NOT mention preconditions)
-        expect(sen.toLowerCase(), sen).toContain(NEVER);
+        // the only sentence allowed to mention both is the prohibition itself, matched VERBATIM (case-sensitive: "never" would not pass)
+        expect(sen, sen).toContain(NEVER);
       }
     }
   });
