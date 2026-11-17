@@ -544,6 +544,7 @@ const DONG_BANG: readonly DongDongBang[] = [
   { tep: "server/services/edge/edgeJournal.ts", ham: "parseLine", dang: "JSON.parse", chu: "JSON.parse(text)", ma: "E-8", lyDo: "dòng journal JSONL do chính nút ghi; hỏng ⇒ JournalCorrupt (ném)" },
   { tep: "server/services/edge/edgeJournal.ts", ham: "EdgeJournal.restore", dang: ".split", chu: "text.split(\"\\n\")", ma: "E-8", lyDo: "tách dòng tệp journal của nút; dòng hỏng ⇒ JournalCorrupt" },
   { tep: "server/services/edge/edgeJournal.ts", ham: "EdgeJournal.countUnreported", dang: ".split", chu: "text.split(\"\\n\")", ma: "E-10", lyDo: "như E-8: đếm bản ghi chưa báo từ tệp journal của nút" },
+  { tep: "server/services/edge/edgeNodeCommands.ts", ham: "canhBaoStopRunQuaHan", dang: "goi:chotTuHang", chu: "F.chotTuHang(hang,ctx.foeResumeStateasnever)", ma: "B-6", lyDo: "X-14 :het: chốt từ chữ hàng ⇒ KHÔNG phát chữ 'Nothing sends it any more' khi lần bấm còn gửi được (đọc như resendAbortStops); đọc sai chỉ làm im một cảnh báo :het, không gửi hay chặn STOP nào (QUYET_DINH_MOC lần 5, X-14/1)" },
   { tep: "server/services/edge/edgeNodeCredentials.ts", ham: "retireEdgeNode", dang: ".replace", chu: "String(causeasError?.message??cause).replace(/^edge_nodes: /,\"\")", ma: "MOI-5", lyDo: "vùng auth: chỉ bỏ tiền tố chữ của DB guard để ghi audit; quyết định do isEdgeControlRefusal (mã)" },
   { tep: "server/services/edge/edgeProgramReportRule.ts", ham: "edgeHoldMarkOf", dang: "/re/.exec", chu: "/^EDGE_HELD\\([A-Za-z]+\\): ([A-Z_]+):/.exec(error??\"\")", ma: "A1-25", lyDo: "dấu EDGE_HELD(x): MARK: trong chữ end của nút ⇒ lời khuyên Continue/Abort", nhan: "tuyen-cu-chi" },
   { tep: "server/services/edge/edgeReportsCentral.ts", ham: "coTheDaRa", dang: "goi:maTuChoiCua", chu: "maTuChoiCua({status:st,detail:r.detail})", ma: "A1-21", lyDo: "bảng Đã xem edgeReportsCentral.ts:258: maTuChoiCua chỉ nhận status + detail.reason (có cấu trúc)" },
@@ -735,10 +736,11 @@ const DONG_BANG: readonly DongDongBang[] = [
 // df934d38e + dung-yen-b.patch. Ghim lại phần tử đầu. Từ đây chỉ được GIẢM.
 // QUYET_DINH_MOC lần 4 (chu-du-an-HST, 2026-11-14): mốc LICH_SU_MOC = 181 = 180 + MOI-37 (held() gọi quyetDinhKetDoanEdge; hàm vào HAM_TRUNG_GIAN; A1-3, A1-19 chỉ đổi
 // văn bản khoá do tách hàm thuần, bước 3); số chạy thật của kiem-dinh trên 5c335119a + 28307c87. Ghim lại phần tử đầu. Từ đây chỉ được GIẢM.
-const MOC_GOC = 181;
-const LICH_SU_MOC: readonly number[] = [181];
+// QUYET_DINH_MOC lần 5 (chu-du-an-HST, 2026-11-17, uỷ quyền 17/11; mã X-14/1): mốc = 182 = 181 + 1 (canhBaoStopRunQuaHan gọi chotTuHang, B-6)
+const MOC_GOC = 182;
+const LICH_SU_MOC: readonly number[] = [182];
 /** Mốc số dòng đóng băng: bằng phần tử cuối của `LICH_SU_MOC`, chỉ được GIẢM. */
-const SO_DONG_MOC = 181;
+const SO_DONG_MOC = 182;
 
 /**
  * HST 14/11 T2-DK1 — "ngoài tầm" không được thành "ngoài sổ". 21 ô của bảng kiểm kê mà census KHÔNG bắt được (không có phép so chữ để bắt:
