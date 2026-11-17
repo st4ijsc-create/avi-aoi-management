@@ -260,6 +260,49 @@ describe("chonThoiDiemTrongChunkSanCo — cungBang (mốc nằm trong chunk có 
     expect(rx.nguon).toBe("mac-dinh:ten-bang-cot-khong-hop-le");
     expect(xau.goiKhac).toHaveLength(0);
   });
+  /**
+   * Bộ chạy giả CÓ MÔ HÌNH NÉN cho bảng phụ: chunk của bảng phụ mang cờ `nen`; câu truy vấn chỉ loại chunk nén KHI văn bản câu lệnh chứa `not is_compressed`
+   * (đúng như Postgres). Nhờ vậy đột biến "bỏ `not is_compressed` ở nhánh cungBang" làm helper chọn nhầm mốc trong chunk NÉN của bảng phụ ⇒ ca ĐỎ.
+   */
+  function giaBangPhuCoNen(chinh: Array<Record<string, unknown>>, chunkPhu: Array<{ dau: Date; cuoi: Date; nen: boolean }>) {
+    const chay: ChayTruyVan = async (q, p) => {
+      if (/range_start <= \$2 and range_end > \$3/.test(q)) {
+        const a = new Date(p[1] as string).getTime();
+        const b = new Date(p[2] as string).getTime();
+        const chiLayChuaNen = /not is_compressed/.test(q);
+        return chunkPhu.some((c) => c.dau.getTime() <= a && b <= c.cuoi.getTime() && (!chiLayChuaNen || !c.nen)) ? [{ co: 1 }] : [];
+      }
+      if (/timescaledb_information\.chunks/.test(q)) return chinh;
+      return [{ n: 0 }];
+    };
+    return chay;
+  }
+
+  it("★★★ bảng phụ (oee_metrics) CHỈ có chunk ĐÃ NÉN phủ chunk chính ⇒ chunk nén bị LOẠI ⇒ mặc định 'khong-co-chunk-phu-hop' (đột biến: bỏ `not is_compressed` ở nhánh cungBang phải ĐỎ)", async () => {
+    const chay = giaBangPhuCoNen([CHUNK_10], [{ dau: new Date("2026-09-01T00:00:00.000Z"), cuoi: new Date("2026-12-01T00:00:00.000Z"), nen: true }]);
+    for (let ts = 1_800_000_000_000; ts < 1_800_000_000_000 + 200; ts += 17) {
+      expect(await chonThoiDiemTrongChunkSanCo(chay, tuyChon(ts, ["oee_metrics"]))).toEqual({ at: MAC_DINH, nguon: "mac-dinh:khong-co-chunk-phu-hop" });
+    }
+  });
+  it("★★★ bảng phụ có chunk NÉN phủ nửa đầu và chunk CHƯA NÉN phủ nửa sau ⇒ mốc chọn được chỉ nằm trong phần CHƯA NÉN (không bao giờ trong phần nén)", async () => {
+    const giua = new Date("2026-10-16T00:00:00.000Z");
+    const chay = giaBangPhuCoNen(
+      [CHUNK_10],
+      [
+        { dau: CHUNK_10.range_start, cuoi: giua, nen: true },
+        { dau: giua, cuoi: CHUNK_10.range_end, nen: false },
+      ],
+    );
+    let chon = 0;
+    for (let ts = 1_800_000_000_000; ts < 1_800_000_000_000 + 600; ts += 7) {
+      const r = await chonThoiDiemTrongChunkSanCo(chay, tuyChon(ts, ["oee_metrics"]));
+      if (r.nguon === "chunk-san-co") {
+        chon++;
+        expect(r.at.getTime() - 30_000, "mốc phải nằm TRỌN trong phần chưa nén").toBeGreaterThanOrEqual(giua.getTime());
+      }
+    }
+    expect(chon, "phần chưa nén là nửa chunk ⇒ nhiều lượt vẫn chọn được").toBeGreaterThan(30);
+  });
   it("lát bị chiếm ở bảng chính thì KHÔNG hỏi bảng khác (không phí truy vấn, không chọn lát bẩn)", async () => {
     const goi: string[] = [];
     const chay: ChayTruyVan = async (q) => {
