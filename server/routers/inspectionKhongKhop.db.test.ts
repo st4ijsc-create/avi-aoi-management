@@ -17,11 +17,34 @@ vi.mock("../db/connection", async (importOriginal) => {
 });
 
 import { inspectionRouter } from "./inspectionRouters";
+import { chonThoiDiemTrongChunkSanCo, type ChayTruyVan } from "../testing/__chunkSanCo";
 
 const DB_URL = process.env.DATABASE_URL;
 const RUN = `KK${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
-const T = new Date("2031-03-15T12:00:00.000Z");
-const WIN = { startDate: new Date("2031-03-01T00:00:00Z"), endDate: new Date("2031-03-30T00:00:00Z") };
+const ts = Date.now();
+/**
+ * ★ 17/11 — KHÔNG TẠO CHUNK TIMESCALE MỚI trong giao dịch dài / ở mốc quá khứ xa: mốc dữ liệu dựng lấy trong một chunk ĐÃ CÓ của product_inspections (`server/testing/__chunkSanCo.ts`, đọc CHỈ ĐỌC trước khi mở giao dịch),
+ * ở vị trí băm theo `ts`, đã kiểm ±60 s TRỐNG; cửa sổ truy vấn co về ±60 s quanh mốc (cô lập vẫn do dữ liệu của CHÍNH lượt này). Không chọn được ⇒ giữ mốc + cửa sổ cũ và cảnh báo.
+ */
+const MOC_MAC_DINH = new Date("2031-03-15T12:00:00.000Z");
+async function chonMocTrongChunkSanCo() {
+  const url = process.env.DATABASE_URL;
+  if (!url) return { at: MOC_MAC_DINH, nguon: "mac-dinh:khong-co-DATABASE_URL" };
+  const cli = postgres(url, { max: 1, onnotice: () => undefined });
+  try {
+    const chay: ChayTruyVan = async (c, p) => (await cli.unsafe(c, p as never[])) as unknown as Array<Record<string, unknown>>;
+    return await chonThoiDiemTrongChunkSanCo(chay, { bang: "product_inspections", cot: "inspectionTime", ts, macDinh: MOC_MAC_DINH, nuaDoTrongMs: 60_000 });
+  } finally {
+    await cli.end({ timeout: 5 });
+  }
+}
+const MOC_CHON = await chonMocTrongChunkSanCo();
+const TRONG_CHUNK = MOC_CHON.nguon === "chunk-san-co";
+if (!TRONG_CHUNK) console.warn(`[inspectionKhongKhop.db.test.ts] không chọn được mốc trong chunk có sẵn (${MOC_CHON.nguon}) — giữ mốc + cửa sổ cũ, có thể tạo chunk mới`);
+const T = MOC_CHON.at;
+const WIN = TRONG_CHUNK
+  ? { startDate: new Date(T.getTime() - 60_000), endDate: new Date(T.getTime() + 60_000) }
+  : { startDate: new Date("2031-03-01T00:00:00Z"), endDate: new Date("2031-03-30T00:00:00Z") };
 const KHONG_TON_TAI = 2_000_000_000;
 let sql: ReturnType<typeof postgres>;
 const ids = { facA: 0, facB: 0, lineA: 0, lineB: 0, machA: 0, machB: 0, user: 0 };

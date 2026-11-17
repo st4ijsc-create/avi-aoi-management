@@ -22,17 +22,22 @@ export interface TuyChonChonChunk {
   macDinh: Date;
   /** "bây giờ" (tiêm được cho test) */
   bayGio?: Date;
-  /** chỉ lấy chunk kết thúc trước `bayGio − daySauToiThieu` ngày (mặc định 1) */
+  /** chỉ lấy phần của chunk nằm trước `bayGio − daySauToiThieu` ngày (mặc định 1); chunk hiện hành bị cắt mút trên về mốc này */
   daySauToiThieu?: number;
   /** chỉ lấy chunk bắt đầu SAU `bayGio − dayLuiToiDa` ngày (mặc định 3500) — các bảng dò của tệp chỉ nhìn lùi 4000 ngày */
   dayLuiToiDa?: number;
   /** nửa bề rộng cần TRỐNG quanh thời điểm chọn (mặc định 30 s) */
   nuaDoTrongMs?: number;
+  /**
+   * Các hypertable KHÁC cũng bị ghi tại đúng mốc này (vd. `oee_metrics`): mốc phải nằm trong một chunk CHƯA NÉN có sẵn của MỖI bảng (cả hai đầu của cửa sổ ±nửa-độ-trống) — biên chunk của các bảng khác nhau.
+   * Không bảng nào thoả ⇒ thử vị trí khác; hết vị trí ⇒ mặc định (như cũ).
+   */
+  cungBang?: readonly string[];
 }
 
 export interface KetQuaChonChunk {
   at: Date;
-  /** `chunk-san-co` hoặc `mac-dinh:<lý do>` */
+  /** `chunk-san-co` hoặc `mac-dinh:<lý do>` (khong-co-chunk-phu-hop · chunk-qua-ngan · loi-doc:… · ten-bang-cot-khong-hop-le) */
   nguon: string;
   chunk?: { batDau: Date; ketThuc: Date };
 }
@@ -63,22 +68,53 @@ export async function chonThoiDiemTrongChunkSanCo(chay: ChayTruyVan, tuyChon: Tu
   const muon = new Date(bayGio.getTime() - (tuyChon.daySauToiThieu ?? 1) * ngay);
   const som = new Date(bayGio.getTime() - (tuyChon.dayLuiToiDa ?? 3500) * ngay);
   const nua = tuyChon.nuaDoTrongMs ?? 30_000;
+  const cungBang = tuyChon.cungBang ?? [];
+  if (cungBang.some((b) => !TEN_BANG.test(b))) return macDinhVi("ten-bang-cot-khong-hop-le");
   try {
     // Chỉ ĐỌC. Chunk đã nén bị bỏ (chèn vào chunk nén chậm / bị cấm tuỳ bản).
+    // ★ Phương án A (HST duyệt 17/11): nhận cả chunk HIỆN HÀNH — chính sách nén (compress_after 30 ngày) nén chunk k đúng lúc chunk k+1 mới thành "đã qua", nên điều kiện `range_end <= hôm qua` để hở cửa sổ 0–1 ngày mỗi tháng.
+    // Chunk bắt đầu TRƯỚC `muon` (hôm qua) đều là ứng viên; mút trên bị CẮT về `min(range_end, muon)` ⇒ vị trí luôn nằm trong phần ĐÃ QUA ≥ 1 ngày trước bây giờ, và chunk hiện hành chỉ còn là dự phòng.
     const chunks = await chay(
-      "select range_start, range_end from timescaledb_information.chunks where hypertable_name = $1 and not is_compressed and range_end <= $2 and range_start >= $3 order by range_start desc limit 12",
+      "select range_start, range_end from timescaledb_information.chunks where hypertable_name = $1 and not is_compressed and range_start < $2 and range_start >= $3 order by range_start desc limit 12",
       [bang, muon.toISOString(), som.toISOString()],
     );
+    const ungVien: Array<{ batDau: Date; ketThuc: Date; hienHanh: boolean }> = [];
+    let quaNgan = false;
     for (const c of chunks) {
       const batDau = laNgay(c.range_start);
-      const ketThuc = laNgay(c.range_end);
-      if (!batDau || !ketThuc || ketThuc.getTime() - batDau.getTime() < 4 * nua) continue;
+      const cuoiChunk = laNgay(c.range_end);
+      if (!batDau || !cuoiChunk) continue;
+      const hienHanh = cuoiChunk.getTime() > muon.getTime();
+      const ketThuc = hienHanh ? muon : cuoiChunk;
+      if (ketThuc.getTime() - batDau.getTime() < 4 * nua) {
+        quaNgan = true;
+        continue;
+      }
+      ungVien.push({ batDau, ketThuc, hienHanh });
+    }
+    // Chunk ĐÃ QUA trước (ổn định, ít dữ liệu sống), chunk hiện hành sau; trong mỗi nhóm giữ thứ tự mới nhất trước.
+    ungVien.sort((a, b) => Number(a.hienHanh) - Number(b.hienHanh));
+    for (const { batDau, ketThuc } of ungVien) {
       for (let k = 0; k < 5; k++) {
         const at = viTriTrongChunk(batDau, ketThuc, ts, k, 2 * nua);
         const dem = await chay(`select count(*)::int as n from ${bang} where "${cot}" >= $1 and "${cot}" < $2`, [new Date(at.getTime() - nua).toISOString(), new Date(at.getTime() + nua).toISOString()]);
-        if (Number(dem[0]?.n ?? 1) === 0) return { at, nguon: "chunk-san-co", chunk: { batDau, ketThuc } };
+        if (Number(dem[0]?.n ?? 1) !== 0) continue;
+        let duMoiBang = true;
+        for (const khac of cungBang) {
+          const co = await chay(
+            "select 1 as co from timescaledb_information.chunks where hypertable_name = $1 and not is_compressed and range_start <= $2 and range_end > $3 limit 1",
+            [khac, new Date(at.getTime() - nua).toISOString(), new Date(at.getTime() + nua).toISOString()],
+          );
+          if (co.length === 0) {
+            duMoiBang = false;
+            break;
+          }
+        }
+        if (duMoiBang) return { at, nguon: "chunk-san-co", chunk: { batDau, ketThuc } };
       }
     }
+    // Không ứng viên nào dùng được vì phần ĐÃ QUA quá ngắn (ngày đầu chunk mới, chunk cũ đã nén) ⇒ nói thẳng lý do riêng.
+    if (ungVien.length === 0 && quaNgan) return macDinhVi("chunk-qua-ngan");
     return macDinhVi("khong-co-chunk-phu-hop");
   } catch (e) {
     return macDinhVi(`loi-doc:${e instanceof Error ? e.message.slice(0, 80) : "khong-ro"}`);
@@ -94,4 +130,15 @@ export async function coChunkChuaThoiDiem(chay: ChayTruyVan, bang: string, t: Da
   } catch {
     return null;
   }
+}
+
+/**
+ * Dùng với một đối tượng `db` của drizzle-postgres-js (có `$client.unsafe`) — để tệp test KHÔNG phải import driver. `db` vắng / không có `$client` ⇒ mặc định (không ném).
+ * Chỉ ĐỌC (xem `chonThoiDiemTrongChunkSanCo`).
+ */
+export async function chonMocTheoDb(db: unknown, tuyChon: TuyChonChonChunk): Promise<KetQuaChonChunk> {
+  const client = (db as { $client?: { unsafe?: (q: string, p: unknown[]) => Promise<unknown> } } | null | undefined)?.$client;
+  if (!client || typeof client.unsafe !== "function") return { at: tuyChon.macDinh, nguon: "mac-dinh:khong-co-ket-noi" };
+  const unsafe = client.unsafe.bind(client);
+  return chonThoiDiemTrongChunkSanCo(async (q, p) => (await unsafe(q, p)) as unknown as Array<Record<string, unknown>>, tuyChon);
 }
