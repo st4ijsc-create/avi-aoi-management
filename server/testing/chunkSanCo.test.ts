@@ -313,3 +313,25 @@ describe("reportExportScope / reportServiceScope — mốc lấy từ chunk có 
     expect(/cungBang/.test(doc("reportExportScope.test.ts").replace(/\/\*[\s\S]*?\*\//g, ""))).toBe(false);
   });
 });
+
+describe("defectHeatmapSavedScope / inspectionKhongKhop.db / defectSpatialHeatmap.scope.db — mốc lấy từ chunk có sẵn, cửa sổ co về ±60 s, mặc định cũ khi rơi về", () => {
+  const doc = (...d: string[]) => readFileSync(join(__dirname, "..", ...d), "utf8");
+  const CA_BA: Array<[string, string, RegExp, RegExp]> = [
+    ["routers/defectHeatmapSavedScope.test.ts", "2019-06-05T03:00:00Z", /const INSPECTED_AT = MOC_CHON\.at;/, /const WIN_START = TRONG_CHUNK \? new Date\(INSPECTED_AT\.getTime\(\) - 60_000\)\.toISOString\(\) : "2019-06-01T00:00:00\.000Z";/],
+    ["routers/inspectionKhongKhop.db.test.ts", "2031-03-15T12:00:00.000Z", /const T = MOC_CHON\.at;/, /const WIN = TRONG_CHUNK\s*\? \{ startDate: new Date\(T\.getTime\(\) - 60_000\), endDate: new Date\(T\.getTime\(\) \+ 60_000\) \}/],
+    ["services/defectSpatialHeatmap.scope.db.test.ts", "2031-03-05T03:00:00Z", /const INSPECTED_AT = MOC_CHON\.at;/, /const WINDOW_START = TRONG_CHUNK \? new Date\(INSPECTED_AT\.getTime\(\) - 60_000\) : new Date\("2031-03-01T00:00:00Z"\);/],
+  ];
+  for (const [tep, macDinh, reMoc, reCuaSo] of CA_BA) {
+    it(`★★★ ${tep}: mặc định cũ ${macDinh} chỉ còn khi rơi về; mốc = MOC_CHON.at; cửa sổ ±60 s khi chọn được chunk, cửa sổ cũ khi không; kết nối đọc chunk riêng, đóng ngay`, () => {
+      const n = doc(...tep.split("/"));
+      expect(n).toContain(`const MOC_MAC_DINH = new Date("${macDinh}");`);
+      expect(n).toMatch(/const MOC_CHON = await chonMocTrongChunkSanCo\(\);\s*const TRONG_CHUNK = MOC_CHON\.nguon === "chunk-san-co";/);
+      expect(n).toMatch(/bang: "product_inspections", cot: "inspectionTime", ts, macDinh: MOC_MAC_DINH, nuaDoTrongMs: 60_000/);
+      expect(n).toMatch(reMoc);
+      expect(n).toMatch(reCuaSo);
+      expect(n).toMatch(/if \(!TRONG_CHUNK\) console\.warn\(/);
+      expect(n).toMatch(/const cli = postgres\(url, \{ max: 1, onnotice: \(\) => undefined \}\);[\s\S]{0,500}?finally \{\s*await cli\.end\(/);
+      expect(/\bconst INSPECTED_AT = new Date\(|\bconst T = new Date\(/.test(n), "mốc không được đặt thẳng").toBe(false);
+    });
+  }
+});

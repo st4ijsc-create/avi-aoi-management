@@ -45,6 +45,7 @@ import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { computeSpatialHeatmap } from "./defectSpatialHeatmap";
 import * as db from "../db";
 import { getDb } from "../db/connection";
+import { chonThoiDiemTrongChunkSanCo, type ChayTruyVan } from "../testing/__chunkSanCo";
 import { clearAssignmentCache } from "../_core/accessControl";
 import {
   factories,
@@ -146,9 +147,28 @@ const CORP_B = `SCP_CORP_B_${ts}`;
 
 // Cửa sổ riêng của file này (không đụng dữ liệu ca khác), và mọi truy vấn còn ghim thêm
 // `productModelId` duy nhất ⇒ khác biệt DUY NHẤT giữa ba người dùng là PHẠM VI.
-const WINDOW_START = new Date("2031-03-01T00:00:00Z");
-const WINDOW_END = new Date("2031-03-10T00:00:00Z");
-const INSPECTED_AT = new Date("2031-03-05T03:00:00Z");
+/**
+ * ★ 17/11 — KHÔNG TẠO CHUNK TIMESCALE MỚI trong giao dịch dài / ở mốc quá khứ xa: mốc dữ liệu dựng lấy trong một chunk ĐÃ CÓ của product_inspections (`server/testing/__chunkSanCo.ts`, đọc CHỈ ĐỌC trước khi mở giao dịch),
+ * ở vị trí băm theo `ts`, đã kiểm ±60 s TRỐNG; cửa sổ truy vấn co về ±60 s quanh mốc (cô lập vẫn do dữ liệu của CHÍNH lượt này). Không chọn được ⇒ giữ mốc + cửa sổ cũ và cảnh báo.
+ */
+const MOC_MAC_DINH = new Date("2031-03-05T03:00:00Z");
+async function chonMocTrongChunkSanCo() {
+  const url = process.env.DATABASE_URL;
+  if (!url) return { at: MOC_MAC_DINH, nguon: "mac-dinh:khong-co-DATABASE_URL" };
+  const cli = postgres(url, { max: 1, onnotice: () => undefined });
+  try {
+    const chay: ChayTruyVan = async (c, p) => (await cli.unsafe(c, p as never[])) as unknown as Array<Record<string, unknown>>;
+    return await chonThoiDiemTrongChunkSanCo(chay, { bang: "product_inspections", cot: "inspectionTime", ts, macDinh: MOC_MAC_DINH, nuaDoTrongMs: 60_000 });
+  } finally {
+    await cli.end({ timeout: 5 });
+  }
+}
+const MOC_CHON = await chonMocTrongChunkSanCo();
+const TRONG_CHUNK = MOC_CHON.nguon === "chunk-san-co";
+if (!TRONG_CHUNK) console.warn(`[defectSpatialHeatmap.scope.db.test.ts] không chọn được mốc trong chunk có sẵn (${MOC_CHON.nguon}) — giữ mốc + cửa sổ cũ, có thể tạo chunk mới`);
+const INSPECTED_AT = MOC_CHON.at;
+const WINDOW_START = TRONG_CHUNK ? new Date(INSPECTED_AT.getTime() - 60_000) : new Date("2031-03-01T00:00:00Z");
+const WINDOW_END = TRONG_CHUNK ? new Date(INSPECTED_AT.getTime() + 60_000) : new Date("2031-03-10T00:00:00Z");
 
 let productModelId: number;
 let adminId: number;
