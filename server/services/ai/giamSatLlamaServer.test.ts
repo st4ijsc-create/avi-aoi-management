@@ -514,7 +514,17 @@ describe("khoiDongTachRoi — PowerShell tách rời, không giữ ống", () =>
       let maThoat: number | null | undefined;
       khoiDongTachRoi(kichBan, { cwd: thuMuc, khiKetThuc: (c) => { maThoat = c; } });
       const han = Date.now() + 20_000;
-      while (!fs.existsSync(cuoi) && Date.now() < han) await new Promise((r) => setTimeout(r, 200));
+      // ★ Chờ tới khi NỘI DUNG cuoi.txt là một số > 0 (hoặc hết hạn 20 s), KHÔNG chỉ chờ tệp xuất hiện: `Out-File` tạo tệp TRƯỚC khi ghi xong nên đọc ngay có thể ra chuỗi rỗng ⇒ pid = 0 (cổng 06/11 và 17/11 09:37 đỏ đúng chỗ này).
+      // Hết hạn mà vẫn chưa có số thì các khẳng định bên dưới (tệp tồn tại, pid > 0) vẫn đỏ như cũ — không nới gì.
+      const docPidCuoi = (): number => {
+        try {
+          const n = Number(fs.readFileSync(cuoi, "utf8").replace(/^﻿/, "").trim());
+          return Number.isFinite(n) ? n : 0;
+        } catch {
+          return 0;
+        }
+      };
+      while (!(docPidCuoi() > 0) && Date.now() < han) await new Promise((r) => setTimeout(r, 200));
       expect(fs.existsSync(dau)).toBe(true);
       expect(fs.existsSync(cuoi)).toBe(true);
       const pidCha = Number(fs.readFileSync(cuoi, "utf8").replace(/^﻿/, "").trim());
