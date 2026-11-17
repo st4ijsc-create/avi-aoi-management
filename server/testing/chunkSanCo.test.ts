@@ -395,27 +395,32 @@ describe("X-16 · khongChuaGioTron + kiểm trống bảng phụ", () => {
   /** Bộ chạy giả: bảng chính luôn trống; `oee_metrics` bận khi tâm cửa sổ nằm trong NỬA ĐẦU chunk; đếm số truy vấn trống của bảng phụ. */
   function giaPhu() {
     const hoiPhu: string[] = [];
+    const cua: Array<[number, number]> = [];
     const chay: ChayTruyVan = async (q, p) => {
       if (/range_start <= \$2 and range_end > \$3/.test(q)) return [{ co: 1 }];
       if (/timescaledb_information\.chunks/.test(q)) return [CH];
       if (/from oee_metrics where "timestamp"/.test(q)) {
         hoiPhu.push(q);
+        cua.push([new Date(p[0] as string).getTime(), new Date(p[1] as string).getTime()]);
         const tam = (new Date(p[0] as string).getTime() + new Date(p[1] as string).getTime()) / 2;
         return [{ n: tam < (CH.range_start.getTime() + CH.range_end.getTime()) / 2 ? 2 : 0 }];
       }
       return [{ n: 0 }];
     };
-    return { chay, hoiPhu };
+    return { chay, hoiPhu, cua };
   }
   const goc = (ts: number, them: object = {}) => ({ bang: "product_inspections", cot: "inspectionTime", ts, macDinh: MAC_DINH, bayGio: BAY_GIO, cungBang: ["oee_metrics"], ...them });
   it("★★★ cotCungBang: bảng phụ phải TRỐNG ±nửa-độ-trống — mốc chọn được luôn ở nửa chunk mà bảng phụ trống; không có cotCungBang ⇒ KHÔNG hỏi đếm bảng phụ (hành vi cũ)", async () => {
     const giuaChunk = (CH.range_start.getTime() + CH.range_end.getTime()) / 2;
     let chon = 0;
     for (let ts = 1_800_000_000_000; ts < 1_800_000_000_000 + 400; ts += 3) {
-      const { chay } = giaPhu();
+      const { chay, cua } = giaPhu();
       const r = await chonThoiDiemTrongChunkSanCo(chay, goc(ts, { cotCungBang: { oee_metrics: "timestamp" } }));
       if (r.nguon === "chunk-san-co") {
         chon++;
+        const [tu, den] = cua[cua.length - 1]!;
+        expect(den - tu, "cửa sổ đếm bảng phụ rộng đúng 2 × nửa-độ-trống và từ < đến (đột biến: đảo hai mốc / cửa sổ một phía phải ĐỎ)").toBe(2 * NUA);
+        expect((tu + den) / 2, "tâm cửa sổ đếm bảng phụ = mốc được chọn").toBe(r.at.getTime());
         expect(r.at.getTime(), "bảng phụ bận ở nửa đầu").toBeGreaterThan(giuaChunk);
       }
     }
