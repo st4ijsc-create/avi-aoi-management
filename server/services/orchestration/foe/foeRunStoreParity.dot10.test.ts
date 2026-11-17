@@ -14572,6 +14572,49 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(chuCua("abortStopNotSent")).not.toMatch(/no time limit/);
   });
   // X-13 (chủ dự án 17/11, X-13 phương án (C); HST 17/11 duyệt tên ca) — D1: the first press, the run not latched, s not verified (pins unreadable), its trace written: ONE URGENT of s under `xm` (was "H23: no URGENT"; H23's "no debt" stands). Đỏ trước sửa
+  // HST 17/11 (X-13 commit 3) — the press on a run NOT latched, then the latch AFTER its sweep (the shape DO-70 missed): the key set and the words of the two
+  // URGENTs of s, for G1' and khongBen (G1: T7B1D-KS-UNV in/past the window, T7B1D-H31-K-NGOAI-CUA). Words: tam/x13-chu-de-nghi.md (sha16 06e9d8bf83734949), the
+  // same strings as X13_URGENT of foeKetCucKhongRo.a2n.test.ts. The two never contradict: xm says when a press can send it (no time limit once the run records
+  // a command whose outcome is unknown) or that a press may not reach it; chot: it stays owed, no time limit.
+  const X13_URG_C3 = {
+    chuaKhoaKhongXacMinh: {
+      tieuDe: (id: string) => `step "${id}" NOT sent: its pins could not be read`,
+      hai: (run: number, id: string) => `Central's Abort of run ${run} did NOT send step "${id}": its pins could not be read, so it was not verified as a pinned STOP and nothing was written to the device for it. Check the machine on site and use its direct STOP / E-STOP.`,
+      than: (run: number, id: string) =>
+        `Central's Abort of run ${run} did NOT send step "${id}": its pins could not be read, so it was not verified as a pinned STOP and nothing was written to the device for it. Check the machine on site and use its direct STOP / E-STOP. A further press of Abort can send it only if its pins are then read as a pinned STOP (on an edge node's adapter: queued for or left to that node, or sent as central's fallback STOP), within 15 minutes from when the run was aborted, or with no time limit once the run records a command whose outcome is unknown, while it stays owed. Otherwise no press sends it.`,
+    },
+    chuaKhoaKetNoi: {
+      tieuDe: (id: string) => `STOP "${id}" NOT sent: central could not confirm the connection to its adapter`,
+      hai: (run: number, id: string) => `Central's Abort of run ${run} did NOT send STOP "${id}": its pins were read, but central could not confirm the running connection to its adapter, so it was not verified and nothing was written to the device for it. Check the machine on site and use its direct STOP / E-STOP.`,
+      than: (run: number, id: string) =>
+        `Central's Abort of run ${run} did NOT send STOP "${id}": its pins were read, but central could not confirm the running connection to its adapter, so it was not verified and nothing was written to the device for it. Check the machine on site and use its direct STOP / E-STOP. A further press of Abort can send it only if its pins are then read as a pinned STOP and that connection is then confirmed (on an edge node's adapter: queued for or left to that node, or sent as central's fallback STOP), within 15 minutes from when the run was aborted, or with no time limit once the run records a command whose outcome is unknown, while it stays owed. Otherwise no press sends it; central does not send it on its own when the connection comes back.`,
+    },
+    chuaKhoaKhongBen: {
+      tieuDe: (id: string) => `step "${id}" NOT sent: its record could not be written`,
+      hai: (run: number, id: string) => `Central's Abort of run ${run} did NOT send step "${id}", and the record of it could not be written, so a further press may not reach it. The STOP was not sent: check the machine on site and use its direct STOP / E-STOP.`,
+      than: (run: number, id: string) => `Central's Abort of run ${run} did NOT send step "${id}", and the record of it could not be written, so a further press may not reach it. The STOP was not sent: check the machine on site and use its direct STOP / E-STOP.`,
+    },
+  } as const;
+  for (const [ten, chuXm, truoc] of [
+    ["G1P", "chuaKhoaKetNoi", () => { h.classifyLoi = false; h.connOk = false; }],
+    ["KHONG-BEN", "chuaKhoaKhongBen", () => { h.hangNem = (r: { stepId?: string }) => r.stepId === "abort:s"; }],
+  ] as const) {
+    it(`T4-B3-LO2A-CHOT-SAU-${ten} (X-13, đối chứng; HST 17/11) press 1 on a run NOT latched, then the latch after its sweep: exactly [xm, chot] for s, xm in the approved words, chot the latch's (stays owed, no time limit)`, async () => {
+      const c = await ksUnv(`d1dcs${ten === "G1P" ? "k" : "b"}`, truoc);
+      h.hangNem = null;
+      h.connOk = true;
+      expect((runRow(c).contextJson as Record<string, unknown> | null)?.[KET_CUC_KHONG_RO_CHOT_CTX_KEY] ?? null, "latched after the sweep").not.toBeNull();
+      const u = h.alerts.filter((a) => String(a.dedupKey).split(":")[2] === "s");
+      expect(u.map((a) => String(a.dedupKey)), "the press's xm, then the latch's chot").toEqual([`${CANH_BAO_KHONG_RO_KIND.abortStopNotSent}:${c}:s:-:xm`, `${CANH_BAO_KHONG_RO_KIND.abortStopNotSent}:${c}:s:-:chot`]);
+      expect(String(u[0]!.title)).toBe(`Run ${c}: ${X13_URG_C3[chuXm].tieuDe("s")}`);
+      expect(String(u[0]!.message)).toBe(`${X13_URG_C3[chuXm].than(c, "s")} [event xm]`);
+      const chot = `${u[1]!.title} ${u[1]!.message}`;
+      expect(chot).toContain('run aborted, step "s" NOT sent: not verified as a pinned STOP');
+      expect(chot).toContain("It stays owed: press Abort again, there is no time limit on this STOP.");
+      if (ten === "G1P") expect(String(u[0]!.message), "xm agrees: no time limit once latched").toContain("or with no time limit once the run records a command whose outcome is unknown");
+      else expect(String(u[0]!.message), "xm promises nothing").toContain("so a further press may not reach it");
+    });
+  }
   it("T7B1D-CHUA-DOC-LAI a run not latched, not verified: a press whose read answers 'no pinned STOP' sends nothing, the trace goes; a read still lost sends nothing, the trace stays", async () => {
     const { c, di } = await moDi(def("d1dcd", [gate(), move("x"), box("b", [delay("w", 300), otStop("s")])]));
     await waitFor(() => stepRows(c).some((r) => r.stepId === "w"), "at the delay");
@@ -15964,9 +16007,15 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     await wait(60);
     h.timeoutDispatch.clear();
     // the durable URGENT of s: one, of the first Abort, one key (dieu-phoi 10/11, (a)): the upper limit of a pin set again is said, nothing past it is promised
+    // HST 17/11 (X-13 commit 3): the press came BEFORE the latch (run not latched at its sweep) ⇒ its own URGENT under `xm` (G1, hàng X-13 "khoá riêng"), THEN the
+    // latch's under `chot` (another news: an unknown outcome); the `chot` words below unchanged, picked by key, not by index
     const urgS = veBuoc("s");
-    expect(urgS.map((x) => x.dedupKey), "one URGENT of s, one key").toEqual([`${CANH_BAO_KHONG_RO_KIND.abortStopNotSent}:${c}:s:-:chot`]);
-    const chuS = `${urgS[0]!.title} ${urgS[0]!.message}`;
+    expect(urgS.map((x) => x.dedupKey), "the press's xm, then the latch's chot (HST 17/11)").toEqual([`${CANH_BAO_KHONG_RO_KIND.abortStopNotSent}:${c}:s:-:xm`, `${CANH_BAO_KHONG_RO_KIND.abortStopNotSent}:${c}:s:-:chot`]);
+    const xmS = urgS.find((x) => String(x.dedupKey).endsWith(":xm"))!;
+    expect(String(xmS.title), "xm: the approved G1 title").toBe(`Run ${c}: ${X13_URG_C3.chuaKhoaKhongXacMinh.tieuDe("s")}`);
+    expect(String(xmS.message), "xm: the approved G1 body, to the character").toBe(`${X13_URG_C3.chuaKhoaKhongXacMinh.than(c, "s")} [event xm]`);
+    const chotS = urgS.find((x) => String(x.dedupKey).endsWith(":chot"))!;
+    const chuS = `${chotS.title} ${chotS.message}`;
     expect(chuS).toContain('step "s"');
     expect(chuS, "the upper limit, as ruled").toContain("If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within 15 minutes of when the run was aborted: past that, check the machine on site and use its direct STOP / E-STOP.");
     expect(chuS, "B-1: no sentence left pointing at no read").not.toContain("If that read finds");
@@ -15996,7 +16045,7 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     h.ghim = PIN_OK;
     const a2 = await bam(c);
     soUrgS += veBuoc("s").length;
-    expect(soUrgS, "no URGENT of s more than the first").toBe(1);
+    expect(soUrgS, "no URGENT of s more than the first press's two (xm, chot) — HST 17/11").toBe(2);
     expect(ids(), "read and pinned, past the window: H31: s does not go").toEqual(["rs"]);
     expect(pdu("s")).toEqual([]);
     expect(a2.message, "F7: s named: not sent, and why").toMatch(/Read as a pinned STOP again: s: not sent, and a later press does not send it[^.]*: check the machine on site and use its direct STOP \/ E-STOP\./);
