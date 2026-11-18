@@ -267,10 +267,11 @@ describe("doc 81 Đợt 5 task E4 — an orchestrated STOP never waits on a hung
       } as any;
     });
     try {
-      await deployWorkflow(
-        { ref: "pre", name: "pre", steps: [{ ...OT_STOP, precondition: { not: { source: "telemetry", machineId: 1, key: "never", op: "exists" } } } as never] },
-        OWNER,
-      );
+      // X-15 (4) — deploy now REFUSES a precondition on a STOP step: this is an OLD definition, active before that refusal (deployed without
+      // it, then its stored row carries it — startRun reads the row). Also X-15's control "an active definition is not refused after the fact".
+      const steps = [{ ...OT_STOP, precondition: { not: { source: "telemetry", machineId: 1, key: "never", op: "exists" } } }];
+      expect((await deployWorkflow({ ref: "pre", name: "pre", steps: [OT_STOP] } as never, OWNER)).ok).toBe(true);
+      (fake.store.get("orchestration_workflows") ?? []).find((w: Record<string, any>) => w.ref === "pre")!.definitionJson.steps = steps;
       const t0 = Date.now();
       const res = await within(startRun("pre", {}, OWNER), 6 * STOP_DB_STEP_DEADLINE_MS);
       expect(res).not.toBe("HUNG");

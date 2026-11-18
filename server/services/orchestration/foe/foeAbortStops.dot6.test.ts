@@ -152,7 +152,7 @@ vi.mock("drizzle-orm", async (orig) => {
 vi.mock("../../../db/connection", () => ({ getDb: vi.fn(async () => fake) }));
 
 import { orchestrationRunSteps, machines, deviceAdapters, deviceTags, robots } from "../../../../drizzle/schema";
-import { deployWorkflow, startRun, resumeRun, abortRun, abortStopKey, abortRowId, ABORT_RESEND_WINDOW_MS } from "./foeEngine";
+import { deployWorkflow, startRun, resumeRun, abortRun, abortStopKey, abortRowId, ABORT_RESEND_WINDOW_MS, rollbackWorkflow } from "./foeEngine";
 import { FOE_REJECT_CLAIM_CTX_KEY } from "./foeGateApproval";
 import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
@@ -1109,5 +1109,138 @@ describe("doc 81 Đợt 7 I1 — the edge-side abort (system principal, central 
     expect(otCommands().map((c) => c.commandType)).toEqual(["start", "stop"]); // start2 (non-STOP) never sent
     expect(robotDispatchMock).toHaveBeenCalledTimes(1);
     expect(runRow(runId).status).toBe("aborted");
+  });
+});
+
+// ═══ X-15 (hàng X-15, chu-du-an-HST 2026-11-17/18) — a STOP that a precondition SKIPPED was never tried: it is still owed (G14, G14b) ═══
+describe("X-15 — a STOP skipped by its precondition (never tried) is sent by the Abort; a STOP precondition is refused at deploy", () => {
+  /** a precondition that never holds (the run's params have no `never`) */
+  const KHONG_DAT = { precondition: { source: "param", key: "never", op: "eq", value: true } } as const;
+  const boQua = <T extends Record<string, unknown>>(s: T, mode: "skip" | "hold" | "abort" = "skip") => ({ ...s, ...KHONG_DAT, onPreconditionFail: mode });
+  const boDieuKien = (x: unknown): unknown =>
+    Array.isArray(x) ? x.map(boDieuKien) : x && typeof x === "object" ? Object.fromEntries(Object.entries(x).filter(([k]) => k !== "precondition" && k !== "onPreconditionFail").map(([k, v]) => [k, boDieuKien(v)])) : x;
+  /** an OLD definition, active before X-15's deploy refusal: deployed without its preconditions, then its stored row carries them (startRun reads the row) */
+  async function deployCu(ref: string, steps: unknown[]): Promise<void> {
+    await deploy(ref, boDieuKien(steps) as unknown[]);
+    const wf = (fake.store.get("orchestration_workflows") ?? []).find((w: Row) => w.ref === ref)!;
+    wf.definitionJson = { ...wf.definitionJson, steps };
+  }
+  /** START sent after gate0 (SUP), then `truoc`, paused at gate1 — no live driver (the stored rows are the sweep's picture) */
+  async function dungSauGate1(ref: string, truoc: unknown[], sau: unknown[] = []): Promise<number> {
+    await deployCu(ref, [GATE, START, ...truoc, GATE1, ...sau]);
+    const s = await startRun(ref, {}, OWNER);
+    expect((await resumeRun(s.runId!, { approved: true }, SUP)).status).toBe("awaiting_confirm");
+    return s.runId!;
+  }
+
+  it.fails("X15-LUU (stored rows) a run paused after its STOP was skipped by the precondition: the Abort sends that STOP", async () => {
+    const runId = await dungSauGate1("x15luu", [boQua(OT_STOP)]);
+    expect(stepRow(runId, "stop")?.status).toBe("skipped");
+    expect(otCommands().map((c) => c.commandType)).toEqual(["start"]);
+    const ab = await abortRun(runId, SUP);
+    expect(ab.abortStops?.sent).toEqual(["stop"]);
+    expect(otCommands().map((c) => c.commandType)).toEqual(["start", "stop"]);
+  });
+
+  it.fails("X15-BO-NHO (the walker's memory, E skip) a live run, its rows UNREADABLE at the Abort: the STOP the walk skipped is still sent", async () => {
+    await deployCu("x15nho", [GATE, START, boQua(OT_STOP), DELAY]);
+    const s = await startRun("x15nho", {}, OWNER);
+    const walk = resumeRun(s.runId!, { approved: true }, SUP);
+    await waitFor(() => stepRow(s.runId!, "d")?.status === "running");
+    expect(stepRow(s.runId!, "stop")?.status).toBe("skipped");
+    HUNG_TABLES.add("orchestration_run_steps");
+    const ab = await abortRun(s.runId!, SUP);
+    expect(ab.abortStops?.sent).toEqual(["stop"]);
+    HUNG_TABLES.clear();
+    await walk;
+  });
+
+  it.fails("X15-SONG (a live run's earlier segment) skipped before gate1, the next walk is live at its delay: the Abort sends the skipped STOP", async () => {
+    const runId = await dungSauGate1("x15song", [boQua(OT_STOP)], [DELAY]);
+    const walk = resumeRun(runId, { approved: true }, SUP);
+    await waitFor(() => stepRow(runId, "d")?.status === "running");
+    const ab = await abortRun(runId, SUP);
+    expect(ab.abortStops?.sent).toEqual(["stop"]);
+    await walk;
+  });
+
+  it.fails("X15-HOP (G14b) a container skipped by its precondition: ONLY its STOPs are sent; its motion is never sent nor written; its branch never evaluated is listed", async () => {
+    const br = { id: "br", type: "branch", condition: { source: "const", key: "x", op: "eq", value: "x" }, then: [RB_STOP], else: [] };
+    const runId = await dungSauGate1("x15hop", [boQua({ id: "box", type: "sequence", steps: [{ ...START, id: "move2" }, OT_STOP, br] })]);
+    expect(stepRow(runId, "box")?.status).toBe("skipped");
+    const ab = await abortRun(runId, SUP);
+    expect(ab.abortStops).toMatchObject({ sent: ["stop"], untakenBranch: ["ra"] });
+    expect(otCommands().map((c) => c.commandType)).toEqual(["start", "stop"]); // move2 never
+    expect(robotDispatchMock).not.toHaveBeenCalled();
+    expect(stepRow(runId, "move2")).toBeUndefined(); // no row written for the motion
+    expect(stepRow(runId, "abort:move2")).toBeUndefined();
+  });
+
+  it.fails("X15-S3 (3) an approved STOP compensation whose precondition failed (its row `skipped`, keyed by the COMPENSATION's id, not its step's): the Abort sends it", async () => {
+    const runId = await dungSauGate1("x15s3", [{ ...START, id: "m2", compensation: { ...OT_STOP, id: "cstop" } }]);
+    // the row foeEngine writes for S3 (an approved compensation's precondition failed, `skip`): status skipped, stepId = comp.id ("cstop" ≠ "m2")
+    (fake.store.get("orchestration_run_steps") as Row[]).push({ id: 9_015, runId, stepId: "cstop", stepType: "command", status: "skipped", attempt: 0, resultJson: null, error: null, startedAt: null, finishedAt: new Date() });
+    const ab = await abortRun(runId, SUP);
+    expect(ab.abortStops?.sent).toEqual(["cstop"]);
+    expect(otCommands().map((c) => c.commandType)).toEqual(["start", "start", "stop"]);
+  });
+
+  it("X15-DC-CONTINUE (control: why `settled` is kept) a Continue past gate1 never runs the skipped STOP again", async () => {
+    const runId = await dungSauGate1("x15dc", [boQua(OT_STOP)], [{ ...START, id: "after" }]);
+    expect((await resumeRun(runId, { approved: true }, SUP)).status).toBe("completed");
+    expect(otCommands().map((c) => c.commandType)).toEqual(["start", "start"]);
+    expect(stepRow(runId, "stop")?.status).toBe("skipped");
+  });
+
+  it("X15-DC-CHUA-TAC-DONG (control, R-6-b) a run that never actuated: the skipped STOP is not sent", async () => {
+    await deployCu("x15ct", [GATE, boQua(OT_STOP), GATE1]);
+    const s = await startRun("x15ct", {}, OWNER);
+    expect((await resumeRun(s.runId!, { approved: true }, SUP)).status).toBe("awaiting_confirm");
+    const ab = await abortRun(s.runId!, SUP);
+    expect(ab).toMatchObject({ ok: true, status: "aborted", abortStops: { sent: [] } });
+    expect(otDispatchMock).not.toHaveBeenCalled();
+  });
+
+  it("X15-DC-BAM-HAI (control) a second Abort sends nothing more", async () => {
+    const runId = await dungSauGate1("x15hai", [boQua(OT_STOP)]);
+    await abortRun(runId, SUP);
+    const n = otDispatchMock.mock.calls.length;
+    await abortRun(runId, SUP);
+    expect(otDispatchMock.mock.calls.length).toBe(n);
+  });
+
+  it.fails("X15-TU-CHOI (4) a precondition on a STOP step is refused at deploy — every mode, nested, a compensation, an unpinned OT stop, a robot stop", async () => {
+    const dang: Array<[string, unknown[], string]> = [
+      ["skip", [boQua(OT_STOP, "skip")], "stop"],
+      ["hold", [boQua(OT_STOP, "hold")], "stop"],
+      ["abort", [boQua(OT_STOP, "abort")], "stop"],
+      ["nested", [{ id: "sq", type: "sequence", steps: [boQua(OT_STOP)] }], "stop"],
+      ["comp", [{ ...START, compensation: boQua({ ...OT_STOP, id: "cstop" }) }], "cstop"],
+      ["unpinned", [boQua(UNPINNED)], "stopU"],
+      ["robot", [boQua(RB_STOP)], "ra"],
+    ];
+    for (const [ten, steps, id] of dang) {
+      const r = await deployWorkflow({ ref: `x15tc-${ten}`, name: ten, steps } as unknown as WorkflowDefinition, OWNER);
+      expect(r, ten).toMatchObject({ ok: false, reason: "stopPrecondition", stepIds: [id] });
+      expect(r.message, ten).toContain(id);
+    }
+  });
+
+  it("X15-TU-CHOI-DC (controls of (4)) a container holding a STOP may carry a precondition; a motion step may; an OLD active definition still STARTS", async () => {
+    await deploy("x15hopdk", [GATE, START, boQua({ id: "box", type: "sequence", steps: [OT_STOP] })]);
+    await deploy("x15motion", [GATE, boQua(START), OT_STOP]);
+    await deployCu("x15cu", [GATE, START, boQua(OT_STOP)]);
+    const s = await startRun("x15cu", {}, OWNER);
+    expect(s).toMatchObject({ ok: true, status: "awaiting_confirm" });
+  });
+
+  it.fails("X15-ROLLBACK (4) a rollback to an old version whose STOP carries a precondition is refused with the same reason", async () => {
+    await deploy("x15rb", [GATE, START, OT_STOP]);
+    const wf = (fake.store.get("orchestration_workflows") ?? []).find((w: Row) => w.ref === "x15rb")!;
+    const v1 = (fake.store.get("orchestration_workflow_versions") ?? []).find((v: Row) => v.workflowId === wf.id && v.version === 1)!;
+    v1.definitionJson = { ...v1.definitionJson, steps: [GATE, START, boQua(OT_STOP)] }; // the old snapshot, from before X-15
+    await deploy("x15rb", [GATE, START, OT_STOP, RB_STOP]);
+    const r = await rollbackWorkflow(wf.id, 1, OWNER, "back to v1 please");
+    expect(r).toMatchObject({ ok: false, reason: "stopPrecondition", stepIds: ["stop"] });
   });
 });
