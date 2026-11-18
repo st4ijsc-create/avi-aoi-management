@@ -36,6 +36,8 @@ export interface TheViec {
   csdl?: string;
   /** HA-3 — trần lượt agent do khoá thẻ TƯỜNG MINH (TRẦN LƯỢT MODEL / TRẦN PHÚT / TRẦN TOKEN RA); vắng ⇒ không áp gì. Chữ tự do trong GIỚI HẠN không được phân tích để áp trần. */
   tran?: TranTheoThe;
+  /** `LƯỢT SỬA TSC: 1` — sau L3c, nếu tsc đỏ, cho đúng MỘT lượt sửa kiểu trong phần trần còn lại; vắng ⇒ hành vi cũ */
+  suaTsc?: boolean;
   gioiHan: { giay: number; vong: number };
 }
 
@@ -55,6 +57,7 @@ const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
   "TRAN LUOT MODEL": "tranLuotModel",
   "TRAN PHUT": "tranPhut",
   "TRAN TOKEN RA": "tranTokenRa",
+  "LUOT SUA TSC": "suaTsc",
 };
 
 /** Bỏ dấu + in hoa để so khoá (thẻ do người gõ, dấu có thể thiếu). */
@@ -157,6 +160,8 @@ export function docTheViec(van: string): KetQuaThe {
     if (n === null) return { ok: false, loi: `${ten} phải là một số nguyên trong khoảng ${gioi.min}..${gioi.max}` };
     tran[truongTran] = n;
   }
+  const suaTsc = truong.get("suaTsc")?.trim();
+  if (suaTsc !== undefined && suaTsc !== "0" && suaTsc !== "1") return { ok: false, loi: "LƯỢT SỬA TSC phải là 1 hoặc 0" };
   return {
     ok: true,
     the: {
@@ -171,6 +176,7 @@ export function docTheViec(van: string): KetQuaThe {
       ...(khangDinhCam.length ? { khangDinhCam } : {}),
       ...(csdl ? { csdl } : {}),
       ...(Object.keys(tran).length > 0 ? { tran } : {}),
+      ...(suaTsc === "1" ? { suaTsc: true } : {}),
       gioiHan: docGioiHan(truong.get("gioiHan")),
     },
   };
