@@ -112,6 +112,7 @@ const BAI_SUA = `import { it } from "vitest";\nit("a", () => {});\nit("b", () =>
 const LOI_A = `${TEP}(3,5): error TS2345: sai kieu`;
 const LOI_NGOAI = "client/src/lib/khac.ts(1,1): error TS2322: ngoai";
 const the = (them = "") => `MÃ: TC-90\nMỤC TIÊU: thử lượt sửa tsc\nTỆP ĐƯỢC PHÉP SỬA/TẠO: ${TEP}\nLỆNH KIỂM: npx vitest run ${TEP}\nGIỚI HẠN: 15 phút, 8 vòng${them}`;
+const DANH_DAU = "LƯỢT SỬA TSC bị chặn trước khi chạy lại: `kiem` và `tsc` trong JSON là kết quả TRƯỚC lượt sửa (tepDoi, dong, diff, viPham là của SAU lượt sửa)";
 const CO = "\nLƯỢT SỬA TSC: 1\nTRẦN LƯỢT MODEL: 20\nTRẦN PHÚT: 20";
 
 let goc: string;
@@ -183,6 +184,7 @@ describe("chayMotViec — lượt sửa tsc", () => {
     expect(r.sauSuaTsc).toEqual({ ketCuc: "xong", lyDo: null });
     expect(r.luotSua).toMatchObject({ soLuotModel: 3, viPham: 0, crlf: 0 });
     expect(r.luotSua).not.toHaveProperty("giamCa");
+    expect(r.luuY).not.toContain(DANH_DAU); // lượt sửa chạy đủ ⇒ kiem/tsc là kết quả SAU, không đánh dấu
     expect(k.dem()).toBe(2); // lệnh kiểm chạy lại sau lượt sửa
     expect(t.dem()).toBe(2); // tsc chạy lại sau lượt sửa
     expect(fs.readFileSync(path.join(wt, TEP), "utf8")).toBe(BAI_SUA);
@@ -199,6 +201,7 @@ describe("chayMotViec — lượt sửa tsc", () => {
     expect(r.sauSuaTsc).toMatchObject({ ketCuc: "kiem-do", lyDo: `sửa tsc làm GIẢM ca test: ${TEP}: 2→1` });
     expect(k.dem()).toBe(1);
     expect(t.dem()).toBe(1);
+    expect(r.luuY).toContain(DANH_DAU);
   });
 
   it("★ lượt sửa chạm tệp NGOÀI danh sách được phép ⇒ vi-pham, ghi lý do riêng", async () => {
@@ -207,6 +210,7 @@ describe("chayMotViec — lượt sửa tsc", () => {
     expect(r.ketCuc).toBe("vi-pham");
     expect(r.sauSuaTsc?.lyDo).toMatch(/^sửa tsc: 1 vi phạm diff, 0 tệp CRLF/);
     expect(r.luotSua).toMatchObject({ viPham: 1 });
+    expect(r.luuY).toContain(DANH_DAU);
   });
 
   it("tsc VẪN đỏ sau lượt sửa ⇒ kiem-do (TRƯỢT); driver đúng 2 lần, không có lượt thứ ba", async () => {
@@ -233,6 +237,7 @@ describe("chayMotViec — lượt sửa tsc", () => {
     const r = await chay(the(CO), drv, lamKiem().f, t.f);
     expect(r).toMatchObject({ ketCuc: "kiem-do", luotSua: { hong: "lượt sửa hết giờ" } });
     expect(t.dem()).toBe(1);
+    expect(r.luuY).toContain(DANH_DAU);
   });
 
   it("★★★ thẻ KHÔNG có khoá + tsc đỏ ⇒ driver đúng 1 lần, kiem-do như cũ, JSON KHÔNG có coLuotSua / truocSuaTsc / sauSuaTsc / luotSua", async () => {

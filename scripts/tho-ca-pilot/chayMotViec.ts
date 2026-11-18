@@ -682,6 +682,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
         const giam = caTestGiam(caTruoc, tepTest);
         const hong = kq2.hetGio || kq2.loi ? `lượt sửa ${kq2.hetGio ? "hết giờ" : `lỗi: ${kq2.loi}`}` : null;
         luotSua = { soLuotModel: kq2.token?.soLuotModel ?? null, giay: Math.round((Date.now() - t2) / 100) / 10, ...(hong ? { hong } : {}), ...(giam.length > 0 ? { giamCa: giam } : {}), viPham: viPham.length, crlf: crlf.length };
+        const kiemTruoc = kiem;
         if (viPham.length > 0 || crlf.length > 0) qd = { ketCuc: "vi-pham", lyDo: `sửa tsc: ${viPham.length} vi phạm diff, ${crlf.length} tệp CRLF sau lượt sửa` };
         else if (giam.length > 0) qd = { ketCuc: "kiem-do", lyDo: `sửa tsc làm GIẢM ca test: ${giam.join("; ")}` };
         else if (hong) qd = { ketCuc: "kiem-do", lyDo: hong };
@@ -690,6 +691,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
           tsc = await (p.chayTsc ?? chayLenhTsc)(wt, tepDoi, p.hanTscGiay ?? 900);
           qd = quyetKetCuc({ truoc: "xong", dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc });
         }
+        if (kiem === kiemTruoc) luuY.push("LƯỢT SỬA TSC bị chặn trước khi chạy lại: `kiem` và `tsc` trong JSON là kết quả TRƯỚC lượt sửa (tepDoi, dong, diff, viPham là của SAU lượt sửa)");
         sauSua = { ketCuc: qd.ketCuc, lyDo: qd.lyDo };
       }
     }
