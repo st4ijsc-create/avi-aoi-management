@@ -803,8 +803,11 @@ interface EdgeHarness {
 }
 
 /** central's edge assignment (startRun with edgeNodeId) — created 'queued' + its assignment row */
-async function edgeAssignedRun(d: WorkflowDefinition): Promise<EdgeHarness> {
-  expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+async function edgeAssignedRun(d: WorkflowDefinition, cu?: WorkflowDefinition): Promise<EdgeHarness> {
+  const dep = await deployWorkflow(d, OWNER);
+  expect(dep.ok).toBe(true);
+  // X-22 SG-2: `cu` = an OLD definition stored before main's step-id rule (whose own tests: workflowModel.kyTuIdBuoc.test.ts, workflowModel.stepIdLuatThem.test.ts) — the deployed row's definitionJson is set to it, version kept; startRun reads the row and never checks that rule
+  if (cu) { const wf = rows("orchestration_workflows").find((w) => w.id === dep.workflowId)!; wf.definitionJson = { ...cu, version: (wf.definitionJson as WorkflowDefinition).version }; }
   const s = await startRun(d.ref, {}, OWNER, { edgeNodeId: NODE });
   expect(s.ok).toBe(true);
   return { runId: s.runId!, statuses: [], records: [], authorizeCalls: [], offline: false, stopped: false };
@@ -20091,11 +20094,12 @@ describe("T4 [H11] / B5 — six damaged forms of the words on the old route (cen
    * One segment: a command `lenh` sent, its answer timed out (outcome unknown, no compensation), and a pinned STOP `stop` in a later branch refused by its driver (DRIVER_WRITE_FAILED: it may have
    * reached the device, owed). The events journal is FULL (I-5): the rider on the end is the only road of the reports. `hong` damages the words the node sends; the wire (quaDayThat) carries them.
    */
-  async function doan(ref: string, lenh: string, stop: string, hong: (w: string) => string, soDay = true) {
+  async function doan(ref: string, lenh: string, stop: string, hong: (w: string) => string, soDay = true, cu = false) {
     const kk = await import("./foeKetCucKhongRo");
     seedHalt();
     h.ghim = PIN_OK;
-    const e = await edgeAssignedRun(def(ref, [gate(), parF("p", [move(lenh), box("v", [delay("w", 30), box("c2", [otStop(stop)])])])]));
+    const buoc = (l: string, s: string) => [gate(), parF("p", [move(l), box("v", [delay("w", 30), box("c2", [otStop(s)])])])];
+    const e = await edgeAssignedRun(def(ref, cu ? buoc("x", "nt") : buoc(lenh, stop)), cu ? def(ref, buoc(lenh, stop)) : undefined);
     await edgeSegment(e, 1);
     await approveEdgeGate(e);
     e.events = [];
@@ -20183,12 +20187,12 @@ describe("T4 [H11] / B5 — six damaged forms of the words on the old route (cen
   });
   it("T4-H11-5 a command id holding ',' and ')' in the list: the list is not read whole: fail-closed", async () => {
     const id = "x,1)q";
-    const x = await doan("t4h5", id, "nt", (w) => `EDGE_OUTCOME_UNKNOWN(${id}): sent, but the result could not be recorded (journal: journal_full) — never sent again; the run is held.${riderCuaChu(w)}`);
+    const x = await doan("t4h5", id, "nt", (w) => `EDGE_OUTCOME_UNKNOWN(${id}): sent, but the result could not be recorded (journal: journal_full) — never sent again; the run is held.${riderCuaChu(w)}`, true, true);
     batBuoc(x, id, "nt");
   });
   for (const stop of ["nt [[A2N:a", "nt [[A2N-THIEU:a"] as const) {
     it(`T4-H11-6 (R-i) a STOP id holding a rider's mark ${JSON.stringify(stop)}, the words undamaged: the rider is read whole: fail-closed`, async () => {
-      const x = await doan(`t4h6${stop.length}`, "x", stop, (w) => w);
+      const x = await doan(`t4h6${stop.length}`, "x", stop, (w) => w, true, true);
       batBuoc(x, "x", stop);
     });
   }
