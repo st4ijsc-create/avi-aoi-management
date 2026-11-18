@@ -40,6 +40,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { dangKyModelSanPhamTest } from "../../testing/modelSanPhamTest";
+import { chonMocTheoDb } from "../../testing/__chunkSanCo";
 import express from "express";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
@@ -138,6 +139,7 @@ let dayStr: string;
 let WIN_FROM: string;
 let WIN_TO: string;
 let INSPECTED_AT: Date;
+let KHE = false;
 const datNgay = (idx: number): void => {
   RUN_DAY = new Date(2044, 0, 1 + idx);
   dayStr = `${RUN_DAY.getFullYear()}-${pad(RUN_DAY.getMonth() + 1)}-${pad(RUN_DAY.getDate())}`;
@@ -296,7 +298,15 @@ const totalFor = (rows: any[], machineId: number): number =>
 // Hạn hook riêng: beforeAll chạy ~45 lượt DB tuần tự; cổng gộp 14/11 11:16 hết giờ 30 s dưới tải nặng (chạy riêng 3–4 s).
 beforeAll(async () => {
   const conn0 = await getDb();
-  await chonNgayTrong(async (tu, den) => {
+  // ★ X-16: ưu tiên KHE ±30 s (≤ hôm qua) nằm trong chunk chưa nén CÓ SẴN của cả hai bảng, đã kiểm trống ở cả hai và không chứa ranh giờ tròn (MV theo giờ) ⇒ không tạo chunk mới, không xin khoá `machines`. Không có khe ⇒ vòng dò ngày 2044+ như cũ.
+  const khe = await chonMocTheoDb(conn0, { bang: "product_inspections", cot: "inspectionTime", ts, macDinh: INSPECTED_AT, cungBang: ["oee_metrics"], cotCungBang: { oee_metrics: "timestamp" }, khongChuaGioTron: true });
+  if (khe.nguon === "chunk-san-co") {
+    KHE = true;
+    INSPECTED_AT = khe.at;
+    WIN_FROM = new Date(khe.at.getTime() - 30_000).toISOString();
+    WIN_TO = new Date(khe.at.getTime() + 30_000).toISOString();
+  } else console.warn(`apiKeyTenantScope: không có khe trong chunk có sẵn (${khe.nguon}) — giữ cửa sổ cũ 2044+ (sẽ tạo chunk mới)`);
+  if (!KHE) await chonNgayTrong(async (tu, den) => {
     const a = await conn0!.select({ n: sql<number>`count(*)::int` }).from(productInspections).where(sql`${productInspections.inspectionTime} >= ${tu}::timestamptz AND ${productInspections.inspectionTime} < ${den}::timestamptz`);
     if (Number(a[0]?.n ?? 0) > 0) return true;
     const b = await conn0!.select({ n: sql<number>`count(*)::int` }).from(oeeMetrics).where(sql`${oeeMetrics.timestamp} >= ${tu}::timestamptz AND ${oeeMetrics.timestamp} < ${den}::timestamptz`);
@@ -374,7 +384,7 @@ beforeAll(async () => {
   // ── `oee_metrics`: bảng KHÔNG có cột tenant nào; phạm vi CHỈ đến từ chuỗi phân cấp của máy.
   const mkOee = (machineId: number, machineCode: string, hour: number) => ({
     machineId, machineCode,
-    timestamp: new Date(`${dayStr}T${pad(hour)}:00:00Z`),
+    timestamp: KHE ? new Date(INSPECTED_AT.getTime() + (hour - 3) * 1000) : new Date(`${dayStr}T${pad(hour)}:00:00Z`),
     availability: 9000, performance: 9500, quality: 9900, oee: 8464,
     plannedTime: 480, runTime: 430, idealCycleTime: 30,
     totalCount: 100, goodCount: 99, rejectCount: 1,

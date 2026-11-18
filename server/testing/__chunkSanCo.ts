@@ -33,6 +33,13 @@ export interface TuyChonChonChunk {
    * Không bảng nào thoả ⇒ thử vị trí khác; hết vị trí ⇒ mặc định (như cũ).
    */
   cungBang?: readonly string[];
+  /**
+   * Cột thời gian của các bảng trong `cungBang` (vd. `{ oee_metrics: "timestamp" }`): bảng nào có tên ở đây thì cửa sổ ±nửa-độ-trống quanh mốc cũng phải TRỐNG ở bảng đó
+   * (không chỉ "có chunk") — để ca đếm tuyệt đối trên cả hai bảng không dính hàng của lượt khác. Bảng không có tên ở đây giữ hành vi cũ (chỉ kiểm chunk).
+   */
+  cotCungBang?: Readonly<Record<string, string>>;
+  /** `true`: loại mốc mà cửa sổ ±nửa-độ-trống CHỨA (hoặc bắt đầu đúng) một ranh giờ tròn — để truy vấn lọc theo `bucket_hour >= từ` (khối tổng hợp theo giờ) không bao giờ khớp hàng của khe. */
+  khongChuaGioTron?: boolean;
 }
 
 export interface KetQuaChonChunk {
@@ -44,6 +51,13 @@ export interface KetQuaChonChunk {
 
 const TEN_BANG = /^[a-z_]+$/;
 const TEN_COT = /^[A-Za-z_]+$/;
+const MOT_GIO = 3_600_000;
+
+/** Cửa sổ [at − nua, at + nua] có chứa một ranh giờ tròn (kể cả đúng đầu cửa sổ) không. */
+export function cuaSoChuaGioTron(at: Date, nua: number): boolean {
+  const dau = at.getTime() - nua;
+  return Math.ceil(dau / MOT_GIO) * MOT_GIO <= at.getTime() + nua;
+}
 
 const laNgay = (v: unknown): Date | null => {
   const d = v instanceof Date ? v : typeof v === "string" || typeof v === "number" ? new Date(v) : null;
@@ -69,7 +83,8 @@ export async function chonThoiDiemTrongChunkSanCo(chay: ChayTruyVan, tuyChon: Tu
   const som = new Date(bayGio.getTime() - (tuyChon.dayLuiToiDa ?? 3500) * ngay);
   const nua = tuyChon.nuaDoTrongMs ?? 30_000;
   const cungBang = tuyChon.cungBang ?? [];
-  if (cungBang.some((b) => !TEN_BANG.test(b))) return macDinhVi("ten-bang-cot-khong-hop-le");
+  const cotPhu = tuyChon.cotCungBang ?? {};
+  if (cungBang.some((b) => !TEN_BANG.test(b)) || Object.entries(cotPhu).some(([b, c]) => !TEN_BANG.test(b) || !TEN_COT.test(c))) return macDinhVi("ten-bang-cot-khong-hop-le");
   try {
     // Chỉ ĐỌC. Chunk đã nén bị bỏ (chèn vào chunk nén chậm / bị cấm tuỳ bản).
     // ★ Phương án A (HST duyệt 17/11): nhận cả chunk HIỆN HÀNH — chính sách nén (compress_after 30 ngày) nén chunk k đúng lúc chunk k+1 mới thành "đã qua", nên điều kiện `range_end <= hôm qua` để hở cửa sổ 0–1 ngày mỗi tháng.
@@ -97,6 +112,7 @@ export async function chonThoiDiemTrongChunkSanCo(chay: ChayTruyVan, tuyChon: Tu
     for (const { batDau, ketThuc } of ungVien) {
       for (let k = 0; k < 5; k++) {
         const at = viTriTrongChunk(batDau, ketThuc, ts, k, 2 * nua);
+        if (tuyChon.khongChuaGioTron && cuaSoChuaGioTron(at, nua)) continue;
         const dem = await chay(`select count(*)::int as n from ${bang} where "${cot}" >= $1 and "${cot}" < $2`, [new Date(at.getTime() - nua).toISOString(), new Date(at.getTime() + nua).toISOString()]);
         if (Number(dem[0]?.n ?? 1) !== 0) continue;
         let duMoiBang = true;
@@ -108,6 +124,14 @@ export async function chonThoiDiemTrongChunkSanCo(chay: ChayTruyVan, tuyChon: Tu
           if (co.length === 0) {
             duMoiBang = false;
             break;
+          }
+          const cotKhac = cotPhu[khac];
+          if (cotKhac) {
+            const demKhac = await chay(`select count(*)::int as n from ${khac} where "${cotKhac}" >= $1 and "${cotKhac}" < $2`, [new Date(at.getTime() - nua).toISOString(), new Date(at.getTime() + nua).toISOString()]);
+            if (Number(demKhac[0]?.n ?? 1) !== 0) {
+              duMoiBang = false;
+              break;
+            }
           }
         }
         if (duMoiBang) return { at, nguon: "chunk-san-co", chunk: { batDau, ketThuc } };
