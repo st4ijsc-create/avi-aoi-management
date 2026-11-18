@@ -93,6 +93,8 @@ const PHUT = 60_000;
 const HAN_SOM = 16_000;
 const NUT = { id: 3, code: "node-A" };
 const ADMIN = 1;
+const ADMIN_TAT = 2;
+const NUT2 = { id: 4, code: "node-B" };
 const OWNER = 7;
 let DEF_HIEN: { steps: Array<Record<string, unknown>> } = { steps: [{ id: "s9", type: "command", machineId: 1, command: "stop" }] };
 
@@ -109,16 +111,17 @@ function nap(): void {
   fake.seed(users, [
     { id: ADMIN, role: "admin", isActive: true },
     { id: OWNER, role: "operator", isActive: true },
+    { id: ADMIN_TAT, role: "admin", isActive: false }, // kiem-dinh d15: an inactive admin is never a recipient
   ]);
-  fake.seed(edgeNodes, [{ id: NUT.id, code: NUT.code, name: "A", status: "offline" }]);
+  fake.seed(edgeNodes, [{ id: NUT.id, code: NUT.code, name: "A", status: "offline" }, { id: NUT2.id, code: NUT2.code, name: "B", status: "offline" }]);
 }
 /** an aborted run, `truocMs` ago. `nut`: given to the edge node (its assignment row; `claim` = a token and its progress), else central's own. */
-function run(id: number, truocMs: number, o: { nut?: boolean; claim?: { tienDoTruocMs?: number | null; nhanTruocMs?: number }; tienDoTruocMs?: number; ctx?: Record<string, unknown> } = {}): void {
+function run(id: number, truocMs: number, o: { nut?: boolean; nutId?: number; claim?: { tienDoTruocMs?: number | null; nhanTruocMs?: number }; tienDoTruocMs?: number; ctx?: Record<string, unknown> } = {}): void {
   runs.push({ id, workflowId: 1, status: "aborted", startedBy: OWNER, finishedAt: new Date(NOW - truocMs), contextJson: o.ctx ?? {} });
   if (o.nut)
     asg.push({
       runId: id,
-      edgeNodeId: NUT.id,
+      edgeNodeId: o.nutId ?? NUT.id,
       workflowId: 1,
       workflowVersion: 1,
       defHash: "h",
@@ -164,7 +167,8 @@ const goc = { select: fake.select.bind(fake), insert: fake.insert.bind(fake), up
   const b = goc.select(p);
   const from = b.from;
   b.from = (t: unknown) => {
-    if (H.markerFails && t === notifications) throw new Error("inbox unreadable (test)");
+    // by the table's NAME: the sweep imports the schema again after vi.resetModules (another object), so `t === notifications` never held (kiem-dinh d7)
+    if (H.markerFails && (t as { [k: symbol]: unknown } | null)?.[Symbol.for("drizzle:Name")] === "notifications") throw new Error("inbox unreadable (test)");
     return from(t);
   };
   return b;
@@ -248,6 +252,8 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     vet(41, "s7", VET_G1);
     vet(41, "s6", VET_NUT);
     steps.push({ id: 99, runId: 41, stepId: "s6", stepType: "command", status: "completed", resultJson: { routedTo: "edge", accepted: true }, error: null });
+    vet(41, "s5", VET_NUT); // kiem-dinh s2: its own row COMPENSATED counts as gone too (the picture's prior.completed, EC:376-379)
+    steps.push({ id: 98, runId: 41, stepId: "s5", stepType: "command", status: "compensated", resultJson: { routedTo: "edge", accepted: true }, error: null });
     nap();
     await quet(NOW);
     expect(khoaCua().sort()).toEqual([khoa(41, "s8", "som"), khoa(41, "s9", "som")].sort());
@@ -262,9 +268,13 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     vet(43, "s9", VET_NUT);
     run(44, 60_000, { nut: true, claim: { tienDoTruocMs: 31_000 } }); // stale (30 s): the node does not progress
     vet(44, "s9", VET_NUT);
+    run(45, 60_000, { nut: true, claim: { tienDoTruocMs: null, nhanTruocMs: 5_000 } }); // kiem-dinh s13: just claimed, no progress yet: fresh by claimedAt
+    vet(45, "s9", VET_NUT);
     nap();
     await quet(NOW);
     expect(khoaCua().sort()).toEqual([khoa(42, "s9", "som"), khoa(44, "s9", "som")].sort());
+    // kiem-dinh s6: a stale claim's mark is finishedAt (60 s), never its last progress (31 s): the words say 60 s
+    expect(String(motCanhBao(khoa(44, "s9", "som")).message)).toBe(CHU.A.than(44, "s9", NUT.code, 60, 16, Math.ceil((ABORT_RESEND_WINDOW_MS - 60_000) / PHUT)));
   });
   it("X14-2B-PHUT-CON-LAI <minutesLeft> = ceil(left / 60 000), never 0 or less: 1 ms ⇒ 1, 60 000 ⇒ 1, 60 001 ⇒ 2; 0 left ⇒ no :som; the words [A] to the character", async () => {
     run(51, ABORT_RESEND_WINDOW_MS - 1, { nut: true });
@@ -298,7 +308,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     const a = motCanhBao(khoa(62, "s9", "het"));
     expect(String(a.title)).toBe(CHU.C.tieuDe(62, "s9", NUT.code));
     expect(String(a.message)).toBe(CHU.C.than(62, "s9", NUT.code));
-    expect({ kind: a.kind, entityType: a.entityType, entityId: a.entityId, khuTrungBenVung: a.khuTrungBenVung }).toEqual({ kind: "stop_undelivered", entityType: "orchestration_run", entityId: 62, khuTrungBenVung: {} });
+    expect({ kind: a.kind, entityType: a.entityType, entityId: a.entityId, khuTrungBenVung: a.khuTrungBenVung, retryUntilPersisted: a.retryUntilPersisted }, "kiem-dinh d11: retried until its inbox row lands").toEqual({ kind: "stop_undelivered", entityType: "orchestration_run", entityId: 62, khuTrungBenVung: {}, retryUntilPersisted: { everyMs: 30_000, attempts: 20 } });
     expect([...(a.recipients ?? [])].sort(), "the run's owner and the active admins").toEqual([ADMIN, OWNER].sort());
   });
   // 4 — the durable marker
@@ -321,7 +331,13 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     H.markerFails = true;
     vi.resetModules();
     nap();
-    await quet(NOW);
+    const loi = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await quet(NOW);
+      expect(loi.mock.calls.flat().join(" "), "the marker read REALLY failed (its branch was reached, kiem-dinh d7)").toMatch(/durable-marker read failed/);
+    } finally {
+      loi.mockRestore();
+    }
     expect(khoaCua(), "the marker read failed: never silent").toEqual([khoa(71, "s9", "som")]);
   });
   // 4B (scada-master 17/11, đột biến X14-M3-DAU sống) — the marker is the inbox row, not this process's memory: a restart never alerts a key again
@@ -353,22 +369,29 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     const ack = new Date(NOW - 10_000);
     run(91, 20_000, { nut: true });
     vet(91, "s9", VET_NUT);
-    reqs.push({ id: 7001, kind: "stop", adapterId: 501, edgeNodeId: NUT.id, outcome: "done", ackedAt: ack, centralExecutionId: null, carriedToId: null, createdAt: ack, requestedBy: OWNER });
+    const GOC = { id: 7001, kind: "stop", adapterId: 501, edgeNodeId: NUT.id, outcome: "done", ackedAt: ack, centralExecutionId: null, carriedToId: null, createdAt: ack, requestedBy: OWNER } as const;
+    reqs.push({ ...GOC });
     H.adapterOf.set("s9", 501);
     nap();
     await quet(NOW);
     const a = motCanhBao(khoa(91, "s9", "som"));
     expect(String(a.title)).toBe(CHU.B.tieuDe(91, "s9", NUT.code));
     expect(String(a.message)).toBe(CHU.B.dau(91, "s9", NUT.code, 20, 7001, 501, ack.toISOString()) + CHU.B.duoiSom(Math.ceil((ABORT_RESEND_WINDOW_MS - 20_000) / PHUT)));
+    // kiem-dinh n2–n5, n7, n9 (17/11): each variant from the SAME base (before: each one inherited the previous one's change — "failed" and "central's ack" were read
+    // with an ack before the abort, so they proved nothing)
     for (const [ten, sua] of [
       ["ack before the abort", { ackedAt: new Date(NOW - 30_000), createdAt: new Date(NOW - 30_000) }],
-      ["failed", { outcome: "failed" }],
-      ["central's ack", { centralExecutionId: 5 }],
+      ["failed (n3)", { outcome: "failed" }],
+      ["central's ack (n4)", { centralExecutionId: 5 }],
+      ["not a STOP request: a lock (n2)", { kind: "lock" }],
+      ["carried to another request, not the chain head (n5)", { carriedToId: 7999 }],
+      ["queued before the abort, acknowledged after (n7)", { createdAt: new Date(NOW - 30_000) }],
+      ["another adapter (n9)", { adapterId: 777 }],
     ] as const) {
       H.alerts = [];
       H.inbox = [];
       vi.resetModules();
-      reqs = [{ ...reqs[0]!, ...sua }];
+      reqs = [{ ...GOC, ...sua }];
       nap();
       await quet(NOW);
       expect(String(motCanhBao(khoa(91, "s9", "som")).title), ten).toBe(CHU.A.tieuDe(91, "s9", NUT.code));
@@ -376,7 +399,7 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     H.alerts = [];
     H.inbox = [];
     vi.resetModules();
-    reqs = [{ ...reqs[0]!, ackedAt: ack, createdAt: ack, outcome: "done", centralExecutionId: null }];
+    reqs = [{ ...GOC }];
     H.adapterOf = new Map();
     nap();
     await quet(NOW);
@@ -393,6 +416,38 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     const a = motCanhBao(khoa(92, "s9", "het"));
     expect(String(a.title)).toBe(CHU.B.tieuDe(92, "s9", NUT.code));
     expect(String(a.message)).toBe(CHU.B.dau(92, "s9", NUT.code, Math.round((ABORT_RESEND_WINDOW_MS + 5_000) / 1000), 7002, 501, ack.toISOString()) + CHU.B.duoiHet);
+  });
+  // 6C (kiem-dinh n8, n10, w2; 17/11) — whose request, which one, and for which words
+  it("X14-6C-CHU-NHE-AI another node's acknowledged request never lightens this node's run (n8); of two, the NEWEST acknowledgement is named (n10); the light words are never [F]'s (w2)", async () => {
+    const cu = new Date(NOW - 15_000);
+    const moi = new Date(NOW - 5_000);
+    run(301, 20_000, { nut: true });
+    vet(301, "s9", VET_NUT);
+    run(302, 20_000, { nut: true, nutId: NUT2.id });
+    vet(302, "s8", VET_NUT);
+    H.adapterOf.set("s9", 501).set("s8", 601);
+    reqs.push({ id: 8001, kind: "stop", adapterId: 501, edgeNodeId: NUT2.id, outcome: "done", ackedAt: moi, centralExecutionId: null, carriedToId: null, createdAt: moi, requestedBy: OWNER }); // node B, run 301's adapter
+    reqs.push({ id: 8002, kind: "stop", adapterId: 601, edgeNodeId: NUT2.id, outcome: "done", ackedAt: cu, centralExecutionId: null, carriedToId: null, createdAt: cu, requestedBy: OWNER });
+    reqs.push({ id: 8003, kind: "stop", adapterId: 601, edgeNodeId: NUT2.id, outcome: "done", ackedAt: moi, centralExecutionId: null, carriedToId: null, createdAt: moi, requestedBy: OWNER });
+    nap();
+    await quet(NOW);
+    expect(String(motCanhBao(khoa(301, "s9", "som")).title), "node A's run: node B's request says nothing of it").toBe(CHU.A.tieuDe(301, "s9", NUT.code));
+    expect(String(motCanhBao(khoa(302, "s8", "som")).message), "the newest acknowledgement").toBe(CHU.B.dau(302, "s8", NUT2.code, 20, 8003, 601, moi.toISOString()) + CHU.B.duoiSom(Math.ceil((ABORT_RESEND_WINDOW_MS - 20_000) / PHUT)));
+    // w2 — a node run, not latched, past 15 min, an UNFLAGGED trace (central's own) whose adapter the node acknowledged: still [F], never the light words
+    H.alerts = [];
+    H.inbox = [];
+    vi.resetModules();
+    runs = [];
+    asg = [];
+    steps = [];
+    run(303, ABORT_RESEND_WINDOW_MS + 5_000, { nut: true });
+    vet(303, "s9", VET_G1);
+    const ack = new Date(NOW - ABORT_RESEND_WINDOW_MS);
+    reqs = [{ id: 8004, kind: "stop", adapterId: 501, edgeNodeId: NUT.id, outcome: "done", ackedAt: ack, centralExecutionId: null, carriedToId: null, createdAt: ack, requestedBy: OWNER }];
+    nap();
+    await quet(NOW);
+    const f = motCanhBao(khoa(303, "s9", "het"));
+    expect([String(f.title), String(f.message)]).toEqual([CHU.F.tieuDe(303, "s9"), CHU.F.than(303, "s9")]);
   });
   // 7 — central runs, latched
   it("X14-7-TRUNG-TAM-CHOT a central run latched (by its context, or by its rows) gets no :het ([E]/[F]/[G] say 'Nothing sends it any more': a press still sends it there)", async () => {
@@ -525,6 +580,19 @@ describe("X-14 — the timed STOP alert sweep (canhBaoStopRunQuaHan)", () => {
     expect([String(a.title), String(a.message)]).toEqual([CHU.F.tieuDe(281, "s9"), CHU.F.than(281, "s9")]);
     expect(H.alerts.filter((x) => /^STOP not confirmed/.test(String(x.title))), "never [C]/[D] for it").toEqual([]);
   });
+  // 17 (kiem-dinh s39, 17/11) — only ABORTED runs: a run that ended failed or completed with an `abort:` trace (an Abort that met a run already ended, daKetThuc)
+  // is told by that Abort's own words and URGENT, never by this sweep
+  it("X14-17-CHI-ABORTED a run whose status is not 'aborted' is never swept, whatever its traces", async () => {
+    run(311, 20_000, { nut: true });
+    vet(311, "s9", VET_NUT);
+    runs[runs.length - 1]!.status = "failed";
+    run(312, ABORT_RESEND_WINDOW_MS + 5_000);
+    vet(312, "s9", VET_G1);
+    runs[runs.length - 1]!.status = "completed";
+    nap();
+    await quet(NOW);
+    expect(khoaCua()).toEqual([]);
+  });
   // 13 — refused STOPs of a central run (HST 17/11 câu 2)
   it("X14-13A-TU-CHOI-CHOT-KHONG-HET a central run LATCHED whose STOP was refused (its URGENT 'chot' was the press's): no :het", async () => {
     run(261, ABORT_RESEND_WINDOW_MS + 5_000, { ctx: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { at: "x" } } });
@@ -586,6 +654,9 @@ describe("X-14 — the sweep's source: no dispatcher, no driver, no write of ano
         const ten = ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : "";
         if (CAM.has(ten)) goi.push(ten);
       }
+      // kiem-dinh 17/11: `d["insert"](…)` and `const { insert } = d` are the same call by another spelling
+      if (ts.isElementAccessExpression(n) && ts.isStringLiteralLike(n.argumentExpression) && CAM.has(n.argumentExpression.text)) goi.push(`[${n.argumentExpression.text}]`);
+      if (ts.isBindingElement(n)) for (const x of [n.propertyName, n.name]) if (x && ts.isIdentifier(x) && CAM.has(x.text)) goi.push(`{${x.text}}`);
       n.forEachChild(di);
     };
     di(than!);

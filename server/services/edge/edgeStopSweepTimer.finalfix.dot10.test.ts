@@ -49,7 +49,7 @@ describe("final fix wave I-3 — the undelivered-STOP sweep timer", () => {
   // X-14 ca 12 (tam/x14-thiet-ke.md mục 5; HST 17/11: alertUndeliveredStops runs first) — red before edgeNodeHealthScheduler.ts calls the new sweep
   it("X14-12-HS every tick runs canhBaoStopRunQuaHan AFTER alertUndeliveredStops (never before, never instead); the new sweep throwing never stops the next ticks", async () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const loi = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const saved = process.env.EDGE_NODE_HEALTH_INTERVAL_MS;
     process.env.EDGE_NODE_HEALTH_INTERVAL_MS = "60000";
     S.thuTu = [];
@@ -62,6 +62,8 @@ describe("final fix wave I-3 — the undelivered-STOP sweep timer", () => {
       S.x14Nem = true;
       const n = S.sweeps;
       await vi.waitFor(() => expect(S.sweeps).toBeGreaterThanOrEqual(n + 3), { timeout: 2_000, interval: 10 });
+      // kiem-dinh h4 (17/11): a failure that is NOT "the edge schema is missing" (this file mocks isEdgeUnavailableError ⇒ false) is logged, never swallowed
+      expect(loi.mock.calls.flat().map(String).join(" "), "the new sweep's failure is logged").toMatch(/timed STOP alert sweep failed/);
     } finally {
       stopEdgeNodeHealthChecker();
       S.x14Nem = false;
