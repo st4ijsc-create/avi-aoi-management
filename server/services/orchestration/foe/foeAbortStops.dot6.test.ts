@@ -1133,7 +1133,7 @@ describe("X-15 — a STOP skipped by its precondition (never tried) is sent by t
     return s.runId!;
   }
 
-  it.fails("X15-LUU (stored rows) a run paused after its STOP was skipped by the precondition: the Abort sends that STOP", async () => {
+  it("X15-LUU (stored rows) a run paused after its STOP was skipped by the precondition: the Abort sends that STOP", async () => {
     const runId = await dungSauGate1("x15luu", [boQua(OT_STOP)]);
     expect(stepRow(runId, "stop")?.status).toBe("skipped");
     expect(otCommands().map((c) => c.commandType)).toEqual(["start"]);
@@ -1142,7 +1142,7 @@ describe("X-15 — a STOP skipped by its precondition (never tried) is sent by t
     expect(otCommands().map((c) => c.commandType)).toEqual(["start", "stop"]);
   });
 
-  it.fails("X15-BO-NHO (the walker's memory, E skip) a live run, its rows UNREADABLE at the Abort: the STOP the walk skipped is still sent", async () => {
+  it("X15-BO-NHO (the walker's memory, E skip) a live run, its rows UNREADABLE at the Abort: the STOP the walk skipped is still sent", async () => {
     await deployCu("x15nho", [GATE, START, boQua(OT_STOP), DELAY]);
     const s = await startRun("x15nho", {}, OWNER);
     const walk = resumeRun(s.runId!, { approved: true }, SUP);
@@ -1155,7 +1155,7 @@ describe("X-15 — a STOP skipped by its precondition (never tried) is sent by t
     await walk;
   });
 
-  it.fails("X15-SONG (a live run's earlier segment) skipped before gate1, the next walk is live at its delay: the Abort sends the skipped STOP", async () => {
+  it("X15-SONG (a live run's earlier segment) skipped before gate1, the next walk is live at its delay: the Abort sends the skipped STOP", async () => {
     const runId = await dungSauGate1("x15song", [boQua(OT_STOP)], [DELAY]);
     const walk = resumeRun(runId, { approved: true }, SUP);
     await waitFor(() => stepRow(runId, "d")?.status === "running");
@@ -1164,7 +1164,7 @@ describe("X-15 — a STOP skipped by its precondition (never tried) is sent by t
     await walk;
   });
 
-  it.fails("X15-HOP (G14b) a container skipped by its precondition: ONLY its STOPs are sent; its motion is never sent nor written; its branch never evaluated is listed", async () => {
+  it("X15-HOP (G14b) a container skipped by its precondition: ONLY its STOPs are sent; its motion is never sent nor written; its branch never evaluated is listed", async () => {
     const br = { id: "br", type: "branch", condition: { source: "const", key: "x", op: "eq", value: "x" }, then: [RB_STOP], else: [] };
     const runId = await dungSauGate1("x15hop", [boQua({ id: "box", type: "sequence", steps: [{ ...START, id: "move2" }, OT_STOP, br] })]);
     expect(stepRow(runId, "box")?.status).toBe("skipped");
@@ -1176,7 +1176,7 @@ describe("X-15 — a STOP skipped by its precondition (never tried) is sent by t
     expect(stepRow(runId, "abort:move2")).toBeUndefined();
   });
 
-  it.fails("X15-S3 (3) an approved STOP compensation whose precondition failed (its row `skipped`, keyed by the COMPENSATION's id, not its step's): the Abort sends it", async () => {
+  it("X15-S3 (3) an approved STOP compensation whose precondition failed (its row `skipped`, keyed by the COMPENSATION's id, not its step's): the Abort sends it", async () => {
     const runId = await dungSauGate1("x15s3", [{ ...START, id: "m2", compensation: { ...OT_STOP, id: "cstop" } }]);
     // the row foeEngine writes for S3 (an approved compensation's precondition failed, `skip`): status skipped, stepId = comp.id ("cstop" ≠ "m2")
     (fake.store.get("orchestration_run_steps") as Row[]).push({ id: 9_015, runId, stepId: "cstop", stepType: "command", status: "skipped", attempt: 0, resultJson: null, error: null, startedAt: null, finishedAt: new Date() });
@@ -1209,7 +1209,7 @@ describe("X-15 — a STOP skipped by its precondition (never tried) is sent by t
     expect(otDispatchMock.mock.calls.length).toBe(n);
   });
 
-  it.fails("X15-TU-CHOI (4) a precondition on a STOP step is refused at deploy — every mode, nested, a compensation, an unpinned OT stop, a robot stop", async () => {
+  it("X15-TU-CHOI (4) a precondition on a STOP step is refused at deploy — every mode, nested, a compensation, an unpinned OT stop, a robot stop", async () => {
     const dang: Array<[string, unknown[], string]> = [
       ["skip", [boQua(OT_STOP, "skip")], "stop"],
       ["hold", [boQua(OT_STOP, "hold")], "stop"],
@@ -1234,7 +1234,7 @@ describe("X-15 — a STOP skipped by its precondition (never tried) is sent by t
     expect(s).toMatchObject({ ok: true, status: "awaiting_confirm" });
   });
 
-  it.fails("X15-ROLLBACK (4) a rollback to an old version whose STOP carries a precondition is refused with the same reason", async () => {
+  it("X15-ROLLBACK (4) a rollback to an old version whose STOP carries a precondition is refused with the same reason", async () => {
     await deploy("x15rb", [GATE, START, OT_STOP]);
     const wf = (fake.store.get("orchestration_workflows") ?? []).find((w: Row) => w.ref === "x15rb")!;
     const v1 = (fake.store.get("orchestration_workflow_versions") ?? []).find((v: Row) => v.workflowId === wf.id && v.version === 1)!;

@@ -12294,6 +12294,7 @@
     "awaitingStep": "Bước đang chờ",
     "gateRequired": "Chưa gửi: lệnh này cần một bước duyệt (gate) trước nó trong lượt chạy, do người KHÁC người khởi động lượt chạy duyệt. Thêm bước duyệt trước bước này, triển khai lại và chạy lượt mới.",
     "deployStopAdapterAmbiguous": "Chưa triển khai: bước dừng {{steps}} không xác định được đúng một bộ điều hợp (máy không có hoặc có nhiều bộ điều hợp đang bật, và bước không chỉ định bộ điều hợp). Chỉ định bộ điều hợp cho bước hoặc sửa bộ điều hợp của máy rồi triển khai lại.",
+    "deployStopPrecondition": "Chưa triển khai: bước dừng {{steps}} có điều kiện trước. Bước dừng không bao giờ có điều kiện — bước dừng bị bỏ qua vì điều kiện trước sẽ không bao giờ được gửi. Bỏ điều kiện trước khỏi từng bước dừng rồi triển khai lại.",
     "robot": "Robot",
     "pickRobot": "Chọn robot…",
     "noRobots": "Không có robot nào đang bật trong phạm vi của bạn.",

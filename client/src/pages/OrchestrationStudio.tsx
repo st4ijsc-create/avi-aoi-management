@@ -1606,6 +1606,8 @@ export default function OrchestrationStudio() {
         return t("studio.deployRefTargetStale", "Not deployed: the workflow you opened is no longer available under this ref (deleted or no longer visible to you), and your scope already has a workflow with this ref. Reload the list and open the workflow again, or use another ref.");
       case "stopAdapterAmbiguous": // fix round 2 (R-4-j)
         return t("studio.deployStopAdapterAmbiguous", "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.", { steps });
+      case "stopPrecondition": // X-15 (4) — a STOP is never conditional (G36: the editor still offers a precondition on a STOP step; this refusal is where it is said)
+        return t("studio.deployStopPrecondition", "Not deployed: stop step(s) {{steps}} carry a precondition. A stop step is never conditional — a stop skipped by its precondition is never sent. Remove the precondition from each stop step, then deploy again.", { steps });
       default:
         return null;
     }

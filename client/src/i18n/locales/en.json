@@ -12294,6 +12294,7 @@
     "awaitingStep": "Awaiting step",
     "gateRequired": "Not sent: this command needs an approval gate earlier in the run, approved by someone other than the person who started it. Add a gate before this step, deploy, and start a new run.",
     "deployStopAdapterAmbiguous": "Not deployed: stop step(s) {{steps}} cannot reach a single adapter (the machine has none or several enabled, and the step names no adapter). Set the step's adapter or fix the machine's adapters, then deploy again.",
+    "deployStopPrecondition": "Not deployed: stop step(s) {{steps}} carry a precondition. A stop step is never conditional — a stop skipped by its precondition is never sent. Remove the precondition from each stop step, then deploy again.",
     "robot": "Robot",
     "pickRobot": "Select robot…",
     "noRobots": "No robot in your scope is enabled.",

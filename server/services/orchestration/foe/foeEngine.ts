@@ -423,6 +423,8 @@ export type DefinitionRefusalReason =
   | "robotIdMissing"
   | "robotUnavailable"
   | "robotDisabled"
+  /** X-15 (4) — a STOP step (verified, stop-typed OT not pinned, or a robot stop) carries a precondition: refused at deploy only (never at start, L-7). */
+  | "stopPrecondition"
   /** doc 81 Đợt 5 task E2 — a step touches a machine / robot / adapter outside the deployer's factory scope. */
   | "outOfScope"
   /** doc 81 Đợt 5 task E2 — the ref belongs to an existing workflow that touches targets outside the deployer's scope. */
@@ -1079,6 +1081,7 @@ async function execStep(rc: RunContext, step: WorkflowStep, quaCua = false): Pro
   if (pre) {
     if (pre.kind === "skipped") {
       rc.settled.add(step.id); // doc 81 Đợt 6
+      (rc.boQua ??= new Set()).add(step.id); // X-15 (1) — skipped, never tried: settled for the walk, still owed to an Abort's sweep
       await stopBoundedWrite(stop, rc.runId, step.id, "skipped row", () =>
         rc.store.upsertStep(rc.runId, step.id, step.type, { status: "skipped", finishedAt: new Date() }),
       );
@@ -2522,6 +2525,14 @@ async function definitionRefusal(
       })),
       message: `Stop step(s) ${ambiguous.join(", ")} cannot reach a unique adapter — set args.adapterId or fix the machine's adapters before deploying.`,
     };
+  }
+  // X-15 (4) — a STOP is never conditional: a precondition on a STOP step (any onPreconditionFail) is refused at DEPLOY (a skipped STOP is a STOP that never
+  // went, G14). Deploy only — START (nonStopOnly) never refuses for a STOP step (R-4-w / L-7). A container holding a STOP is not refused (HST 18/11: (1)/(2) send it).
+  const coDieuKien: string[] = [];
+  if (!opts.nonStopOnly) for (const s of allStepsOf(def.steps)) if (s.precondition && (await laStopTheoBuoc(s, machineMap))) coDieuKien.push(s.id);
+  if (coDieuKien.length > 0) {
+    const message = `Stop step(s) ${coDieuKien.join(", ")} carry a precondition — a STOP is never conditional (a skipped STOP is never sent): remove the precondition before deploying.`;
+    return { reason: "stopPrecondition", stepIds: coDieuKien, errors: coDieuKien.map((id) => ({ path: `step:${id}`, message })), message };
   }
   return null;
 }
@@ -6169,7 +6180,8 @@ async function planAbortSweep(src: AbortSweepSource, def: WorkflowDefinition, v:
     for (const s of steps ?? []) {
       // A2(n) T5 — a failed container still holds a STOP in state C: "not settled" of the row alone would not reach it
       const coChuaRa = s.type !== "command" && !!src.chuaRa?.size && allStepsOf([s]).some((x) => src.chuaRa?.has(x.id));
-      if (src.settled(s.id) && !(chot && s.type !== "command") && !coChuaRa) continue; // finished / failed on its own / already on its way to the dispatcher
+      // X-15 (1)/(2) — skipped by a precondition, never tried (a step, or a container: G14b) is NOT finished for the sweep: its STOPs are still sent
+      if (src.settled(s.id) && !(chot && s.type !== "command") && !coChuaRa && !src.boQua?.(s.id)) continue; // finished / failed on its own / already on its way to the dispatcher
       switch (s.type) {
         case "command":
           await classify(s);

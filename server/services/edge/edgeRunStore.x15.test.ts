@@ -28,19 +28,19 @@ describe("X-15 — the node's sweep sources: skipped, never tried (boQua)", () =
     expect(anh.attempted).toContain("y"); // a routedTo result: handed over, so tried
   });
 
-  it.fails("X15-PRIOR-BOQUA central's reading of the same rows (priorStepsOf, the stored and live sources) agrees: skipped ∖ attempted", () => {
+  it("X15-PRIOR-BOQUA central's reading of the same rows (priorStepsOf, the stored and live sources) agrees: skipped ∖ attempted", () => {
     expect([...(priorStepsOf(HANG).boQua ?? [])]).toEqual(["stop"]);
     expect(priorStepsOf(HANG).settled.has("stop")).toBe(true); // still settled for a walk
   });
 
-  it.fails("X15-NUT-ANH (the node's signed sweep picture) boQua is exactly the skipped, never tried step", async () => {
+  it("X15-NUT-ANH (the node's signed sweep picture) boQua is exactly the skipped, never tried step", async () => {
     const store = createEdgeSweepStore({ definition: DINH_NGHIA, machines: [], verifiedStops: [], stopsUnsure: [], prior: anh } as never, { abortStop: () => undefined });
     const src = (await store.sweepSource())!;
     expect(["move", "stop", "x", "y", "nope"].filter((id) => src.boQua?.(id))).toEqual(["stop"]);
     expect(src.settled("stop")).toBe(true); // still settled for a walk: a Continue never runs it again
   });
 
-  it.fails("X15-NUT-SONG (the node's live walker) boQua = what this walk skipped (its memory) + the package's skipped, never tried", async () => {
+  it("X15-NUT-SONG (the node's live walker) boQua = what this walk skipped (its memory) + the package's skipped, never tried", async () => {
     const pkg = { runId: 7, claimSeq: 2, definition: DINH_NGHIA, machines: [], verifiedStops: [], stopsUnsure: [], resolvedAdapters: [], prior: anh, context: {} };
     const store = createEdgeRunStore(pkg as never, { runId: 7, claimSeq: 2 } as never);
     const rc = {

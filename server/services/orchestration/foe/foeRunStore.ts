@@ -80,6 +80,8 @@ export interface PriorSteps {
   attempted: Set<string>;
   /** fix 2 (R-6-c) — true ⇔ the rows could not be read at all (no DB): whether the run acted is UNKNOWN ⇒ counted as acted. */
   unknown: boolean;
+  /** X-15 (1) — rows `skipped` that never left the engine (no dispatcher result): skipped, NEVER tried. A STOP here is still owed to an Abort (G14) */
+  boQua?: Set<string>;
 }
 
 /** The part of the walker's RunContext a store reads (foeEngine.RunContext extends it). */
@@ -100,6 +102,8 @@ export interface RunStoreContext {
   settled: Set<string>;
   prior: PriorSteps;
   attempted: Set<string>;
+  /** X-15 (1) — steps THIS walk skipped (a precondition `skip`) without trying them: still in `settled` (a Continue never runs them again), still owed to an Abort */
+  boQua?: Set<string>;
 }
 
 /** One step-row transition (orchestration_run_steps), exactly what upsertStep takes. */
@@ -181,6 +185,8 @@ export interface AbortSweepSource {
   /** false ⇔ the step rows could not be read: nothing is known settled, every compensation counts as due (STOP direction). */
   rowsKnown: boolean;
   settled: (stepId: string) => boolean;
+  /** X-15 (1) — skipped, never tried (a precondition `skip`): settled for the walker, NOT for the sweep — its STOP (or the STOPs of a skipped container) is still sent */
+  boQua?: (stepId: string) => boolean;
   branchOf: (stepId: string) => "then" | "else" | undefined;
   startOrder: string[];
   /** R-6-b — steps that MAY have been handed to a dispatcher (attempted, whatever the result) — counted conservatively. */
@@ -311,9 +317,11 @@ export function priorStepsOf(rows: ReadonlyArray<{ id?: number; stepId: string; 
   const branches = new Map<string, "then" | "else">();
   const started: Array<{ stepId: string; at: number; id: number }> = [];
   const attempted = new Set<string>();
+  const boQua = new Set<string>();
   for (const r of rows) {
     if (r.stepId.startsWith(ABORT_ROW_PREFIX)) continue;
     const result = (r.resultJson ?? null) as Record<string, unknown> | null;
+    if (r.status === "skipped" && typeof result?.routedTo !== "string") boQua.add(r.stepId); // X-15 (1) — skipped and never handed over: still owed (skipped ∖ attempted)
     // A2(n) T5 — a row in state C is no last word: an Abort and a later walk still have this STOP to send
     // T5 (H16) — nor is a row central could not verify: it says what an edge reported, not that a STOP went
     if (!laHangChuaRa(r) && dauKhongXacNhan(result) === null && (["completed", "skipped", "compensated", "failed"].includes(r.status) || typeof result?.routedTo === "string")) settled.add(r.stepId);
@@ -325,7 +333,7 @@ export function priorStepsOf(rows: ReadonlyArray<{ id?: number; stepId: string; 
     }
   }
   started.sort((a, b) => a.at - b.at || a.id - b.id);
-  return { settled, branches, startOrder: started.map((s) => s.stepId), attempted, unknown: false };
+  return { settled, branches, startOrder: started.map((s) => s.stepId), attempted, unknown: false, boQua };
 }
 
 /** #2 — the STOPs earlier sweeps confirmed sent (pure). fix 3 (M4) — the step id is read from the row's result (the row
@@ -1662,6 +1670,7 @@ async function liveSweepSource(rc: RunStoreContext): Promise<AbortSweepSource> {
     machineById: rc.machineById,
     rowsKnown: true,
     settled: (id) => rc.completed.has(id) || rc.prior.settled.has(id) || rc.settled.has(id) || rc.dispatched.has(id),
+    boQua: (id) => !!rc.boQua?.has(id) || !!rc.prior.boQua?.has(id),
     branchOf: (id) => {
       const b = rc.context[`branch:${id}`];
       return b === "then" || b === "else" ? b : rc.prior.branches.get(id);
@@ -1708,6 +1717,7 @@ async function storedSweepSource(run: OrchestrationRun, hasLiveDriver: (runId: n
     machineById,
     rowsKnown: rows !== null,
     settled: (id) => prior.settled.has(id),
+    boQua: (id) => !!prior.boQua?.has(id),
     branchOf: (id) => {
       const b = context[`branch:${id}`];
       return b === "then" || b === "else" ? b : prior.branches.get(id);

@@ -649,6 +649,8 @@ export class EdgeRunStore extends EdgeStoreBase {
       machineById: rc.machineById,
       rowsKnown: true,
       settled: (id) => rc.completed.has(id) || rc.prior.settled.has(id) || rc.settled.has(id) || rc.dispatched.has(id),
+      // X-15 (1) — skipped, never tried: this walk's memory, or the package's picture (completed ∖ attempted: edgePriorPictureOf counts a skipped row completed, never attempted)
+      boQua: (id) => !!rc.boQua?.has(id) || (this.pkg.prior.completed.includes(id) && !this.pkg.prior.attempted.includes(id)),
       branchOf: (id) => {
         const b = rc.context[`branch:${id}`];
         return b === "then" || b === "else" ? b : rc.prior.branches.get(id);
@@ -814,6 +816,7 @@ export class EdgeSweepStore extends EdgeStoreBase {
       machineById,
       rowsKnown: !p.unknown,
       settled: (id) => settled.has(id),
+      boQua: (id) => p.completed.includes(id) && !p.attempted.includes(id), // X-15 (1) — as the live store: skipped, never tried
       branchOf: (id) => branches.get(id),
       startOrder: [...p.startOrder],
       mayHaveActuated: () => true,
