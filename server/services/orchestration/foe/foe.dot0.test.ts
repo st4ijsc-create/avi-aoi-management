@@ -622,8 +622,48 @@ describe("final fix #9 — run bị abort không để lại hàng ủy quyền"
           },
         ],
       };
-      await deployWorkflow(def, ENGINEER);
+      // X-15 (4) (HST 18/11, (a)) — deploy now REFUSES a precondition on a STOP step: this is an OLD definition, active before that refusal
+      // (deployed without it — that deploy must succeed —, then its stored row carries it; startRun reads the row). Every assertion below unchanged.
+      expect((await deployWorkflow({ ...def, steps: [{ ...def.steps[0], precondition: undefined }] } as WorkflowDefinition, ENGINEER)).ok).toBe(true);
+      (fake.store.get("orchestration_workflows") ?? []).find((w: Record<string, any>) => w.ref === "abort-before-auth")!.definitionJson.steps = def.steps;
       const res = await startRun("abort-before-auth", {}, ENGINEER);
+      expect(aborted).toBe(true);
+      expect(res.status).toBe("aborted");
+      expect(dispatched()).toEqual([]);
+      expect(fake.store.get("ai_pending_actions") ?? []).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("X-15 (b, HST 18/11) the same with a NON-STOP command, through a real deploy: abort during its precondition ⇒ 0 commands, 0 ai_pending_actions", async () => {
+    const mod = await import("../../equipment/equipmentAdapter");
+    let aborted = false;
+    const spy = vi.spyOn(mod.equipmentRegistry, "getAdapter").mockReturnValue({
+      kind: "ot-opcua",
+      delegatesTo: "ot",
+      testConnection: async () => ({ ok: true }),
+      readTelemetry: async () => {
+        if (!aborted) {
+          aborted = true;
+          const runId = runRows()[0].id as number;
+          expect((await abortRun(runId, SUP, "dung truoc lenh")).ok).toBe(true);
+        }
+        return [{ key: "ok", value: 1 }];
+      },
+      sendCommand: async (cmd: { name: string }) => {
+        await otDispatchMock({ commandType: cmd.name } as never);
+        return { ok: true, routedTo: "ot-dispatcher", status: "simulated" };
+      },
+    } as never);
+    try {
+      const def: WorkflowDefinition = {
+        ref: "abort-before-auth-b",
+        name: "AbortBeforeAuthB",
+        steps: [{ id: "b", type: "command", machineId: 1, command: "start", precondition: { source: "telemetry", machineId: 1, key: "ok", op: "eq", value: 1 } }],
+      };
+      expect((await deployWorkflow(def, ENGINEER)).ok).toBe(true); // a precondition on a NON-STOP step is never refused (X-15 (4) is about STOP steps only)
+      const res = await startRun("abort-before-auth-b", {}, ENGINEER);
       expect(aborted).toBe(true);
       expect(res.status).toBe("aborted");
       expect(dispatched()).toEqual([]);

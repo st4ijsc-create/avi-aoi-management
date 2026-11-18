@@ -1176,13 +1176,48 @@ describe("X-15 — a STOP skipped by its precondition (never tried) is sent by t
     expect(stepRow(runId, "abort:move2")).toBeUndefined();
   });
 
-  it("X15-S3 (3) an approved STOP compensation whose precondition failed (its row `skipped`, keyed by the COMPENSATION's id, not its step's): the Abort sends it", async () => {
+  it("X15-S3 (3) CA GÀI (a seeded row, not the S3 road — that road: X15-G38-DUONG-THAT) an approved STOP compensation whose precondition failed (its row `skipped`, keyed by the COMPENSATION's id, not its step's): the Abort sends it", async () => {
     const runId = await dungSauGate1("x15s3", [{ ...START, id: "m2", compensation: { ...OT_STOP, id: "cstop" } }]);
-    // the row foeEngine writes for S3 (an approved compensation's precondition failed, `skip`): status skipped, stepId = comp.id ("cstop" ≠ "m2")
+    // CA GÀI (HST 18/11, G38): the row foeEngine writes for S3 (an approved compensation's precondition failed, `skip`) is SEEDED: status skipped, stepId = comp.id ("cstop" ≠ "m2")
     (fake.store.get("orchestration_run_steps") as Row[]).push({ id: 9_015, runId, stepId: "cstop", stepType: "command", status: "skipped", attempt: 0, resultJson: null, error: null, startedAt: null, finishedAt: new Date() });
     const ab = await abortRun(runId, SUP);
     expect(ab.abortStops?.sent).toEqual(["cstop"]);
     expect(otCommands().map((c) => c.commandType)).toEqual(["start", "start", "stop"]);
+  });
+
+  it("X15-G38-DUONG-THAT (3) the S3 road itself (G38): a latched run, two compensations approved by ONE Continue — cA (a STOP whose precondition fails) is skipped, cB stops at its gate; the Abort at that gate sends cA", async () => {
+    const DK = { precondition: { source: "param", key: "never", op: "eq", value: true }, onPreconditionFail: "skip" };
+    const cB = { id: "cB", type: "sequence", steps: [{ id: "gB", type: "hitl_gate", prompt: "B" }, { ...START, id: "rB" }] };
+    const box = (cA: unknown) => ({ id: "box", type: "parallel", steps: [{ ...START, id: "x", compensation: cA }, { ...START, id: "y", command: "pause", compensation: cB }] });
+    await deployCu("x15g38", [GATE, box({ ...OT_STOP, id: "cA", ...DK })]);
+    const goc = otDispatchMock.getMockImplementation()!;
+    // x's outcome is UNKNOWN (timeout) ⇒ the run latches; y is refused (a known failure): both compensations are held for a person
+    otDispatchMock.mockImplementation(async (input?: unknown) => {
+      const t = (input as { commandType: string }).commandType;
+      order.push(`ot:${t}`);
+      if (t === "start" || t === "pause") return { ok: false, simulated: false, status: (t === "start" ? "timeout" : "rejected") as never, results: [], commandLogIds: [] };
+      return { ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] };
+    });
+    const tag = (fake.store.get("device_tags") as Row[]).find((r) => r.id === 9001)!;
+    fake.store.set("permissions", [{ id: 912, userId: SUP.id, category: "machine", moduleName: "machine_control", canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false, expiresAt: null }]);
+    tag.stopValue = false; // the pins differ while the run walks: at the split cA is no pinned STOP ⇒ held like any compensation (N3b's shape)
+    ghimThat.bat = true;
+    try {
+      const s = await startRun("x15g38", {}, OWNER);
+      expect((await resumeRun(s.runId!, { approved: true }, SUP)).status).toBe("held");
+      expect([stepRow(s.runId!, "cA")?.status, stepRow(s.runId!, "cB")?.status]).toEqual(["held", "held"]);
+      // ONE Continue approves both: cA's precondition fails ⇒ skipped, never sent; cB stops at its gate ⇒ the run is not ended
+      expect((await resumeRun(s.runId!, { approved: true, note: "checked on site" }, SUP, {}, { scope: null } as never)).status).toBe("awaiting_confirm");
+      expect(stepRow(s.runId!, "cA")?.status).toBe("skipped");
+      expect(otCommands().map((c) => c.commandType)).toEqual(["start", "pause"]);
+      tag.stopValue = true; // the pins are back: the Abort's verifier reads cA as a pinned STOP
+      const ab = await abortRun(s.runId!, SUP);
+      expect(ab.abortStops?.sent).toEqual(["cA"]);
+      expect(otCommands().map((c) => c.commandType)).toEqual(["start", "pause", "stop"]);
+    } finally {
+      otDispatchMock.mockImplementation(goc);
+      ghimThat.bat = false;
+    }
   });
 
   it("X15-DC-CONTINUE (control: why `settled` is kept) a Continue past gate1 never runs the skipped STOP again", async () => {
