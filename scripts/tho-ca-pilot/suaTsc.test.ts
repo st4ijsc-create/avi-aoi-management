@@ -2,7 +2,7 @@
  * Lượt sửa tsc (một lượt, sau L3c) — khoá thẻ `LƯỢT SỬA TSC`, bốn hàm thuần trong kiemChung.ts, và nhánh gọi trong chayMotViec.
  * Test thuần: driver, tsc và lệnh kiểm đều là bản giả; chỉ dùng git trong thư mục tạm. KHÔNG chạm DB, mạng, mô hình.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -22,7 +22,14 @@ describe("khoá thẻ LƯỢT SỬA TSC", () => {
     expect(co.ok && co.the.suaTsc).toBe(true);
     for (const van of [goc, `${goc}\nLƯỢT SỬA TSC: 0`]) {
       const r = docTheViec(van);
+      expect(r.ok).toBe(true); // '0' là giá trị HỢP LỆ (không bị từ chối), chỉ không bật
       expect(r.ok && "suaTsc" in r.the).toBe(false);
+    }
+  });
+  it("giá trị '1' có khoảng trắng đuôi hoặc dòng trống cuối thẻ vẫn được nhận", () => {
+    for (const van of [`${goc}\nLƯỢT SỬA TSC: 1   `, `${goc}\nLƯỢT SỬA TSC: 1\n`, `${goc}\nLƯỢT SỬA TSC:   1  \n\n`]) {
+      const r = docTheViec(van);
+      expect(r.ok && r.the.suaTsc).toBe(true);
     }
   });
   it("giá trị khác 0/1 ⇒ thẻ bị từ chối với lý do nêu khoá", () => {
@@ -49,6 +56,9 @@ describe("nganSachSuaTsc — phần CÒN LẠI của trần thẻ, không cộng
   const t = tranThe({ luotModel: 20, phut: 20 });
   it("thẻ 20 lượt/20 phút, đã dùng 7 lượt và 53 s ⇒ còn 13 lượt, 1147 s", () => {
     expect(nganSachSuaTsc(t, 1200, 7, 53)).toEqual({ gioiHan: { soLuotToiDa: 13, msToiDa: 1_147_000 }, hanGiay: 1147 });
+  });
+  it("giây model có phần lẻ ⇒ hạn làm tròn XUỐNG (không vượt phần còn lại): 1200 − 53,4 = 1146,6 ⇒ 1146", () => {
+    expect(nganSachSuaTsc(t, 1200, 7, 53.4)).toEqual({ gioiHan: { soLuotToiDa: 13, msToiDa: 1_146_000 }, hanGiay: 1146 });
   });
   it("biên: còn đúng 2 lượt ⇒ cho; còn 1 ⇒ không", () => {
     expect(nganSachSuaTsc(t, 1200, 18, 0)?.gioiHan.soLuotToiDa).toBe(2);
@@ -136,15 +146,16 @@ afterEach(() => fs.rmSync(goc, { recursive: true, force: true }));
 
 type Goi = { lenh: string; hanGiay: number; gioiHanLuot?: unknown };
 /** Lượt 1 ghi BAI và báo `soLuot` lượt model đã dùng; lượt 2 (nếu có) chạy `sua`. */
-const lamDriver = (soLuot: number, sua?: () => void) => {
+const lamDriver = (soLuot: number, sua?: () => void, them: { ketQua1?: Record<string, unknown>; tienGiay?: number } = {}) => {
   const goi: Goi[] = [];
   const drv: Driver = async (v) => {
     goi.push({ lenh: v.lenh, hanGiay: v.hanGiay, gioiHanLuot: v.gioiHanLuot });
     if (goi.length === 1) {
       fs.mkdirSync(path.join(wt, "client/src/lib"), { recursive: true });
       fs.writeFileSync(path.join(wt, TEP), BAI);
+      if (them.tienGiay) vi.setSystemTime(Date.now() + them.tienGiay * 1000); // đồng hồ tiêm vào (chỉ Date), không đổi mã sản xuất
     } else sua?.();
-    return { ghiChu: [], vong: 1, token: { cache: null, prompt: null, soLuotModel: goi.length === 1 ? soLuot : 3 }, hetGio: false } as never;
+    return { ghiChu: [], vong: 1, token: { cache: null, prompt: null, soLuotModel: goi.length === 1 ? soLuot : 3 }, hetGio: false, ...(goi.length === 1 ? them.ketQua1 : {}) } as never;
   };
   return { drv, goi };
 };
@@ -269,5 +280,78 @@ describe("chayMotViec — lượt sửa tsc", () => {
     const r = await chay(the(CO), drv, lamKiem().f, lamTsc(DO, XANH).f);
     expect(goi).toHaveLength(1);
     expect(r).toMatchObject({ ketCuc: "kiem-do", coLuotSua: false });
+  });
+
+  it("driver lượt đầu KHÔNG báo số lượt model (token null, hoặc thiếu soLuotModel) ⇒ không biết đã dùng bao nhiêu ⇒ không lượt sửa (không đoán là 0)", async () => {
+    for (const token of [null, { cache: null, prompt: null }]) {
+      const { drv, goi } = lamDriver(7, undefined, { ketQua1: { token } });
+      const r = await chay(the(CO), drv, lamKiem().f, lamTsc(DO, XANH).f);
+      expect(goi).toHaveLength(1);
+      expect(r).toMatchObject({ ketCuc: "kiem-do", coLuotSua: false });
+      expect(r.luuY?.join("\n")).toContain("LƯỢT SỬA TSC: không áp");
+      fs.rmSync(path.join(wt, TEP), { force: true }); // lần lặp sau bắt đầu từ cây sạch
+      git(wt, "reset", "-q");
+      git(wt, "checkout", "-q", "--", ".");
+    }
+  });
+
+  it("tsc đỏ nhưng KHÔNG dòng lỗi nào thuộc tệp đổi và được phép ⇒ không có lời nhắc ⇒ không gọi driver lần hai", async () => {
+    const { drv, goi } = lamDriver(7, () => fs.writeFileSync(path.join(wt, TEP), BAI_SUA));
+    const loiLa = tsc({ loiTrongTep: [`${TEP}x(3,5): error TS2345: tiền tố giống nhưng là tệp khác`], tongLoi: 1 });
+    const r = await chay(the(CO), drv, lamKiem().f, lamTsc(loiLa, XANH).f);
+    expect(goi).toHaveLength(1);
+    expect(r).toMatchObject({ ketCuc: "kiem-do", coLuotSua: false });
+    expect(r.luuY?.join("\n")).toContain("LƯỢT SỬA TSC: không áp");
+  });
+
+  it("lượt sửa ghi tệp được phép nhưng đổi sang CRLF ⇒ vi-pham, lý do nêu số tệp CRLF", async () => {
+    const { drv } = lamDriver(7, () => fs.writeFileSync(path.join(wt, TEP), BAI_SUA.replace(/\n/g, "\r\n")));
+    const t = lamTsc(DO, XANH);
+    const r = await chay(the(CO), drv, lamKiem().f, t.f);
+    expect(r.ketCuc).toBe("vi-pham");
+    expect(r.sauSuaTsc?.lyDo).toBe("sửa tsc: 0 vi phạm diff, 1 tệp CRLF sau lượt sửa");
+    expect(r.luotSua).toMatchObject({ viPham: 0, crlf: 1 });
+    expect(t.dem()).toBe(1);
+  });
+
+  it("driver lượt sửa trả `loi` (không phải hết giờ) ⇒ kiem-do, hong 'lượt sửa lỗi: …', không chạy lại tsc", async () => {
+    let n = 0;
+    const drv: Driver = async () => {
+      if (n++ === 0) {
+        fs.mkdirSync(path.join(wt, "client/src/lib"), { recursive: true });
+        fs.writeFileSync(path.join(wt, TEP), BAI);
+        return { ghiChu: [], vong: 1, token: { cache: null, prompt: null, soLuotModel: 7 }, hetGio: false } as never;
+      }
+      return { ghiChu: [], vong: 0, token: null, hetGio: false, loi: "mất kết nối model" } as never;
+    };
+    const t = lamTsc(DO, XANH);
+    const r = await chay(the(CO), drv, lamKiem().f, t.f);
+    expect(r).toMatchObject({ ketCuc: "kiem-do", luotSua: { hong: "lượt sửa lỗi: mất kết nối model" } });
+    expect(r.sauSuaTsc?.lyDo).toBe("lượt sửa lỗi: mất kết nối model");
+    expect(t.dem()).toBe(1);
+  });
+});
+
+describe("chayMotViec — lượt sửa tsc: thời gian chờ NGƯỜI duyệt không ăn vào trần (đồng hồ Date tiêm bằng fake timers)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-18T03:00:00Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("★ tổng 1180 s trong đó chờ duyệt 1100 s ⇒ thời gian MODEL 80 s ⇒ còn 1120 s: lượt sửa CÓ chạy, driver nhận hanGiay 1120 (không phải hạn đầy đủ 1200)", async () => {
+    const { drv, goi } = lamDriver(7, () => fs.writeFileSync(path.join(wt, TEP), BAI_SUA), { tienGiay: 1180, ketQua1: { duyet: { soLanCho: 3, soChapNhan: 3, soTuChoi: 0, giayChoDuyet: 1100 } } });
+    const r = await chay(the(CO), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(goi).toHaveLength(2);
+    expect(goi[1]!.hanGiay).toBe(1120);
+    expect(goi[1]!.gioiHanLuot).toEqual({ soLuotToiDa: 13, msToiDa: 1_120_000 });
+    expect(r).toMatchObject({ ok: true, coLuotSua: true, giayTuong: 1180, giayKhongChoNguoi: 80 });
+  });
+
+  it("đối chứng: cùng 1180 s nhưng KHÔNG có thời gian chờ duyệt ⇒ model đã dùng 1180 s, còn 20 s < 30 ⇒ không lượt sửa", async () => {
+    const { drv, goi } = lamDriver(7, () => fs.writeFileSync(path.join(wt, TEP), BAI_SUA), { tienGiay: 1180 });
+    const r = await chay(the(CO), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(goi).toHaveLength(1);
+    expect(r).toMatchObject({ ketCuc: "kiem-do", coLuotSua: false, giayTuong: 1180 });
   });
 });
