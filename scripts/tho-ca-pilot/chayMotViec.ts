@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 import { chuanDuong, docTheViec, kiemDiffTheoThe, quetChamDb, tepTestTrongLenh, type TheViec, type ViPhamDiff } from "./theViec";
 import { dongBaoTran, gioiHanChoLuot, tinhTranLuot, type GioiHanLuotChoDriver, type TranLuotKetQua } from "./tranLuot";
 import { apDungDotBien, kiemDotBienTrenBase, quetGhimNghiNgo, quetKhangDinhCam, tepTestDoi, type KetQuaDotBien } from "./dotBien";
-import { canChayTsc, canSuaTsc, caTestGiam, chayLenhTsc, loiNhacSuaTsc, nganSachSuaTsc, giaTriBiMatTuUrl, taoChayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
+import { canChayTsc, canSuaTsc, caTestGiam, chayLenhTsc, loiNhacSuaTsc, nganSachSuaTsc, soDemGiam, giaTriBiMatTuUrl, taoChayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
 
 export type TenDriver = "kho" | "cli" | "host";
 
@@ -408,10 +408,10 @@ function thuTepDoi(wt: string, boQuaAgentsMd = true): string[] {
   return ra.sort();
 }
 
-function demDong(wt: string, tep: string[]): { them: number; xoa: number } {
+function demDong(wt: string, tep: string[], soVoiHead = true): { them: number; xoa: number } {
   let them = 0;
   let xoa = 0;
-  const r = git(["diff", "--numstat", "HEAD", "--", ...tep], wt);
+  const r = git(["diff", "--numstat", ...(soVoiHead ? ["HEAD"] : []), "--", ...tep], wt);
   for (const dong of r.out.split("\n")) {
     const m = /^(\d+|-)\t(\d+|-)\t/.exec(dong);
     if (m) {
@@ -674,14 +674,17 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
       if (ns && nhac) {
         nhatKy(`L3c: tsc đỏ — MỘT lượt sửa kiểu (còn ${ns.gioiHan.soLuotToiDa} lượt model, ${ns.hanGiay} s)`);
         const caTruoc = tepTest;
+        const nguon = () => caTruoc.map((c) => { try { return fs.readFileSync(path.join(wt, c.duong), "utf8"); } catch { return ""; } }).join("\n");
+        const nguonTruoc = nguon();
+        git(["add", "--", ...caTruoc.map((c) => c.duong)], wt); // mốc index để đếm dòng RIÊNG của lượt sửa
         const t2 = Date.now();
         const kq2 = await goiDriver(nhac, ns.hanGiay, ns.gioiHan);
         for (const g of kq2.ghiChu) nhatKy(g);
         ({ tepDoi, dong, viPham, ghimNghiNgo, crlf } = thu());
         tepTest = demTepTest(wt, tepDoi);
-        const giam = caTestGiam(caTruoc, tepTest);
+        const giam = [...caTestGiam(caTruoc, tepTest), ...soDemGiam(nguonTruoc, nguon())];
         const hong = kq2.hetGio || kq2.loi ? `lượt sửa ${kq2.hetGio ? "hết giờ" : `lỗi: ${kq2.loi}`}` : null;
-        luotSua = { soLuotModel: kq2.token?.soLuotModel ?? null, giay: Math.round((Date.now() - t2) / 100) / 10, ...(hong ? { hong } : {}), ...(giam.length > 0 ? { giamCa: giam } : {}), viPham: viPham.length, crlf: crlf.length };
+        luotSua = { soLuotModel: kq2.token?.soLuotModel ?? null, giay: Math.round((Date.now() - t2) / 100) / 10, ...(hong ? { hong } : {}), ...(giam.length > 0 ? { giamCa: giam } : {}), dongSua: demDong(wt, caTruoc.map((c) => c.duong), false), viPham: viPham.length, crlf: crlf.length };
         const kiemTruoc = kiem;
         if (viPham.length > 0 || crlf.length > 0) qd = { ketCuc: "vi-pham", lyDo: `sửa tsc: ${viPham.length} vi phạm diff, ${crlf.length} tệp CRLF sau lượt sửa` };
         else if (giam.length > 0) qd = { ketCuc: "kiem-do", lyDo: `sửa tsc làm GIẢM ca test: ${giam.join("; ")}` };

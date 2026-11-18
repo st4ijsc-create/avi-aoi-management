@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { chayMotViec, type Driver } from "./chayMotViec";
-import { canSuaTsc, caTestGiam, loiNhacSuaTsc, nganSachSuaTsc, type ChayKiem, type KetQuaTsc } from "./kiemChung";
+import { canSuaTsc, caTestGiam, loiNhacSuaTsc, nganSachSuaTsc, soDemGiam, type ChayKiem, type KetQuaTsc } from "./kiemChung";
 import { docTheViec } from "./theViec";
 import { tinhTranLuot } from "./tranLuot";
 
@@ -114,6 +114,28 @@ describe("caTestGiam — chốt chống 'sửa kiểu bằng cách bỏ ca'", ()
   });
 });
 
+describe("soDemGiam — số `.each(` và `expect(` không được giảm (it.each đếm 1 cho cả bảng nên caTestGiam không thấy)", () => {
+  const goc = 'it.each([1, 2, 3])("n %i", (n) => {\n  expect(n).toBeGreaterThan(0);\n});\nit("b", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n});\n';
+  it("không đổi, hoặc tăng cả hai ⇒ rỗng", () => {
+    expect(soDemGiam(goc, goc)).toEqual([]);
+    expect(soDemGiam(goc, `${goc}it.each([4])("m", () => { expect(4).toBe(4); });\n`)).toEqual([]);
+  });
+  it("mất `.each(` (3 expect, 1 each) ⇒ nêu tên số và trước→sau", () => {
+    expect(soDemGiam(goc, goc.replace("it.each([1, 2, 3])", "it.skip.foo([1, 2, 3])"))).toEqual(["số lần `.each(`: 1→0"]);
+  });
+  it("mất một `expect(` ⇒ nêu số expect 3→2; mất cả hai ⇒ `.each(` đứng trước", () => {
+    expect(soDemGiam(goc, goc.replace("  expect(2).toBe(2);\n", ""))).toEqual(["số lần `expect(`: 3→2"]);
+    expect(soDemGiam(goc, "")).toEqual(["số lần `.each(`: 1→0", "số lần `expect(`: 3→0"]);
+  });
+  it("biên từ: `myexpect(`, `expect.soft(`, `expectation(` KHÔNG tính là `expect(`; `test.each(` và `describe.each(` tính là `.each(`", () => {
+    expect(soDemGiam("myexpect(1); expect.soft(2); expectation(3);\n", "")).toEqual([]);
+    expect(soDemGiam('test.each([1])("a", () => {});\ndescribe.each([1])("b", () => {});\n', "")).toEqual(["số lần `.each(`: 2→0"]);
+  });
+  it("thêm ép kiểu / đổi chỗ expect, số lượng giữ nguyên ⇒ rỗng (sửa kiểu hợp lệ không bị chặn)", () => {
+    expect(soDemGiam(goc, goc.replace("expect(1)", "expect(1 as number)").replace("(n) =>", "(n: number) =>"))).toEqual([]);
+  });
+});
+
 // ── nhánh gọi trong chayMotViec (driver / tsc / lệnh kiểm giả) ─────────────────────────────────────
 const git = (cwd: string, ...a: string[]) => spawnSync("git", a, { cwd, encoding: "utf8" }).stdout.trim();
 const TEP = "client/src/lib/a.test.ts";
@@ -146,13 +168,13 @@ afterEach(() => fs.rmSync(goc, { recursive: true, force: true }));
 
 type Goi = { lenh: string; hanGiay: number; gioiHanLuot?: unknown };
 /** Lượt 1 ghi BAI và báo `soLuot` lượt model đã dùng; lượt 2 (nếu có) chạy `sua`. */
-const lamDriver = (soLuot: number, sua?: () => void, them: { ketQua1?: Record<string, unknown>; tienGiay?: number } = {}) => {
+const lamDriver = (soLuot: number, sua?: () => void, them: { ketQua1?: Record<string, unknown>; tienGiay?: number; bai?: string } = {}) => {
   const goi: Goi[] = [];
   const drv: Driver = async (v) => {
     goi.push({ lenh: v.lenh, hanGiay: v.hanGiay, gioiHanLuot: v.gioiHanLuot });
     if (goi.length === 1) {
       fs.mkdirSync(path.join(wt, "client/src/lib"), { recursive: true });
-      fs.writeFileSync(path.join(wt, TEP), BAI);
+      fs.writeFileSync(path.join(wt, TEP), them.bai ?? BAI);
       if (them.tienGiay) vi.setSystemTime(Date.now() + them.tienGiay * 1000); // đồng hồ tiêm vào (chỉ Date), không đổi mã sản xuất
     } else sua?.();
     return { ghiChu: [], vong: 1, token: { cache: null, prompt: null, soLuotModel: goi.length === 1 ? soLuot : 3 }, hetGio: false, ...(goi.length === 1 ? them.ketQua1 : {}) } as never;
@@ -193,7 +215,7 @@ describe("chayMotViec — lượt sửa tsc", () => {
     expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
     expect(r.truocSuaTsc).toMatchObject({ ketCuc: "kiem-do" });
     expect(r.sauSuaTsc).toEqual({ ketCuc: "xong", lyDo: null });
-    expect(r.luotSua).toMatchObject({ soLuotModel: 3, viPham: 0, crlf: 0 });
+    expect(r.luotSua).toMatchObject({ soLuotModel: 3, viPham: 0, crlf: 0, dongSua: { them: 1, xoa: 1 } }); // riêng lượt sửa: đúng 1 dòng it("b") đổi, không lẫn 3 dòng của lượt đầu
     expect(r.luotSua).not.toHaveProperty("giamCa");
     expect(r.luuY).not.toContain(DANH_DAU); // lượt sửa chạy đủ ⇒ kiem/tsc là kết quả SAU, không đánh dấu
     expect(k.dem()).toBe(2); // lệnh kiểm chạy lại sau lượt sửa
@@ -329,6 +351,34 @@ describe("chayMotViec — lượt sửa tsc", () => {
     expect(r).toMatchObject({ ketCuc: "kiem-do", luotSua: { hong: "lượt sửa lỗi: mất kết nối model" } });
     expect(r.sauSuaTsc?.lyDo).toBe("lượt sửa lỗi: mất kết nối model");
     expect(t.dem()).toBe(1);
+  });
+});
+
+describe("chayMotViec — lượt sửa tsc: chốt thứ hai (số `.each(` và `expect(` không giảm)", () => {
+  const BAI_EACH = `import { it } from "vitest";\nit.each([1, 2])("n %i", (n) => {\n  expect(n).toBeGreaterThan(0);\n});\nit("b", () => {\n  expect(1).toBe(1);\n});\n`;
+  const lam = (sua: string) => lamDriver(7, () => fs.writeFileSync(path.join(wt, TEP), sua), { bai: BAI_EACH });
+
+  it("★ lượt sửa đổi `it.each(` thành `it(` (số ca it( không đổi 2→2, expect không đổi) ⇒ kiem-do, lý do nêu `.each(` 1→0; không chạy lại tsc", async () => {
+    const { drv } = lam(BAI_EACH.replace("it.each([1, 2])(", "it("));
+    const t = lamTsc(DO, XANH);
+    const r = await chay(the(CO), drv, lamKiem().f, t.f);
+    expect(r).toMatchObject({ ok: false, ketCuc: "kiem-do" });
+    expect(r.sauSuaTsc?.lyDo).toBe("sửa tsc làm GIẢM ca test: số lần `.each(`: 1→0");
+    expect(r.luotSua).toMatchObject({ giamCa: ["số lần `.each(`: 1→0"] });
+    expect(t.dem()).toBe(1);
+  });
+
+  it("★ lượt sửa XOÁ một dòng `expect(` (số ca it( không đổi) ⇒ kiem-do, lý do nêu `expect(` 2→1", async () => {
+    const { drv } = lam(BAI_EACH.replace("  expect(1).toBe(1);\n", ""));
+    const r = await chay(the(CO), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(r).toMatchObject({ ok: false, ketCuc: "kiem-do" });
+    expect(r.sauSuaTsc?.lyDo).toBe("sửa tsc làm GIẢM ca test: số lần `expect(`: 2→1");
+  });
+
+  it("★ sửa kiểu HỢP LỆ (thêm ép kiểu, số `.each(` và `expect(` giữ nguyên) KHÔNG bị chặn ⇒ xong; dongSua phản ánh đúng 2 dòng đổi", async () => {
+    const { drv } = lam(BAI_EACH.replace("(n) =>", "(n: number) =>").replace("expect(1)", "expect(1 as number)"));
+    const r = await chay(the(CO), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true, luotSua: { dongSua: { them: 2, xoa: 2 } } });
   });
 });
 

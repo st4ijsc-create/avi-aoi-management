@@ -409,6 +409,12 @@ export function caTestGiam(truoc: ReadonlyArray<{ duong: string; soCa: number }>
   return truoc.filter((t) => (s.get(t.duong) ?? 0) < t.soCa).map((t) => `${t.duong}: ${t.soCa}→${s.get(t.duong) ?? 0}`);
 }
 
+/** Chốt thứ hai (it.each đếm 1 cho cả bảng): sau lượt sửa, số lần `.each(` và `expect(` (gộp mọi tệp test) không được GIẢM. THUẦN; trả "tên: trước→sau". */
+export function soDemGiam(truoc: string, sau: string): string[] {
+  const dem = (s: string, re: RegExp) => (s.match(re) ?? []).length;
+  return ([["số lần `.each(`", /\.each\(/g], ["số lần `expect(`", /\bexpect\(/g]] as const).flatMap(([ten, re]) => (dem(sau, re) < dem(truoc, re) ? [`${ten}: ${dem(truoc, re)}→${dem(sau, re)}`] : []));
+}
+
 export type ChayKiem = (lenh: string, wt: string, hanGiay: number) => Promise<KetQuaKiem>;
 
 /** Chạy LỆNH KIỂM thật: shell, cwd = worktree pilot, env DB chết, hạn giờ riêng (giết cả cây tiến trình khi hết hạn). */
