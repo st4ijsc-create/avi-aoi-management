@@ -226,3 +226,48 @@ describe("resolveDefectForClass — classRules null hoặc {}", () => {
     expect(resolveDefectForClass(defect, "3").accept).toBe("reject");
   });
 });
+
+// Bổ sung của người rà (dieu-phoi, 18/11) theo kiem-dinh: hai khoảng trống e2, x1 — commit riêng, không sửa commit của Thợ Cả.
+describe("resolveDefectForClass — bổ sung: verdict \"process\" và severity hàng vắng ở nhánh tường minh", () => {
+  it("luật tường minh mang accept \"process\" ⇒ kết quả \"process\", explicit = true (cấp 2 và cấp 3)", () => {
+    const defect = {
+      code: "B1",
+      severity: "major",
+      acceptanceClass: "1",
+      classRules: {
+        class2: { accept: "process" as const, limit: "lim-2" },
+        class3: { accept: "process" as const, notes: "note-3" },
+      },
+    };
+    expect(resolveDefectForClass(defect, "2")).toEqual({
+      accept: "process",
+      severity: "major",
+      limit: "lim-2",
+      notes: undefined,
+      explicit: true,
+    });
+    expect(resolveDefectForClass(defect, "3")).toEqual({
+      accept: "process",
+      severity: "major",
+      limit: undefined,
+      notes: "note-3",
+      explicit: true,
+    });
+  });
+
+  it("nhánh tường minh: luật thiếu severity và hàng KHÔNG có trường severity (vắng) ⇒ \"minor\"", () => {
+    const defect = {
+      code: "B2",
+      acceptanceClass: "3",
+      classRules: { class2: { accept: "accept" as const }, class3: { accept: "reject" as const } },
+    };
+    const r2 = resolveDefectForClass(defect, "2");
+    expect(r2.severity).toBe("minor");
+    expect(r2.explicit).toBe(true);
+    expect(r2.accept).toBe("accept");
+    const r3 = resolveDefectForClass(defect, "3");
+    expect(r3.severity).toBe("minor");
+    expect(r3.explicit).toBe(true);
+    expect(r3.accept).toBe("reject");
+  });
+});
