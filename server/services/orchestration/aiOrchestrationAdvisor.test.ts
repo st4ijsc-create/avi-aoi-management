@@ -234,3 +234,56 @@ describe("HITL purity — the advisor never deploys or runs", () => {
     expect(code).not.toMatch(/\bstartRun\s*\(/);
   });
 });
+
+// ═══ X-19 — the planner prompts never advise a precondition / interlock on a STOP step ══════════════════════════════════════════════
+// A stop / abort step must always be able to run (a precondition on it can keep a machine from stopping). The advice to put a HUMAN gate before risky actions, and
+// preconditions on START steps, stays. These cases lock the text actually SENT to the model (captured at the generateJSON mock), not the source.
+describe("X-19 — prompt wording: a stop step never carries a precondition", () => {
+  const NEVER = "a stop / abort step NEVER carries a precondition or interlock";
+  const current: WorkflowDefinition = { ref: "line-a", name: "Line A", steps: [{ id: "a", type: "command", machineId: 1, command: "start" }] };
+  const sentPrompt = (): string => String((generateJSON.mock.calls[0]![1] as { prompt: string }).prompt);
+
+  async function design(): Promise<string> {
+    mockReturn(validRaw());
+    await suggestWorkflow({ goal: "g", machines: MACHINES, lang: "en" });
+    return sentPrompt();
+  }
+  async function optimize(): Promise<string> {
+    mockReturn(validRaw());
+    await optimizeWorkflow({ workflow: current, machines: MACHINES, lang: "en" });
+    return sentPrompt();
+  }
+
+  it("★ design prompt: states that a stop / abort step NEVER carries a precondition or interlock, and puts preconditions on START steps only", async () => {
+    const p = await design();
+    expect(p).toContain(NEVER); // verbatim, case-sensitive
+    expect(p).toContain("Add a precondition/interlock only on START steps");
+    // the OLD wording (precondition advised alongside start/stop/abort) is gone
+    expect(p).not.toContain("start/stop/abort, and a precondition/interlock");
+  });
+
+  it("★ optimize prompt: same rule; interlocks/preconditions are for START steps only", async () => {
+    const p = await optimize();
+    expect(p).toContain(NEVER); // verbatim, case-sensitive
+    expect(p).toContain("interlocks/preconditions on START steps only");
+    expect(p).not.toMatch(/add missing safety\s+interlocks\/preconditions, add hitl_gate/);
+  });
+
+  it("★ the human-gate advice is KEPT: hitl_gate before high-risk start/stop/abort (design) and before risky actions (optimize)", async () => {
+    expect(await design()).toContain("prefer adding a hitl_gate before high-risk start/stop/abort");
+    generateJSON.mockClear();
+    expect(await optimize()).toContain("add hitl_gate before risky actions");
+  });
+
+  it("★ no sentence of either prompt recommends adding a precondition/interlock to stop or abort: every 'precondition/interlock' recommendation names START, every mention near stop/abort is the NEVER rule", async () => {
+    for (const p of [await design(), (generateJSON.mockClear(), await optimize())]) {
+      const flat = p.replace(/\s+/g, " ");
+      const sentences = flat.split(/(?<=[.;])\s+/);
+      for (const sen of sentences) {
+        if (!/precondition|interlock/i.test(sen) || !/stop|abort/i.test(sen)) continue;
+        // the only sentence allowed to mention both is the prohibition itself, matched VERBATIM (case-sensitive: "never" would not pass)
+        expect(sen, sen).toContain(NEVER);
+      }
+    }
+  });
+});
