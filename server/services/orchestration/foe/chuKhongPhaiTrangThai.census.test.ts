@@ -682,6 +682,7 @@ const DONG_BANG: readonly DongDongBang[] = [
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "edgeResumeStateOf", dang: "goi:loiLaKetCucKhongRo", chu: "loiLaKetCucKhongRo(error)", ma: "A1-15", lyDo: "edgeResumeStateOf (:2246): cờ khongRo từ chữ lỗi" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "edgeResumeStateOf", dang: "goi:loiLaKetCucKhongRo", chu: "loiLaKetCucKhongRo(c?.error)", ma: "A1-15", lyDo: "edgeResumeStateOf: cờ khongRo từ chữ bù trừ" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "edgeResumeStateOf", dang: "goi:laLoiKhongGuiChot", chu: "laLoiKhongGuiChot(error)", ma: "A1-13", lyDo: "edgeResumeStateOf (:2249): compensationHeld / doneFailed" },
+  { tep: "server/services/orchestration/foe/workflowModel.ts", ham: "duyet", dang: ".includes", chu: "id.includes(DAU_HIEU_RIENG_STEP_ID)", ma: "SG-1", lyDo: "luật mã bước MỚI của main (kiemTraKyTuIdBuoc, hàm trong duyet; X-06): kiểm ĐẦU VÀO lúc deploy / nhân bản, từ chối id chứa dấu [[A2N; không suy trạng thái run hay STOP từ chữ, không gửi hay chặn STOP nào; id lọt qua thì rider bị đọc thiếu ⇒ fail-closed (QUYET_DINH_MOC lần 6, SG-1)" },
   { tep: "server/services/ot/commandDispatcher.ts", ham: "hangThietBi", dang: "goi:maTienTo", chu: "maTienTo(r.errorText)", ma: "A1-33", lyDo: "hangThietBi: mã đầu errorText ⇒ hàng thiết bị hay không gửi" },
   { tep: "server/services/ot/commandDispatcher.ts", ham: "ketQuaPhatLai", dang: "goi:maTienTo", chu: "maTienTo(existing.errorText)", ma: "A1-34", lyDo: "ketQuaPhatLai: reason phát lại từ mã đầu errorText" },
   { tep: "server/services/ot/drivers/ethernetIpDriver.ts", ham: "EthernetIpDriver.readOne", dang: "goi:laQuaHanThuVienEip", chu: "laQuaHanThuVienEip(err)", ma: "A1-37", lyDo: "readOne: chữ lỗi thư viện EIP ⇒ phiên nhiễm" },
@@ -737,10 +738,11 @@ const DONG_BANG: readonly DongDongBang[] = [
 // QUYET_DINH_MOC lần 4 (chu-du-an-HST, 2026-11-14): mốc LICH_SU_MOC = 181 = 180 + MOI-37 (held() gọi quyetDinhKetDoanEdge; hàm vào HAM_TRUNG_GIAN; A1-3, A1-19 chỉ đổi
 // văn bản khoá do tách hàm thuần, bước 3); số chạy thật của kiem-dinh trên 5c335119a + 28307c87. Ghim lại phần tử đầu. Từ đây chỉ được GIẢM.
 // QUYET_DINH_MOC lần 5 (chu-du-an-HST, 2026-11-17, uỷ quyền 17/11; mã X-14/1): mốc = 182 = 181 + 1 (canhBaoStopRunQuaHan gọi chotTuHang, B-6)
-const MOC_GOC = 182;
-const LICH_SU_MOC: readonly number[] = [182];
+// QUYET_DINH_MOC lần 6 (chu-du-an-HST, 2026-11-18; mã SG-1, hàng X-22): mốc = 183 = 182 + 1 (luật mã bước của main gộp vào A2(n): workflowModel.ts duyet, id.includes(DAU_HIEU_RIENG_STEP_ID))
+const MOC_GOC = 183;
+const LICH_SU_MOC: readonly number[] = [183];
 /** Mốc số dòng đóng băng: bằng phần tử cuối của `LICH_SU_MOC`, chỉ được GIẢM. */
-const SO_DONG_MOC = 182;
+const SO_DONG_MOC = 183;
 
 /**
  * HST 14/11 T2-DK1 — "ngoài tầm" không được thành "ngoài sổ". 21 ô của bảng kiểm kê mà census KHÔNG bắt được (không có phép so chữ để bắt:
