@@ -1,0 +1,12 @@
+{
+  "id": "H-ts1",
+  "kieu": "ma-don",
+  "bo": "tasks-hard",
+  "lang": "ts",
+  "ten": "LRU-TTL",
+  "nguon": {
+    "tep": "tasks-hard.json",
+    "id": "H-ts1"
+  },
+  "canDb": false
+}

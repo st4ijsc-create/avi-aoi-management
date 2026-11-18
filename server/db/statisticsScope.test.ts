@@ -42,9 +42,12 @@
  * Cửa sổ dữ liệu là một lát 2 GIÂY sinh từ `Date.now()` nên KHÔNG đụng dữ liệu của file kiểm
  * khác (vitest chạy song song theo file) và cũng không cộng dồn qua các lần chạy.
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { taoNguoiDungTest } from "../testing/nguoiDungTest";
 import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
+import { chonThoiDiemTrongChunkSanCo, coChunkChuaThoiDiem, type ChayTruyVan } from "../testing/__chunkSanCo";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import superjson from "superjson";
@@ -53,6 +56,53 @@ import { getDb } from "./connection";
 import { clearAssignmentCache } from "../_core/accessControl";
 import { users, measurementPointDefs, type InsertUser } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// GIAO DỊCH HOÀN TÁC — toàn bộ fixture nằm trong MỘT giao dịch drizzle mở suốt tệp, kết thúc bằng ROLLBACK
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// `getDb` (mock) trả về `tx` của giao dịch ấy. `createProductInspection` tự mở `db.transaction(...)`: trên `tx` việc đó thành SAVEPOINT
+// (không COMMIT giao dịch ngoài) nên ROLLBACK cuối cùng hoàn tác được cả nhà máy / xưởng / dây chuyền / trạm / máy / trạm công đoạn / model sản phẩm / người dùng.
+// Không DELETE, không TRUNCATE, không dùng owner `aoi`.
+class HoanTacCuoiTep extends Error {}
+const holder: { db: unknown } = { db: null };
+vi.mock("./connection", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getDb: async () => holder.db,
+}));
+let phienGiaoDich: ReturnType<typeof postgres> | null = null;
+let moKhoaHoanTac: () => void = () => undefined;
+let giaoDichXong: Promise<void> = Promise.resolve();
+
+async function moGiaoDichHoanTac(): Promise<void> {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("statisticsScope.test: thiếu DATABASE_URL (CSDL _test)");
+  phienGiaoDich = postgres(url, { max: 1, onnotice: () => undefined });
+  const choHoanTac = new Promise<void>((xong) => {
+    moKhoaHoanTac = xong;
+  });
+  await new Promise<void>((sanSang, thatBai) => {
+    giaoDichXong = drizzle(phienGiaoDich!)
+      .transaction(async (tx) => {
+        holder.db = tx;
+        sanSang();
+        await choHoanTac;
+        throw new HoanTacCuoiTep();
+      })
+      .then(
+        () => undefined,
+        (e: unknown) => {
+          if (!(e instanceof HoanTacCuoiTep)) thatBai(e);
+        },
+      );
+  });
+}
+
+afterAll(async () => {
+  holder.db = null;
+  moKhoaHoanTac();
+  await giaoDichXong;
+  if (phienGiaoDich) await phienGiaoDich.end({ timeout: 5 });
+}, 60_000);
 
 // ══════════════════════════════════════════════════════════════════════════════════════════
 // PHẦN A — LIỆT KÊ: đọc chính mã nguồn `statistics.ts`
@@ -122,9 +172,28 @@ const CORP_B = `SS_CORP_B_${ts}`;
  * Một lát 2 GIÂY trong quá khứ, vị trí sinh từ `ts` ⇒ hai lần chạy (hay hai file kiểm chạy song
  * song) không bao giờ dùng chung lát. Nhờ vậy các hàm KHÔNG có trục máy/điểm đo
  * (`getShiftStats`, `getNGComparisonDirect`, `getYieldRateByCorporate`, …) vẫn đếm được CHÍNH
- * XÁC. Mọi hàng nằm cùng một ngày 2017-11-08 nên không sinh thêm chunk Timescale mỗi lần chạy.
+ * XÁC.
+ *
+ * ★ 17/11 — KHÔNG ĐƯỢC TẠO CHUNK MỚI TRONG GIAO DỊCH DÀI: `product_inspections` là hypertable chunk 1 THÁNG có khoá ngoại → `machines`; chèn vào khoảng thời gian chưa có chunk ⇒ Timescale tạo chunk và giữ
+ * `ShareRowExclusiveLock` trên `machines` tới hết giao dịch (~29 s của tệp này) ⇒ `INSERT machines` của worker khác chờ tới `statement_timeout` 30 s (apiKeyTenantScope hết giờ). Chunk tạo trong giao dịch bị ROLLBACK
+ * cũng bị huỷ ⇒ lần nào cũng tạo lại. Nên lát 2 giây được đặt vào một chunk ĐÃ CÓ (đọc chỉ-đọc `timescaledb_information.chunks` TRƯỚC khi mở giao dịch; `server/testing/__chunkSanCo.ts`), ở vị trí ngẫu nhiên theo
+ * `ts` và đã kiểm KHÔNG có hàng nào trong ±30 s. Không có chunk phù hợp ⇒ rơi về ngày 2017-11-08 như cũ (và `nguonThoiDiem` nói thẳng lý do).
  */
-const AT = new Date(Date.UTC(2017, 10, 8) + (ts % 86_400_000));
+async function chonLatCoChunkSanCo() {
+  const macDinh = new Date(Date.UTC(2017, 10, 8) + (ts % 86_400_000));
+  const url = process.env.DATABASE_URL;
+  if (!url) return { at: macDinh, nguon: "mac-dinh:khong-co-DATABASE_URL", coChunkHomNay: null as boolean | null };
+  const cli = postgres(url, { max: 1, onnotice: () => undefined });
+  try {
+    const chay: ChayTruyVan = async (c, p) => (await cli.unsafe(c, p as never[])) as unknown as Array<Record<string, unknown>>;
+    const chon = await chonThoiDiemTrongChunkSanCo(chay, { bang: "product_inspections", cot: "inspectionTime", ts, macDinh });
+    return { at: chon.at, nguon: chon.nguon, coChunkHomNay: await coChunkChuaThoiDiem(chay, "product_inspections", new Date()) };
+  } finally {
+    await cli.end({ timeout: 5 });
+  }
+}
+const THOI_DIEM = await chonLatCoChunkSanCo();
+const AT = THOI_DIEM.at;
 const WINDOW_START = new Date(AT.getTime() - 1000);
 const WINDOW_END = new Date(AT.getTime() + 1000);
 /** Kỳ "trước" của hai hàm so sánh — cố ý RỖNG, ca kiểm chỉ neo vào kỳ "hiện tại". */
@@ -176,6 +245,11 @@ async function mkInspection(
 }
 
 beforeAll(async () => {
+  // Nói thẳng nơi nào còn có thể tạo chunk mới trong giao dịch dài (nhật ký đo khoá): lát cũ rơi về mặc định, hoặc tháng hiện tại chưa có chunk.
+  if (THOI_DIEM.nguon !== "chunk-san-co" || THOI_DIEM.coChunkHomNay === false) {
+    console.warn(`[statisticsScope] có thể TẠO CHUNK MỚI trong giao dịch dài (giữ khoá machines): lát=${THOI_DIEM.nguon}; chunk tháng hiện tại có sẵn=${String(THOI_DIEM.coChunkHomNay)}`);
+  }
+  await moGiaoDichHoanTac();
   // Mã nhà máy = FAC_A để `factoryId` (resolveFactoryCode) và `factoryCode` trên bản ghi kiểm
   // trỏ về cùng một thứ.
   factoryId = await db.createFactory({ code: FAC_A, name: "Stats scope fac" });
@@ -279,7 +353,7 @@ const cmpWin = {
   previousStartDate: PREV_START,
   previousEndDate: PREV_END,
 };
-/** Đủ xa để trùm cả lát 2017 lẫn các hàng "hôm nay" của máy riêng. */
+/** Đủ xa để trùm cả lát cũ (chunk có sẵn trong 3500 ngày gần đây, hoặc 2017 khi rơi về mặc định) lẫn các hàng "hôm nay" của máy riêng. */
 const DAYS_BACK = 4000;
 const HOURS_BACK = 100_000;
 
@@ -333,6 +407,10 @@ const PROBES: Probe[] = [
 
   { fn: "searchInspections", admin: 5, userA: 2,
     run: async (w) => { const r = await db.searchInspections({ ...win, machineCode, ...w }); return { n: Number(r.total), res: r }; } },
+
+  // Q0-3 (dọn vệ sinh): KPI toàn khoảng của trang Lịch sử — CÙNG điều kiện với searchInspections (một hàm dùng chung) ⇒ cùng số hàng thấy được.
+  { fn: "summarizeInspections", admin: 5, userA: 2,
+    run: async (w) => { const r = await db.summarizeInspections({ ...win, machineCode, ...w }); return { n: Number(r.total), res: r }; } },
 
   { fn: "getTopNGMeasurementPoints", admin: 2, userA: 1,
     run: async (w) => {

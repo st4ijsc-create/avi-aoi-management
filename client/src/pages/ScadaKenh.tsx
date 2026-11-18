@@ -22,6 +22,7 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
 import { ChipTruyenThong } from "@/components/scada/ChipTruyenThong";
+import { VungUrgentBen } from "@/components/scada/VungUrgentBen";
 import { PageHeader, PageContainer, SectionCard, EmptyState } from "@/components/patterns";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -82,6 +83,7 @@ export default function ScadaKenh() {
     <DashboardLayout title={t("scada.kenh.title")} navItems={navItems} currentPath="/scada/config/channels">
       <PageContainer fluid>
         <PageHeader icon={<SlidersHorizontal className="h-6 w-6" />} title={t("scada.kenh.title")} description={t("scada.kenh.subtitle")} actions={<ChipTruyenThong />} />
+        <VungUrgentBen />
 
         <SectionCard title={t("scada.kenh.cheDo.tieuDe")} description={t("scada.kenh.cheDo.moTa")} contentClassName="overflow-x-auto">
           {cheDoQ.isLoading ? (

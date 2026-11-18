@@ -1,0 +1,12 @@
+{
+  "id": "A2-oc5",
+  "kieu": "ma-don",
+  "bo": "tasks-api2",
+  "lang": "cs",
+  "ten": "DocOpc",
+  "nguon": {
+    "tep": "tasks-api2.json",
+    "id": "A2-oc5"
+  },
+  "canDb": false
+}

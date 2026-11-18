@@ -1,0 +1,12 @@
+{
+  "id": "A2-ms3",
+  "kieu": "ma-don",
+  "bo": "tasks-api2",
+  "lang": "tsql",
+  "ten": "KhungMuoiLamPhut",
+  "nguon": {
+    "tep": "tasks-api2.json",
+    "id": "A2-ms3"
+  },
+  "canDb": false
+}

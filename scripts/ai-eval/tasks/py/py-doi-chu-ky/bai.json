@@ -1,0 +1,13 @@
+{
+  "id": "py-doi-chu-ky",
+  "kieu": "agent-f",
+  "bo": "agent-dai",
+  "lang": "py",
+  "ten": "Đổi chữ ký hàm dùng ở 6 nơi trong 5 module (có gọi qua partial và qua tham số hàm), thêm 2 dataclass, giữ hành vi",
+  "nguon": {
+    "tep": "agent-f/bai.json",
+    "id": "py-doi-chu-ky"
+  },
+  "duAn": "sandbox-projects/agent-f/py-doi-chu-ky",
+  "canDb": false
+}

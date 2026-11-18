@@ -1,0 +1,13 @@
+{
+  "id": "cs-dat-phong",
+  "kieu": "agent-f",
+  "bo": "agent-f",
+  "lang": "cs",
+  "ten": "Đặt phòng lặp lại hằng tuần, tất cả-hoặc-không, ngoại lệ xung đột mới, mã chuỗi + huỷ cả chuỗi",
+  "nguon": {
+    "tep": "agent-f/bai.json",
+    "id": "cs-dat-phong"
+  },
+  "duAn": "sandbox-projects/agent-f/cs-dat-phong",
+  "canDb": false
+}

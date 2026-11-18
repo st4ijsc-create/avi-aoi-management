@@ -18,6 +18,8 @@ const H = vi.hoisted(() => ({
   trangMount: vi.fn(),
 }));
 vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: H.user }) }));
+// Lớp QUYỀN của Provider có test riêng (khongGoiThuTucThieuQuyen.dom.test.tsx); ở đây đủ quyền để chỉ kiểm cổng theo cờ posture.
+vi.mock("@/_core/hooks/usePermissions", () => ({ usePermissions: () => ({ hasPermission: () => true }) }));
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     oversight: {

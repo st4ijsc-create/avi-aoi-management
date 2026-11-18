@@ -12,6 +12,7 @@
  * "your workspace" row (authed) · brand footer.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
 import { getLoginUrl } from "@/const";
@@ -29,14 +30,16 @@ import { DOMAINS } from "@/lib/domains";
 
 // ─── Live plant-health strip ───────────────────────────────────────────────────
 // Reuses the SAME aggregation the Command Center uses (commandCenter.kpiSummary)
-// so Home never invents numbers. Honest "—" when a source is unavailable; if the
-// query errors (e.g. the viewer lacks machine_monitoring), we render nothing loud
-// — the query is best-effort and additive.
+// so Home never invents numbers. Honest "—" when a source is unavailable. Viewer lacking
+// machine_monitoring ⇒ the procedure is NOT called (it would be FORBIDDEN inside the batch)
+// and the strip shows the plain "available to monitoring roles" notice instead.
 function PlantHealthStrip() {
   const { t } = useTranslation();
+  const { hasPermission } = usePermissions();
+  const coQuyen = hasPermission("machine_monitoring", "canView");
   const kpiQ = trpc.commandCenter.kpiSummary.useQuery(
     {},
-    { refetchInterval: 30_000, staleTime: 10_000, retry: false, refetchOnWindowFocus: false },
+    { enabled: coQuyen, refetchInterval: 30_000, staleTime: 10_000, retry: false, refetchOnWindowFocus: false },
   );
   const kpi = kpiQ.data;
 
@@ -55,7 +58,7 @@ function PlantHealthStrip() {
   const sitesTotal = kpi?.sites.available ? kpi.sites.value?.total ?? 0 : null;
 
   // The viewer cannot read the estate KPIs — say so plainly rather than fake it.
-  if (kpiQ.isError) {
+  if (!coQuyen || kpiQ.isError) {
     return (
       <div className="rounded-xl border bg-card/60 px-4 py-3 text-sm text-muted-foreground">
         {t("home.kpiNoAccess", "Live plant health is available to monitoring roles.")}

@@ -32,6 +32,7 @@
 
 import Aedes from 'aedes';
 import { createServer } from 'aedes-server-factory';
+import { boDocHetVaoBroker } from './mqttDocHet';
 import { readFileSync } from 'fs';
 import {
   BrokerTlsError,
@@ -1768,6 +1769,7 @@ export function initMqttBroker(listen: MqttListenOptions = {}) {
   
   // Create Aedes broker
   aedes = new Aedes();
+  boDocHetVaoBroker(aedes);
 
   // doc 81 dot 1B task 10 — `listen` lets a test bind 127.0.0.1 + port 0 through THIS
   // function; production passes nothing ⇒ 0.0.0.0 + MQTT_PORT/MQTT_WS_PORT exactly as before.

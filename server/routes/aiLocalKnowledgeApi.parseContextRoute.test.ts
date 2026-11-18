@@ -132,3 +132,11 @@ describe("§Đợt 9 — context.kiemBienDichST", () => {
     expect(parseContext({ codingMode: true })?.kiemBienDichST).toBeUndefined();
   });
 });
+
+describe("§T1 — context.tuKiemMa", () => {
+  it("★★★ CHỈ `true` được nhận; mọi giá trị khác bị bỏ", () => {
+    expect(parseContext({ codingMode: true, tuKiemMa: true })?.tuKiemMa).toBe(true);
+    for (const v of [false, "true", 1, null, {}]) expect(parseContext({ codingMode: true, tuKiemMa: v })?.tuKiemMa).toBeUndefined();
+    expect(parseContext({ codingMode: true })?.tuKiemMa).toBeUndefined();
+  });
+});

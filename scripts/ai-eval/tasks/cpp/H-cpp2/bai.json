@@ -1,0 +1,12 @@
+{
+  "id": "H-cpp2",
+  "kieu": "ma-don",
+  "bo": "tasks-hard",
+  "lang": "cpp",
+  "ten": "SapXepTopo",
+  "nguon": {
+    "tep": "tasks-hard.json",
+    "id": "H-cpp2"
+  },
+  "canDb": false
+}

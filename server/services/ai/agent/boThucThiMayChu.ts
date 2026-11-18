@@ -99,6 +99,7 @@ import {
   type MotEdit,
   type NguCanhThucThi,
   type ThayDoiTep,
+  type WireTool,
 } from "@shared/agentCore";
 import { daBiTuChoiGhi, docKetQuaTest, maTuChoiGhi } from "@shared/aiCodingLoop";
 import { executeDecision as executeDecisionGoc, type PendingActionDTO, type ToolExecContext, type ToolResult } from "../../aiLocalTools";
@@ -124,6 +125,8 @@ import { dinhDangKetQuaApi, traApiMacDinh, type NgonNguApi, type TraApi } from "
 import { goiYTraApiTuDauRa, tuTraApiBat } from "../apiRef/goiYLoiBienDich";
 import { cheDoCompileStTacNhan } from "../st/kiemBienDichSt";
 import type { KhoDauRaDai } from "./khoDauRaDai";
+import { goiYLenhTuChoi } from "./goiYLenhTuChoi";
+import { TRAN_BYTE_DOC_CSV, TRAN_DONG_DOC_CSV, csvBat } from "../../aiLocalTools/csvTrongDuAn";
 import { laDuAnPlc } from "./nhanDienDuAnPlc";
 
 /** Lý do gắn vào audit của `confirmAction` cho một lượt ghi KHÔNG người bấm của chế độ `tu-dong`. */
@@ -415,7 +418,20 @@ export function phanQuyetLenhTuDong(
   return { ok: true, nhan: kc.nhan, duongCham };
 }
 
-function cauTuChoiLenhTuDong(ma: "AUTOLOOP_TAT" | "LENH_CAN_DUYET_TAY", chiTiet: string): string {
+/**
+ * Công tắc `AI_AGENT_GOI_Y_LENH` (HA-4 lệnh): chỉ `1` bật. MẶC ĐỊNH TẮT — lời từ chối giữ NGUYÊN TỪNG BYTE như trước HA-4 cho tới khi có A/B GPU
+ * (đổi chữ trong kết quả tool = đổi byte gửi model ⇒ phát lại fixture H4.2 lệch, và các lượt model sau trong fixture không còn đại diện hành vi mới;
+ * `server/testing/phatLaiFixture.test.ts` bắt đúng loại đổi này). Bật ⇒ phải ghi lại fixture ở cửa sổ GPU.
+ */
+export function goiYLenhBat(giaTri: string | undefined): boolean {
+  return giaTri === "1";
+}
+
+/**
+ * `lenh` (tuỳ chọn) = chuỗi lệnh model đã gửi — CHỈ để `goiYLenhTuChoi` chọn gợi ý DẠNG ĐƯỢC PHÉP (HA-4 lệnh); không chép vào câu. Vắng ⇒ như cũ.
+ * Cờ `AI_AGENT_GOI_Y_LENH` (đọc TẠI CHỖ GỌI) tắt ⇒ KHÔNG gợi ý, câu y hệt bản cũ.
+ */
+export function cauTuChoiLenhTuDong(ma: "AUTOLOOP_TAT" | "LENH_CAN_DUYET_TAY", chiTiet: string, lenh?: unknown): string {
   if (ma === "AUTOLOOP_TAT")
     return (
       "Refused in automatic mode: running commands without approval is disabled on this server (AI_CODING_AUTOLOOP is off). " +
@@ -428,13 +444,15 @@ function cauTuChoiLenhTuDong(ma: "AUTOLOOP_TAT" | "LENH_CAN_DUYET_TAY", chiTiet:
       "just run `dotnet test <project>`; a package not on this machine fails with NU1101 and needs the user to approve " +
       "`dotnet restore` in 'Edit' mode. Do not create or edit obj/project.assets.json by hand."
     : "";
+  const goiYDang = goiYLenhBat(process.env.AI_AGENT_GOI_Y_LENH) ? goiYLenhTuChoi(lenh) : "";
   return (
     `Refused in automatic mode: this command needs manual approval (${chiTiet}).${goiYRestore} Only test/build verification commands ` +
     "(e.g. node --test <path>, npx vitest run <path>, dotnet build|test <path>, python -m pytest|unittest <path>, " +
     "javac -d <out> <files|dir>, java -cp <out> <TestClass>, cmake -S . -B <build>, cmake --build <build>, ctest --test-dir <build>, " +
     "go test|build|vet ./..., cargo test|build|check --offline) run without approval, " +
     "and never commands that rewrite source files (dotnet format). The command was NOT run. Use a verification command, " +
-    "or tell the user to run this one in 'Edit' mode."
+    "or tell the user to run this one in 'Edit' mode." +
+    (goiYDang === "" ? "" : ` ${goiYDang}`)
   );
 }
 
@@ -501,6 +519,21 @@ const bamNoiDung = (s: string): string => createHash("sha256").update(s).digest(
 /** Công tắc `AI_AGENT_DOC_TRUOC_KHI_GHI`: chỉ `1` bật (mặc định TẮT — hành vi cũ từng byte). */
 export function docTruocKhiGhiBat(giaTri: string | undefined): boolean {
   return giaTri === "1";
+}
+
+/**
+ * B1 `.csv` — dòng mô tả thêm cho tool `read_file` khi cờ `AI_AGENT_CSV_DOC=1` (để model khỏi dò lệnh khác): `.csv` chỉ đọc bằng `read_file`, đường chính xác, trong thư mục dự án;
+ * `find_files` / `grep` không quét `.csv`. KHÔNG đổi gì khi cờ tắt (từng byte). Thuần.
+ */
+export function moTaDocCsv(t: WireTool): WireTool {
+  if (t.function.name !== "read_file") return t;
+  return {
+    ...t,
+    function: {
+      ...t.function,
+      description: `${t.function.description} .csv files can only be read with read_file, by exact path inside the project directory (first ${TRAN_DONG_DOC_CSV} lines / ${TRAN_BYTE_DOC_CSV / 1024} KB); find_files and grep do not scan .csv files.`,
+    },
+  };
 }
 
 export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
@@ -605,7 +638,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
       const tho = docThoTrongHopCat(gocDuAn, duong);
       if (tho.ok && tho.tonTai) ghiNhanBam(duong, tho.noiDung);
     }
-    const d = (result.data ?? {}) as { path?: string; bytes?: number; truncated?: boolean; redacted?: boolean; content?: string };
+    const d = (result.data ?? {}) as { path?: string; bytes?: number; truncated?: boolean; redacted?: boolean; content?: string; csv?: { rows?: number; cutByLines?: boolean } };
     const dau = typeof t.start_line === "number" ? t.start_line : undefined;
     const cuoi = typeof t.end_line === "number" ? t.end_line : undefined;
     const so = danhSoDong(String(d.content ?? ""), { dau, cuoi });
@@ -613,6 +646,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     if (so.tongDong === 0 || (so.tongDong === 1 && String(d.content ?? "") === "")) ghiChu.push("empty file");
     if (dau !== undefined || cuoi !== undefined || so.catBot) ghiChu.push(`showing lines ${so.dauThat}-${so.cuoiThat}`);
     if (d.truncated) ghiChu.push(`TRUNCATED: only the first ${String(d.content ?? "").length} of ${d.bytes} bytes could be read`);
+    if (d.csv && d.truncated) ghiChu.push(`CSV cap (${TRAN_BYTE_DOC_CSV} bytes / ${TRAN_DONG_DOC_CSV} lines): only the first ${d.csv.rows} rows are shown, cut after line ${d.csv.rows} (byte ${Buffer.byteLength(String(d.content ?? ""))} of ${d.bytes}); later lines are NOT visible and cannot be read further with this tool`);
     if (d.redacted) ghiChu.push("some secret-looking strings are shown as [REDACTED_…] and cannot be edited");
     const dauDong = `${d.path ?? duong} (${so.tongDong} lines${ghiChu.length ? `; ${ghiChu.join("; ")}` : ""})`;
     const duoi = so.catBot ? `\n[… file continues at line ${so.cuoiThat + 1}; read more with start_line/end_line]` : "";
@@ -951,7 +985,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
           return {
             ok: false,
             ma: pq.ma,
-            choModel: pq.ma === "REPO_CHINH_CHUA_CHECKPOINT" ? cauTuChoiTuDong("REPO_CHINH_CHUA_CHECKPOINT") : cauTuChoiLenhTuDong(pq.ma, pq.chiTiet),
+            choModel: pq.ma === "REPO_CHINH_CHUA_CHECKPOINT" ? cauTuChoiTuDong("REPO_CHINH_CHUA_CHECKPOINT") : cauTuChoiLenhTuDong(pq.ma, pq.chiTiet, args.command),
           };
         }
       } else if (!tuTriGhiRepoChinhDuoc()) {
@@ -1180,7 +1214,8 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
           ten === "delegate" ? cauHinh.coGiaoViec === true : ten === "read_output" ? cauHinh.khoDauRaDai !== undefined : toolTuyChonBat(ten, process.env, gocDuAn),
         ),
       );
-      return an.size === 0 ? ds : ds.filter((t) => !an.has(t.function.name));
+      const dsCsv = csvBat(process.env.AI_AGENT_CSV_DOC) ? ds.map(moTaDocCsv) : ds;
+      return an.size === 0 ? dsCsv : dsCsv.filter((t) => !an.has(t.function.name));
     },
     async chay(goi, ctx) {
       const kq = await chayMot(goi, ctx);

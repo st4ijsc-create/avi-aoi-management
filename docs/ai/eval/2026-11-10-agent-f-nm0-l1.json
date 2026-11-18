@@ -1,0 +1,208 @@
+{
+ "ngay": "2026-11-10",
+ "nhan": "agent-f-nm0-l1",
+ "commit": "2231f6425",
+ "cayBan": false,
+ "soMau": 1,
+ "truc": "M",
+ "maxTokens": 16000,
+ "sampling": {
+  "temperature": 0.2,
+  "top_p": 0.9
+ },
+ "giayTuong": 931,
+ "model": {
+  "tep": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+  "sha": "707a55a8a4397ecde44de0c499d3e68c1ad1d240d1da65826b4949d1043f4450",
+  "ctx": 65536,
+  "reasoningBudget": 12000,
+  "slot": 1
+ },
+ "co": {
+  "AI_AGENT_CONG_KE_HOACH": "0",
+  "AI_AGENT_CON_BAO_CAO": "0",
+  "AI_AGENT_CUU_TRAN": "1",
+  "AI_AGENT_DAU_RA_DAI": "0",
+  "AI_AGENT_DOC_TRUOC_KHI_GHI": "0",
+  "AI_AGENT_GIAO_VIEC": "0",
+  "AI_AGENT_GIU_NGHI": "1",
+  "AI_AGENT_HOUSEKEEPING_ENABLED": "false",
+  "AI_AGENT_KIEM_DAC_TA": "1",
+  "AI_AGENT_NEN_MOC": "0",
+  "AI_AGENT_NEN_SO_THAT": "0",
+  "AI_AGENT_NGHI": "1",
+  "AI_AGENT_THEO_VAI_TRO": "1",
+  "AI_AGENT_TIEP_TUC": "0",
+  "AI_AGENT_TOM_TAT_80": "0",
+  "AI_AGENT_TOOL_TIMEOUT": "0",
+  "AI_AGENT_TU_TRA_API": "1",
+  "AI_CODING_AUTOLOOP": "0",
+  "AI_CODING_REPO_CONTEXT": "1",
+  "AI_CODING_TU_TRI_GHI": "0"
+ },
+ "ghiChu": "agent-f luot 1/6 (D0,D,D,D0,D0,D), AI_AGENT_NEN_MOC=0, test an py-dang-ky moi d9e16a6f3 (du phong bang hanh vi). May :3013 tren aoi_management_test, vai avi_app, dist baseline 09/11 (a4eb85df4), co khai tuong minh, RAG embed CPU, llama-server :8091 khong restart.",
+ "taiMay": {
+  "soMauTai": 1,
+  "cpuTb": 10,
+  "cpuMax": 10,
+  "tienTrinhNang": {},
+  "soLuotSlotBan": 0,
+  "sach": true
+ },
+ "dungSom": null,
+ "chuaDo": [
+  "pilot-repo (TC-02, TC-03, TC-04, TC-05): cần bộ chạy pilot và lượt _test"
+ ],
+ "stacks": [
+  {
+   "stack": "cs",
+   "bai": 2,
+   "luot": 2,
+   "dat": 0,
+   "passAt1": 0,
+   "passAtN": 0,
+   "moiMau": [
+    0
+   ],
+   "cut": null,
+   "tokRaTb": 43906,
+   "msTb": 260076
+  },
+  {
+   "stack": "js",
+   "bai": 1,
+   "luot": 1,
+   "dat": 1,
+   "passAt1": 1,
+   "passAtN": 1,
+   "moiMau": [
+    1
+   ],
+   "cut": null,
+   "tokRaTb": 7799,
+   "msTb": 45783
+  },
+  {
+   "stack": "py",
+   "bai": 2,
+   "luot": 2,
+   "dat": 2,
+   "passAt1": 1,
+   "passAtN": 1,
+   "moiMau": [
+    2
+   ],
+   "cut": null,
+   "tokRaTb": 23058,
+   "msTb": 130219
+  },
+  {
+   "stack": "ts",
+   "bai": 1,
+   "luot": 1,
+   "dat": 1,
+   "passAt1": 1,
+   "passAtN": 1,
+   "moiMau": [
+    1
+   ],
+   "cut": null,
+   "tokRaTb": 15803,
+   "msTb": 88212
+  }
+ ],
+ "tong": {
+  "stack": "TỔNG",
+  "bai": 6,
+  "luot": 6,
+  "dat": 4,
+  "passAt1": 0.667,
+  "passAtN": 0.667,
+  "moiMau": [
+   4
+  ],
+  "cut": null,
+  "tokRaTb": 26255,
+  "msTb": 152431
+ },
+ "hang": [
+  {
+   "id": "cs-dat-phong",
+   "stack": "cs",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO",
+    "THIEU_TEST:14<15"
+   ],
+   "cut": null,
+   "tokRa": 66019,
+   "ms": 371525,
+   "lyDoDung": "lap-lai"
+  },
+  {
+   "id": "cs-nhat-ky",
+   "stack": "cs",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO",
+    "THIEU_TEST:14<15"
+   ],
+   "cut": null,
+   "tokRa": 21792,
+   "ms": 148627,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "js-cli-viec",
+   "stack": "js",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 7799,
+   "ms": 45783,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "py-dang-ky",
+   "stack": "py",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 34149,
+   "ms": 193841,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "py-kho-cache",
+   "stack": "py",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 11966,
+   "ms": 66596,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "ts-gio-hang",
+   "stack": "ts",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 15803,
+   "ms": 88212,
+   "lyDoDung": "het-luot"
+  }
+ ]
+}

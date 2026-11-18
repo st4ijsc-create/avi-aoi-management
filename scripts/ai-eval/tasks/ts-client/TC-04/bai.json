@@ -1,0 +1,17 @@
+{
+  "id": "TC-04",
+  "kieu": "pilot-repo",
+  "bo": "pilot",
+  "repo": {
+    "commit": "02d56641e"
+  },
+  "tepDuocSua": [
+    "client/src/lib/domains.unit.test.ts"
+  ],
+  "lenhKiem": "npx vitest run client/src/lib/domains.unit.test.ts",
+  "nguonGhim": {
+    "client/src/lib/domains.ts": "19b607c9c9ccfffedbdc431d4e4def0c1966d243"
+  },
+  "mauBlob": "f3189c8d77f6f34892964234b989989febf66c56",
+  "canDb": false
+}

@@ -15,7 +15,7 @@ import {
   productModels,
 } from "../../drizzle/schema";
 import { statsCache, CACHE_KEYS, CACHE_TTL } from "../_core/cache";
-import { resolveFactoryDateWindow, finalYield as finalYieldPct } from "../utils/kpi";
+import { resolveFactoryDateWindow, finalYield as finalYieldPct, fpyPctOver, fpyPctByBucket, khoaBucket } from "../utils/kpi";
 import { getFalseCallEscapeKpi } from "../services/falseCallEscapeService";
 import { idsMayTrongPhamVi } from "./_adapterPhamVi";
 
@@ -192,7 +192,7 @@ export const productionDashboardRouter = router({
         if (input.endDate) inspConditions.push(lte(productInspections.inspectionTime, input.endDate));
 
         // Build previous period conditions
-        let prevQueryPromise: Promise<{ total: number; ok: number }[]> | null = null;
+        let prevQueryPromise: Promise<number> | null = null; // FPY thật của kỳ trước (dọn vệ sinh Q0-2)
         if (input.startDate && input.endDate) {
           const duration = input.endDate.getTime() - input.startDate.getTime();
           const prevEnd = new Date(input.startDate.getTime() - 1);
@@ -202,14 +202,11 @@ export const productionDashboardRouter = router({
             gte(productInspections.inspectionTime, prevStart),
             lte(productInspections.inspectionTime, prevEnd),
           ];
-          prevQueryPromise = database.select({
-            total: sql<number>`count(*)`,
-            ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
-          }).from(productInspections).where(and(...prevConditions));
+          prevQueryPromise = fpyPctOver(database, and(...prevConditions));
         }
 
         // Run all independent queries in parallel
-        const [statsResult, topDefects, mpCount, latestInsp, prevResult] = await Promise.all([
+        const [statsResult, topDefects, mpCount, latestInsp, prevFpy, fpyNow] = await Promise.all([
           // Aggregate stats
           database.select({
             total: sql<number>`count(*)`,
@@ -240,6 +237,8 @@ export const productionDashboardRouter = router({
             .limit(1),
           // Previous period (null if no date range)
           prevQueryPromise ?? Promise.resolve(null),
+          // FPY thật của kỳ này: kiểm tra ĐẦU TIÊN của mỗi serial (trước: ok/total — đếm cả lần kiểm lại, bỏ NTF)
+          fpyPctOver(database, and(...inspConditions)),
         ]);
 
         const stats = statsResult[0] || { total: 0, ok: 0, ng: 0, ntf: 0 };
@@ -247,17 +246,14 @@ export const productionDashboardRouter = router({
         const ok = Number(stats.ok) || 0;
         const ng = Number(stats.ng) || 0;
         const ntf = Number(stats.ntf) || 0;
-        const firstPassYield = total > 0 ? Math.round((ok / total) * 10000) / 100 : 0;
+        const firstPassYield = Math.round(fpyNow * 100) / 100;
         const finalYield = Math.round(finalYieldPct({ ok, ntf, total }) * 100) / 100;
         const retestRate = total > 0 ? Math.round((ntf / total) * 10000) / 100 : 0;
 
         // Compute yield change from previous period
         let yieldChange = 0;
-        if (prevResult) {
-          const prevTotal = Number(prevResult[0]?.total) || 0;
-          const prevOk = Number(prevResult[0]?.ok) || 0;
-          const prevFPY = prevTotal > 0 ? (prevOk / prevTotal) * 100 : 0;
-          yieldChange = Math.round((firstPassYield - prevFPY) * 100) / 100;
+        if (prevFpy !== null) {
+          yieldChange = Math.round((firstPassYield - prevFpy) * 100) / 100;
         }
 
         // Get product image from latest inspection
@@ -426,6 +422,9 @@ export const productionDashboardRouter = router({
         .groupBy(sql`period`)
         .orderBy(sql`period`);
 
+      // FPY thật theo kỳ (kiểm tra ĐẦU TIÊN của mỗi serial; bo thuộc kỳ của lần kiểm đầu) — thay "FPY proxy" ok/total (dọn vệ sinh Q0-2)
+      const fpyTheoKy = await fpyPctByBucket(database, and(...conditions), truncExpr);
+
       return rows.map(r => {
         const total = Number(r.total) || 0;
         const ok = Number(r.ok) || 0;
@@ -437,7 +436,7 @@ export const productionDashboardRouter = router({
           ok,
           ng,
           ntf,
-          fpy: total > 0 ? Math.round((ok / total) * 10000) / 100 : 0,
+          fpy: Math.round((fpyTheoKy.get(khoaBucket(r.period)) ?? 0) * 100) / 100,
           finalYield: Math.round(finalYieldPct({ ok, ntf, total }) * 100) / 100,
         };
       });
@@ -484,8 +483,6 @@ export const productionDashboardRouter = router({
       // For each station, compute daily yields to get stddev
       const results = await Promise.all(rows.map(async (row) => {
         const total = Number(row.total) || 0;
-        const ok = Number(row.ok) || 0;
-        const fpy = total > 0 ? (ok / total) * 100 : 0;
 
         // Get daily yields for this station
         const stationMachines = await database.select({ id: machines.id })
@@ -497,6 +494,8 @@ export const productionDashboardRouter = router({
         const dailyConditions: SQL[] = [inArray(productInspections.machineId, smIds)];
         if (input.startDate) dailyConditions.push(gte(productInspections.inspectionTime, input.startDate));
         if (input.endDate) dailyConditions.push(lte(productInspections.inspectionTime, input.endDate));
+        // FPY thật của trạm (kiểm tra ĐẦU TIÊN của mỗi serial) — thay "FPY proxy" ok/total (dọn vệ sinh Q0-2)
+        const fpy = await fpyPctOver(database, and(...dailyConditions));
 
         const dailyRows = await database.select({
           day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),

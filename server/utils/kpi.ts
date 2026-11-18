@@ -398,3 +398,36 @@ export function sixSigmaFromCounts(counts: {
 export function executeRows(result: unknown): any[] {
   return ((result as any)?.rows ?? result ?? []) as any[];
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// FPY thật (first-pass theo serial) — hai lối gọi gọn cho router (dọn vệ sinh Q0-2, 2026-11-04)
+// ═══════════════════════════════════════════════════════════════════════
+
+type CoExecute = { execute: (q: SQL) => Promise<unknown> };
+
+/**
+ * FPY % thật trên một tập điều kiện (`where` = điều kiện drizzle trên product_inspections): kiểm tra ĐẦU TIÊN của mỗi serial
+ * (xem firstInspectionsSql), `OK` mới là first-pass (NTF KHÔNG phải). Thay cho "FPY proxy" `ok/total` (đếm cả lần kiểm lại).
+ * Không có serial dùng được ⇒ 0.
+ */
+export async function fpyPctOver(database: CoExecute, where: SQL | undefined): Promise<number> {
+  const rows = executeRows(await database.execute(fpyAggregateSql({ where, groupBy: "none" })));
+  const r = rows[0];
+  return fpyFromFirstInspections({ firstPass: Number(r?.first_pass) || 0, firstTotal: Number(r?.first_total) || 0 });
+}
+
+/** Khoá so khớp bucket thời gian giữa hai truy vấn: mili-giây nếu parse được, nếu không thì chuỗi. */
+export function khoaBucket(v: unknown): string {
+  const d = new Date(v as string | number | Date);
+  return Number.isNaN(d.getTime()) ? String(v) : String(d.getTime());
+}
+
+/** FPY % thật theo bucket (vd date_trunc): Map<khoaBucket(bucket), %>. Một bo thuộc bucket của lần kiểm ĐẦU TIÊN của nó. */
+export async function fpyPctByBucket(database: CoExecute, where: SQL | undefined, bucketExpr: SQL): Promise<Map<string, number>> {
+  const rows = executeRows(await database.execute(fpyAggregateSql({ where, bucketExpr, groupBy: "bucket" })));
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    out.set(khoaBucket(r.bucket), fpyFromFirstInspections({ firstPass: Number(r.first_pass) || 0, firstTotal: Number(r.first_total) || 0 }));
+  }
+  return out;
+}

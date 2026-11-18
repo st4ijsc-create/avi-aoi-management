@@ -1,0 +1,17 @@
+{
+  "id": "TC-03",
+  "kieu": "pilot-repo",
+  "bo": "pilot",
+  "repo": {
+    "commit": "de47e3027"
+  },
+  "tepDuocSua": [
+    "client/src/lib/engineeringDeepLink.unit.test.ts"
+  ],
+  "lenhKiem": "npx vitest run client/src/lib/engineeringDeepLink.unit.test.ts",
+  "nguonGhim": {
+    "client/src/lib/engineeringDeepLink.ts": "13ab9e6cba716eb985946c8e7f1e54ee99c0a897"
+  },
+  "mauBlob": "758dee92c9fbf8080114b19d460d91bc6e1d4b32",
+  "canDb": false
+}

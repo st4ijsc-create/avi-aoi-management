@@ -64,6 +64,10 @@ export default defineConfig({
       // Phụ kiện bài thi của bộ đo model (scripts/ai-eval): đề ẩn `an/` import ../src chỉ có trong sandbox, `khung/` rỗng, `du-an/` là dự án mẫu.
       // Bộ chấm chạy `node --test` trong bản chép ngoài scripts/ (không dùng vitest) nên loại ở đây là AN TOÀN (do-model xác nhận 2026-10-21).
       "scripts/ai-eval/**/an/**",
+      // `mau/` = lời giải MẪU của bài agent-f (chép đè lên dự án sandbox lúc kiểm thước); test trong đó là `node:test` của bài làm
+      // (vd. mau/ts-tach-module/test/donHang/*.test.ts) — bộ chấm chạy `node --test` trong bản chép, vitest thu vào thì "No test suite
+      // found" (cổng gộp 11/11 đỏ). Cùng lý do với `an/`; dieu-phoi duyệt 2026-11-11.
+      "scripts/ai-eval/**/mau/**",
       "scripts/ai-eval/**/khung/**",
       "scripts/ai-eval/vscode-e2e/du-an/**",
       "server/services/edge/edgeExecution.dot10.e2e.db.test.ts",

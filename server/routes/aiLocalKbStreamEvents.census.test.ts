@@ -333,6 +333,29 @@ describe("§C — `done.kiemBienDichST` đi ra tới socket; vắng thì không 
   });
 });
 
+// ★ T1 (2026-11-10) — ô `tuKiemMa` của `done` (vòng tự kiểm mã của nhánh sinh mã) phải RA TỚI socket: do-model đọc nó để ghi số vòng + chi phí.
+describe("§C2 — `done.tuKiemMa` đi ra tới socket; vắng thì không bịa", () => {
+  async function chayDone(done: Record<string, unknown>) {
+    h.sukien = [{ type: "token", token: "x" }, done];
+    const { app, tuyen } = appGia();
+    registerAiLocalKnowledgeRoutes(app);
+    const { res, manh } = resGia();
+    await tuyen.get("/api/ai/local-kb/stream")!(reqGia({ question: "q", context: { codingMode: true } }), res);
+    return khungSSE(manh).find((k) => k.type === "done")!;
+  }
+  it("★★★ có ô ⇒ khung done mang đúng chuỗi", async () => {
+    const d = await chayDone({
+      type: "done", provider: "ollama", cached: false, followUpSuggestions: [], answer: "a", answerRevised: true,
+      tuKiemMa: "ok=1; trang-thai=da-sua; ngon-ngu=cs; vong=1; sua=1; con=0; ky-tu-them=100; ms=5",
+    });
+    expect(d.tuKiemMa).toBe("ok=1; trang-thai=da-sua; ngon-ngu=cs; vong=1; sua=1; con=0; ky-tu-them=100; ms=5");
+  });
+  it("vắng ô ⇒ khung done KHÔNG có khoá tuKiemMa", async () => {
+    const d = await chayDone({ type: "done", provider: "ollama", cached: false, followUpSuggestions: [], answer: "a" });
+    expect(Object.prototype.hasOwnProperty.call(d, "tuKiemMa")).toBe(false);
+  });
+});
+
 // ★ Đợt 9 (2026-10-23) — trợ lý theo vai trò: `usage.vaiTro`/`nguonVaiTro` phải RA TỚI socket (ca `usage` là danh sách trắng từng ô).
 describe("§D — `usage.vaiTro` đi ra tới socket; vắng thì không bịa", () => {
   async function chayUsage(u: Record<string, unknown>) {

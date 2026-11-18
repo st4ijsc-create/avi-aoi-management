@@ -96,6 +96,11 @@ let edgeNodeId = 0;
 const ad = { conn: 0, cing: 0, lost: 0, tat: 0, edge: 0, bConn: 0, bLost: 0 };
 const HOST_BI_MAT = "10.77.66.55";
 const LOI_THO = `connect ECONNREFUSED ${HOST_BI_MAT}:502`;
+// Fixture adapter BẬT giao thức thật: chỉ trỏ loopback cổng đóng (9) để tiến trình khác reconcile không ra mạng. Hai địa chỉ phải KHÁC nhau.
+const EP_CHINH = "tcp://127.0.0.1:9";
+const EP_PHU = "tcp://localhost:9";
+// Dùng cho khẳng định "không lộ": endpoint đã che không được chứa địa chỉ fixture (HOST_BI_MAT giờ chỉ còn nằm trong LOI_THO).
+const DIA_CHI_FIXTURE = ["127.0.0.1:9", "localhost:9"];
 
 type ShCaller = ReturnType<typeof import("./systemHealthRouter").systemHealthRouter.createCaller>;
 type Nguoi = { diag: DiagCaller; ad: AdCaller; sh: ShCaller };
@@ -130,8 +135,8 @@ async function seedAdapter(
 ): Promise<number> {
   const code = `${RUN}-${ten}`;
   const protocol = o.protocol ?? "stub";
-  const endpoint = protocol === "stub" ? `stub://${code}` : `tcp://${HOST_BI_MAT}:5007`;
-  const opts = o.ha ? JSON.stringify({ ha: { secondaryEndpoint: `tcp://${HOST_BI_MAT}:5008` } }) : null;
+  const endpoint = protocol === "stub" ? `stub://${code}` : EP_CHINH;
+  const opts = o.ha ? JSON.stringify({ ha: { secondaryEndpoint: EP_PHU } }) : null;
   const [r] = await dung(sql`INSERT INTO device_adapters ("machineId", code, name, protocol, endpoint, "connectionOptions", "pollIntervalMs", "isEnabled", status, "lastError", "lastErrorAt")
     VALUES (${machineId}, ${code}, ${code}, ${protocol}::otprotocolenum, ${endpoint}, ${opts}::json, 60000, ${o.isEnabled}, ${o.status}::otadapterstatusenum,
             ${o.lastError ?? null}, ${o.lastError ? sql`now()` : null}) RETURNING id`);
@@ -288,6 +293,7 @@ describe("scadaDiag.danhSach — endpoint / loi chỉ cho kỹ sư canEdit (mụ
         expect(h.loi, `${ten} #${h.adapterId}`).toBeNull();
       }
       expect(JSON.stringify(ds), ten).not.toContain(HOST_BI_MAT);
+      for (const dc of DIA_CHI_FIXTURE) expect(JSON.stringify(ds), ten).not.toContain(dc);
       // vận hành vẫn biết "mất kết nối": mã nhóm, không host:port
       expect(ds.find((h) => h.adapterId === ad.lost)?.maLoi, ten).toBe("ADAPTER_OFFLINE");
       expect(ds.find((h) => h.adapterId === ad.conn)?.maLoi, ten).toBeNull();
@@ -300,7 +306,7 @@ describe("scadaDiag.danhSach — endpoint / loi chỉ cho kỹ sư canEdit (mụ
       const conn = ds.find((h) => h.adapterId === ad.conn)!;
       expect(conn.endpoint).toBe(`stub://${RUN}-conn`);
       const lost = ds.find((h) => h.adapterId === ad.lost)!;
-      expect(lost.endpoint).toBe(`tcp://${HOST_BI_MAT}:5007`);
+      expect(lost.endpoint).toBe(EP_CHINH);
       expect(lost.loi).toBe(LOI_THO);
       expect(lost.maLoi).toBe("ADAPTER_OFFLINE");
     }
@@ -321,21 +327,23 @@ describe("deviceAdapter.list / get — redactAdapterRow che endpoint / lastError
       expect(lost.lastError, ten).toBe("ADAPTER_OFFLINE");
       expect(lost.maLoi, ten).toBe("ADAPTER_OFFLINE");
       expect(JSON.stringify(ds), ten).not.toContain(HOST_BI_MAT);
+      for (const dc of DIA_CHI_FIXTURE) expect(JSON.stringify(ds), ten).not.toContain(dc);
       const g = await n.ad.get({ id: ad.lost });
       expect(g.endpoint, ten).toBeNull();
       expect(g.lastError, ten).toBe("ADAPTER_OFFLINE");
       expect(g.connectionOptions, ten).toBeNull();
       expect(JSON.stringify(g), ten).not.toContain(HOST_BI_MAT);
+      for (const dc of DIA_CHI_FIXTURE) expect(JSON.stringify(g), ten).not.toContain(dc);
     }
   });
 
   it("kỹ sư canEdit ⇒ endpoint / lastError / connectionOptions thật (bí mật vẫn che như trước)", async () => {
     const g = await engA.ad.get({ id: ad.lost });
-    expect(g.endpoint).toBe(`tcp://${HOST_BI_MAT}:5007`);
+    expect(g.endpoint).toBe(EP_CHINH);
     expect(g.lastError).toBe(LOI_THO);
     expect(g.maLoi).toBe("ADAPTER_OFFLINE");
-    expect(g.connectionOptions).toEqual({ ha: { secondaryEndpoint: `tcp://${HOST_BI_MAT}:5008` } });
-    expect((await engA.ad.list()).find((r) => r.id === ad.lost)?.endpoint).toBe(`tcp://${HOST_BI_MAT}:5007`);
+    expect(g.connectionOptions).toEqual({ ha: { secondaryEndpoint: EP_PHU } });
+    expect((await engA.ad.list()).find((r) => r.id === ad.lost)?.endpoint).toBe(EP_CHINH);
   });
 });
 
@@ -388,11 +396,11 @@ describe("C2 fix 1 — deviceAdapter.update: chốt mất dữ liệu (người 
       const r2 = await operatorA.ad.update({ id, isEnabled: true, pollIntervalMs: 30000 });
       expect(r2.isEnabled).toBe(true);
       const truoc = await hang();
-      expect(truoc.endpoint).toBe(`tcp://${HOST_BI_MAT}:5007`);
+      expect(truoc.endpoint).toBe(EP_CHINH);
       // chốt: endpoint (kể cả cùng giá trị đã lưu) / connectionOptions (kể cả null) ⇒ FORBIDDEN trước mọi lượt ghi
       for (const patch of [
         { endpoint: "x" },
-        { endpoint: `tcp://${HOST_BI_MAT}:5007` },
+        { endpoint: EP_CHINH },
         { connectionOptions: null },
         { connectionOptions: {} },
         { name: "kem", endpoint: "tcp://h:1" },
@@ -409,8 +417,8 @@ describe("C2 fix 1 — deviceAdapter.update: chốt mất dữ liệu (người 
       }
       expect(await hang()).toEqual(truoc); // không đổi gì — kể cả name / updatedAt của lượt có "kem"
       // đối chứng: kỹ sư canEdit đổi endpoint được
-      const r3 = await engA.ad.update({ id, endpoint: `tcp://${HOST_BI_MAT}:5017` });
-      expect(r3.endpoint).toBe(`tcp://${HOST_BI_MAT}:5017`);
+      const r3 = await engA.ad.update({ id, endpoint: EP_PHU });
+      expect(r3.endpoint).toBe(EP_PHU);
     } finally {
       await xoaAdapter(id);
     }
@@ -421,8 +429,8 @@ describe("C2 fix 1 — systemHealth.connectionSupervisors: che activeEndpoint / 
   it("người dưới canEdit ⇒ activeEndpoint null + lastError = MÃ; kỹ sư canEdit / admin ⇒ thật", async () => {
     const goc = { code: "x", protocol: "modbus", activeLabel: "primary", endpointCount: 2, reconnects: 1, failovers: 0, attempts: 3, consecutiveFailures: 1, samplesForwarded: 0, lastConnectedAt: null, lastStateChangeAt: null };
     SUP.ds = [
-      { ...goc, adapterId: ad.lost, state: "reconnecting", connected: false, activeEndpoint: `tcp://${HOST_BI_MAT}:5007`, lastError: LOI_THO },
-      { ...goc, adapterId: ad.conn, state: "connected", connected: true, activeEndpoint: `tcp://${HOST_BI_MAT}:5008`, lastError: null },
+      { ...goc, adapterId: ad.lost, state: "reconnecting", connected: false, activeEndpoint: EP_CHINH, lastError: LOI_THO },
+      { ...goc, adapterId: ad.conn, state: "connected", connected: true, activeEndpoint: EP_PHU, lastError: null },
     ];
     try {
       for (const [ten, n] of [["viewer", viewerA], ["operator canEdit", operatorA], ["engineer không canEdit", kySuKhongSuaA]] as const) {
@@ -432,11 +440,12 @@ describe("C2 fix 1 — systemHealth.connectionSupervisors: che activeEndpoint / 
         expect(r.supervisors.find((x) => x.adapterId === ad.lost)?.lastError, ten).toBe("ADAPTER_OFFLINE");
         expect(r.supervisors.find((x) => x.adapterId === ad.conn)?.lastError, ten).toBeNull();
         expect(JSON.stringify(r), ten).not.toContain(HOST_BI_MAT);
+        for (const dc of DIA_CHI_FIXTURE) expect(JSON.stringify(r), ten).not.toContain(dc);
       }
       for (const n of [engA, admin]) {
         const r = await n.sh.connectionSupervisors();
         const lost = r.supervisors.find((x) => x.adapterId === ad.lost)!;
-        expect(lost.activeEndpoint).toBe(`tcp://${HOST_BI_MAT}:5007`);
+        expect(lost.activeEndpoint).toBe(EP_CHINH);
         expect(lost.lastError).toBe(LOI_THO);
       }
     } finally {
@@ -459,6 +468,7 @@ describe("C2 fix 2 — deviceAdapter.testConnection({id}): văn bản lỗi driv
         expect(j, ten).not.toContain("10.0.0.5");
         expect(j, ten).not.toContain(":502");
         expect(j, ten).not.toContain(HOST_BI_MAT);
+        for (const dc of DIA_CHI_FIXTURE) expect(j, ten).not.toContain(dc);
       }
       for (const n of [engA, admin]) {
         expect(await n.ad.testConnection({ id })).toMatchObject({ ok: false, errorCode: "DEVICE_UNREACHABLE", error: LOI });

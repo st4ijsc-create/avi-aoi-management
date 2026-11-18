@@ -14,6 +14,8 @@
 import { createHash } from "node:crypto";
 import os from "node:os";
 import type { GgufChatOptions, GgufStreamChunk } from "../services/aiGgufEngine";
+import { MAU_TOKEN_CO_TIEN_TO, nguonCoBien } from "../../shared/mauBiMat";
+import { LoiKhungThu } from "./kenhGiaoDich";
 
 /** 2 = tin của mỗi lượt lưu dạng HIỆU so với lượt trước (`tinChung` + `tinMoi`) — lịch sử chỉ-nối-thêm ⇒ fixture O(n) thay vì O(n²). */
 export const PHIEN_BAN_FIXTURE = 2;
@@ -263,6 +265,11 @@ const MAU_CAM: ReadonlyArray<[string, RegExp]> = [
   ["mat-khau", /\b(password|passwd|pwd)\s*[=:]\s*["']?[^\s"'&;]{4,}/i],
   ["chuoi-ket-noi", /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@"']+:[^\s@/"']+@/i],
   ["khoa-slack", /\bxox[abposr]-[A-Za-z0-9-]{10,}/],
+  // ★ 2026-11-14 (lô "một nguồn mẫu", chu-du-an-HST): bộ DÒ rò phải mạnh ít nhất bằng bộ CHE. Các luật `khoa-*` ở trên dùng `\b` ⇒
+  // khoá DÍNH chữ phía trước (`esk-ant-api03-…`, `xghp_…`) lọt, và thiếu hẳn gitlab/google/stripe/npm/github_pat. Thêm MỌI mẫu của
+  // `shared/mauBiMat.ts` (cùng quy tắc biên trái với bộ che, qua `nguonCoBien`), nhãn `token-<ten>`. GIỮ các luật cũ: chúng rộng
+  // hơn ở vài chỗ (`sk-` chung, `sk-ant-` bất kỳ thân, slack thân ngắn) — dò thừa là hướng an toàn của bộ quét rò.
+  ...MAU_TOKEN_CO_TIEN_TO.map((m): [string, RegExp] => [`token-${m.ten}`, new RegExp(nguonCoBien(m))]),
 ];
 
 export function kiemMauCam(s: string): string[] {
@@ -329,7 +336,7 @@ export function dongGoi(
     ky: { suKien: chuanHoaSuKien(y.suKien, thay), lyDo: y.lyDo, ...(y.dat !== undefined ? { dat: y.dat } : {}) },
   };
   const cam = kiemMauCamGiaTri(fx);
-  if (cam.length) throw new Error(`fixture còn mẫu cấm sau khi thay: ${cam.join(", ")} — xem bản thô, không commit`);
+  if (cam.length) throw new LoiKhungThu("FIXTURE_MAU_CAM", `fixture còn mẫu cấm sau khi thay: ${cam.join(", ")} — xem bản thô, không commit`);
   return fx;
 }
 
@@ -365,7 +372,22 @@ export function soYeuCau(ghi: YeuCauChuanHoa, thuc: YeuCauChuanHoa, soHeThong = 
  * đổi THỨ TỰ dòng giữa hai lần chạy. Tin không phải `tool` (do model sinh — phát lại nguyên văn) vẫn so đúng thứ tự.
  */
 function dangSoTin(t: TinChuanHoa): TinChuanHoa {
-  return t.role === "tool" ? { ...t, content: chuanHoaSoDo(t.content).split(/\r?\n/).sort().join("\n") } : t;
+  return t.role === "tool" ? { ...t, content: dongDeSo(chuanHoaSoDo(t.content)).join("\n") } : t;
+}
+
+/**
+ * Các dòng của một kết quả công cụ THẬT, ở dạng so được theo TẬP: runner song song (xUnit trên `dotnet test`) ghi CHỒNG hai luồng nên đôi khi DÍNH hai mẩu
+ * vào một dòng (`[xUnit.net …] X [FAIL]  Failed X [1 ms]`) và chèn dòng trống ở chỗ khác giữa hai lần chạy ⇒ tách lại trước mỗi mẩu `[xUnit.net ` / `Failed <Tên> [`
+ * đứng giữa dòng, bỏ khoảng trắng cuối + dòng trống, rồi sắp. Dòng khác nội dung vẫn lệch. Thuần.
+ */
+export function dongDeSo(s: string): string[] {
+  return s
+    .replace(/(?<=\S)[ \t]*(?=\[xUnit\.net\s)/g, "\n")
+    .replace(/(?<=\S)[ \t]+(?=Failed [\w.`<>+]+ \[)/g, "\n  ")
+    .split(/\r?\n/)
+    .map((d) => d.trimEnd())
+    .filter((d) => d !== "")
+    .sort();
 }
 
 /**
@@ -380,7 +402,7 @@ export function soSuKien(ghi: readonly unknown[], thuc: readonly unknown[]): { d
       if (a.endsWith("…") || b.endsWith("…")) {
         const [ngan, dai] = [a.replace(/…$/, ""), b.replace(/…$/, "")].sort((x, y) => x.length - y.length) as [string, string];
         if (dai.startsWith(ngan.slice(0, ngan.length - Math.min(16, Math.ceil(ngan.length / 4))))) return null;
-      } else if (a.split(/\r?\n/).sort().join("\n") === b.split(/\r?\n/).sort().join("\n")) return null;
+      } else if (dongDeSo(a).join("\n") === dongDeSo(b).join("\n")) return null;
       return { duong, ghi: a, thuc: b };
     }
     if (Array.isArray(a) && Array.isArray(b)) {
@@ -434,7 +456,7 @@ export function taoStreamPhatLai(fx: FixturePhatLai, o: { goc: string; chat?: bo
       if (o.chat !== false) throw new LoiLechPhatLai(d);
     }
     for (const c of l.manh) yield thayMoiChuoi(c, veGoc);
-    if (l.loi) throw new Error(veGoc(l.loi));
+    if (l.loi) throw new LoiKhungThu("FIXTURE_LOI_LUOT", veGoc(l.loi));
   };
   return { stream, lech, conLai: () => fx.luot.length - k };
 }

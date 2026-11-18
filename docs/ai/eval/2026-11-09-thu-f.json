@@ -1,0 +1,98 @@
+{
+ "ngay": "2026-11-09",
+ "nhan": "thu-f",
+ "commit": "a4eb85df4",
+ "cayBan": false,
+ "soMau": 1,
+ "truc": "M",
+ "maxTokens": 16000,
+ "sampling": {
+  "temperature": 0.2,
+  "top_p": 0.9
+ },
+ "giayTuong": 68,
+ "model": {
+  "tep": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+  "sha": "707a55a8a4397ecde44de0c499d3e68c1ad1d240d1da65826b4949d1043f4450",
+  "ctx": 65536,
+  "reasoningBudget": 12000,
+  "slot": 1
+ },
+ "co": {
+  "AI_AGENT_CONG_KE_HOACH": "0",
+  "AI_AGENT_CON_BAO_CAO": "0",
+  "AI_AGENT_CUU_TRAN": "1",
+  "AI_AGENT_DAU_RA_DAI": "0",
+  "AI_AGENT_DOC_TRUOC_KHI_GHI": "0",
+  "AI_AGENT_GIAO_VIEC": "0",
+  "AI_AGENT_GIU_NGHI": "1",
+  "AI_AGENT_HOUSEKEEPING_ENABLED": "false",
+  "AI_AGENT_KIEM_DAC_TA": "1",
+  "AI_AGENT_NEN_MOC": "0",
+  "AI_AGENT_NEN_SO_THAT": "0",
+  "AI_AGENT_NGHI": "1",
+  "AI_AGENT_THEO_VAI_TRO": "1",
+  "AI_AGENT_TIEP_TUC": "0",
+  "AI_AGENT_TOM_TAT_80": "0",
+  "AI_AGENT_TOOL_TIMEOUT": "0",
+  "AI_AGENT_TU_TRA_API": "1"
+ },
+ "ghiChu": null,
+ "taiMay": {
+  "soMauTai": 1,
+  "cpuTb": 26,
+  "cpuMax": 26,
+  "tienTrinhNang": {},
+  "soLuotSlotBan": 0,
+  "sach": true
+ },
+ "dungSom": null,
+ "chuaDo": [],
+ "stacks": [
+  {
+   "stack": "js",
+   "bai": 1,
+   "luot": 1,
+   "dat": 0,
+   "passAt1": 0,
+   "passAtN": 0,
+   "moiMau": [
+    0
+   ],
+   "cut": null,
+   "tokRaTb": 11123,
+   "msTb": 67070
+  }
+ ],
+ "tong": {
+  "stack": "TỔNG",
+  "bai": 1,
+  "luot": 1,
+  "dat": 0,
+  "passAt1": 0,
+  "passAtN": 0,
+  "moiMau": [
+   0
+  ],
+  "cut": null,
+  "tokRaTb": 11123,
+  "msTb": 67070
+ },
+ "hang": [
+  {
+   "id": "js-cli-viec",
+   "stack": "js",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO",
+    "THIEU_TEST:10<12"
+   ],
+   "cut": null,
+   "tokRa": 11123,
+   "ms": 67070,
+   "lyDoDung": "hoan-thanh"
+  }
+ ]
+}

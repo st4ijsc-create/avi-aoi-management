@@ -1,0 +1,17 @@
+{
+  "id": "TC-02",
+  "kieu": "pilot-repo",
+  "bo": "pilot",
+  "repo": {
+    "commit": "12f505368"
+  },
+  "tepDuocSua": [
+    "client/src/lib/stateVocabulary.unit.test.ts"
+  ],
+  "lenhKiem": "npx vitest run client/src/lib/stateVocabulary.unit.test.ts",
+  "nguonGhim": {
+    "client/src/lib/stateVocabulary.ts": "eb04ae58035d6abb58dec187d96c6011da09362c"
+  },
+  "mauBlob": "dfcf18626d30fb81308f46c03b68278796b3235b",
+  "canDb": false
+}

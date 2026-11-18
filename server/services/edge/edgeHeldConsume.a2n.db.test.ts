@@ -88,7 +88,7 @@ async function dungThe(tx: Tx): Promise<The> {
   const nodeCode = `N-${t}`;
   const nodeId = await one(sql`INSERT INTO edge_nodes (code, name, "factoryCode", status) VALUES (${nodeCode}, 'a2n node', ${`F-${t}`}, 'online') RETURNING id`);
   await tx.execute(sql`UPDATE edge_nodes SET "protocolVersion" = 2 WHERE id = ${nodeId}`);
-  const robotId = await one(sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId", "stationId", "edgeNodeId") VALUES (${`R-${t}`}, 'a2n robot', 'fanuc', 'tcp://10.0.0.1', true, ${line}, ${st}, ${nodeId}) RETURNING id`);
+  const robotId = await one(sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId", "stationId", "edgeNodeId") VALUES (${`R-${t}`}, 'a2n robot', 'fanuc', 'tcp://127.0.0.1:9', true, ${line}, ${st}, ${nodeId}) RETURNING id`);
   const { token } = await issueNodeCredential({ nodeCode, actorUserId: nguoi.admin, reason: "a2n round C" });
   const node = await authenticateEdgeNodeToken(token);
   if (!node) throw new Error("the node's credential was not accepted");

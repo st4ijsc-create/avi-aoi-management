@@ -167,6 +167,8 @@ export function parseContext(raw: unknown): KbQueryContext | undefined {
   }
   // ★ Đợt 9 (2026-10-23) — CHỈ `false` được nhận (opt-out vòng kiểm biên dịch ST); giá trị khác bỏ — client không BẬT được vòng.
   if (r.kiemBienDichST === false) ctx.kiemBienDichST = false;
+  // ★ T1 — CHỈ `true` được nhận, và chỉ có tác dụng khi máy chủ đặt AI_CHAT_TU_KIEM_MA=theo-luot (cờ env vắng/0/1 BỎ QUA trường này).
+  if (r.tuKiemMa === true) ctx.tuKiemMa = true;
   // ★★★ doc 79 · TRỤC 2 — id DỰ ÁN. Chỉ nhận chuỗi HÌNH DẠNG id (`[A-Za-z0-9_-]`, 1..64). Một client
   // gửi ĐƯỜNG DẪN (`../../etc`, `C:\…`, `/a/b`) trượt regex ⇒ bị BỎ ở đây (lớp 1); và kể cả lọt thì
   // `gocTheoId` không tìm thấy id ⇒ TỪ CHỐI (lớp 2). Server KHÔNG BAO GIỜ nhận đường dẫn từ client.
@@ -757,6 +759,8 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       let answerRevised = false;
       // ★ Đợt 9 — tóm tắt vòng kiểm biên dịch ST của trợ lý (vắng = không chạy).
       let kiemBienDichST: string | undefined;
+      // ★ T1 — tóm tắt vòng tự kiểm mã (vắng = cờ AI_CHAT_TU_KIEM_MA tắt).
+      let tuKiemMa: string | undefined;
 
       for await (const evt of streamAnswer(effectiveQuestion, topK, history, userRole, ngCanhVoiAnh(context, question, vision), execCtx)) {
         if (closed) return;
@@ -860,6 +864,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
             degradedReason = evt.degradedReason;
             answerRevised = evt.answerRevised === true;
             kiemBienDichST = evt.kiemBienDichST;
+            tuKiemMa = evt.tuKiemMa;
             break;
         }
       }
@@ -876,6 +881,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
           ...(degraded ? { degraded: true, degradedReason } : {}),
           ...(answerRevised ? { answerRevised: true } : {}),
           ...(kiemBienDichST ? { kiemBienDichST } : {}),
+          ...(tuKiemMa ? { tuKiemMa } : {}),
         });
       }
     } catch (error: any) {

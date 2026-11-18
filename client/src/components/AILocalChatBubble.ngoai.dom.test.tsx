@@ -48,6 +48,7 @@ vi.mock("@/lib/trpc", () => {
       aiLocalKb: { health: { useQuery: () => ({ data: { ready: true, staleDays: 0 }, isLoading: false }) }, reload: mut(), feedback: mut() },
       aiCopilot: { confirmAction: mut(), cancelAction: mut() },
       aiAgent: { startSession: mut(), approvePlan: mut(), confirmStep: mut(), cancelSession: mut(), startPlaybook: mut(), listPlaybooks: query },
+      aiKiemDinh: { xemTruoc: query, chay: mut() },
       aiChat: {
         createConversation: { useMutation: () => ({ isPending: false, mutateAsync: H.createConv }) },
         saveStreamedMessage: { useMutation: () => ({ isPending: false, mutate: H.saveStreamed }) },
@@ -253,6 +254,35 @@ describe("AILocalChatBubble — model ngoài (L4)", () => {
       act(() => setAiChatOpen(true));
       expect(await screen.findByText("đang gõ")).toBeInTheDocument();
       expect(screen.getAllByTestId("nut-kiem-dinh-ngoai")).toHaveLength(1); // chỉ lượt đã xong; lượt đang stream không có
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("v23 — tích hợp: lượt van-ban dài hơn 16 KB ⇒ bong bóng truyền daCat xuống nút ⇒ hộp xem trước CÓ dòng cảnh báo 'đã cắt'; lượt ngắn thì không", async () => {
+    vi.stubEnv("VITE_AI_BONG_BONG_VAN_BAN", "true");
+    try {
+      const luu = (traLoi: string) =>
+        localStorage.setItem(
+          "ai_chat_messages_v2",
+          JSON.stringify([
+            { id: "u1", type: "user", content: "hỏi", timestamp: new Date().toISOString(), ngoaiConvId: 7 },
+            { id: "a1", type: "assistant", content: traLoi, timestamp: new Date().toISOString(), ngoaiConvId: 7 },
+          ]),
+        );
+      luu("a".repeat(20 * 1024)); // 20 KB > trần 16 KB
+      render(<AILocalChatBubble />);
+      act(() => setAiChatOpen(true));
+      fireEvent.click(await screen.findByTestId("nut-kiem-dinh-ngoai"));
+      expect(await screen.findByTestId("kdnh-van-ban-da-cat")).toBeInTheDocument();
+      cleanup();
+      resetAiEntryForTest();
+      luu("đáp ngắn");
+      render(<AILocalChatBubble />);
+      act(() => setAiChatOpen(true));
+      fireEvent.click(await screen.findByTestId("nut-kiem-dinh-ngoai"));
+      expect(await screen.findByTestId("kdnh-van-ban")).toBeInTheDocument();
+      expect(screen.queryByTestId("kdnh-van-ban-da-cat")).not.toBeInTheDocument();
     } finally {
       vi.unstubAllEnvs();
     }

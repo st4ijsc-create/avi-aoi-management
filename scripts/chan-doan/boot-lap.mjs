@@ -1,5 +1,8 @@
 // Chẩn đoán 2026-10-23 — khởi động server app lặp lại N lần (spawn node TRỰC TIẾP để bắt đúng exit code, vd 3221226356 = 0xC0000374).
-// usage: node scripts/chan-doan/boot-lap.mjs <N> [KEY=VAL…]   (KEY=VAL ghi đè biến môi trường của tiến trình con)
+// usage: node scripts/chan-doan/boot-lap.mjs <N> [KEY=VAL…]   (KEY=VAL CHỈ nhận: PORT (đủ tên), LOG_*, DIAG_*, BOOT_*, hoặc khoá trong KHOA_TAT_DUOC (cờ boot-lap tự tắt + EDGE_FACTORY_DRIFT_ALERT) với giá trị TẮT false/off/0;
+//   KHÔNG có quy tắc chung "giá trị tắt luôn an toàn" (cờ cực tính ngược như RBAC_SCOPED_ADMIN=false làm yếu an toàn) — không mở đường ra thiết bị:
+//   5 cờ an toàn, DATABASE_URL, DOTENV_CONFIG_PATH, ROLE, NODE_OPTIONS bị từ chối mọi giá trị; khoá thuộc ALWAYS_OFF chỉ nhận giá trị trùng; còn lại ⇒ ném lỗi, không khởi server.
+//   Ví dụ lệnh chẩn đoán 23/10: DIAG_NO_KB_WARM=1 AI_ORCHESTRATION_ENABLED=false EDGE_FACTORY_DRIFT_ALERT=off LOG_JSON=1)
 // Biến điều khiển: BOOT_DIR(.boot20) BOOT_GIU_MS(25000) BOOT_TRAN_MS(180000) BOOT_NODE(node hệ thống) BOOT_SAVE_LOG=1 BOOT_CLEAN_EVERY=N.
 // Mặc định: PORT 3016, DATABASE_URL → DB _test, tắt warm model + llama-server + watchdog. Xem README.md.
 // Khởi động lặp server app trên :3016 (DB _test, không warm model, không llama-server/watchdog). Ghi mã thoát từng lần.
@@ -7,85 +10,149 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import postgres from "postgres";
+import path from "node:path";
+import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
 
-const LAN = Number(process.argv[2] ?? 20);
-const GHI_DE = Object.fromEntries(process.argv.slice(3).map((a) => a.split(/=(.*)/s).slice(0, 2)));
-const THU_MUC_LOG = process.env.BOOT_DIR ?? ".boot20";
-const GIU_MS = Number(process.env.BOOT_GIU_MS ?? 25_000); // giữ sau khi cổng nghe
-const TRAN_LEN_MS = Number(process.env.BOOT_TRAN_MS ?? 180_000); // cổng không nghe sau 180 s ⇒ coi là treo
-const PORT = 3016;
+// ── Env CÁCH LY của tiến trình server (luật vận hành tạm 14/11: server trỏ _test KHÔNG được kế thừa env cha, KHÔNG nạp .env) ──
+// Mẫu: e2e/flow-studio/instance.ts. Không rải toàn bộ env cha: biến lạ ở cha không lọt vào con.
+export const BIEN_HE_DIEU_HANH = ["PATH", "Path", "SYSTEMROOT", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH", "COMSPEC", "PATHEXT", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS", "HOME"];
+/** Năm cờ chặn mọi đường gửi lệnh ra thiết bị (sweep STOP lúc boot) — LUÔN "false", đặt SAU ALWAYS_OFF. */
+export const NAM_CO_TAT = ["ROBOT_CONTROL_ENABLED", "OT_CONTROL_ENABLED", "FOE_ENABLED", "FOE_DURABLE", "OT_GATEWAY_ENABLED"];
+const NGUON_ALWAYS_OFF = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "e2e", "dot5-h6", "instance.ts");
 
-const envFile = fs.readFileSync(".env", "utf8").split(/\r?\n/);
-const dbLine = envFile.filter((l) => /^DATABASE_URL=/.test(l)).pop();
-const dbUrl = dbLine.replace(/^DATABASE_URL=/, "").trim().replace(/\s+#.*$/, "").replace(/\/aoi_management(\?|$)/, "/aoi_management_test$1");
-if (!/aoi_management_test/.test(dbUrl)) throw new Error("không dựng được URL DB _test");
-
-const env = {
-  ...process.env,
-  PORT: String(PORT),
-  DATABASE_URL: dbUrl,
-  GGUF_WARM_DEEP_MODEL_ON_BOOT: "false",
-  LLAMA_SERVER_ENABLED: "false",
-  LLAMA_WATCHDOG_ENABLED: "false",
-  // Không-GPU mặc định (census VRAM): aiWatcher tắt + KHÔNG làm ấm KB lúc boot (cờ THẬT AI_KB_WARM_ON_BOOT, không cần bản vá chẩn đoán).
-  AI_ORCHESTRATION_ENABLED: "false",
-  AI_KB_WARM_ON_BOOT: "false",
-  VITEST: "", // không phải môi trường test
-  ...GHI_DE,
-};
-
-const nghe = () =>
-  new Promise((ok) => {
-    const s = net.connect({ port: PORT, host: "127.0.0.1" }, () => { s.destroy(); ok(true); });
-    s.on("error", () => ok(false));
-    s.setTimeout(800, () => { s.destroy(); ok(false); });
-  });
-const ngu = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function giet(pid) {
-  spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+/** Đọc ALWAYS_OFF từ NGUỒN e2e/dot5-h6/instance.ts (một nguồn sự thật; .mjs không import được .ts). Thiếu/rỗng ⇒ ném lỗi (fail-closed). */
+export function docAlwaysOff(nguon = fs.readFileSync(NGUON_ALWAYS_OFF, "utf8")) {
+  const m = /export const ALWAYS_OFF[^=]*=\s*\{([\s\S]*?)\n\};/.exec(nguon);
+  if (!m) throw new Error("không tìm thấy ALWAYS_OFF trong e2e/dot5-h6/instance.ts");
+  const kq = {};
+  // Đừng đặt dấu nháy trần trong regex literal — scrub() của vramAllocationSites không hiểu regex nên coi phần sau là chuỗi (spawn "biến mất" khỏi bộ quét).
+  for (const p of m[1].matchAll(/\b([A-Z][A-Z0-9_]*):\s*\x22([^\x22]*)\x22/g)) kq[p[1]] = p[2];
+  if (kq.ROBOT_CONTROL_ENABLED !== "false" || Object.keys(kq).length < 10) throw new Error("ALWAYS_OFF đọc ra không hợp lệ — dừng, không khởi server");
+  return kq;
 }
 
-const ketQua = [];
-// Mỗi lần khởi động sinh ~6.000 thông báo ALERT (quét STOP/factory-drift trên dữ liệu test) — dọn định kỳ để DB _test không phình và gây treo giả.
-const DON_MOI = Number(process.env.BOOT_CLEAN_EVERY ?? 0);
-async function donThongBao() {
-  const sql = postgres(dbUrl, { max: 1, onnotice: () => {} });
-  try {
-    await sql`delete from notifications where type = 'ALERT' and "createdAt" >= now() - interval '2 hours' and (title ~ 'factory changed while edge' or title ~ '^STOP owed after transfer' or title ~ '^OT STOP sync between central' or title ~ '^STOP not confirmed')`;
-  } finally { await sql.end(); }
-}
-fs.mkdirSync(THU_MUC_LOG, { recursive: true });
-for (let i = 1; i <= LAN; i++) {
-  if (await nghe()) { console.log(`#${i} cổng ${PORT} ĐANG có người nghe trước khi chạy — dừng`); break; }
-  const t0 = Date.now();
-  const log = [];
-  const child = spawn(process.env.BOOT_NODE ?? process.execPath, ["node_modules/tsx/dist/cli.mjs", "server/_core/index.ts"], { env, cwd: process.cwd(), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
-  let thoat = null;
-  child.on("exit", (code, signal) => { thoat = { code, signal, ms: Date.now() - t0 }; });
-  const nap = (b) => { for (const dong of b.toString("utf8").split(/\r?\n/)) if (dong && !dong.startsWith("[SLOW QUERY]")) { log.push(dong); if (log.length > 20000) log.shift(); } };
-  child.stdout.on("data", nap);
-  child.stderr.on("data", nap);
+/** Khoá KEY=VAL bị TỪ CHỐI (không phân biệt hoa thường): năm cờ an toàn + nơi trỏ DB/.env/vai trò — lệnh của người chạy bị chặn chứ không bị âm thầm sửa. */
+export const KHOA_CAM_GHI_DE = [...NAM_CO_TAT, "DATABASE_URL", "DOTENV_CONFIG_PATH", "ROLE"];
+/** KEY=VAL chỉ được nhận khi: khoá là PORT (khớp ĐỦ tên) hoặc bắt đầu bằng LOG_/DIAG_/BOOT_ (biến chẩn đoán), HOẶC khoá nằm trong KHOA_TAT_DUOC và giá trị là "tắt".
+ *  KHÔNG có quy tắc chung "giá trị tắt luôn an toàn": nhiều cờ có cực tính ngược (RBAC_SCOPED_ADMIN=false, AUDIT_ALL_MUTATIONS=false… làm yếu an toàn). */
+export const KHOA_CHAN_DOAN = ["PORT"];
+export const TIEN_TO_CHAN_DOAN = ["LOG_", "DIAG_", "BOOT_"];
+/** Danh sách TƯỜNG MINH: đúng các cờ boot-lap tự tắt mặc định (xem dungEnvCoLap) + EDGE_FACTORY_DRIFT_ALERT; tắt thêm các cờ này an toàn. */
+export const KHOA_TAT_DUOC = ["GGUF_WARM_DEEP_MODEL_ON_BOOT", "LLAMA_SERVER_ENABLED", "LLAMA_WATCHDOG_ENABLED", "AI_ORCHESTRATION_ENABLED", "AI_KB_WARM_ON_BOOT", "EDGE_FACTORY_DRIFT_ALERT"];
+export const GIA_TRI_TAT = ["false", "off", "0"];
+/** Cấm MỌI giá trị (mở đường nạp mã/đổi hành vi tiến trình con). Ngoài ra: khoá thuộc ALWAYS_OFF chỉ nhận giá trị TRÙNG ALWAYS_OFF (no-op). */
+export const KHOA_CAM_MOI_GIA_TRI = ["NODE_OPTIONS"];
 
-  let tgNghe = null;
-  let ketCuc = null;
-  while (ketCuc === null) {
-    await ngu(500);
-    if (thoat) { ketCuc = tgNghe ? "chet-sau-khi-nghe" : "chet-truoc-khi-nghe"; break; }
-    if (tgNghe === null && (await nghe())) tgNghe = Date.now() - t0;
-    if (tgNghe !== null && Date.now() - t0 - tgNghe >= GIU_MS) { ketCuc = "song-het-giu"; break; }
-    if (tgNghe === null && Date.now() - t0 > TRAN_LEN_MS) { ketCuc = "treo-khong-nghe"; break; }
+/** Dựng env con: chỉ biến hệ điều hành cần thiết + cấu hình đo + ALWAYS_OFF + năm cờ "false"; `ghiDe` (KEY=VAL từ dòng lệnh) áp CUỐI, trừ KHOA_CAM_GHI_DE ⇒ ném lỗi. */
+export function dungEnvCoLap(envCha, { port, dbUrl, logDir, ghiDe = {}, alwaysOff = docAlwaysOff() }) {
+  const cam = [...KHOA_CAM_GHI_DE, ...KHOA_CAM_MOI_GIA_TRI].map((k) => k.toUpperCase());
+  const tatCa = Object.fromEntries(Object.entries(alwaysOff).map(([k, v]) => [k.toUpperCase(), v]));
+  for (const [k, v] of Object.entries(ghiDe)) {
+    const K = k.toUpperCase();
+    if (cam.includes(K)) throw new Error(`KEY=VAL "${k}" bị từ chối: khoá này do boot-lap tự đặt (cờ an toàn / DB / .env / ROLE / NODE_OPTIONS), không ghi đè được`);
+    if (K in tatCa && tatCa[K] !== v) throw new Error(`KEY=VAL "${k}=${v}" bị từ chối: khoá thuộc ALWAYS_OFF (chỉ nhận giá trị trùng "${tatCa[K]}")`);
+    if (K in tatCa) continue; // trùng ALWAYS_OFF (đã qua kiểm trên) = no-op, không đổi env
+    const laChanDoan = KHOA_CHAN_DOAN.includes(K) || TIEN_TO_CHAN_DOAN.some((t) => K.startsWith(t));
+    const laTat = KHOA_TAT_DUOC.includes(K) && GIA_TRI_TAT.includes(String(v).trim().toLowerCase());
+    if (!laChanDoan && !laTat) throw new Error(`KEY=VAL "${k}=${v}" bị từ chối: chỉ nhận PORT, LOG_*, DIAG_*, BOOT_*, hoặc khoá trong KHOA_TAT_DUOC với giá trị tắt (false/off/0)`);
   }
-  const pid = child.pid;
-  if (!thoat) { giet(pid); await ngu(1500); }
-  const r = { lan: i, ketCuc, tgNgheMs: tgNghe, thoat, tongMs: Date.now() - t0 };
-  ketQua.push(r);
-  const hex = thoat?.code != null ? "0x" + (thoat.code >>> 0).toString(16) : "-";
-  console.log(`#${i} ${ketCuc} nghe=${tgNghe}ms exit=${thoat ? `${thoat.code}(${hex})/${thoat.signal}` : "bị-ta-giết"} tong=${r.tongMs}ms`);
-  if (ketCuc.startsWith("chet") || ketCuc.startsWith("treo") || process.env.BOOT_SAVE_LOG === "1") fs.writeFileSync(`${THU_MUC_LOG}/lan${i}.log`, log.slice(-20000).join("\n"));
-  if (DON_MOI > 0 && i % DON_MOI === 0) await donThongBao().catch((e) => console.log("dọn thông báo lỗi:", e.message));
-  await ngu(2000);
+  const env = {};
+  for (const k of BIEN_HE_DIEU_HANH) if (envCha[k] != null) env[k] = envCha[k];
+  Object.assign(env, {
+    DOTENV_CONFIG_PATH: path.join(logDir, "khong-ton-tai.env"),
+    DATABASE_URL: dbUrl,
+    PORT: String(port), ROLE: "api",
+    JWT_SECRET: "bl-" + crypto.randomBytes(32).toString("hex"),
+    LICENSE_BYPASS: "true", AUTH_2FA_BAT_BUOC: "0", VITE_APP_ID: "ui-metrics",
+    GGUF_WARM_DEEP_MODEL_ON_BOOT: "false",
+    LLAMA_SERVER_ENABLED: "false",
+    LLAMA_WATCHDOG_ENABLED: "false",
+    // Không-GPU mặc định (census VRAM): aiWatcher tắt + KHÔNG làm ấm KB lúc boot (cờ THẬT AI_KB_WARM_ON_BOOT, không cần bản vá chẩn đoán).
+    AI_ORCHESTRATION_ENABLED: "false",
+    AI_KB_WARM_ON_BOOT: "false",
+    VITEST: "", // không phải môi trường test
+  }, alwaysOff);
+  for (const k of NAM_CO_TAT) env[k] = "false";
+  Object.assign(env, ghiDe);
+  // Phòng thủ lớp hai: dù ghiDe lọt kiểm tra trên, năm cờ vẫn phải là "false" khi trả về.
+  for (const k of NAM_CO_TAT) if (env[k] !== "false") throw new Error(`env con có ${k}=${env[k]} — dừng, không khởi server`);
+  return env;
 }
-fs.writeFileSync(`${THU_MUC_LOG}/tom-tat.json`, JSON.stringify(ketQua, null, 1));
-const chet = ketQua.filter((r) => r.ketCuc.startsWith("chet") || r.ketCuc.startsWith("treo"));
-console.log(`TONG ${ketQua.length} lần: sống ${ketQua.length - chet.length}, chết/treo ${chet.length}`);
+
+async function chinh() {
+  const LAN = Number(process.argv[2] ?? 20);
+  const GHI_DE = Object.fromEntries(process.argv.slice(3).map((a) => a.split(/=(.*)/s).slice(0, 2)));
+  const THU_MUC_LOG = process.env.BOOT_DIR ?? ".boot20";
+  const GIU_MS = Number(process.env.BOOT_GIU_MS ?? 25_000); // giữ sau khi cổng nghe
+  const TRAN_LEN_MS = Number(process.env.BOOT_TRAN_MS ?? 180_000); // cổng không nghe sau 180 s ⇒ coi là treo
+  const PORT = 3016;
+
+  const envFile = fs.readFileSync(".env", "utf8").split(/\r?\n/);
+  const dbLine = envFile.filter((l) => /^DATABASE_URL=/.test(l)).pop();
+  const dbUrl = dbLine.replace(/^DATABASE_URL=/, "").trim().replace(/\s+#.*$/, "").replace(/\/aoi_management(\?|$)/, "/aoi_management_test$1");
+  if (!/aoi_management_test/.test(dbUrl)) throw new Error("không dựng được URL DB _test");
+
+  const env = dungEnvCoLap(process.env, { port: PORT, dbUrl, logDir: THU_MUC_LOG, ghiDe: GHI_DE });
+
+  const nghe = () =>
+    new Promise((ok) => {
+      const s = net.connect({ port: PORT, host: "127.0.0.1" }, () => { s.destroy(); ok(true); });
+      s.on("error", () => ok(false));
+      s.setTimeout(800, () => { s.destroy(); ok(false); });
+    });
+  const ngu = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function giet(pid) {
+    spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+  }
+
+  const ketQua = [];
+  // Mỗi lần khởi động sinh ~6.000 thông báo ALERT (quét STOP/factory-drift trên dữ liệu test) — dọn định kỳ để DB _test không phình và gây treo giả.
+  const DON_MOI = Number(process.env.BOOT_CLEAN_EVERY ?? 0);
+  async function donThongBao() {
+    const sql = postgres(dbUrl, { max: 1, onnotice: () => {} });
+    try {
+      await sql`delete from notifications where type = 'ALERT' and "createdAt" >= now() - interval '2 hours' and (title ~ 'factory changed while edge' or title ~ '^STOP owed after transfer' or title ~ '^OT STOP sync between central' or title ~ '^STOP not confirmed')`;
+    } finally { await sql.end(); }
+  }
+  fs.mkdirSync(THU_MUC_LOG, { recursive: true });
+  for (let i = 1; i <= LAN; i++) {
+    if (await nghe()) { console.log(`#${i} cổng ${PORT} ĐANG có người nghe trước khi chạy — dừng`); break; }
+    const t0 = Date.now();
+    const log = [];
+    const child = spawn(process.env.BOOT_NODE ?? process.execPath, ["node_modules/tsx/dist/cli.mjs", "server/_core/index.ts"], { env, cwd: process.cwd(), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    let thoat = null;
+    child.on("exit", (code, signal) => { thoat = { code, signal, ms: Date.now() - t0 }; });
+    const nap = (b) => { for (const dong of b.toString("utf8").split(/\r?\n/)) if (dong && !dong.startsWith("[SLOW QUERY]")) { log.push(dong); if (log.length > 20000) log.shift(); } };
+    child.stdout.on("data", nap);
+    child.stderr.on("data", nap);
+
+    let tgNghe = null;
+    let ketCuc = null;
+    while (ketCuc === null) {
+      await ngu(500);
+      if (thoat) { ketCuc = tgNghe ? "chet-sau-khi-nghe" : "chet-truoc-khi-nghe"; break; }
+      if (tgNghe === null && (await nghe())) tgNghe = Date.now() - t0;
+      if (tgNghe !== null && Date.now() - t0 - tgNghe >= GIU_MS) { ketCuc = "song-het-giu"; break; }
+      if (tgNghe === null && Date.now() - t0 > TRAN_LEN_MS) { ketCuc = "treo-khong-nghe"; break; }
+    }
+    const pid = child.pid;
+    if (!thoat) { giet(pid); await ngu(1500); }
+    const r = { lan: i, ketCuc, tgNgheMs: tgNghe, thoat, tongMs: Date.now() - t0 };
+    ketQua.push(r);
+    const hex = thoat?.code != null ? "0x" + (thoat.code >>> 0).toString(16) : "-";
+    console.log(`#${i} ${ketCuc} nghe=${tgNghe}ms exit=${thoat ? `${thoat.code}(${hex})/${thoat.signal}` : "bị-ta-giết"} tong=${r.tongMs}ms`);
+    if (ketCuc.startsWith("chet") || ketCuc.startsWith("treo") || process.env.BOOT_SAVE_LOG === "1") fs.writeFileSync(`${THU_MUC_LOG}/lan${i}.log`, log.slice(-20000).join("\n"));
+    if (DON_MOI > 0 && i % DON_MOI === 0) await donThongBao().catch((e) => console.log("dọn thông báo lỗi:", e.message));
+    await ngu(2000);
+  }
+  fs.writeFileSync(`${THU_MUC_LOG}/tom-tat.json`, JSON.stringify(ketQua, null, 1));
+  const chet = ketQua.filter((r) => r.ketCuc.startsWith("chet") || r.ketCuc.startsWith("treo"));
+  console.log(`TONG ${ketQua.length} lần: sống ${ketQua.length - chet.length}, chết/treo ${chet.length}`);
+}
+
+// So bằng realpath (đi qua junction/symlink vẫn khớp). Gọi đúng tên boot-lap.mjs mà vẫn lệch ⇒ báo stderr, không im lặng thoát 0.
+const duongChay = process.argv[1] ? fs.realpathSync(process.argv[1]) : "";
+if (duongChay === fs.realpathSync(fileURLToPath(import.meta.url))) await chinh();
+else if (path.basename(process.argv[1] ?? "") === "boot-lap.mjs") console.error(`boot-lap: KHÔNG chạy — đường dẫn gọi (${duongChay}) lệch tệp nguồn; chạy trực tiếp bằng node scripts/chan-doan/boot-lap.mjs`);

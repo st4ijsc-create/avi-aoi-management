@@ -67,13 +67,13 @@ let schema: typeof import("../../../drizzle/schema");
 
 type Seed = { key: string; protocol: "modbus" | "opcua" | "s7"; endpoint: string; connectionOptions: Record<string, unknown> | null };
 const SEEDS: Seed[] = [
-  { key: "secret", protocol: "modbus", endpoint: "tcp://10.250.0.5:502", connectionOptions: { unitId: 3, password: "enc:v1:aa", timeoutMs: 1500 } },
-  { key: "null", protocol: "s7", endpoint: "10.250.0.6", connectionOptions: null },
+  { key: "secret", protocol: "modbus", endpoint: "tcp://127.0.0.1:9", connectionOptions: { unitId: 3, password: "enc:v1:aa", timeoutMs: 1500 } },
+  { key: "null", protocol: "s7", endpoint: "127.0.0.1:9", connectionOptions: null },
   {
     key: "ha",
     protocol: "opcua",
-    endpoint: "opc.tcp://10.250.0.7:4840",
-    connectionOptions: { securityMode: "None", userName: "op", ha: { secondaryEndpoint: "opc.tcp://10.250.0.8:4840" } },
+    endpoint: "opc.tcp://127.0.0.1:9",
+    connectionOptions: { securityMode: "None", userName: "op", ha: { secondaryEndpoint: "opc.tcp://localhost:9" } },
   },
 ];
 const ids: Record<string, number> = {};
@@ -146,11 +146,11 @@ describe("G3 — fingerprint through the REAL loadEnabledAdapters (_test DB)", (
         expect(ot.getActiveConnectionFingerprint(ids.secret)).toBe(adapterTargetFingerprint(await rowOf("secret")));
 
         // Re-pointed rows (not reconnected) ⇒ the running fingerprint must NOT match any more (no false exemption).
-        await db.update(schema.deviceAdapters).set({ endpoint: "tcp://10.250.0.99:502" }).where(eq(schema.deviceAdapters.id, ids.secret));
-        await db.update(schema.deviceAdapters).set({ endpoint: "10.250.0.66" }).where(eq(schema.deviceAdapters.id, ids.null));
+        await db.update(schema.deviceAdapters).set({ endpoint: "tcp://localhost:9" }).where(eq(schema.deviceAdapters.id, ids.secret));
+        await db.update(schema.deviceAdapters).set({ endpoint: "localhost:9" }).where(eq(schema.deviceAdapters.id, ids.null));
         await db
           .update(schema.deviceAdapters)
-          .set({ connectionOptions: { securityMode: "None", userName: "op", ha: { secondaryEndpoint: "opc.tcp://10.250.0.9:4840" } } })
+          .set({ connectionOptions: { securityMode: "None", userName: "op", ha: { secondaryEndpoint: "opc.tcp://127.0.0.1:9" } } })
           .where(eq(schema.deviceAdapters.id, ids.ha));
         for (const k of ["secret", "null", "ha"]) {
           expect(ot.getActiveConnectionFingerprint(ids[k]), `${k} re-pointed`).not.toBe(adapterTargetFingerprint(await rowOf(k)));

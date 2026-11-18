@@ -62,6 +62,7 @@ import { appRouter } from "../routers";
 import type { TrpcContext } from "../_core/context";
 import * as db from "../db";
 import { getDb } from "../db/connection";
+import { chonMocTheoDb } from "../testing/__chunkSanCo";
 import { clearAssignmentCache } from "../_core/accessControl";
 import { SCOPED_EXPORT_NOTE } from "../_core/reportExportScope";
 import { users, type InsertUser, type User } from "../../drizzle/schema";
@@ -92,7 +93,21 @@ const CORP_B = `RES_CORP_B_${ts}`;
  *    (xem `beforeAll`) ⇒ dù một file test khác có tình cờ ghi vào đúng khe này, phép đo vẫn
  *    nói đúng về 5 hàng mà file này tạo ra.
  */
-const INSPECTED_AT = new Date(1_000_000_000_000 + (ts % 200_000) * 3_600_000);
+/**
+ * ★ 17/11 — KHÔNG TẠO CHUNK TIMESCALE MỚI: bản cũ đặt mốc ở một giờ NGẪU NHIÊN trong 2001-09…~2024 (`ts % 200_000` giờ) nên gần như MỖI lượt chạm một chunk CHƯA CÓ (đo ở cổng: 2010-05, 2013-03, 2010-12, 2014-02, 2006-04, 2009-01 …),
+ * mà `product_inspections` có khoá ngoại → machines ⇒ tạo chunk xin ShareRowExclusive trên machines và chờ sau mọi giao dịch đang giữ RowExclusive (chuỗi khoá 25 s). Nay mốc lấy trong một chunk ĐÃ CÓ, ở vị trí băm theo `ts`, đã kiểm ±60 s TRỐNG ở `product_inspections` (đúng bề rộng cửa sổ bên dưới) — `server/testing/__chunkSanCo.ts`.
+ * Hai lớp cô lập của docblock trên giữ nguyên (khe riêng + đo THEO ĐỘ LỆCH so với `baseline`); không chọn được chunk ⇒ rơi về công thức cũ (và cảnh báo).
+ */
+const MOC_MAC_DINH = new Date(1_000_000_000_000 + (ts % 200_000) * 3_600_000);
+const MOC_CHON = await chonMocTheoDb(await getDb(), {
+  bang: "product_inspections",
+  cot: "inspectionTime",
+  ts,
+  macDinh: MOC_MAC_DINH,
+  nuaDoTrongMs: 60_000,
+});
+if (MOC_CHON.nguon !== "chunk-san-co") console.warn(`[${"reportExportScope.test.ts"}] không chọn được mốc trong chunk có sẵn (${MOC_CHON.nguon}) — rơi về công thức cũ, có thể tạo chunk mới`);
+const INSPECTED_AT = MOC_CHON.at;
 const WINDOW_START = new Date(INSPECTED_AT.getTime() - 60_000);
 const WINDOW_END = new Date(INSPECTED_AT.getTime() + 60_000);
 

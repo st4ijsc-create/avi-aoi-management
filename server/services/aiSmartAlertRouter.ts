@@ -20,6 +20,7 @@ import { decideAlertWrite, type AlertSeverity } from "./alerts/decideAlertWrite"
 import { decideNotify } from "./alerts/decideNotify";
 // Đợt 0.3 — cổng ưu tiên llama-server (module LÁ).
 import { chayVoiUuTien } from "./ai/hangDoiUuTienLlm";
+import { finalYield } from "../utils/kpi";
 
 /** Wave 3 §4.2 — hạn dùng cảnh báo. Gia hạn mỗi lần tái diễn, nên hết hạn
  *  nghĩa là "tình trạng đã THÔI tái diễn", không phải "đã quá N ngày". */
@@ -1186,6 +1187,7 @@ export async function detectYieldDrop(
     .select({
       total: sql<number>`COALESCE(SUM(${dailyStatistics.totalCount}), 0)`,
       ok: sql<number>`COALESCE(SUM(${dailyStatistics.okCount}), 0)`,
+      ntf: sql<number>`COALESCE(SUM(${dailyStatistics.ntfCount}), 0)`,
     })
     .from(dailyStatistics)
     .where(
@@ -1200,6 +1202,7 @@ export async function detectYieldDrop(
     .select({
       total: sql<number>`COALESCE(SUM(${dailyStatistics.totalCount}), 0)`,
       ok: sql<number>`COALESCE(SUM(${dailyStatistics.okCount}), 0)`,
+      ntf: sql<number>`COALESCE(SUM(${dailyStatistics.ntfCount}), 0)`,
     })
     .from(dailyStatistics)
     .where(
@@ -1212,13 +1215,16 @@ export async function detectYieldDrop(
 
   const todayTotal = Number(todayStats?.total ?? 0);
   const todayOk = Number(todayStats?.ok ?? 0);
+  const todayNtf = Number(todayStats?.ntf ?? 0);
   const yesterdayTotal = Number(yesterdayStats?.total ?? 0);
   const yesterdayOk = Number(yesterdayStats?.ok ?? 0);
+  const yesterdayNtf = Number(yesterdayStats?.ntf ?? 0);
 
   if (todayTotal < 10 || yesterdayTotal < 10) return null; // Not enough data
 
-  const todayYield = (todayOk / todayTotal) * 100;
-  const yesterdayYield = (yesterdayOk / yesterdayTotal) * 100;
+  // canonical (OK + NTF) / total — dọn vệ sinh Q0-2 (trước: chỉ OK ⇒ NTF làm yield tụt giả)
+  const todayYield = finalYield({ ok: todayOk, ntf: todayNtf, total: todayTotal });
+  const yesterdayYield = finalYield({ ok: yesterdayOk, ntf: yesterdayNtf, total: yesterdayTotal });
   const drop = yesterdayYield - todayYield;
 
   if (drop >= dropThresholdPercent) {

@@ -4,9 +4,9 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 const dir = fileURLToPath(new URL("./", import.meta.url));
 const PAGES = { "man-1-home.html": ["binh-thuong", "p1-chua-ack", "du-lieu-cu"], "man-4-canh-bao.html": ["hon-hop", "lu", "du-lieu-cu", "p1-tuoi-line-cu", "chi-tiet"], "man-5-tai-san.html": ["may-that", "may-sim", "ngoai-pham-vi", "wizard"] };
 const b = await chromium.launch(); let tong = 0, loi = 0; const mau = {};
-for (const [tep, ds] of Object.entries(PAGES)) for (const st of ds) for (const [w, h, den, min] of [[1280, 800, "comfortable", 48], [1920, 1080, "default", 40]]) {
+for (const [tep, ds] of Object.entries(PAGES)) for (const st of ds) for (const vai of (tep.startsWith("man-1") ? ["van-hanh", "giam-sat", "ky-su", "quan-ly", "quan-tri"] : ["giam-sat"])) for (const [w, h, den, min] of [[1280, 800, "comfortable", 48], [1920, 1080, "default", 40]]) {
   const p = await b.newPage({ viewport: { width: w, height: h } });
-  await p.goto(pathToFileURL(dir + tep).href + `?state=${st}&density=${den}&rail=${w >= 1920 ? "open" : "closed"}&shot=1`);
+  await p.goto(pathToFileURL(dir + tep).href + `?state=${st}&role=${vai}&density=${den}&rail=${w >= 1920 ? "open" : "closed"}&shot=1`);
   const r = await p.evaluate((min) => [...document.querySelectorAll("a[href],button,[role=tab],input,select,textarea,.chk")].filter((e) => !e.closest(".demo") && e.getClientRects().length).map((e) => ({ t: (e.textContent || e.className || e.tagName).trim().slice(0, 30), h: Math.round(e.getBoundingClientRect().height) })).reduce((a, x) => { a.n++; if (x.h < min) { a.bad.push(x); } return a; }, { n: 0, bad: [] }), min);
   tong += r.n; loi += r.bad.length; for (const x of r.bad) mau[`${x.t}|${x.h}`] = (mau[`${x.t}|${x.h}`] ?? 0) + 1;
   await p.close();

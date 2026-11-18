@@ -67,11 +67,17 @@ export function trichMa(text, lang, dinhDanh) {
 function chay(file, args, cwd, timeout, signal, shell = false, env = undefined) {
   return new Promise((resolve) => {
     if (signal?.aborted) return resolve({ ok: false, out: "HUY" });
-    execFile(file, args, { cwd, timeout, signal, shell, ...(env ? { env } : {}), encoding: "utf8", maxBuffer: 16 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+    // Windows: `timeout` của execFile chỉ giết tiến trình trực tiếp (cmd.exe, dotnet), lời giải vòng vô hạn ở tiến trình con sống tiếp và ngốn một lõi
+    //   (đo 09/11: `python t.py` mồ côi, giữ luôn thư mục chấm). Hết giờ ⇒ giết cả cây TRƯỚC khi cha chết; sau đó không còn tìm được con.
+    const giet = process.platform === "win32" && timeout;
+    let hen = null;
+    const c = execFile(file, args, { cwd, ...(giet ? {} : { timeout }), signal, shell, ...(env ? { env } : {}), encoding: "utf8", maxBuffer: 16 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+      if (hen) clearTimeout(hen);
       if (!err) return resolve({ ok: true, out: stdout });
       const out = `${stdout || ""}\n${stderr || ""}`.trim();
       resolve({ ok: false, out: (out || String(err.message || err)).slice(-1500) });
     });
+    if (giet) hen = setTimeout(() => execFile("taskkill", ["/T", "/F", "/PID", String(c.pid)], { windowsHide: true }, () => {}), timeout);
   });
 }
 

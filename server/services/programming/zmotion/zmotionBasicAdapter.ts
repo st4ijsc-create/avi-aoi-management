@@ -278,6 +278,9 @@ class ZmcLink {
   }
 }
 
+/** Pha 0 · C0-8 — hằng, KHÔNG phải cờ môi trường: không có công tắc nào để bật lại tới khi 70 nối qua 50. Kiểu `boolean` để thân deploy cũ không bị coi là mã chết. */
+const MODULE_ZMOTION_DEPLOY_TAM_DUNG: boolean = true;
+
 export class ZmotionBasicAdapter implements ProgrammingAdapter {
   readonly kind = "zmotion-basic" as const;
   readonly capabilities: ProgrammingCapability = {
@@ -369,6 +372,18 @@ export class ZmotionBasicAdapter implements ProgrammingAdapter {
   }
 
   async deploy(build: BuildResult, opts: ProgDeployOpts): Promise<ProgDeployResult> {
+    // Pha 0 · C0-8 (2026-11-06): ĐÓNG BĂNG có chủ đích tới khi 70 nối đường ghi Zmotion qua 50 (dispatch()). KHÔNG probe, KHÔNG ZmcLink, KHÔNG nạp zauxFfi/koffi —
+    // nếu koffi được cài, đường này sẽ GHI THẲNG xuống bộ điều khiển và NÉ dispatch() (HITL/interlock/chế độ cục bộ). Không có công tắc để bật (≠ FEATURE_DISABLED).
+    // Phần thân bên dưới giữ nguyên làm tài liệu sống cho lúc nối lại; unreachable-by-design.
+    if (MODULE_ZMOTION_DEPLOY_TAM_DUNG) {
+      return {
+        ok: false,
+        status: "failed",
+        simulated: false,
+        detail: { reason: "MODULE_PAUSED", module: "zmotion-deploy" },
+        error: "MODULE_PAUSED: Zmotion deploy bị đóng băng (pha 0 · C0-8) — chưa có đường ghi qua dispatch().",
+      };
+    }
     // Reached ONLY when the service opened the gate (DPC_DEPLOY_ENABLED + HITL sign-off).
     // Honest by construction: any failure → status 'failed', never a fake 'deployed'.
     // Endpoint precedence: explicit opts.endpoint → ZMC_ENDPOINT env (owner sets the wired

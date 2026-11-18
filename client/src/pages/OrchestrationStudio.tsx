@@ -27,6 +27,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Link, useSearch } from "wouter";
 import { useEngineering } from "@/contexts/EngineeringContext";
+import { keHoachToastAbort, soGiaoThat, type AbortStopsBaoCao } from "@/lib/abortStopToasts"; // T12b — toast theo báo cáo thật của abortStops
 import { withParams } from "@/lib/engineeringDeepLink";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useShellPageVariant } from "@/lib/shellPage";
@@ -1610,10 +1611,28 @@ export default function OrchestrationStudio() {
     }
   };
 
+  /** Luật đầu vào step id MỚI: mỗi mã lỗi của server có câu i18n RIÊNG nêu đúng lý do (ký tự / độ dài / tiền tố abort: / dấu riêng). */
+  const stepIdRefusalText = (e: { path: string; code?: string; kyTu?: string; doDai?: number; toiDa?: number }): string => {
+    const path = e.path;
+    switch (e.code) {
+      case "STEP_ID_TOO_LONG":
+        return t("studio.deployStepIdQuaDai", "Not deployed: the step id at {{path}} is {{doDai}} characters long; the limit is {{toiDa}}. Shorten it, then deploy again.", { path, doDai: e.doDai ?? 0, toiDa: e.toiDa ?? 0 });
+      case "STEP_ID_ABORT_PREFIX":
+        return t("studio.deployStepIdTienToAbort", "Not deployed: the step id at {{path}} starts with \"abort:\", which is reserved. Rename the step, then deploy again.", { path });
+      case "STEP_ID_RESERVED_MARKER":
+        return t("studio.deployStepIdDauHieuRieng", "Not deployed: the step id at {{path}} contains the reserved marker \"[[A2N\". Rename the step, then deploy again.", { path });
+      default:
+        return t("studio.deployStepIdKyTu", "Not deployed: the step id at {{path}} contains {{kyTu}}. A step id may not contain \",\" \"(\" \")\" or a line break — rename the step, then deploy again.", { path, kyTu: e.kyTu ?? "" });
+    }
+  };
   const deployM = trpc.orchestration.deployWorkflow.useMutation({
     onSuccess: (r) => {
       if (r?.ok) { toast.success(t("studio.deployed", "Workflow saved / deployed")); void workflowsQ.refetch(); }
-      else toast.error(definitionRefusalText(r) ?? r?.message ?? t("studio.deployFail", "Deploy failed"));
+      else {
+        // luật đầu vào step id MỚI: server trả errors[] có code STEP_ID_FORBIDDEN_CHAR + path + kyTu ⇒ câu i18n nêu đúng ký tự và vị trí step.
+        const kyTuId = r?.errors?.find((e) => e.code?.startsWith("STEP_ID_"));
+        toast.error(kyTuId ? stepIdRefusalText(kyTuId) : definitionRefusalText(r) ?? r?.message ?? t("studio.deployFail", "Deploy failed"));
+      }
     },
     onError: (e) => toastTrpcError(e),
   });
@@ -1662,7 +1681,7 @@ export default function OrchestrationStudio() {
    */
   // fix 2 (N6) — `kind` says whether it was an abort or a gate rejection (the texts name the right action).
   const abortOutcomeToasts = (
-    r: { ok?: boolean; runId?: number; reason?: string; resend?: boolean; abortStops?: { sent: string[]; failed: string[]; pending: string[]; unverified: string[]; untakenBranch: string[]; notPinned: string[]; notNeeded?: string[] } } | null | undefined,
+    r: { ok?: boolean; runId?: number; reason?: string; resend?: boolean; abortStops?: AbortStopsBaoCao; message?: string } | null | undefined,
     kind: "abort" | "reject",
   ) => {
     if (r?.reason === "resendTooOld") {
@@ -1671,21 +1690,35 @@ export default function OrchestrationStudio() {
     }
     const stops = r?.abortStops;
     if (!stops) return;
-    if (r?.resend) {
-      // fix 3 (M5) — a re-send is not a new abort: say what was sent again
-      toast.success(t("studio.resendDone", "STOP steps of run #{{id}} sent again — confirmed by the machine: {{sent}}.", { id: r?.runId ?? "?", sent: stops.sent.length }));
-    } else if (r?.reason === "abortUnconfirmed") {
+    // T12b — chữ theo BÁO CÁO THẬT: "sent" = bộ điều phối NHẬN (không phải máy xác nhận); không success khi không STOP nào đi / còn điều chưa biết.
+    const ke = keHoachToastAbort(stops);
+    if (r?.reason === "abortUnconfirmed") {
       toast.error(
         kind === "reject"
-          ? t("studio.rejectUnconfirmed", "The rejection could not be confirmed in the database in time. STOP steps confirmed sent: {{sent}}. Check the run and retry.", { sent: stops.sent.length })
-          : t("studio.abortUnconfirmed", "The abort could not be confirmed in the database in time. STOP steps confirmed sent: {{sent}}. Check the run and retry.", { sent: stops.sent.length }),
+          ? t("studio.rejectUnconfirmed", "The rejection could not be confirmed in the database in time. STOP steps handed to the dispatcher: {{sent}}. Check the run and retry.", { sent: soGiaoThat(stops) })
+          : t("studio.abortUnconfirmed", "The abort could not be confirmed in the database in time. STOP steps handed to the dispatcher: {{sent}}. Check the run and retry.", { sent: soGiaoThat(stops) }),
       );
-    } else {
-      toast.success(
-        kind === "reject"
-          ? t("studio.rejectDone", "Run #{{id}} rejected and aborted. Non-STOP steps were skipped; STOP steps confirmed sent: {{sent}}.", { id: r?.runId ?? "?", sent: stops.sent.length })
-          : t("studio.abortDone", "Run #{{id}} aborted. Non-STOP steps were skipped; STOP steps confirmed sent: {{sent}}.", { id: r?.runId ?? "?", sent: stops.sent.length }),
+    } else if (ke.dau === "chuaBiet") {
+      toast.warning(
+        t("studio.abortStopsUnknown", "The STOP report is incomplete ({{why}}) — do not assume any STOP step has gone out. STOP steps handed to the dispatcher: {{sent}}. Check the run's steps; to stop that equipment now, use the machine's direct STOP / E-STOP.", {
+          why: ke.lyDo.map((k) => t(`studio.abortWhy.${k}`, k, { count: stops.moPhong?.length ?? 0 })).join("; "),
+          sent: soGiaoThat(stops),
+        }),
+        r?.message ? { description: r.message } : undefined,
       );
+    } else if (ke.dau === "khongStopNaoDi") {
+      toast.info(t("studio.abortNoStopSent", "No STOP step was sent by this action."));
+    } else if (ke.dau === "thanhCong") {
+      if (r?.resend) {
+        // fix 3 (M5) — a re-send is not a new abort: say what was sent again
+        toast.success(t("studio.resendDone", "STOP steps of run #{{id}} sent again — handed to the dispatcher: {{sent}} (not yet confirmed by the machine).", { id: r?.runId ?? "?", sent: stops.sent.length }));
+      } else {
+        toast.success(
+          kind === "reject"
+            ? t("studio.rejectDone", "Run #{{id}} rejected and aborted. Non-STOP steps were skipped; STOP steps handed to the dispatcher: {{sent}} (not yet confirmed by the machine).", { id: r?.runId ?? "?", sent: stops.sent.length })
+            : t("studio.abortDone", "Run #{{id}} aborted. Non-STOP steps were skipped; STOP steps handed to the dispatcher: {{sent}} (not yet confirmed by the machine).", { id: r?.runId ?? "?", sent: stops.sent.length }),
+        );
+      }
     }
     if (stops.pending.length > 0) toast.info(t("studio.abortStopsPending", "{{count}} STOP step(s) handed to the machine, answer not received yet — see the run's steps.", { count: stops.pending.length }));
     const notSent = stops.failed.length + stops.unverified.length + stops.untakenBranch.length;

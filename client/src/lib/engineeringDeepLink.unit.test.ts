@@ -239,12 +239,25 @@ describe("withParams", () => {
     });
   });
 
-  // ⚠ LỖI ĐÃ BIẾT (dieu-phoi duyệt pilot 2026-11-02): withParams không xử lý path đã có "?" hoặc "#" ⇒ sinh hai "?" /
-  // query sau "#". Hai ca dưới GHI LẠI HIỆN TRẠNG, không phải hành vi mong muốn — khi sửa withParams (backlog) thì đổi kỳ vọng.
-  describe("path đã có query string — HIỆN TRẠNG (lỗi đã biết)", () => {
-    it("thêm query vào cuối path (không parse query cũ)", () => {
+  describe("path đã có query string", () => {
+    it("tham số mới ghép bằng '&', giữ nguyên query cũ", () => {
       const result = withParams("/path?old=1", { new: "2" });
-      expect(result).toBe("/path?old=1?new=2");
+      expect(result).toBe("/path?old=1&new=2");
+    });
+
+    it("khoá trùng → giá trị mới thay giá trị cũ tại vị trí cũ", () => {
+      const result = withParams("/path?old=1&ref=line-a", { old: "99" });
+      expect(result).toBe("/path?old=99&ref=line-a");
+    });
+
+    it("tham số cũ giữ nguyên văn (không re-encode)", () => {
+      const result = withParams("/path?name=hello%20world", { new: "2" });
+      expect(result).toBe("/path?name=hello%20world&new=2");
+    });
+
+    it("nhiều tham số cũ + nhiều tham số mới", () => {
+      const result = withParams("/path?a=1&b=2&c=3", { d: "4", e: "5" });
+      expect(result).toBe("/path?a=1&b=2&c=3&d=4&e=5");
     });
   });
 
@@ -295,10 +308,92 @@ describe("withParams", () => {
     });
   });
 
-  describe("edge cases — path có hash — HIỆN TRẠNG (lỗi đã biết, xem chú thích ở trên)", () => {
-    it("path có hash → giữ nguyên hash", () => {
+  describe("edge cases — path có hash", () => {
+    it("path có hash → query đứng trước '#', fragment giữ nguyên", () => {
       const result = withParams("/path?old=1#section", { new: "2" });
-      expect(result).toBe("/path?old=1#section?new=2");
+      expect(result).toBe("/path?old=1&new=2#section");
+    });
+
+    it("path không có query nhưng có hash → query đứng trước '#'", () => {
+      const result = withParams("/path#section", { new: "2" });
+      expect(result).toBe("/path?new=2#section");
+    });
+
+    it("path có cả '?' và '#' → query đã ghép đứng trước '#'", () => {
+      const result = withParams("/path?old=1#section", { new: "2" });
+      expect(result).toBe("/path?old=1&new=2#section");
+    });
+  });
+
+  describe("không có tham số hợp lệ → path nguyên văn", () => {
+    it("path có '?' nhưng không param → giữ nguyên", () => {
+      expect(withParams("/path?", {})).toBe("/path?");
+    });
+
+    it("path có '#' nhưng không param → giữ nguyên", () => {
+      expect(withParams("/path#", {})).toBe("/path#");
+    });
+
+    it("path có cả '?' và '#' nhưng không param → giữ nguyên", () => {
+      expect(withParams("/path?#frag", {})).toBe("/path?#frag");
+    });
+
+    it("path có query cũ nhưng không param mới → giữ nguyên", () => {
+      expect(withParams("/path?old=1", {})).toBe("/path?old=1");
+    });
+
+    it("path có query cũ + hash nhưng không param mới → giữ nguyên", () => {
+      expect(withParams("/path?old=1#frag", {})).toBe("/path?old=1#frag");
+    });
+  });
+
+  describe("edge cases — path kết thúc bằng '?' hoặc '#' trống", () => {
+    it("path '/p?' + param → '/p?key=value' (không '?&')", () => {
+      expect(withParams("/p?", { a: "1" })).toBe("/p?a=1");
+    });
+
+    it("path '/p#' + param → '/p?key=value#' (giữ '#' ở cuối)", () => {
+      expect(withParams("/p#", { a: "1" })).toBe("/p?a=1#");
+    });
+
+    it("path '/p?#' + param → '/p?a=1#'", () => {
+      expect(withParams("/p?#", { a: "1" })).toBe("/p?a=1#");
+    });
+  });
+
+  describe("tham số cũ không có dấu '='", () => {
+    it("param '/p?flag' giữ nguyên văn", () => {
+      const result = withParams("/p?flag", { new: "2" });
+      expect(result).toBe("/p?flag&new=2");
+    });
+
+    it("param '/p?flag' + param trùng → thay flag bằng key=value mới", () => {
+      const result = withParams("/p?flag", { flag: "9" });
+      expect(result).toBe("/p?flag=9");
+    });
+  });
+
+  describe("khoá trùng trong query cũ", () => {
+    it("query có khoá lặp '/p?a=1&a=2' + {a:'9'} → 'a=9' (một lần, vị trí đầu)", () => {
+      const result = withParams("/p?a=1&a=2", { a: "9" });
+      expect(result).toBe("/p?a=9");
+    });
+
+    it("query có khoá lặp '/p?a=1&a=2&b=3' + {a:'9'} → 'a=9&b=3'", () => {
+      const result = withParams("/p?a=1&a=2&b=3", { a: "9" });
+      expect(result).toBe("/p?a=9&b=3");
+    });
+
+    it("query có khoá lặp '/p?a=1&a=2' + {b:'3'} → 'a=1&a=2&b=3' (giữ nguyên bản lặp)", () => {
+      const result = withParams("/p?a=1&a=2", { b: "3" });
+      expect(result).toBe("/p?a=1&a=2&b=3");
+    });
+  });
+
+  describe("thay thế nhiều khoá trùng", () => {
+    it("query '/p?a=1&b=2&c=3' + {a:'9',c:'7'} → 'a=9&b=2&c=7'", () => {
+      const result = withParams("/p?a=1&b=2&c=3", { a: "9", c: "7" });
+      expect(result).toBe("/p?a=9&b=2&c=7");
     });
   });
 });

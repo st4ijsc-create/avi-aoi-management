@@ -568,7 +568,8 @@ const MIEN_TRU_VAN_HANH: readonly string[] = [
 //   cổng: beMatAi 471→461 · aiCoCong 409→406 · aiMienTru 62→55 (aiSmartAlertRouting ×7 khỏi miễn trừ vận hành; aiVisionLanguage ×3 có cổng) · tong 2448→2414 trùng phamViDocCensus#GHIM.tong.
 // ★★ 2026-11-04 · dọn vệ sinh lô A2 + gỡ orchestrationGov/twinGov (chủ dự án chọn) — tho-ca-agent: thêm −77 thủ tục (A2 −68: parameterGuardrail, measurementSamples, spcConfig, aiAdvanced đã comment, 21 thủ tục lẻ… ; gỡ Gov −9). ĐO trên nhánh: ghim cũ đỏ ĐÚNG số đó.
 //   cổng: beMatAi 461→429 · aiCoCong 406→374 · tong 2414→2337 (aiMienTru 55 · ngoaiAiCoCong 0 không đổi); SKU khác: MOD_ENGINEERING 76→64 · MOD_OT_CONTROL 133→131 · MOD_QUALITY 67→62.
-const GHIM = { tong: 2337, beMatAi: 429, aiCoCong: 374, aiMienTru: 55, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
+// 2026-11-05 dọn vệ sinh Q0-3: +1 thủ tục `inspection.searchKpi` (KPI Lịch sử tính ở server; không thuộc bề mặt AI, không cổng module) ⇒ tong 2337→2338; beMatAi/aiCoCong/aiMienTru/ngoaiAiCoCong và các SKU khác KHÔNG đổi.
+const GHIM = { tong: 2338, beMatAi: 429, aiCoCong: 374, aiMienTru: 55, ngoaiAiCoCong: 0 } as const; // W17b: +2 mutation yieldThreshold.create|delete (ngưỡng yield theo nhà máy, đều ngoài bề mặt AI) ⇒ 2405
 // 2026-10-27 dieu-phoi GỘP 10.4 máy chủ với R1b-2b-1 — ghim ĐO trên cây gộp.
 // ★★ 2026-10-30 · SCADA R1b-2b-2b A — C1 (M9) — **tong 2428 → 2429 · beMatAi / aiCoCong / aiMienTru / ngoaiAiCoCong KHÔNG đổi.** Query MỚI
 //   `commandLog.nhatKy` (không phải bề mặt AI) sau `MOD_OT_CONTROL` (Q3; xem `GHIM_MODULE_KHAC.MOD_OT_CONTROL` 129 → 130). Đo: ghim cũ (gốc

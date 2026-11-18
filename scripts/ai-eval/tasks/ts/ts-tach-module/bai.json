@@ -1,0 +1,13 @@
+{
+  "id": "ts-tach-module",
+  "kieu": "agent-f",
+  "bo": "agent-dai",
+  "lang": "ts",
+  "ten": "Tách một module 4 phần thành 4 module + index, tệp cũ chỉ còn re-export, không import ngược/vòng, test riêng cho từng module",
+  "nguon": {
+    "tep": "agent-f/bai.json",
+    "id": "ts-tach-module"
+  },
+  "duAn": "sandbox-projects/agent-f/ts-tach-module",
+  "canDb": false
+}

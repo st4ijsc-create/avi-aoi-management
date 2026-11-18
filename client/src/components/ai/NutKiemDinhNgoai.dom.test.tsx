@@ -261,6 +261,30 @@ describe("rà kiem-dinh 10.4 (NÊN #3) — cảnh báo ô tiêu chí", () => {
   });
 });
 
+describe("v15 — mã lỗi của van-ban CHỈ áp cho nguồn van-ban", () => {
+  it("nguồn chat / agent / coding gặp FORBIDDEN (hay NOT_FOUND/CONFLICT…) ⇒ bộ dịch chung, KHÔNG hiện câu 'nhà máy chưa bật kiểm định từ bong bóng'", () => {
+    const nguonKhac: NguonKiemDinh[] = [
+      CHAT,
+      { loai: "agent", runId: "22222222-2222-4222-8222-222222222222" },
+      { loai: "coding", phienId: "11111111-1111-4111-8111-111111111111", chiSoLuot: 3 },
+    ];
+    for (const ng of nguonKhac) {
+      for (const code of ["FORBIDDEN", "NOT_FOUND", "TOO_MANY_REQUESTS", "CONFLICT", "PAYLOAD_TOO_LARGE"]) {
+        h.cheDo = "loi";
+        h.loiMa = code;
+        render(<NutKiemDinhNgoai nguon={ng} />);
+        mo();
+        fireEvent.click(screen.getByTestId("kdnh-gui"));
+        const chu = screen.getByTestId("kdnh-loi").textContent ?? "";
+        expect(chu, `${ng.loai}/${code}`).toBe("LOI:hết trần"); // đúng đầu ra của bộ dịch chung (mapTrpcError)
+        expect(chu, `${ng.loai}/${code}`).not.toContain("bong bóng");
+        cleanup();
+      }
+    }
+    h.loiMa = undefined;
+  });
+});
+
 describe("nguồn van-ban (bong bóng, L4)", () => {
   it("hộp xem trước ĐÚNG chuỗi sẽ gửi (câu hỏi + trả lời), nhắc 'chưa lưu'; không báo cắt khi vừa", () => {
     render(<NutKiemDinhNgoai nguon={VAN_BAN} daCat={false} />);

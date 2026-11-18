@@ -1,0 +1,13 @@
+{
+  "id": "py-doi-soat",
+  "kieu": "agent-f",
+  "bo": "agent-dai",
+  "lang": "py",
+  "ten": "Công cụ đối soát tồn kho: gói 3 module + CLI có mã thoát + test của bài làm + mục README có lệnh mẫu chạy thật",
+  "nguon": {
+    "tep": "agent-f/bai.json",
+    "id": "py-doi-soat"
+  },
+  "duAn": "sandbox-projects/agent-f/py-doi-soat",
+  "canDb": false
+}

@@ -60,13 +60,7 @@ interface MienTruDong {
   lyDo: string;
 }
 const MIEN_TRU_DONG: MienTruDong[] = [
-  { file: "server/routers/productionDashboardRouter.ts", noiDung: "const firstPassYield = total > 0 ? Math.round((ok / total) * 10000) / 100 : 0;", lyDo: "FPY proxy — lỗi KHÁC, sửa cần firstInspectionsSql" },
-  { file: "server/routers/productionDashboardRouter.ts", noiDung: "fpy: total > 0 ? Math.round((ok / total) * 10000) / 100 : 0,", lyDo: "FPY proxy — lỗi KHÁC" },
-  { file: "server/routers/productionDashboardRouter.ts", noiDung: "const fpy = total > 0 ? (ok / total) * 100 : 0;", lyDo: "FPY proxy — lỗi KHÁC" },
-  // FPY proxy khác: tên ngắn / kỳ trước (thước mở rộng 2026-08-25) — đã xác minh là nợ KHÁC, không phải final-yield sai.
-  { file: "server/routers/productionDashboardRouter.ts", noiDung: "const prevFPY = prevTotal > 0 ? (prevOk / prevTotal) * 100 : 0;", lyDo: "FPY proxy (prevFPY, kỳ trước) — cùng họ với :236, KHÁC lỗi" },
-  { file: "server/routers/stationAnalysisRouter.ts", noiDung: "const fpy = total > 0 ? (ok / total) * 100 : 0;", lyDo: "FPY proxy — lỗi KHÁC" },
-  { file: "server/routers/stationAnalysisRouter.ts", noiDung: "const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;", lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng họ với :832" },
+  // Dọn vệ sinh Q0-2 (2026-11-04): 6 ghim "FPY proxy" của productionDashboardRouter (×4) và stationAnalysisRouter (×2) đã GỠ cùng công thức — nay dùng fpyPctOver/fpyPctByBucket (FPY thật theo serial).
   { file: "server/services/aiExecutiveReport.ts", noiDung: "const fpy = totals.total > 0 ? (totals.ok / totals.total) * 100 : 0;", lyDo: "FPY proxy (biến fpy trong gatherKpis) — cùng họ, KHÁC lỗi" },
   { file: "server/routes/externalStationApi.ts", noiDung: "const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;", lyDo: "FPY proxy (biến fpy, tên ngắn t=total) — cùng khuôn với stationAnalysisRouter:197" },
 

@@ -24,6 +24,7 @@
 import "./lib/env.mjs";
 import http from "node:http";
 import { buildTopology, PORTS } from "./topology.mjs";
+import { MODBUS_ALL_UNITS, dungBangUnit, docThanhGhi } from "./lib/modbusUnits.mjs";
 
 const APP_BASE = process.env.APP_BASE_URL || `http://127.0.0.1:${process.env.PORT || 3000}`;
 const CONTROL_PORT = Number(process.env.SIM_CONTROL_PORT || PORTS.control);
@@ -214,26 +215,19 @@ async function startModbus() {
     console.warn("[sim/modbus] ServerTCP không khả dụng → BỎ QUA Modbus.");
     return;
   }
-  const lineByUnit = {};
-  for (const line of topo.lines) lineByUnit[line.modbusUnitId] = line.lineNo;
+  const bangUnit = dungBangUnit(topo.lines);
 
-  const getReg = (addr, unitID) => {
-    const lineNo = lineByUnit[unitID];
-    if (lineNo == null) return 0;
-    const s = state[lineNo];
-    return Number(s.tags[`m:${addr}`] ?? 0) & 0xffff;
-  };
   const vector = {
-    getHoldingRegister: (addr, unitID) => getReg(addr, unitID),
-    getInputRegister: (addr, unitID) => getReg(addr, unitID),
+    getHoldingRegister: (addr, unitID) => docThanhGhi(bangUnit, state, addr, unitID),
+    getInputRegister: (addr, unitID) => docThanhGhi(bangUnit, state, addr, unitID),
     getCoil: () => 0,
     setRegister: () => {},
     setCoil: () => {},
   };
   try {
-    modbusServer = new ServerTCP(vector, { host: "0.0.0.0", port: MODBUS_PORT, debug: false, unitID: 1 });
+    modbusServer = new ServerTCP(vector, { host: "0.0.0.0", port: MODBUS_PORT, debug: false, unitID: MODBUS_ALL_UNITS });
     modbusServer.on("socketError", (err) => console.warn("[sim/modbus] socketError:", err?.message ?? err));
-    console.log(`[sim/modbus] Modbus TCP LIVE @ tcp://127.0.0.1:${MODBUS_PORT} (units: ${Object.keys(lineByUnit).join(",")})`);
+    console.log(`[sim/modbus] Modbus TCP LIVE @ tcp://127.0.0.1:${MODBUS_PORT} (units: ${Object.keys(bangUnit).join(",")})`);
   } catch (e) {
     console.warn("[sim/modbus] không bind được:", e?.message ?? e);
   }

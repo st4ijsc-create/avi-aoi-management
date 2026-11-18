@@ -36,6 +36,7 @@ const protectedProcedure = moduleProcedure("MOD_FEDERATION");
 import { sites, siteKpiRollup, siteSyncLog } from "../../drizzle/schema";
 import type { SiteDetailRow, SiteAlertRollup, RollupCategory } from "../../drizzle/schema";
 import { ROLLUP_CATEGORIES } from "../../drizzle/schema";
+import { finalYield } from "../utils/kpi";
 
 async function db() {
   const d = await getDb();
@@ -244,6 +245,7 @@ export const federationRouter = router({
       let totalInspections = 0;
       let okCount = 0;
       let ngCount = 0;
+      let ntfCount = 0;
       let weightedYieldNum = 0;
       let weightedYieldDen = 0;
       let sitesWithData = 0;
@@ -254,6 +256,7 @@ export const federationRouter = router({
         totalInspections += ti;
         okCount += r.okCount ?? 0;
         ngCount += r.ngCount ?? 0;
+        ntfCount += r.ntfCount ?? 0;
         const y = num(r.yieldRate);
         if (y != null && ti > 0) {
           weightedYieldNum += y * ti;
@@ -263,7 +266,7 @@ export const federationRouter = router({
 
       const overallYield =
         totalInspections > 0
-          ? Number(((okCount / totalInspections) * 100).toFixed(2))
+          ? Number(finalYield({ ok: okCount, ntf: ntfCount, total: totalInspections }).toFixed(2)) // canonical (OK + NTF) / total — dọn vệ sinh Q0-2
           : weightedYieldDen > 0
             ? Number((weightedYieldNum / weightedYieldDen).toFixed(2))
             : null;
@@ -272,7 +275,7 @@ export const federationRouter = router({
         sitesTotal: scopeSites.length,
         sitesReporting: snaps.length,
         sitesWithData,
-        totals: { totalInspections, okCount, ngCount },
+        totals: { totalInspections, okCount, ngCount, ntfCount },
         overallYieldRate: overallYield, // honest null when nothing has data
         overallNgRate:
           totalInspections > 0 ? Number(((ngCount / totalInspections) * 100).toFixed(2)) : null,

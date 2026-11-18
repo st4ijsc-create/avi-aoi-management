@@ -89,8 +89,8 @@ async function defaultMirrorDb(env: NodeJS.ProcessEnv): Promise<{ db: any; end: 
   if (!base) return null;
   const u = new URL(base);
   if (!env.MIGRATION_DB_URL) {
-    u.username = env.MIGRATION_DB_USER ?? "aoi";
-    u.password = env.MIGRATION_DB_PASSWORD ?? "aoi";
+    u.username = env.MIGRATION_DB_USER as string;
+    u.password = env.MIGRATION_DB_PASSWORD as string;
   }
   const postgres = (await import("postgres")).default;
   const { drizzle } = await import("drizzle-orm/postgres-js");
@@ -193,6 +193,9 @@ export async function runEdgeSigningKeyCli(argv: string[], io: SigningKeyCliIo, 
 
   // ── the mirror (audit / distribution only) ────────────────────────────────────────────────────────────────────────
   let mirror: { db: any; end: () => Promise<void> } | null = null;
+  // X-17: no hard-coded owner defaults — a configured DB without the owner variables is refused (variable NAMES only).
+  const thieu = deps.mirrorDb !== undefined || env.MIGRATION_DB_URL || !env.DATABASE_URL ? [] : ["MIGRATION_DB_USER", "MIGRATION_DB_PASSWORD"].filter((n) => !env[n]);
+  if (thieu.length) { io.err(`missing required environment variable(s): ${thieu.join(", ")} — nothing was changed`); return 2; }
   if (deps.mirrorDb !== undefined) mirror = deps.mirrorDb ? { db: deps.mirrorDb, end: async () => {} } : null;
   else mirror = await defaultMirrorDb(env).catch(() => null);
   const { edgeAuthSigningKeys: K } = await import("../server/services/edge/edgeControlSchema");

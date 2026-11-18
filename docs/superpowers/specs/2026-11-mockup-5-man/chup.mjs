@@ -14,6 +14,11 @@ const PLAN = {
     ["binh-thuong-van-hanh", "state=binh-thuong&role=van-hanh"],
     ["p1-chua-ack-van-hanh", "state=p1-chua-ack&role=van-hanh"],
     ["binh-thuong-ky-su", "state=binh-thuong&role=ky-su"],
+    ["binh-thuong-quan-ly", "state=binh-thuong&role=quan-ly"],
+    ["p1-chua-ack-quan-ly", "state=p1-chua-ack&role=quan-ly"],
+    ["binh-thuong-quan-tri", "state=binh-thuong&role=quan-tri"],
+    ["p1-chua-ack-quan-tri", "state=p1-chua-ack&role=quan-tri"],
+    ["du-lieu-cu-quan-tri", "state=du-lieu-cu&role=quan-tri"],
   ]],
   "man-4": ["man-4-canh-bao.html", "man-4", [
     ["12-hon-hop", "state=hon-hop"],

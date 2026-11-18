@@ -13,6 +13,7 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAssetScope } from "@/contexts/AssetScopeContext";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -52,7 +53,11 @@ export function AssetScopeBar({ className }: { className?: string }) {
   const { t } = useTranslation();
   const { axis, setAxis, clearAxis } = useAssetScope();
 
+  // Thiếu quyền `machine_monitoring` ⇒ KHÔNG gọi thủ tục (FORBIDDEN trong thân batch); thanh trả null (trung tính, không spinner).
+  const { hasPermission } = usePermissions();
+  const coQuyen = hasPermission("machine_monitoring", "canView");
   const hierarchy = trpc.commandCenter.hierarchy.useQuery(undefined, {
+    enabled: coQuyen,
     staleTime: 60_000,
     retry: false,
     refetchOnWindowFocus: false,
@@ -86,7 +91,7 @@ export function AssetScopeBar({ className }: { className?: string }) {
     return [];
   }, [roots, axis.factoryId, axis.lineId]);
 
-  if (!hierarchy.isSuccess || factories.length === 0) return null;
+  if (!coQuyen || !hierarchy.isSuccess || factories.length === 0) return null;
 
   const hasAny = axis.factoryId !== undefined || axis.lineId !== undefined || axis.machineId !== undefined;
 

@@ -1,0 +1,13 @@
+{
+  "id": "ts-gio-hang",
+  "kieu": "agent-f",
+  "bo": "agent-f",
+  "lang": "ts",
+  "ten": "Mã giảm giá % + theo bậc cho giỏ hàng: module mới, sửa giỏ (tạm tính/giảm/tổng), sửa hoá đơn, xuất API",
+  "nguon": {
+    "tep": "agent-f/bai.json",
+    "id": "ts-gio-hang"
+  },
+  "duAn": "sandbox-projects/agent-f/ts-gio-hang",
+  "canDb": false
+}

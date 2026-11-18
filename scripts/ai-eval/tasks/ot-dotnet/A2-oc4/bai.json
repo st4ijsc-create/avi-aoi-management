@@ -1,0 +1,12 @@
+{
+  "id": "A2-oc4",
+  "kieu": "ma-don",
+  "bo": "tasks-api2",
+  "lang": "cs",
+  "ten": "GhiModbus",
+  "nguon": {
+    "tep": "tasks-api2.json",
+    "id": "A2-oc4"
+  },
+  "canDb": false
+}

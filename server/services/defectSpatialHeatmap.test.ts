@@ -1,32 +1,17 @@
 /**
- * Doc 27 W5-A (gap A5) — REAL bbox-based defect heatmap tests.
+ * Doc 27 W5-A (gap A5) — REAL bbox-based defect heatmap tests: phần THUẦN (không DB).
  *
- * Pure bucketing math (no DB) + a DB-integration pass against the isolated
- * cloned test DB (vitest.setup.ts): seeded bboxes land in the expected grid
- * cells, NULL-bbox NG rows are EXCLUDED but counted (no silent drops), the
- * coordinate space is resolved honestly, and the pointDef fallback is
- * labeled as logical (realCoordinates:false).
+ * Pure bucketing math: seeded bboxes land in the expected grid cells and the coordinate space is resolved honestly.
+ * Phần tích hợp DB (NULL-bbox NG bị loại nhưng được đếm, pointDef fallback gắn nhãn logic) nằm ở `defectSpatialHeatmap.db.test.ts`
+ * (giao dịch HOÀN TÁC) — tách ra vì tệp cũ INSERT thẳng vào `_test` mà không dọn.
  */
-import { describe, it, expect, beforeAll } from "vitest";
-import { dangKyModelSanPhamTest } from "../testing/modelSanPhamTest";
+import { describe, it, expect } from "vitest";
 import {
   resolveBoardExtent,
   bucketSpatialDefects,
-  computeSpatialHeatmap,
   severityWeight,
   type SpatialDefectRow,
 } from "./defectSpatialHeatmap";
-import * as db from "../db";
-import { getDb } from "../db/connection";
-
-/**
- * Các ca dưới đây đo PHÉP GOM (bucketing / coordinate space), không đo phạm vi dữ liệu.
- * Vai `admin` ⇒ `getAccessFilterConditions` trả `undefined` ⇒ KHÔNG bộ lọc nào được áp
- * ⇒ hành vi y hệt trước bản vá phạm vi 2026-08-17, nên các phép đo cũ giữ nguyên nghĩa.
- * (`userId` không cần có thật: `getUserAssignmentCodes` ngắt mạch ở vai `admin` trước
- * khi chạm CSDL.) Trục phạm vi có lưới RIÊNG: `defectSpatialHeatmap.scope.test.ts`.
- */
-const ADMIN_SCOPE = { userId: 1, userRole: "admin" } as const;
 
 function row(partial: Partial<SpatialDefectRow> & { bboxX: number; bboxY: number }): SpatialDefectRow {
   return {
@@ -128,147 +113,5 @@ describe("bucketSpatialDefects (seeded bboxes → expected cells)", () => {
     expect(severityWeight("major")).toBe(3);
     expect(severityWeight(null)).toBe(1);
     expect(severityWeight("weird")).toBe(1);
-  });
-});
-
-// ─── DB integration ─────────────────────────────────────────────────────────
-
-describe("computeSpatialHeatmap (DB integration)", () => {
-  const ts = Date.now();
-  let machineId: number;
-  let productModelId: number;
-  let catalogId: number;
-  const windowStart = new Date("2026-04-01T00:00:00Z");
-  const windowEnd = new Date("2026-04-10T00:00:00Z");
-
-  beforeAll(async () => {
-    const factoryId = await db.createFactory({ code: `TEST_FAC_HM_${ts}`, name: "Heatmap fac" });
-    const workshopId = await db.createWorkshop({ factoryId, code: `TEST_WS_HM_${ts}`, name: "Heatmap ws" });
-    const lineId = await db.createProductionLine({ workshopId, code: `TEST_LINE_HM_${ts}`, name: "Heatmap line" });
-    const stationId = await db.createStation({ lineId, code: `TEST_ST_HM_${ts}`, name: "Heatmap st", sequence: 1 });
-    machineId = await db.createMachine({
-      stationId,
-      code: `M_HM_${ts}`,
-      name: "Heatmap machine",
-      machineType: "AOI",
-      apiKey: `test_hm_${ts}`,
-    });
-    productModelId = dangKyModelSanPhamTest(await db.createProductModel({
-      code: `PROD_HM_${ts}`,
-      name: "Heatmap product",
-      version: "1.0",
-      imageWidth: 1000,
-      imageHeight: 800,
-    }));
-    const pointDefId = await db.createMeasurementPointDef({
-      productModelId,
-      code: `MP_HM_${ts}`,
-      name: "Heatmap point",
-      measurementType: "VISUAL",
-      positionX: 0,
-      positionY: 0,
-    });
-    catalogId = await db.createDefectCatalog({
-      code: `TEST_HM_BRIDGE_${ts}`,
-      name: "Test bridging",
-      severity: "critical",
-      category: "solder",
-    });
-
-    const inspectionId = await db.createProductInspection({
-      machineId,
-      productModelId,
-      serialNumber: `SN_HM_${ts}`,
-      overallResult: "NG",
-      originalResult: "NG",
-      inspectionTime: new Date("2026-04-05T03:00:00Z"),
-    });
-
-    await db.createMeasurementResults([
-      // 3 NG WITH bbox → grid (cells derived from centers over 1000×800):
-      // center (50,40)   → cell (0,0) on a 10×10 grid
-      { inspectionId, pointDefId, result: "NG", defectCatalogId: catalogId, defectBboxX: 40, defectBboxY: 30, defectBboxW: 20, defectBboxH: 20 },
-      // center (55,45)   → cell (0,0)
-      { inspectionId, pointDefId, result: "NG", defectCatalogId: catalogId, defectBboxX: 55, defectBboxY: 45, defectBboxW: 0, defectBboxH: 0 },
-      // center (550,440) → cell (5,5)
-      { inspectionId, pointDefId, result: "NG", defectBboxX: 540, defectBboxY: 430, defectBboxW: 20, defectBboxH: 20 },
-      // 2 NG WITHOUT bbox → excluded, counted
-      { inspectionId, pointDefId, result: "NG" },
-      { inspectionId, pointDefId, result: "NG", defectBboxX: null as any, defectBboxY: null as any },
-      // 1 OK row with bbox → not a defect, ignored entirely
-      { inspectionId, pointDefId, result: "OK", defectBboxX: 10, defectBboxY: 10, defectBboxW: 5, defectBboxH: 5 },
-    ] as any);
-  });
-
-  it("aggregates real bboxes into the expected cells and counts NULL-bbox exclusions", async () => {
-    const conn = await getDb();
-    expect(conn).toBeTruthy();
-    const r = await computeSpatialHeatmap(conn!, {
-      startDate: windowStart,
-      endDate: windowEnd,
-      machineId,
-      productModelId,
-      gridWidth: 10,
-      gridHeight: 10,
-      mode: "bbox",
-      scope: ADMIN_SCOPE,
-    });
-
-    expect(r.realCoordinates).toBe(true);
-    expect(r.mode).toBe("bbox");
-    // Product dims stored + all bboxes fit → product_image space, 1000×800.
-    expect(r.coordinateSpace).toBe("product_image");
-    expect(r.boardWidth).toBe(1000);
-    expect(r.boardHeight).toBe(800);
-
-    expect(r.totalDefects).toBe(3);
-    expect(r.excludedNoBbox).toBe(2);
-    expect(r.excludedNoBboxPct).toBe(40); // 2 of 5 NG rows
-
-    expect(r.grid[0][0]).toBe(2);
-    expect(r.grid[5][5]).toBe(1);
-    expect(r.maxDefectsInCell).toBe(2);
-
-    const top = r.hotspots[0];
-    expect(top).toMatchObject({ x: 0, y: 0, defectCount: 2, topDefectClass: `TEST_HM_BRIDGE_${ts}` });
-    const second = r.hotspots[1];
-    expect(second).toMatchObject({ x: 5, y: 5, defectCount: 1, topDefectClass: "UNCLASSIFIED" });
-  });
-
-  it("filters by defect class", async () => {
-    const conn = await getDb();
-    const r = await computeSpatialHeatmap(conn!, {
-      startDate: windowStart,
-      endDate: windowEnd,
-      machineId,
-      productModelId,
-      defectCatalogId: catalogId,
-      gridWidth: 10,
-      gridHeight: 10,
-      mode: "bbox",
-      scope: ADMIN_SCOPE,
-    });
-    expect(r.totalDefects).toBe(2); // only the two classified rows
-    expect(r.grid[0][0]).toBe(2);
-  });
-
-  it("pointDef fallback is honestly labeled as logical, not spatial", async () => {
-    const conn = await getDb();
-    const r = await computeSpatialHeatmap(conn!, {
-      startDate: windowStart,
-      endDate: windowEnd,
-      machineId,
-      productModelId,
-      gridWidth: 10,
-      gridHeight: 10,
-      mode: "pointDef",
-      scope: ADMIN_SCOPE,
-    });
-    expect(r.realCoordinates).toBe(false);
-    expect(r.mode).toBe("pointDef");
-    expect(r.coordinateSpace).toBe("logical_point_index");
-    // All 5 NG rows participate (bbox irrelevant in logical mode).
-    expect(r.totalDefects).toBe(5);
-    expect(r.excludedNoBbox).toBe(0);
   });
 });

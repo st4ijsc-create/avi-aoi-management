@@ -36,6 +36,7 @@
  *   phép "server khoẻ chưa" của cửa fail-closed được TIÊM VÀO (`thamDoKhoe`) — engine truyền
  *   `srv.preflightHealthy`, nên lưới engine giả được nó mà không mở kết nối thật nào tới :8091.
  */
+import { tieuDeLlamaServer } from "./khoaLlamaServer";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -169,9 +170,7 @@ export async function thamDoCong(url: string, timeoutMs: number, fetchFn: typeof
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const headers: Record<string, string> = {};
-    const key = (process.env.LLAMA_SERVER_API_KEY || "").trim();
-    if (key) headers.authorization = `Bearer ${key}`;
+    const headers = tieuDeLlamaServer();
     const res = await fetchFn(`${url.replace(/\/+$/, "")}/health`, { headers, signal: ctrl.signal });
     // Đọc hết thân để socket được trả về pool (không rò kết nối mỗi 15 s).
     await res.text().catch(() => "");

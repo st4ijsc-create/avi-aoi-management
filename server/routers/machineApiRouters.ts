@@ -2633,13 +2633,24 @@ export async function processInspectionSubmission(
       });
 
       // Check yield rate and emit warning if below threshold
-      if (machineStats.yieldRate < 90) {
+      // Dọn vệ sinh Q0-2: ngưỡng đọc từ `yield_alert_thresholds` (metric FY, mặc định toàn tập đoàn); vắng/tắt/lỗi đọc ⇒ giữ 90 như cũ (hành vi không đổi khi chưa cấu hình).
+      let nguongYieldCanhBao = 90;
+      try {
+        const cauHinhFy = await db.getYieldAlertThresholdByType("FY", null);
+        if (cauHinhFy && cauHinhFy.isEnabled) {
+          const v = Number(cauHinhFy.warningThreshold);
+          if (Number.isFinite(v) && v > 0) nguongYieldCanhBao = v;
+        }
+      } catch (e) {
+        console.error("[yieldThreshold] đọc ngưỡng lỗi, dùng 90:", e instanceof Error ? e.message : e);
+      }
+      if (machineStats.yieldRate < nguongYieldCanhBao) {
         emitYieldWarning(
           machine.id,
           machine.name,
           machine.code,
           machineStats.yieldRate,
-          90
+          nguongYieldCanhBao
         );
       }
 

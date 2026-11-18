@@ -15,6 +15,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { toastTrpcError } from "@/lib/trpcErrors";
 import { trpc } from "@/lib/trpc";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -40,7 +41,11 @@ export function ShellAlertChip({ className }: { className?: string }) {
   const [note, setNote] = useState("");
 
   // Poll 15s — chip là bề mặt vỏ, nhẹ; push realtime của trang không bị đụng.
+  // Thiếu quyền `andon` ⇒ KHÔNG gọi thủ tục (server trả FORBIDDEN trong thân batch) và KHÔNG render chip.
+  const { hasPermission } = usePermissions();
+  const coQuyen = hasPermission("andon", "canView");
   const active = trpc.andon.active.useQuery(undefined, {
+    enabled: coQuyen,
     refetchInterval: 15_000,
     retry: false,
     refetchOnWindowFocus: false,
@@ -63,7 +68,7 @@ export function ShellAlertChip({ className }: { className?: string }) {
   });
 
   // ISA-101 — im lặng khi không có gì bất thường (kể cả khi query lỗi/không quyền).
-  if (!active.isSuccess || rows.length === 0) return null;
+  if (!coQuyen || !active.isSuccess || rows.length === 0) return null;
 
   const critical = rows.some((r) => String(r.state).toLowerCase() === "red" || String(r.state).toLowerCase() === "call");
 

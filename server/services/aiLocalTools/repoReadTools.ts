@@ -47,6 +47,7 @@
  */
 import { z } from "zod";
 import { menhLenhTuChoiChoModel } from "../ai/vanBanChoModel";
+import { TRAN_BYTE_DOC_CSV, TRAN_DONG_DOC_CSV } from "./csvTrongDuAn";
 import { authCtxParam, authCtxSchema, rbacGate } from "./readToolRbac";
 import {
   HAN_GIO_GREP_MS,
@@ -170,6 +171,8 @@ interface DuLieuDocTep {
   truncated: boolean;
   redacted: boolean;
   content: string | null;
+  /** Chỉ có khi đọc `.csv` (B1): số dòng TRẢ VỀ và có cắt theo trần số dòng không. */
+  csv?: { rows: number; cutByLines: boolean };
 }
 
 const RONG_DOC: DuLieuDocTep = { path: null, bytes: null, truncated: false, redacted: false, content: null };
@@ -222,7 +225,7 @@ const readFileTool: Tool<z.infer<typeof thamSoDocTep>, DuLieuDocTep> = {
     }
 
     const tranByte = typeof raw.maxBytes === "number" ? raw.maxBytes : undefined;
-    const kq = moTepTrongHopCat(duongDan, { tranByte, khoaNganSach: khoaNganSach(raw.__authCtx), goc: gocTuArgs(raw) });
+    const kq = moTepTrongHopCat(duongDan, { tranByte, khoaNganSach: khoaNganSach(raw.__authCtx), goc: gocTuArgs(raw), choPhepCsv: true });
     if (!kq.ok) return ketQuaTuChoiHopCat(title, RONG_DOC, kq.ma, kq.chiTiet);
 
     const data: DuLieuDocTep = {
@@ -231,10 +234,14 @@ const readFileTool: Tool<z.infer<typeof thamSoDocTep>, DuLieuDocTep> = {
       truncated: kq.catBot,
       redacted: kq.daChe,
       content: kq.noiDung,
+      ...(kq.csv ? { csv: { rows: kq.csv.dongTra, cutByLines: kq.csv.catTheoDong } } : {}),
     };
     const dau =
       `${kq.relPath} — ${kq.byteTrenDia} byte` +
       (kq.catBot ? `, ĐÃ CẮT ở ${kq.noiDung.length} byte (trần mỗi tệp/ngân sách phiên)` : "") +
+      (kq.csv && kq.catBot
+        ? `; CSV: chỉ trả ${kq.csv.dongTra} dòng đầu, CẮT sau dòng ${kq.csv.dongTra} (byte ${Buffer.byteLength(kq.noiDung)} / ${kq.byteTrenDia} byte); các dòng sau KHÔNG được hiển thị và KHÔNG đọc tiếp được bằng công cụ này (trần ${TRAN_BYTE_DOC_CSV} byte / ${TRAN_DONG_DOC_CSV} dòng)`
+        : "") +
       (kq.daChe ? ", CÓ chuỗi bí mật đã bị che" : "") +
       ":";
     return { type: KIEU, title, data, textSummary: `${dau}\n${kq.noiDung}` };
