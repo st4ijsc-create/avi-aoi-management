@@ -561,3 +561,90 @@ GIỚI HẠN: 15 phút, 8 vòng${CO}`;
     expect(fs.readFileSync(path.join(wt, "client/src/lib/f.ts"), "utf8")).toBe(NGUON_F);
   });
 });
+
+describe("chayMotViec — lượt sửa tsc: dongSua / tepSua đếm RIÊNG lượt sửa trên MỌI tệp (DONGSUA-0)", () => {
+  // Luật (chayMotViec.ts, khối lượt sửa): mốc index = `git add` MỌI tepDoi trước lượt sửa; dongSua = tổng numstat (so index) của tepDoi SAU lượt sửa;
+  // tepSua = từng tệp; tệp ngoài RE_TEP_TEST ⇒ một dòng luuY; ketCuc không đổi. Mọi thứ giả: driver, lệnh kiểm, tsc.
+  const F = "client/src/lib/f.ts";
+  const F_GOC = "export const f = 1;\nexport const g = 2;\nexport const h = 3;\n";
+  const F_LUOT1 = F_GOC.replace("f = 1", "f = 10");
+  const ghi = (rel: string, s: string) => {
+    fs.mkdirSync(path.dirname(path.join(wt, rel)), { recursive: true });
+    fs.writeFileSync(path.join(wt, rel), s);
+  };
+  const caiF = () => {
+    ghi(F, F_GOC);
+    git(wt, "add", ".");
+    git(wt, "commit", "-q", "-m", "f");
+  };
+  const theCho = (...them: string[]) => the(CO).replace(`TỆP ĐƯỢC PHÉP SỬA/TẠO: ${TEP}`, `TỆP ĐƯỢC PHÉP SỬA/TẠO: ${[TEP, ...them].join(", ")}`);
+  /** driver hai lượt: lượt 1 chạy `l1`, lượt 2 chạy `l2` */
+  const lamDriver2 = (l1: () => void, l2: () => void) => {
+    let n = 0;
+    const drv: Driver = async () => {
+      n += 1;
+      (n === 1 ? l1 : l2)();
+      return { ghiChu: [], vong: 1, token: { cache: null, prompt: null, soLuotModel: n === 1 ? 7 : 3 }, hetGio: false } as never;
+    };
+    return { drv, dem: () => n };
+  };
+  const CAU_NGOAI = (cacTep: string) => `LƯỢT SỬA TSC đổi tệp NGOÀI tệp test: ${cacTep} — người duyệt xem diff của lượt sửa; bộ chạy không phán đúng/sai việc đổi này`;
+  const luuYGop = (r: { luuY?: string[] }) => (r.luuY ?? []).join("\n");
+
+  it("★★★ lượt sửa đổi tệp test (1 dòng) VÀ tệp nguồn (1 dòng) ⇒ dongSua {2,2}; tepSua hai mục; dòng của LƯỢT ĐẦU ở tệp nguồn (f = 10) KHÔNG tính; luuY nêu tệp nguồn; ketCuc xong", async () => {
+    caiF();
+    const { drv } = lamDriver2(
+      () => { ghi(TEP, BAI); ghi(F, F_LUOT1); },
+      () => { ghi(TEP, BAI_SUA); ghi(F, F_LUOT1.replace("g = 2", "g = 20")); },
+    );
+    const r = await chay(theCho(F), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
+    expect(r.luotSua?.dongSua).toEqual({ them: 2, xoa: 2 });
+    expect(r.luotSua?.tepSua).toEqual([{ duong: TEP, them: 1, xoa: 1 }, { duong: F, them: 1, xoa: 1 }]);
+    expect(r.luuY).toContain(CAU_NGOAI(`${F} (+1/−1)`));
+    expect(r.dong).toEqual({ them: 5, xoa: 2 }); // tổng so HEAD sau lượt sửa: a.test.ts mới 3 dòng + f.ts 2 dòng đổi (f, g) ⇒ +5 −2 (ghim u5: so index sẽ ra số khác)
+    expect(r.luotSua).not.toHaveProperty("soLanNhacPhu");
+  });
+  it("★★ lượt sửa CHỈ đổi tệp test ⇒ dongSua {1,1}, tepSua một mục, KHÔNG có câu luuY về tệp ngoài test; r.dong = {3,0} (tổng so HEAD, không co lại về phần lượt sửa)", async () => {
+    caiF();
+    const { drv } = lamDriver2(() => ghi(TEP, BAI), () => ghi(TEP, BAI_SUA));
+    const r = await chay(theCho(F), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
+    expect(r.luotSua?.dongSua).toEqual({ them: 1, xoa: 1 });
+    expect(r.luotSua?.tepSua).toEqual([{ duong: TEP, them: 1, xoa: 1 }]);
+    expect(luuYGop(r)).not.toContain("NGOÀI tệp test");
+    expect(r.dong).toEqual({ them: 3, xoa: 0 });
+  });
+  it("★★ lượt sửa TẠO tệp nguồn mới 2 dòng + đổi tệp test 1 dòng ⇒ dongSua {3,1}; tepSua [test 1/1, g.ts 2/0]; luuY nêu g.ts (+2/−0)", async () => {
+    const G = "client/src/lib/g.ts";
+    const { drv } = lamDriver2(() => ghi(TEP, BAI), () => { ghi(TEP, BAI_SUA); ghi(G, "export const a = 1;\nexport const b = 2;\n"); });
+    const r = await chay(theCho(G), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
+    expect(r.luotSua?.dongSua).toEqual({ them: 3, xoa: 1 });
+    expect(r.luotSua?.tepSua).toEqual([{ duong: TEP, them: 1, xoa: 1 }, { duong: G, them: 2, xoa: 0 }]);
+    expect(r.luuY).toContain(CAU_NGOAI(`${G} (+2/−0)`));
+  });
+  it("★★ lượt sửa KHÔNG đổi gì (tsc vẫn đỏ) ⇒ dongSua {0,0} (số 0 THẬT), tepSua [], không câu luuY về tệp ngoài test, kiem-do", async () => {
+    caiF();
+    const { drv, dem } = lamDriver2(() => { ghi(TEP, BAI); ghi(F, F_LUOT1); }, () => undefined);
+    const r = await chay(theCho(F), drv, lamKiem().f, lamTsc(DO, DO).f);
+    expect(dem()).toBe(2);
+    expect(r).toMatchObject({ ok: false, ketCuc: "kiem-do", coLuotSua: true });
+    expect(r.luotSua?.dongSua).toEqual({ them: 0, xoa: 0 });
+    expect(r.luotSua?.tepSua).toEqual([]);
+    expect(luuYGop(r)).not.toContain("NGOÀI tệp test");
+  });
+  it("★★★ lượt đầu ĐỔI TÊN tệp nguồn (xoá f.ts, tạo f2.ts nội dung y hệt): mốc index không làm status nuốt đường f.ts ⇒ tepDoi có CẢ hai; tepSua chỉ phần lượt sửa (f2.ts 1/1)", async () => {
+    caiF();
+    const F2 = "client/src/lib/f2.ts";
+    const { drv } = lamDriver2(
+      () => { ghi(TEP, BAI); fs.rmSync(path.join(wt, F)); ghi(F2, F_GOC); },
+      () => { ghi(TEP, BAI_SUA); ghi(F2, F_GOC.replace("f = 1", "f = 11")); },
+    );
+    const r = await chay(theCho(F, F2), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
+    expect(r.tepDoi).toEqual([TEP, F, F2]);
+    expect(r.luotSua?.tepSua).toEqual([{ duong: TEP, them: 1, xoa: 1 }, { duong: F2, them: 1, xoa: 1 }]);
+    expect(r.luotSua?.dongSua).toEqual({ them: 2, xoa: 2 });
+  });
+});
