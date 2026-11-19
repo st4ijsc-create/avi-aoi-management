@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { chayMotViec, type Driver } from "./chayMotViec";
+import type { MayDem } from "./hauQua";
 import { canSuaTsc, caTestGiam, loiNhacSuaTsc, nganSachSuaTsc, soDemGiam, type ChayKiem, type KetQuaTsc } from "./kiemChung";
 import { docTheViec } from "./theViec";
 import { tinhTranLuot } from "./tranLuot";
@@ -460,5 +461,103 @@ describe("chayMotViec — lượt sửa tsc + KIỂM PHỦ: lượt sửa mang `
     const r = await chay(VAN_PHU, drv, kiemPhuGia, lamTsc(DO, XANH).f);
     expect((r as { luotSua?: unknown }).luotSua).toMatchObject({ soLanNhacPhu: 0, biNhacPhu: false });
     expect(r.phu!.soLanNhac).toBe(3);
+  });
+
+  it("★★ driver KHÔNG báo soLanNhacPhu (như driverKho / driverCli) ⇒ luotSua.soLanNhacPhu === 0 (số, không undefined), biNhacPhu === false; phu.soLanNhac cũng 0", async () => {
+    const phuCuaLoiGoi: unknown[] = [];
+    const drv: Driver = async (v) => {
+      const lan = phuCuaLoiGoi.push(v.phu);
+      fs.mkdirSync(path.join(wt, "client/src/lib"), { recursive: true });
+      fs.writeFileSync(path.join(wt, TEP), lan === 1 ? BAI_PHU : BAI_PHU_SUA);
+      return { ghiChu: [], vong: 1, token: { cache: null, prompt: null, soLuotModel: lan === 1 ? 7 : 3 }, hetGio: false } as never; // KHÔNG có khoá soLanNhacPhu
+    };
+    const r = await chay(VAN_PHU, drv, kiemPhuGia, lamTsc(DO, XANH).f);
+    expect(phuCuaLoiGoi).toHaveLength(2);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
+    expect(r.luotSua).toHaveProperty("soLanNhacPhu", 0);
+    expect(r.luotSua).toHaveProperty("biNhacPhu", false);
+    expect(r.phu!.soLanNhac).toBe(0);
+  });
+});
+
+describe("chayMotViec — lượt sửa tsc THÀNH CÔNG (trước đỏ, sau xong): các bước sau vẫn chạy (HA-6b hậu quả, L3b đột biến)", () => {
+  // Luật: chayMotViec.ts:898 và :910 chỉ chạy khi kết cục HIỆN TẠI `qd` là "xong". Sau lượt sửa thành công qd = "xong" (:885) dù
+  // `truocSua` là "kiem-do": các bước sau phải đọc `qd`, không đọc kết cục TRƯỚC lượt sửa. Mọi thứ dưới đây là giả: driver, lệnh kiểm, tsc, bộ đếm.
+  const DAU = "MATKHAU_GIA_456";
+  const URL_GIA = `postgresql://tho_ca_test:${DAU}@127.0.0.1:5434/aoi_management_test`;
+  const THE_SUA = (them: string) => `MÃ: TC-90
+MỤC TIÊU: thử bước sau lượt sửa
+TỆP ĐƯỢC PHÉP SỬA/TẠO: ${TEP}
+${them}LỆNH KIỂM: npx vitest run ${TEP}
+GIỚI HẠN: 15 phút, 8 vòng${CO}`;
+  const DRV = () => lamDriver(7, () => fs.writeFileSync(path.join(wt, TEP), BAI_SUA));
+
+  /** bộ đếm giả: lần mở thứ n trả bản đồ `lan[n]` (nhãn bảng → số) */
+  const moGia = (lan: Array<Record<string, number>>) => {
+    const nk = { mo: 0, dong: 0 };
+    const moMayDem = async () => {
+      const n = nk.mo++;
+      const may: MayDem = { kiemDinhDanh: async () => null, dem: async (m) => lan[n]![m.bang] ?? 0 };
+      return { may, dong: async () => void nk.dong++ };
+    };
+    return { nk, moMayDem };
+  };
+  const chayDb = (van: string, drv: Driver, moMayDem: Parameters<typeof chayMotViec>[0]["moMayDem"]) =>
+    chayMotViec({ van, wt, base: "HEAD", driver: drv, ra, choPhepKhoRieng: true, luat: "# l\n", chayKiem: lamKiem().f, chayTsc: lamTsc(DO, XANH).f, envTran: {} as NodeJS.ProcessEnv, choPhepDb: true, testDbUrl: URL_GIA, moMayDem });
+  const VAN_DB = THE_SUA("CSDL: chạm aoi_management_test (CHỈ CSDL _test)\nBẢNG ĐẾM:\nmachines\n");
+
+  it("★★★ HA-6b sau lượt sửa thành công: hàng ĐỔI ở mục chấm (machines 10→12) ⇒ hau-qua-xau, ok:false; đếm đúng 2 lần (trước lượt, sau lệnh kiểm cuối)", async () => {
+    const g = moGia([{ machines: 10 }, { machines: 12 }]);
+    const { drv } = DRV();
+    const r = await chayDb(VAN_DB, drv, g.moMayDem);
+    expect(r.truocSuaTsc).toMatchObject({ ketCuc: "kiem-do" });
+    expect(r.sauSuaTsc).toEqual({ ketCuc: "xong", lyDo: null }); // lượt sửa thành công
+    expect(r).toMatchObject({ ok: false, ketCuc: "hau-qua-xau", coLuotSua: true });
+    expect(r.hauQua).toMatchObject({ ketCuc: "hau-qua-xau", db: "co" });
+    expect(r.hauQua).not.toHaveProperty("ghiKhiDo"); // ghiKhiDo = đếm bổ sung của kết cục đã đỏ (HA-6c), KHÔNG phải kiểm HA-6b
+    expect(r.hauQua!.bang).toEqual([{ muc: "machines", ghi: false, truoc: 10, sau: 12, chenh: 2 }]);
+    expect(g.nk).toMatchObject({ mo: 2, dong: 2 });
+    expect(JSON.stringify(r)).not.toContain(DAU);
+  });
+  it("đối chứng HA-6b: hàng KHÔNG đổi sau lượt sửa thành công ⇒ xong, hauQua ok (db co) không có ghiKhiDo", async () => {
+    const g = moGia([{ machines: 10 }, { machines: 10 }]);
+    const { drv } = DRV();
+    const r = await chayDb(VAN_DB, drv, g.moMayDem);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true, hauQua: { ketCuc: "ok", db: "co" } });
+    expect(r.hauQua).not.toHaveProperty("ghiKhiDo");
+    expect(g.nk.mo).toBe(2);
+  });
+
+  const NGUON_F = "export const f = (n: number) => (n > 0 ? 1 : 0);\n";
+  const DB1 = "ĐỘT BIẾN: client/src/lib/f.ts|n > 0|n >= 0";
+  const caiNguon = () => {
+    fs.mkdirSync(path.join(wt, "client/src/lib"), { recursive: true });
+    fs.writeFileSync(path.join(wt, "client/src/lib/f.ts"), NGUON_F);
+    git(wt, "add", ".");
+    git(wt, "commit", "-q", "-m", "nguon");
+  };
+  /** lệnh kiểm giả: đỏ khi nguồn f.ts mang dấu `n >= 0` (đột biến đã áp) */
+  const kiemTheoNguon: ChayKiem = async (lenh) => {
+    const ng = fs.readFileSync(path.join(wt, "client/src/lib/f.ts"), "utf8");
+    return ng.includes("n >= 0") ? { lenh, ...kiemXanh, exit: 1, vitest: { tep: { dat: 0, hong: 1, boQua: 0, tong: 1 }, ca: { dat: 0, hong: 1, boQua: 0, tong: 2 } } } : { lenh, ...kiemXanh };
+  };
+  const kiemXanhChung: ChayKiem = async (lenh) => ({ lenh, ...kiemXanh });
+  const chayDotBien = (kiem: ChayKiem, drv: Driver) =>
+    chayMotViec({ van: THE_SUA(`${DB1}\n`), wt, base: "HEAD", driver: drv, ra, choPhepKhoRieng: true, luat: "# l\n", chayKiem: kiem, chayTsc: lamTsc(DO, XANH).f, envTran: {} as NodeJS.ProcessEnv });
+
+  it("★★★ L3b sau lượt sửa thành công: đột biến SỐNG (lệnh kiểm vẫn xanh) ⇒ dot-bien-song, ok:false, dotBien.song 1", async () => {
+    caiNguon();
+    const { drv } = DRV();
+    const r = await chayDotBien(kiemXanhChung, drv);
+    expect(r.sauSuaTsc).toEqual({ ketCuc: "xong", lyDo: null });
+    expect(r).toMatchObject({ ok: false, ketCuc: "dot-bien-song", coLuotSua: true, dotBien: { tong: 1, song: 1, do: 0, khoiPhucSach: true } });
+    expect(fs.readFileSync(path.join(wt, "client/src/lib/f.ts"), "utf8")).toBe(NGUON_F);
+  });
+  it("★★★ L3b sau lượt sửa thành công: đột biến BỊ BẮT (lệnh kiểm đỏ khi đột biến) ⇒ xong, JSON có dotBien {tong 1, do 1, song 0}; nguồn khôi phục", async () => {
+    caiNguon();
+    const { drv } = DRV();
+    const r = await chayDotBien(kiemTheoNguon, drv);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true, dotBien: { tong: 1, do: 1, song: 0, khoiPhucSach: true, tepLa: [] } });
+    expect(fs.readFileSync(path.join(wt, "client/src/lib/f.ts"), "utf8")).toBe(NGUON_F);
   });
 });
