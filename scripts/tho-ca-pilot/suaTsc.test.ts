@@ -405,3 +405,45 @@ describe("chayMotViec — lượt sửa tsc: thời gian chờ NGƯỜI duyệt 
     expect(r).toMatchObject({ ketCuc: "kiem-do", coLuotSua: false, giayTuong: 1180 });
   });
 });
+
+describe("chayMotViec — lượt sửa tsc + KIỂM PHỦ: ghim lựa chọn CHƯA được HST nhận (tho-ca-agent, khi gộp main vào nhánh sửa tsc)", () => {
+  // Lựa chọn khi giải xung đột: lượt sửa gọi driver bằng CÙNG `goiDriver` nên mang tuỳ chọn `phu` như lượt đầu; `phu.soLanNhac` chỉ lấy số nhắc của lượt đầu.
+  // Hai ca dưới ghim ĐÚNG hành vi hiện có; nếu HST chọn khác (lượt sửa không mang `phu`, hoặc cộng số nhắc) thì sửa mã và đổi hai ca này.
+  const BAI_PHU = `import { it, expect } from "vitest";\nconst f = (x: number) => x;\nit("[D1] một", () => { expect(f(1)).toBe(1); });\nit("[D2] hai", () => { expect(f(2)).toBe(2); });\n`;
+  const BAI_PHU_SUA = BAI_PHU.replace("(x: number) => x", "(x: number): number => x");
+  const VAN_PHU = `MÃ: TC-90\nQUY TRÌNH: Làm ngay.\nĐÃ DUYỆT:\n1. Ca một.\n2. Ca hai.\nKIỂM PHỦ: CÓ\nMỤC TIÊU: thử phủ ở lượt sửa\nTỆP ĐƯỢC PHÉP SỬA/TẠO: ${TEP}\nLỆNH KIỂM: npx vitest run ${TEP}\nGIỚI HẠN: 15 phút, 8 vòng${CO}`;
+
+  /** driver ghi lại `phu` của từng lời gọi; lượt 1 ghi BAI_PHU và báo `nhacPhu[0]` lần nhắc phủ, lượt 2 sửa kiểu và báo `nhacPhu[1]` */
+  const lamDriverPhu = (nhacPhu: [number, number]) => {
+    const phuCuaLoiGoi: unknown[] = [];
+    const drv: Driver = async (v) => {
+      const lan = phuCuaLoiGoi.push(v.phu);
+      fs.mkdirSync(path.join(wt, "client/src/lib"), { recursive: true });
+      fs.writeFileSync(path.join(wt, TEP), lan === 1 ? BAI_PHU : BAI_PHU_SUA);
+      return { ghiChu: [], vong: 1, token: { cache: null, prompt: null, soLuotModel: lan === 1 ? 7 : 3 }, hetGio: false, soLanNhacPhu: nhacPhu[lan - 1] } as never;
+    };
+    return { drv, phuCuaLoiGoi };
+  };
+  /** lệnh kiểm giả: lệnh thường ⇒ xanh; lệnh có --outputFile ⇒ ghi JSON vitest "mọi ca passed" cho hai ca [D1] [D2] */
+  const kiemPhuGia: ChayKiem = async (lenh) => {
+    const m = /--outputFile="([^"]+)"/.exec(lenh);
+    if (m) fs.writeFileSync(m[1]!, JSON.stringify({ testResults: [{ assertionResults: [{ title: "[D1] một", status: "passed" }, { title: "[D2] hai", status: "passed" }] }] }));
+    return { lenh, ...kiemXanh };
+  };
+
+  it("lượt sửa CÓ mang `phu`, giống lượt đầu (lựa chọn CHƯA được HST nhận): hai lời gọi driver, cả hai có phu = {2 dòng ĐÃ DUYỆT k=1,2 không GIỮ, tenCaCu rỗng, tepTest=[TEP]}", async () => {
+    const { drv, phuCuaLoiGoi } = lamDriverPhu([3, 5]);
+    const r = await chay(VAN_PHU, drv, kiemPhuGia, lamTsc(DO, XANH).f);
+    expect(phuCuaLoiGoi).toHaveLength(2);
+    expect(phuCuaLoiGoi[0]).toEqual({ dongDuyet: [{ k: 1, giu: false, noiDung: "Ca một." }, { k: 2, giu: false, noiDung: "Ca hai." }], tenCaCu: new Set(), tepTest: [TEP] });
+    expect(phuCuaLoiGoi[1]).toEqual(phuCuaLoiGoi[0]);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
+  });
+
+  it("`phu.soLanNhac` = số nhắc của LƯỢT ĐẦU (3); số nhắc của lượt sửa (5) không được cộng (lựa chọn CHƯA được HST nhận)", async () => {
+    const { drv } = lamDriverPhu([3, 5]);
+    const r = await chay(VAN_PHU, drv, kiemPhuGia, lamTsc(DO, XANH).f);
+    expect(r.phu).toMatchObject({ dongThieu: [], dongDaPhu: [1, 2], xacNhanPassed: true });
+    expect(r.phu!.soLanNhac).toBe(3);
+  });
+});
