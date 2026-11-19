@@ -79,6 +79,11 @@ if (!/CreationDate -ne \$daKiem/.test(doc("scripts/ai/start-llama-server.ps1")))
 const tay = doc("scripts/ai/khoi-llama-tay.ps1");
 if (!(tay.indexOf("if ($ChiKiem)") > 0 && tay.indexOf("if ($ChiKiem)") < tay.indexOf("Start-Process"))) loi.push("khoi-llama-tay: -ChiKiem không đứng trước Start-Process");
 
+// D1c C2 (HST 03:03): dòng .sh dưới scripts/ GHI LOG CommandLine llama (`log` + `CommandLine`) mà không chỉ `grep -o`/`grep -q` một cờ
+// ⇒ phải che `<tep-khoa>` (không lộ đường tệp khoá). Duyệt bằng fs, không thêm lời gọi tiến trình.
+const tepSh = []; const quetSh = (d) => { for (const t of fs.readdirSync(path.join(GOC, d), { withFileTypes: true })) { const r = `${d}/${t.name}`; if (t.isDirectory()) quetSh(r); else if (r.endsWith(".sh")) tepSh.push(r); } };
+quetSh("scripts");
+for (const f of tepSh) for (const d of doc(f).split("\n")) if (/CommandLine/.test(d) && /\blog\b/.test(d) && !/grep -[oq]/.test(d) && !/<tep-khoa>/.test(d) && !d.trim().startsWith("#")) loi.push(`${f}: dòng ghi log CommandLine chưa che <tep-khoa>`);
 const goc2 = (() => { const i = process.argv.indexOf("--them-goc"); return i > 0 ? process.argv[i + 1] : ""; })();
 if (goc2) {
   // Thư mục ngoài repo (D:/DO-AI): chỉ LIỆT KÊ tệp có 8091 kèm lời gọi (fetch/curl/Invoke-WebRequest) để người rà phân loại; không tính đỏ.

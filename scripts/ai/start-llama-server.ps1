@@ -220,7 +220,7 @@ $srvArgs = @(
 $apiKeyFile = $cfg['LLAMA_SERVER_API_KEY_FILE']
 $apiKey = $cfg['LLAMA_SERVER_API_KEY']
 if (-not [string]::IsNullOrWhiteSpace($apiKeyFile)) {
-    if (-not (Test-Path -LiteralPath $apiKeyFile -PathType Leaf)) { Write-Bad "LLAMA_SERVER_API_KEY_FILE khong ton tai: $apiKeyFile"; exit 2 }
+    if (-not (Test-Path -LiteralPath $apiKeyFile -PathType Leaf)) { Write-Bad "LLAMA_SERVER_API_KEY_FILE dat nhung tep KHONG ton tai (D1c: khong in duong)."; exit 2 }
     $srvArgs += @('--api-key-file', $apiKeyFile)
 } elseif (-not [string]::IsNullOrWhiteSpace($apiKey)) { $srvArgs += @('--api-key', $apiKey) }
 # D1: bi danh cho client (GET /v1/models). Ten tep that van doc o /props.model_path.
@@ -267,7 +267,7 @@ elseif ($cheDoMmproj -ine 'off') { Write-Step "mmproj: không có cho $(Split-Pa
 # Đường khởi thật bên dưới vẫn truyền $srvArgs gốc cho llama-server, không đổi.
 if ($InThamSo) {
     $inRa = $srvArgs.Clone()
-    for ($i = 0; $i -lt $inRa.Count - 1; $i++) { if ($inRa[$i] -ceq '--api-key') { $inRa[$i + 1] = '<che>' } }
+    for ($i = 0; $i -lt $inRa.Count - 1; $i++) { if ($inRa[$i] -ceq '--api-key') { $inRa[$i + 1] = '<che>' } elseif ($inRa[$i] -ceq '--api-key-file') { $inRa[$i + 1] = '<tep-khoa>' } }
     (@{ model = $modelPath; args = $inRa } | ConvertTo-Json -Compress); exit 0
 }
 
