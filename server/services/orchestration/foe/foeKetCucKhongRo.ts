@@ -441,6 +441,8 @@ export interface CanhBaoKhongRo {
   stopKhongXacMinh?: true;
   /** X-26 (G46) — forwardNotSent: a stop-typed step never handed over, and a STOP pass of the walk threw. The words speak of this step and that pass only */
   luotStopHong?: true;
+  /** X-28 (G46-e) — abortDefUnread: the definition was read, the planning of the STOP sweep threw (nothing of the press out). Its own words, never "could not read the definition" */
+  keHoachLoi?: true;
   /** A2(n) T7b-1c — abortStopNotSent: the words of THE classification (chuStopAbort) */
   chuAbort?: ChuStopAbort;
   /** A2(n) T7b-3 (H36) — stopEndedUnswept: how the run ended (`completed`: with a step of it failed) */
@@ -571,6 +573,11 @@ export function chuKhongDocDinhNghia(runId: number): string {
 }
 
 /** A2(n) T7b-1d lượt sửa 2 (H32) — a sweep past its ceiling: nothing here was refused or unread, it has simply not answered. It goes on behind this: a STOP may be out already or may yet go. No step to name: no second picture of a sweep for this. The URGENT and the answer say the same. */
+/** X-28 (G46-e) — an Abort of a latched run whose planning threw: what it is, that the names may not be all, what to do. No press promised: the same planning throws again */
+export function chuKeHoachLoi(runId: number): string {
+  return `The STOP sweep of run ${runId} read its definition but failed while planning which STOP steps to send, so this press sent none of them. Where the system could work them out, STOP-typed steps never handed over are named in alerts of their own; that list may be incomplete or empty, and a STOP compensation of a step that already finished is never named. Stop the machine at the machine now with its direct STOP / E-STOP, and check it on site.`;
+}
+
 export function chuQuetChuaXong(runId: number): string {
   return `The STOP sweep of run ${runId} has not finished and is still running: STOP steps of this run may have gone out or may still go, which ones is not known, and nothing confirms them yet. Check the machine on site and use its direct STOP / E-STOP if needed. Abort can be pressed again.`;
 }
@@ -832,7 +839,7 @@ export function noiDungCanhBaoKhongRo(goc: CanhBaoKhongRo): { kind: string; titl
       stopGhimLech: [`STOP "${stopCua(a)}": the pins differ, what went out may not be a STOP`, `The edge node reports step "${stopCua(a)}" handed over as a STOP, but the pins central reads do not match it: what went out may not have been a STOP. Check the machine on site and use its direct STOP / E-STOP.`],
       stopGhimLechChuaGui: [`STOP "${stopCua(a)}" NOT sent: the edge snapshot says it is not pinned`, `Central verified step "${stopCua(a)}" as a pinned STOP, but the edge node's dispatcher snapshot says it is not pinned: it was refused before any driver, so the STOP was NOT sent. Check the machine on site and use its direct STOP / E-STOP if needed.`],
       abortStopNotSent: chuAbortChuaRa(a),
-      abortDefUnread: [`definition of the run unread, a STOP may still not be out`, chuKhongDocDinhNghia(a.runId)],
+      abortDefUnread: a.keHoachLoi ? [`planning of the STOP sweep failed, a STOP may still not be out`, chuKeHoachLoi(a.runId)] : [`definition of the run unread, a STOP may still not be out`, chuKhongDocDinhNghia(a.runId)],
       abortSweepUnfinished: [`STOP sweep has not finished, a STOP may have gone out or may still go`, chuQuetChuaXong(a.runId)],
       stopEndedUnswept: chuKetThucKhongQuet(a),
       edgeStreamStuck: chuLuongEdgeKet(a),

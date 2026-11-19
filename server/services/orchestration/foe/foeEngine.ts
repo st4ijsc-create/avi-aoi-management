@@ -103,7 +103,7 @@ import {
   type PhanLoaiBuTru,
 } from "./foeBuTruBiNgat";
 // R1b-2b-2a A2(n) — an UNKNOWN outcome never triggers a device write from a non-STOP compensation: split by energy direction
-import { type DangDauVetAbort, type ChuStopAbort, type PhanLoaiStopAbort, chuBamSauKhongDoc, chuKhongDocDinhNghia, chuQuetChuaXong, chuStopAbort, MOC_CUA_SO, STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_XAC_NHAN_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, VI_KHONG_BAO, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo, chuBamDaKetThuc, type KetThucKhongQuet, type NoKetThucKhongQuet } from "./foeKetCucKhongRo";
+import { type DangDauVetAbort, type ChuStopAbort, type PhanLoaiStopAbort, chuBamSauKhongDoc, chuKeHoachLoi, chuKhongDocDinhNghia, chuQuetChuaXong, chuStopAbort, MOC_CUA_SO, STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_XAC_NHAN_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, VI_KHONG_BAO, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo, chuBamDaKetThuc, type KetThucKhongQuet, type NoKetThucKhongQuet } from "./foeKetCucKhongRo";
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED, FOE_NOT_SENT_RUN_LATCHED, FOE_STOP_NOT_SENT } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
 export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
@@ -391,6 +391,8 @@ export interface AbortStopReport {
   notNeeded: string[];
   /** A2(n) T7b-1 fix 1 (RA-1) — this sweep could not read the definition, or (pressed again on a latched run) the step rows: what it did not send, it does not know of. Absent otherwise */
   khongDocDuoc?: true;
+  /** X-28 (G46-e) — of `khongDocDuoc`: the definition was read and the PLANNING threw, before any STOP of this press went out (the forward STOPs never handed over are named) */
+  keHoachLoi?: true;
   /** A2(n) T7b-1d lượt sửa 2 (H32) — past the ceiling of the sweep: it has not answered and goes on behind this report: nothing is known of what it read or sent. Absent otherwise */
   quetChuaXong?: true;
   /** A2(n) T7b-1d lượt sửa 2 — this press joined a sweep in flight: the report is that sweep's, this press sent nothing of its own. Absent otherwise */
@@ -1734,6 +1736,17 @@ function baoBuocTienBiBo(rc: RunContext, lan: string): void {
     const banGhi = ma === undefined && !rc.khongXacMinhGhim?.has(id) ? rc.khongBanGhi?.get(id) : undefined; // T9 (MAT-HET-CS) — no record of an earlier hand-over
     baoKetCucKhongRo(rc, { loai: "forwardNotSent", stepId: id, compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot(id), lan, ...(ma !== undefined ? { vi: { nguon: "tuChoi" as const, ma } } : {}), ...(rc.khongXacMinhGhim?.has(id) ? { stopKhongXacMinh: true as const } : {}), ...(rc.tenLuotHong?.has(id) ? { luotStopHong: true as const } : {}), ...(banGhi ? { khongBanGhi: true as const, stopBuTru: banGhi } : {}) });
   }
+}
+
+/**
+ * X-26 (G46) — the forward stop-typed steps a failed STOP pass leaves unnamed: never handed over (no row of it went, no state C of its own), read from the definition and the walk's memory only.
+ * An unreadable classification reads as a STOP. X-28 (G46-e) — an Abort whose planning threw reads it too, on its picture of the run (rcTuHang: no hand-over of this process in it).
+ */
+async function tenStopTienChuaGiao(rc: RunContext, vao = new Set<string>()): Promise<Set<string>> {
+  for (const s of rc.def.steps.flatMap(buocTienCua)) {
+    if (s.type === "command" && !rc.completed.has(s.id) && !rc.attempted.has(s.id) && !rc.prior.attempted.has(s.id) && !rc.diStop?.has(s.id) && !rc.chuaRaStop?.has(s.id) && (await laStopTheoBuoc(s, rc.machineById).catch(() => true))) vao.add(s.id);
+  }
+  return vao;
 }
 
 /**
@@ -3660,10 +3673,8 @@ async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<Orches
       if (!(cid && daDuyetBuTruKhongRo(rc.context, stepId, cid) && rc.buTruDaGui?.has(cid))) baoKetCucKhongRo(rc, { loai: "noCompensation", stepId, compId: KHONG_CO_BU_TRU, error: loiCoMaKhongRo(loiKhongRoKet), lan });
     }
   }
-  // X-26 (G46) — a STOP pass threw: every forward stop-typed step never handed over (no row of it went, no state C of its own) is named. An unreadable classification reads as a STOP
-  for (const s of rc.luotStopHong ? rc.def.steps.flatMap(buocTienCua) : []) {
-    if (s.type === "command" && !rc.completed.has(s.id) && !rc.attempted.has(s.id) && !rc.prior.attempted.has(s.id) && !rc.diStop?.has(s.id) && !rc.chuaRaStop?.has(s.id) && (await laStopTheoBuoc(s, rc.machineById).catch(() => true))) (rc.tenLuotHong ??= new Set()).add(s.id);
-  }
+  // X-26 (G46) — a STOP pass threw: every forward stop-typed step never handed over is named (tenStopTienChuaGiao)
+  if (rc.luotStopHong) rc.tenLuotHong = await tenStopTienChuaGiao(rc, rc.tenLuotHong);
   // A2(n) (decision 3) — forward work dropped: said in its own words, whatever else this walk told. T6 (H13) — one URGENT per branch dropped, read by duongKetThuc
   baoBuocTienBiBo(rc, luotDiCua(rc));
   let status: OrchestrationRun["status"];
@@ -6465,7 +6476,7 @@ export function chuBamLai(runId: number, r: AbortStopReport, chuaKhoa = false): 
   if (r.ghimNgoaiCua?.length) cau.push(quaCua(r.ghimNgoaiCua, "Read as a pinned STOP again"));
   if (r.notPinned.length) cau.push(`Read as no pinned STOP: ${r.notPinned.join(", ")}: not sent.`);
   if (r.untakenBranch.length) cau.push(`STOP steps in a branch never evaluated: ${r.untakenBranch.join(", ")}: not sent; check the machine on site.`);
-  if (r.khongDocDuoc) cau.push(`Its records could not be read, so what they would show was not sent. ${chuBamSauKhongDoc()}: check the machine on site.`);
+  if (r.khongDocDuoc) cau.push(r.keHoachLoi ? chuKeHoachLoi(runId) : `Its records could not be read, so what they would show was not sent. ${chuBamSauKhongDoc()}: check the machine on site.`); // X-28 — the planning threw: its own words
   if (r.quetChuaXong) cau.push(chuQuetChuaXong(runId));
   const dongChua = new Set([...r.sent, ...r.failed, ...r.pending, ...r.notPinned, ...r.unverified, ...r.untakenBranch]);
   const conLai = [...no].filter((id) => !dongChua.has(id));
@@ -6606,8 +6617,8 @@ function abortStopSweep(
 }
 
 /** A2(n) T7b-1c (RA2-5) — the URGENT of a latched run whose sweep could not read what it needs: no step to name. One bounded try; never a command. */
-async function baoKhongDocDinhNghia(runId: number, owner: number | null): Promise<void> {
-  await withDeadline(canhBaoKetCucKhongRo({ loai: "abortDefUnread", runId, stepId: BUOC_KHONG_XAC_DINH, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "chot", owner }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} definition unread URGENT`).catch((err: unknown) =>
+async function baoKhongDocDinhNghia(runId: number, owner: number | null, keHoachLoi?: true): Promise<void> {
+  await withDeadline(canhBaoKetCucKhongRo({ loai: "abortDefUnread", runId, stepId: BUOC_KHONG_XAC_DINH, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "chot", owner, ...(keHoachLoi ? { keHoachLoi } : {}) }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} definition unread URGENT`).catch((err: unknown) =>
     console.error(`[FOE] abort of run ${runId}: the URGENT of its definition unread failed: ${(err as Error)?.message ?? err}`),
   );
 }
@@ -6895,8 +6906,10 @@ async function runAbortStopSweep(
   const cho: Array<Promise<unknown>> = []; // T7b-1d — started beside the STOPs, waited for after them: traces and words
   const baoKhongDoc = async () => {
     report.phanLoai ??= {};
-    await baoKhongDocDinhNghia(runId, owner);
+    await baoKhongDocDinhNghia(runId, owner, report.keHoachLoi);
   };
+  // X-28 (G46-e) — central's picture of a latched run, set from the planning up to the first send: a throw in between is the planning's (no STOP of this press out yet)
+  let nhinLoi: RunContext | null = null;
   try {
     const src = await store.sweepSource({ live, run, hasLiveDriver: (id) => liveRuns.has(id) });
     // T7b-1 (5a, A2, 1b) — a latched run: THE planner of the end of a walk, for a person (nguoi: G, a hand-over never confirmed is due again). R-6-b is for a run NOT latched only: latched means
@@ -6936,6 +6949,7 @@ async function runAbortStopSweep(
     // T7b-1d lượt sửa 1 (H30, chu du an 09/11) — a press on a run not latched: a step an Abort cancelled is no last word: what stands behind it is planned, and the verification and the classification decide as for any other. At a press only: a first
     // Abort over the rows of a walker elsewhere is not covered, as decided (a latched run reads no `failed` as settled at all: lapKeHoachStop)
     const nhin = khoa ? (live ?? rcTuHang(runId, def, ctxRun, src, store, user, owner)) : khoaEdge ? live : null;
+    nhinLoi = khoa ? nhin : null;
     const plan = nhin ? await lapKeHoachStop(nhin, src, v, true, { xacNhan: daXacNhan, daGiao, daDinh }) : await planAbortSweep(bamChuaKhoa ? { ...src, settled: (id) => src.settled(id) && !laHangHuyBoiAbort(hangTheo.get(id)) } : src, def, v, undefined, daDinh);
     // R-6-b — a run that never actuated sends none of its STOPs (said out loud)
     if (!nhin && plan.send.length > 0 && !runHasActuated(def, src, v)) {
@@ -7081,6 +7095,7 @@ async function runAbortStopSweep(
       cho.push(baoH13KhiAbort(nhin, noiKhac ? null : src, plan, tien).catch((err: unknown) => console.error(`[FOE] abort of run ${runId}: forward work not told: ${(err as Error)?.message ?? err}`)));
     }
     for (const id of khongXacMinhKetThuc) viNo.set(id, { nguon: "doc", ma: "NOT_CONFIRMED" });
+    nhinLoi = null; // X-28 (e) — from here a STOP of this press may be out: a throw below keeps the old words, names nobody (a named limit)
     if (plan.send.length > 0) {
       // every STOP prepared CONCURRENTLY (≤ 2·D, the scope marker alongside ≤ D), then handed to its dispatcher IN ORDER,
       // without waiting on a reply
@@ -7180,8 +7195,11 @@ async function runAbortStopSweep(
     console.error(`[FOE] abort of run ${runId}: STOP sweep error — ${(err as Error)?.message ?? err}; use the machine's direct STOP / E-STOP`);
     // T7b-1d (H26) — never a silent ok: told as what it is. A latched run by RA2-5's road, the 15 minutes do not stretch; a run not latched only to the one who pressed (H23)
     report.khongDocDuoc = true;
+    // X-28 (G46-e) — the planning threw (nhinLoi set, nothing of this press out): its own words, then the forward STOPs never handed over, each named (X-26's naming, bounded; never throws, the answer does not wait past `cho`)
+    if (nhinLoi) report.keHoachLoi = true;
     const ctxNem = (live?.context ?? (run?.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
     if (khoa || (store.kind === "central" && (runDaChotKhongRo(ctxNem) || (live !== null && daChotKhongRo(live))))) await baoKhongDoc();
+    if (nhinLoi) cho.push(withDeadline(tenStopTienChuaGiao(nhinLoi).then((ids) => Promise.all([...ids].map((id) => canhBaoKetCucKhongRo({ loai: "forwardNotSent", runId, stepId: id, compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot(id), lan: "abort", luotStopHong: true, owner })))), 3 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} STOP names`).catch(() => false));
   }
   await withDeadline(Promise.allSettled(cho), 3 * STOP_DB_STEP_DEADLINE_MS, `FOE abort run ${runId} traces`).catch((err: unknown) => console.warn(`[FOE] abort of run ${runId}: ${(err as Error)?.message ?? err}`));
   // T7b-1d (H27, chu du an 09/11) — a run not latched, the one write of a trace lost: a known limit, no second path for it: where the walker wrote over the rows a press sends nothing. The answer says so now, by name
@@ -7416,7 +7434,7 @@ export async function abortRun(
     // T7b-1c — a latched run: never a silent ok (RA2-5), and what it knows of a key used again
     // X-11 (P3, x11-chu-duyet (b)/(c)) — a STOP left to the node (not latched) or given to it (latched): the run's state, then its words, first
     // X-13 — (e), G1, G1' (a run not latched) open with the run's state too; the trace not recorded keeps its place, last (chuChuaKhoa)
-    const loi = [...(abortStops.choNut?.length || abortStops.xepChoNut?.length || abortStops.giaoNutChuaKhoa?.length || abortStops.khongXacMinhChuaKhoa?.length || abortStops.ketNoiChuaKhoa?.length ? [`Run ${runId} is aborted${abortStops.xepChoNut?.length ? " and records a command whose outcome is unknown" : ""}.`] : []), ...(abortStops.choNut?.length ? [chuChoNutNgan(abortStops.choNut, true)] : []), ...(abortStops.xepChoNut?.length ? [chuXepChoNut(abortStops.xepChoNut)] : []), ...(abortStops.khongDocDuoc ? [chuKhongDocDinhNghia(runId)] : []), ...(abortStops.quetChuaXong ? [chuQuetChuaXong(runId)] : []), ...cauCoTheDaRa(abortStops), ...chuChuaKhoa(abortStops)];
+    const loi = [...(abortStops.choNut?.length || abortStops.xepChoNut?.length || abortStops.giaoNutChuaKhoa?.length || abortStops.khongXacMinhChuaKhoa?.length || abortStops.ketNoiChuaKhoa?.length ? [`Run ${runId} is aborted${abortStops.xepChoNut?.length ? " and records a command whose outcome is unknown" : ""}.`] : []), ...(abortStops.choNut?.length ? [chuChoNutNgan(abortStops.choNut, true)] : []), ...(abortStops.xepChoNut?.length ? [chuXepChoNut(abortStops.xepChoNut)] : []), ...(abortStops.khongDocDuoc ? [abortStops.keHoachLoi ? chuKeHoachLoi(runId) : chuKhongDocDinhNghia(runId)] : []), ...(abortStops.quetChuaXong ? [chuQuetChuaXong(runId)] : []), ...cauCoTheDaRa(abortStops), ...chuChuaKhoa(abortStops)];
     return { ok: true, enabled: foeEnabled(), runId, status: "aborted", abortStops, ...(loi.length ? { message: loi.join(" ") } : {}) };
   } catch (err) {
     thaSapQuet();

@@ -14,7 +14,7 @@ import ts from "typescript"; // A2(n) T8 — the sweeper census reads the source
 
 const { otDispatchMock, robotDispatchMock, ghimMock, alerts, audits, HX } = vi.hoisted(() => ({
   /** T2 — alertBen: what the alert reports through baoBen, null ⇔ it says nothing; alertNem: it throws. I-2 — this step-row write throws (a DB error on the unknown path); I-C — it never answers; m-6 — the audit row is not written; M-5 — the run's context write throws */
-  HX: { rowThrows: null as null | ((r: Record<string, any>) => boolean), rowHangs: null as null | ((r: Record<string, any>) => boolean), rowSlowMs: null as null | ((r: Record<string, any>) => number), auditFails: false, contextThrows: false, alertBen: true as boolean | null, alertNem: false },
+  HX: { rowThrows: null as null | ((r: Record<string, any>) => boolean), rowHangs: null as null | ((r: Record<string, any>) => boolean), rowSlowMs: null as null | ((r: Record<string, any>) => number), auditFails: false, contextThrows: false, alertBen: true as boolean | null, alertNem: false, alertNemKhi: null as null | ((a: Record<string, any>) => boolean) },
   otDispatchMock: vi.fn(async (_i: Record<string, unknown>) => ({ ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] }) as Record<string, unknown>),
   robotDispatchMock: vi.fn(async (_i: Record<string, unknown>) => ({ ok: true, status: "done", jobId: 7 }) as Record<string, unknown>),
   /** the A2(h) predicate's verdict per call (adapterId, commandType) — scripted per test */
@@ -33,7 +33,7 @@ vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
     ...orig,
     raiseCriticalStopAlert: async (a: Record<string, any>) => {
       alerts.push(a);
-      if (HX.alertNem) throw new Error("alert down (test)");
+      if (HX.alertNem || HX.alertNemKhi?.(a)) throw new Error("alert down (test)");
       if (HX.alertBen !== null) a.baoBen?.(HX.alertBen);
     },
   };
@@ -212,7 +212,7 @@ vi.mock("../../../db/connection", () => ({
 
 import { permissions } from "../../../../drizzle/schema";
 import type { WorkflowDefinition, WorkflowStep } from "./workflowModel";
-import { abortRun, autoResumeInterruptedRuns, deployWorkflow, FOE_NOT_SENT_RUN_LATCHED, FOE_OUTCOME_UNKNOWN, getRun, resumeRun, startRun } from "./foeEngine";
+import { abortRowId, abortRun, autoResumeInterruptedRuns, deployWorkflow, FOE_NOT_SENT_RUN_LATCHED, FOE_OUTCOME_UNKNOWN, getRun, resumeRun, startRun } from "./foeEngine";
 import { baoCaoHopLe, baoCaoKhongRoTuHang, chuBuTruTrongDinhNghia, dauKhongRoTuBaoCao, duongToiBuoc, edgeResumeStateOf, loiKhongGuiChot, themBuocHongKhiTiepTuc, toTienCua } from "./foeRunStore";
 import { FOE_STOP_NOT_SENT, MA_CHUA_GHI, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi,
   KHONG_RO_DANG_BAY_AUDIT_OP,
@@ -281,6 +281,7 @@ beforeEach(() => {
   HX.contextThrows = false;
   HX.alertBen = true;
   HX.alertNem = false;
+  HX.alertNemKhi = null;
   ghimMock.mockReset();
   ghimMock.mockImplementation(async (_d, i) => ({ pinnedStop: i.commandType === "stop", loiDocGhim: null }));
   alerts.length = 0;
@@ -2635,13 +2636,14 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
 vi.mock("./foeRunStore", async (importOriginal) => {
   const o = await importOriginal<typeof import("./foeRunStore")>();
   const s = o.centralRunStore;
-  const co = () => (globalThis as { __x26?: "nem" | "settled" | null }).__x26 ?? null;
+  const co = () => (globalThis as { __x26?: "nem" | "settled" | "unv" | "khongDef" | "auditNem" | null }).__x26 ?? null;
   return {
     ...o,
     centralRunStore: {
       ...s,
       sweepSource: async (...a: Parameters<typeof s.sweepSource>) => {
         const r = await s.sweepSource(...a);
+        if (co() === "khongDef" && r) return { ...r, def: null } as typeof r;
         if (co() !== "settled" || !r) return r;
         return {
           ...r,
@@ -2650,8 +2652,19 @@ vi.mock("./foeRunStore", async (importOriginal) => {
           },
         };
       },
+      bindAbortStop: (): void => {
+        if (co() === "auditNem") throw new Error("bind down (X-28 A10)");
+      },
+      auditAbort: (...a: Parameters<typeof s.auditAbort>) => {
+        if (co() === "auditNem" && a[2] === "abortStopFailed") throw new Error("audit down (X-28 A10)");
+        return s.auditAbort(...a);
+      },
       verifyStops: async (...a: Parameters<typeof s.verifyStops>) => {
         if (co() === "nem") throw new Error("verifyStops down (X-26 K1)");
+        if (co() === "unv") {
+          const r = await s.verifyStops(...a);
+          return { ...r, ids: new Set([...r.ids].filter((x) => x !== "xs")), unsure: new Set([...r.unsure, "xs"]), failed: true };
+        }
         return s.verifyStops(...a);
       },
     },
@@ -2663,7 +2676,13 @@ vi.mock("./foeStepClass", async (importOriginal) => {
   return {
     ...o,
     laStopTheoBuoc: async (...a: Parameters<typeof o.laStopTheoBuoc>) => {
-      if ((globalThis as { __x26ls?: string | null }).__x26ls === a[0].id) throw new Error("laStopTheoBuoc down (X-26 K8)");
+      const g = globalThis as { __x26ls?: string | null; __x28treo?: string | null; __x28stack?: string[] };
+      if (g.__x26ls === a[0].id) {
+        const loi = new Error("laStopTheoBuoc down (X-26 K8)");
+        (g.__x28stack ??= []).push(String(loi.stack));
+        throw loi;
+      }
+      if (g.__x28treo === a[0].id && /tenStopTienChuaGiao/.test(String(new Error().stack))) return new Promise<boolean>(() => undefined);
       return o.laStopTheoBuoc(...a);
     },
   };
@@ -2815,6 +2834,245 @@ describe("X-26 a STOP pass that throws names the forward STOP never handed over"
     } finally {
       (globalThis as { __x26ls?: string | null }).__x26ls = null;
       datX26(null);
+      err.mockRestore();
+    }
+  });
+});
+
+describe("X-28 an Abort whose STOP planning throws names the forward STOP never handed over", () => {
+  const g = globalThis as { __x26?: unknown; __x26ls?: string | null; __x28treo?: string | null; __x28stack?: string[] };
+  const dat = (v: "nem" | "settled" | "unv" | "khongDef" | "auditNem" | null) => void (g.__x26 = v);
+  const stopX = (id: string): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop" }) as WorkflowStep;
+  const KIND_TIEN = CANH_BAO_KHONG_RO_KIND.forwardNotSent;
+  const KIND_HOI = CANH_BAO_KHONG_RO_KIND.abortDefUnread;
+  // X-26 words, unchanged (foeKetCucKhongRo.ts:821-823)
+  const TIEU_DE = (runId: number, id: string) => `Run ${runId}: another command's outcome is unknown — machine state unknown — STOP-typed step "${id}" NOT sent: the STOP pass of this run failed`;
+  const THAN = (id: string) => `Step "${id}" is a STOP-typed command and it was NOT sent: the STOP pass of this run failed, so the system cannot be relied on to send it. Stop the machine at the machine now with its direct STOP / E-STOP, and check it on site.`;
+  // X-28 words (brief x28 section 2), the prefix of a latched run's URGENT (foeKetCucKhongRo.ts:784, 788, 842)
+  const TIEU_DE_HOI = (runId: number) => `Run ${runId}: another command's outcome is unknown — machine state unknown — planning of the STOP sweep failed, a STOP may still not be out`;
+  const THAN_HOI = (runId: number) =>
+    `The STOP sweep of run ${runId} read its definition but failed while planning which STOP steps to send, so this press sent none of them. Where the system could work them out, STOP-typed steps never handed over are named in alerts of their own; that list may be incomplete or empty, and a STOP compensation of a step that already finished is never named. Stop the machine at the machine now with its direct STOP / E-STOP, and check it on site.`;
+  const tenAbort = () => alerts.filter((a) => a.kind === KIND_TIEN && String(a.dedupKey).endsWith(":abort"));
+  const hoi = () => alerts.filter((a) => a.kind === KIND_HOI);
+  const cho = () => new Promise((x) => setTimeout(x, 150));
+  /** a latched run held, its STOP pass throwing at every pass (verifyStops, as X-26 K1): `xs` is never handed over */
+  async function giuChuaGui() {
+    otDispatchMock.mockImplementation(async (i) => {
+      if (i.commandType === "start") {
+        dat("nem");
+        return TIMEOUT;
+      }
+      return ACKED;
+    });
+    const r = await chay([seq("box", [main(resetComp("undo")), stopX("xs")])]);
+    await cho();
+    expect(r.res.status).toBe("held");
+    expect(sent("stop")).toEqual([]);
+    alerts.length = 0;
+    return r.runId;
+  }
+  const bam = (runId: number) => abortRun(runId, ADMIN, "checked", { scope: null } as never) as Promise<{ message?: unknown }>;
+
+  it("A1 the planner throws at an Abort of a latched run: one URGENT naming xs (key :abort), the '?' URGENT and the answer say planning failed, nothing sent, the run aborted", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const runId = await giuChuaGui();
+      dat("settled");
+      const a = await bam(runId);
+      await cho();
+      expect(runRow(runId).status).toBe("aborted");
+      expect(sent("stop")).toEqual([]);
+      expect(tenAbort().map((x) => x.title)).toEqual([TIEU_DE(runId, "xs")]);
+      expect(String(tenAbort()[0]!.message)).toContain(THAN("xs"));
+      expect(String(tenAbort()[0]!.dedupKey)).toBe(`${KIND_TIEN}:${runId}:xs:-:abort`);
+      expect(hoi().map((x) => x.title)).toEqual([TIEU_DE_HOI(runId)]);
+      expect(String(hoi()[0]!.message)).toContain(THAN_HOI(runId));
+      expect(String(hoi()[0]!.message)).not.toContain("could not read the definition");
+      expect(String(a.message)).toContain(THAN_HOI(runId));
+      expect(String(a.message)).not.toContain("could not read the definition");
+    } finally {
+      dat(null);
+      err.mockRestore();
+    }
+  });
+
+  it("A2 a second press: the same planning throws again: the URGENT naming xs carries the SAME key (the durable dedup drops it, foeKetCucKhongRo.ts:872-879), the answer says planning failed", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const runId = await giuChuaGui();
+      dat("settled");
+      await bam(runId);
+      await cho();
+      const khoa = tenAbort().map((x) => String(x.dedupKey));
+      expect(khoa).toEqual([`${KIND_TIEN}:${runId}:xs:-:abort`]);
+      alerts.length = 0;
+      const b = await bam(runId);
+      await cho();
+      expect(tenAbort().map((x) => String(x.dedupKey))).toEqual(khoa);
+      expect(String(b.message)).toContain(THAN_HOI(runId));
+      expect(String(b.message)).not.toContain("Its records could not be read");
+      expect(sent("stop")).toEqual([]);
+    } finally {
+      dat(null);
+      err.mockRestore();
+    }
+  });
+
+  it("A3 a STOP an earlier Abort left a trace of (abort:xs) and never handed over is still named (HST 13:04)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const runId = await giuChuaGui();
+      rows("orchestration_run_steps").push({ id: 99_028, runId, stepId: abortRowId("xs"), stepType: "command", status: "failed", error: null, attempt: 0, resultJson: { abortStop: "failed", stepId: "xs" }, startedAt: new Date(), finishedAt: new Date() });
+      dat("settled");
+      await bam(runId);
+      await cho();
+      expect(tenAbort().map((x) => x.title)).toEqual([TIEU_DE(runId, "xs")]);
+      expect(sent("stop")).toEqual([]);
+    } finally {
+      dat(null);
+      err.mockRestore();
+    }
+  });
+
+  it("A11 a throw AFTER the planner returned, before any send (laStopTheoBuoc of an unverified STOP, foeEngine.ts:6978): the new words and the name", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const han = Error.stackTraceLimit;
+    Error.stackTraceLimit = 60;
+    try {
+      const runId = await giuChuaGui();
+      dat("unv");
+      g.__x26ls = "xs";
+      g.__x28stack = [];
+      const a = await bam(runId);
+      await cho();
+      // the throw is where the case says: after the planner, inside the sweep (not inside lapKeHoachStop, not the naming's own read)
+      expect((g.__x28stack ?? []).some((st) => /runAbortStopSweep/.test(st) && !/lapKeHoachStop/.test(st) && !/tenStopTienChuaGiao/.test(st))).toBe(true);
+      expect(tenAbort().map((x) => x.title)).toEqual([TIEU_DE(runId, "xs")]);
+      expect(hoi().map((x) => x.title)).toEqual([TIEU_DE_HOI(runId)]);
+      expect(String(a.message)).toContain(THAN_HOI(runId));
+      expect(sent("stop")).toEqual([]);
+    } finally {
+      Error.stackTraceLimit = han;
+      g.__x26ls = null;
+      g.__x28stack = [];
+      dat(null);
+      err.mockRestore();
+    }
+  });
+  it("A4 the URGENTs naming the STOPs fail to land: the '?' URGENT still goes with the planning's words, the answer is the same, the Abort does not throw", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const runId = await giuChuaGui();
+      HX.alertNemKhi = (a) => a.kind === KIND_TIEN;
+      dat("settled");
+      const a = await bam(runId);
+      await cho();
+      expect(runRow(runId).status).toBe("aborted");
+      expect(hoi().map((x) => x.title)).toEqual([TIEU_DE_HOI(runId)]);
+      expect(String(hoi()[0]!.message)).toContain(THAN_HOI(runId));
+      expect(String(a.message)).toContain(THAN_HOI(runId));
+      expect(sent("stop")).toEqual([]);
+    } finally {
+      HX.alertNemKhi = null;
+      dat(null);
+      err.mockRestore();
+    }
+  });
+
+  it("A5 the naming never answers (laStopTheoBuoc of xs hangs, inside the naming only): bounded (3·D, foeEngine catch of runAbortStopSweep): the '?' URGENT and the answer as A1, no name, within the answer's ceiling", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const runId = await giuChuaGui();
+      g.__x28treo = "xs";
+      dat("settled");
+      const t0 = Date.now();
+      const a = await bam(runId);
+      const t = Date.now() - t0;
+      await cho();
+      expect(t, "the answer's ceiling (15·D + 1·D)").toBeLessThan(16 * STOP_DB_STEP_DEADLINE_MS);
+      expect(hoi().map((x) => x.title)).toEqual([TIEU_DE_HOI(runId)]);
+      expect(String(a.message)).toContain(THAN_HOI(runId));
+      expect(tenAbort()).toEqual([]);
+      expect(runRow(runId).status).toBe("aborted");
+    } finally {
+      g.__x28treo = null;
+      dat(null);
+      err.mockRestore();
+    }
+  }, 20_000);
+
+  it("A6 control (words, green before and after): a sweep not finished keeps chuQuetChuaXong word for word; the path itself is RP T7B1D-P2 (quetChuaXong, foeRunStoreParity.dot10.test.ts:15464)", () => {
+    const n = noiDungCanhBaoKhongRo({ loai: "abortSweepUnfinished", runId: 7, stepId: "?", compId: "-", error: "FOE_OUTCOME_UNKNOWN", lan: "chot" });
+    expect(n.message).toContain(
+      "The STOP sweep of run 7 has not finished and is still running: STOP steps of this run may have gone out or may still go, which ones is not known, and nothing confirms them yet. Check the machine on site and use its direct STOP / E-STOP if needed. Abort can be pressed again.",
+    );
+    const cu = noiDungCanhBaoKhongRo({ loai: "abortDefUnread", runId: 7, stepId: "?", compId: "-", error: "FOE_STOP_NOT_SENT", lan: "chot" });
+    expect(cu.title).toBe("Run 7: another command's outcome is unknown — machine state unknown — definition of the run unread, a STOP may still not be out");
+    expect(cu.message).toContain("The system could not read the definition of run 7");
+  });
+
+  it("A7 control: the definition really unread (foeEngine: !src.def) keeps the old words, names nobody", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const runId = await giuChuaGui();
+      dat("khongDef");
+      const a = await bam(runId);
+      await cho();
+      expect(hoi().map((x) => x.title)).toEqual([`Run ${runId}: another command's outcome is unknown — machine state unknown — definition of the run unread, a STOP may still not be out`]);
+      expect(String(a.message)).toContain(`could not read the definition of run ${runId}`);
+      expect(String(a.message)).not.toContain(THAN_HOI(runId));
+      expect(tenAbort()).toEqual([]);
+    } finally {
+      dat(null);
+      err.mockRestore();
+    }
+  });
+
+  it("A8 control: a healthy Abort of the same run raises neither the '?' URGENT nor a name", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const runId = await giuChuaGui();
+      dat(null);
+      await bam(runId);
+      await cho();
+      expect(runRow(runId).status).toBe("aborted");
+      expect(hoi()).toEqual([]);
+      expect(tenAbort()).toEqual([]);
+    } finally {
+      dat(null);
+      err.mockRestore();
+    }
+  });
+
+  it("A9 a throw BEFORE the run's picture (verifyStops, before nhinLoi is set): the old words, no name (a named limit)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const runId = await giuChuaGui();
+      dat("nem");
+      const a = await bam(runId);
+      await cho();
+      expect(String(a.message)).toContain(`could not read the definition of run ${runId}`);
+      expect(String(a.message)).not.toContain(THAN_HOI(runId));
+      expect(tenAbort()).toEqual([]);
+    } finally {
+      dat(null);
+      err.mockRestore();
+    }
+  });
+
+  it("A10 a throw AFTER the point where nhinLoi is cleared (the send block: a failed prepare's audit throws): the old words, no name (a named limit)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const runId = await giuChuaGui();
+      dat("auditNem");
+      const a = await bam(runId);
+      await cho();
+      expect(err.mock.calls.some((c) => /STOP sweep error — audit down \(X-28 A10\)/.test(String(c[0]))), "the throw is the one of the send block").toBe(true);
+      expect(String(a.message)).toContain(`could not read the definition of run ${runId}`);
+      expect(String(a.message)).not.toContain(THAN_HOI(runId));
+      expect(tenAbort()).toEqual([]);
+    } finally {
+      dat(null);
       err.mockRestore();
     }
   });

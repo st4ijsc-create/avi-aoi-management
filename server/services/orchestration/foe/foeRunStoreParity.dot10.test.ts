@@ -16912,6 +16912,8 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     const a = await bam(c);
     expect(a.abortStops?.khongDocDuoc).toBe(true);
     expect(urgentCua("abortDefUnread").length).toBe(1);
+    // X-28 (measured 19/11, probe X28T7): steps: 5 throws in verifyStopsForAbort's last fallback (allStepsOf, foeStepClass.ts:42) BEFORE the run's picture is set (nhinLoi):
+    // not the planning, so the old words stand. A shape X-28 does not cover: it belongs to G46-c (the malformed definition), a named limit
     expect(a.message).toMatch(/could not read the definition/);
     expect(a.message).toMatch(/none can be counted on after 15 minutes from when the run was aborted/); // H32, dieu-phoi 09/11: was /within 15 minutes/
     expect(ids()).toEqual([]);
