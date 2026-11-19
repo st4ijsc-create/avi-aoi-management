@@ -2656,6 +2656,17 @@ vi.mock("./foeRunStore", async (importOriginal) => {
     },
   };
 });
+// X-26 K8 — `laStopTheoBuoc` throws for ONE step id while a global flag names it (off ⇒ the real function): the walk-end naming reads an unreadable classification as a STOP
+vi.mock("./foeStepClass", async (importOriginal) => {
+  const o = await importOriginal<typeof import("./foeStepClass")>();
+  return {
+    ...o,
+    laStopTheoBuoc: async (...a: Parameters<typeof o.laStopTheoBuoc>) => {
+      if ((globalThis as { __x26ls?: string | null }).__x26ls === a[0].id) throw new Error("laStopTheoBuoc down (X-26 K8)");
+      return o.laStopTheoBuoc(...a);
+    },
+  };
+});
 describe("X-26 a STOP pass that throws names the forward STOP never handed over", () => {
   const datX26 = (v: "nem" | "settled" | null) => void ((globalThis as { __x26?: unknown }).__x26 = v);
   const tiepX26 = (runId: number) => resumeRun(runId, { approved: true, note: "checked" }, ADMIN, {}, { scope: null });
@@ -2781,6 +2792,27 @@ describe("X-26 a STOP pass that throws names the forward STOP never handed over"
       expect(luotHong().map((a) => a.title)).toEqual([TIEU_DE(r.runId, "xe"), TIEU_DE(r.runId, "xs")]);
       expect(sent("stop")).toEqual([]);
     } finally {
+      datX26(null);
+      err.mockRestore();
+    }
+  });
+
+  it("K8 an unreadable classification reads as a STOP: the Continue's walk-end names xs while laStopTheoBuoc throws for it (kills `.catch(() => true)` → false)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      batKhiStart("nem");
+      const r = await chay([seq("box", [main(resetComp("undo")), stopX("xs")])]);
+      await new Promise((x) => setTimeout(x, 150));
+      expect(luotHong().map((a) => a.title)).toEqual([TIEU_DE(r.runId, "xs")]);
+      // the Continue's walk: its pass throws too (flag still "nem"), its buocTienBiBo names nothing (a compensation-only walk), the naming reads xs with the classifier down
+      (globalThis as { __x26ls?: string | null }).__x26ls = "xs";
+      await tiepX26(r.runId).catch(() => undefined);
+      await new Promise((x) => setTimeout(x, 150));
+      expect(luotHong().map((a) => a.title)).toEqual([TIEU_DE(r.runId, "xs"), TIEU_DE(r.runId, "xs")]);
+      expect(new Set(luotHong().map((a) => a.dedupKey)).size).toBe(2);
+      expect(sent("stop")).toEqual([]);
+    } finally {
+      (globalThis as { __x26ls?: string | null }).__x26ls = null;
       datX26(null);
       err.mockRestore();
     }
