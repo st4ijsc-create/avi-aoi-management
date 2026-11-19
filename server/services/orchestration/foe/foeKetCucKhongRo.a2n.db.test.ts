@@ -30,6 +30,10 @@ const H = vi.hoisted(() => ({
   alerts: [] as Array<Record<string, unknown>>,
   /** X-25 (2) — run_end URGENTs raised while the frame calls the walker dead (H.chet): kept apart, never stored */
   alertsChet: [] as Array<Record<string, unknown>>,
+  /** X-23 (DB) — when set: the G39 / G40 URGENTs (approvedNotSent, stopEndedUnswept) go through the REAL raiseCriticalStopAlert, to these recipients only (a stored row in the case's transaction); every other alert as before */
+  luuThat: null as null | number[],
+  /** X-23 (DB) — what the real alert told baoBen, per kind */
+  benX23: [] as Array<{ kind: string; ben: boolean }>,
   /** A2(n) extension — the process "dies" the moment the latch reached the DB (chotRoiChet) */
   chetSauChot: false,
   chet: false,
@@ -86,6 +90,10 @@ vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
     raiseCriticalStopAlert: async (a: Record<string, unknown>) => {
       if (H.chet && a.kind === "foe_outcome_unknown_run_end") return void H.alertsChet.push(a);
       H.alerts.push(a);
+      if (H.luuThat && (a.kind === "foe_outcome_unknown_approved_compensation_not_sent" || a.kind === "foe_outcome_unknown_stop_ended_unswept")) {
+        const goc = a.baoBen as ((b: boolean) => void) | undefined;
+        return orig.raiseCriticalStopAlert({ ...(a as Parameters<typeof orig.raiseCriticalStopAlert>[0]), recipients: H.luuThat, baoBen: (b: boolean) => (H.benX23.push({ kind: String(a.kind), ben: b }), goc?.(b)) });
+      }
       (a.baoBen as ((b: boolean) => void) | undefined)?.(true);
     },
   };
@@ -114,7 +122,9 @@ vi.mock("./foeRunStore", async (importOriginal) => {
 });
 
 import * as conn from "../../../db/connection";
-import { aiPendingActions, auditLogs, commandLog, orchestrationRunSteps, orchestrationRuns } from "../../../../drizzle/schema";
+import { aiPendingActions, auditLogs, commandLog, notifications, orchestrationRunSteps, orchestrationRuns } from "../../../../drizzle/schema";
+import { __quenBoNhoKhuTrungChoTest } from "../../robot/criticalStopAlert";
+import { _resetSafetyCriticalDedupForTests } from "../../notificationService";
 import { startS7commSim, type S7commSim } from "../../ot/drivers/__s7commSim";
 import { S7Driver } from "../../ot/drivers/s7Driver";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
@@ -311,6 +321,8 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     H.bayStack.length = 0;
     H.alerts.length = 0;
     H.alertsChet.length = 0;
+    H.luuThat = null;
+    H.benX23.length = 0;
     H.chet = false;
     H.chetSauChot = false;
     H.boc = null;
@@ -719,6 +731,46 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       expect(H.alerts.filter((a) => String(a.kind).startsWith("foe_outcome_unknown") && a.entityId === runId)).toEqual([]);
       expect((await ctxCua(tx, runId))[KET_CUC_KHONG_RO_CTX_KEY]).toBeUndefined();
     });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ X-23-DB the G39 and G40 URGENTs are STORED (one notifications row each, in this transaction, to the run's owner): their keys and their new words", async () => {
+    try {
+      await trongGiaoDich(async (tx) => {
+        H.luuThat = [OWNER];
+        const DK = { precondition: { source: "param", key: "never", op: "eq", value: true }, onPreconditionFail: "skip" };
+        const hangCua = (khoa: string) => tx.select().from(notifications).where(sql`${notifications.metadata}->>'dedupKey' LIKE ${khoa}`);
+        // G39 — a stop-typed compensation on the UNPINNED tag u (R-5-j: no STOP) is held for a person; the Continue approves it; its precondition skips it
+        const g39 = await giuSauKhongRo(tx, ({ m1, m2 }) => [buocChinh(m2, { id: "cs", type: "command", machineId: m1, command: "stop", args: { tagKey: "u", value: 1 }, ...DK } as WorkflowStep)]);
+        await chacKhongRo(tx, g39.runId);
+        expect((await runCua(tx, g39.runId)).status).toBe("held");
+        await resumeRun(g39.runId, { approved: true, note: "checked on site: cs" }, ADMIN, {}, { scope: null });
+        const khoa39 = `${CANH_BAO_KHONG_RO_KIND.approvedNotSent}:${g39.runId}:main:cs:%`;
+        await vi.waitFor(async () => expect(await hangCua(khoa39)).toHaveLength(1), { timeout: 10_000 });
+        const h39 = (await hangCua(khoa39))[0]!;
+        expect(h39.userId).toBe(OWNER);
+        expect(String(h39.title)).toContain('STOP-typed compensation "cs" NOT sent: skipped by its precondition');
+        expect(String(h39.message)).toContain("is a STOP-typed command and was NOT sent: its precondition skipped it, and it could not be verified as a pinned STOP. No path of this run sends it.");
+        // G40 — a KNOWN failure (N10's shape); its compensation's pinned STOP st is skipped by its precondition: the run ends failed with no STOP sweep (H36)
+        const d = await dungThietBi(tx, { cWritable: false });
+        const r40 = await dungRun([buocChinh(d.m2, { id: "cq", type: "sequence", steps: [{ ...buTruStop(d.m1, "st"), ...DK }] } as WorkflowStep)]);
+        await khoiDong(r40);
+        expect((await runCua(tx, r40)).status).toBe("failed");
+        const khoa40 = `foe_outcome_unknown_stop_ended_unswept:${r40}:st:-:ket`;
+        await vi.waitFor(async () => expect(await hangCua(khoa40)).toHaveLength(1), { timeout: 10_000 });
+        const h40 = (await hangCua(khoa40))[0]!;
+        expect(h40.userId).toBe(OWNER);
+        expect(String(h40.message)).toContain("It was skipped by its precondition and never tried.");
+        // both stored at their FIRST try (baoBen true): no recipient left, so no retry timer is armed (criticalStopAlert.ts retry: pending empty ⇒ return)
+        await vi.waitFor(() => expect(H.benX23.map((b) => `${b.kind}:${b.ben}`).sort()).toEqual([`${CANH_BAO_KHONG_RO_KIND.approvedNotSent}:true`, "foe_outcome_unknown_stop_ended_unswept:true"]), { timeout: 10_000 });
+        expect(canhBao("approvedNotSent", g39.runId)).toHaveLength(1);
+        expect(canhBao("stopEndedUnswept", r40)).toHaveLength(1);
+      });
+    } finally {
+      H.luuThat = null;
+      __quenBoNhoKhuTrungChoTest();
+      _resetSafetyCriticalDedupForTests();
+    }
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
 
