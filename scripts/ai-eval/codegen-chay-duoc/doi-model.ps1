@@ -171,7 +171,9 @@ $giuTamDung = $false
 
 try {
 # D1b M1 (HST 20/11): thu muc log tao TRUOC khoi dung chu cu, trong try de finally go tep tam dung cua toi. Hong => thoat 2, chu cu nguyen.
-try { if (-not (Test-Path -LiteralPath $log -PathType Container)) { New-Item -ItemType Directory -Path $log -Force -ErrorAction Stop | Out-Null } } catch { [Console]::Error.WriteLine("KHONG TAO DUOC THU MUC LOG ($log) - KHONG dung ai, KHONG khoi."); exit 2 }
+#   kiem-dinh 01:05 [DO]: New-Item -Force tren duong la TEP / cha la TEP KHONG nem, KHONG tao => kiem HAU DIEU KIEN, khong tin catch.
+try { if (-not (Test-Path -LiteralPath $log -PathType Container)) { New-Item -ItemType Directory -Path $log -Force -ErrorAction Stop | Out-Null } } catch { }
+if (-not (Test-Path -LiteralPath $log -PathType Container)) { [Console]::Error.WriteLine("KHONG TAO DUOC THU MUC LOG ($log) - KHONG dung ai, KHONG khoi."); exit 2 }
 # 1. Lo D1-script: KHONG con giet vo dieu kien theo ten (ban cu: Get-Process llama-server | Stop-Process).
 #    Chi dung khi chu cong $Cong la DUNG MOT tien trinh co ExecutablePath = $Exe, CommandLine co --port $Cong, va KHONG co tien
 #    trinh cung ten exe nao khac (dang nap, chua bind). CreationDate doc lai ngay truoc khi dung phai trung luc kiem.
@@ -196,8 +198,10 @@ if ($chu.Count -eq 1) {
   if ((-not $lai) -or ($lai.CreationDate -ne $taoLuc)) { [Console]::Error.WriteLine("PID $id doi danh tinh / khong con giua luc kiem va luc dung - KHONG dung."); exit 9 }
   # D1b M5 (HST 20/11 00:50, bang 8 dong): tin hieu khoa = CommandLine cua chu cong (khong doc .env). KHONG in nguyen CommandLine.
   $clCu = "$($ci.CommandLine)"
-  $tepCu = if ($clCu -match '--api-key-file\s+(?:"([^"]+)"|(\S+))') { if ($Matches[1]) { $Matches[1] } else { $Matches[2] } } else { '' }
-  $coKhoaCu = [bool]$tepCu -or ($clCu -match '--api-key(\s|=)')
+  #   kiem-dinh 01:05 + arg.cpp (487a6cc16): llama doi '_' thanh '-' trong ten co "--" => bat ca --api_key_file / --api_key; dang "=" llama
+  #   KHONG nhan (invalid argument) nhung van bat cho chac (that bai => coi la CO khoa, tu choi).
+  $tepCu = if ($clCu -match '--api[-_]key[-_]file(?:\s+|=)(?:"([^"]+)"|(\S+))') { if ($Matches[1]) { $Matches[1] } else { $Matches[2] } } else { '' }
+  $coKhoaCu = [bool]$tepCu -or ($clCu -match '--api[-_]key([-_]file)?(\s|=)')
   if ($coKhoaCu -and (-not $tepKhoa) -and (-not $KhongKhoa)) { [Console]::Error.WriteLine("CHU CONG $Cong PID $id DANG CO KHOA; shell thieu LLAMA_SERVER_API_KEY_FILE - KHONG dung, KHONG khoi llama khong khoa. Dat bien, hoac -KhongKhoa neu chu y."); exit 11 }
   if ($coKhoaCu -and $tepKhoa -and ((-not $tepCu) -or ((Duong-Day $tepCu) -ine (Duong-Day $tepKhoa)) -or (-not (Duong-Day $tepCu)))) {
     $moTaCu = if ($tepCu) { "--api-key-file $tepCu" } else { '--api-key <che>' }
