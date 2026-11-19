@@ -217,6 +217,7 @@ if (CA_RIENG === "doi-chung-mac-dinh") {
     // D1c C2 (HST 03:03): khoi-llama-tay khởi CÓ khoá ⇒ dòng `CMDLINE:` phải che đường tệp khoá thành `<tep-khoa>` (kiểm chung bên dưới bắt đường thật).
     // D1c C4: đối chứng (auto + có tệp mmproj cạnh model ⇒ có --mmproj) rồi -ChonMmproj off thắng cấu hình env ⇒ KHÔNG --mmproj.
     { ten: "force-0-mmproj-auto-doi-chung", dung: async (c) => { fs.writeFileSync(path.join(D, "Gia-mmproj-F16.gguf"), ""); await chuCu([])(c); }, chay: (c) => force(c, DOI_SONG, "auto"), kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhCo: "--mmproj" } },
+    { ten: "force-0-mmproj-auto-qua-tham-so", dung: async (c) => { fs.writeFileSync(path.join(D, "Gia-mmproj-F16.gguf"), ""); await chuCu([])(c); }, chay: (c) => force(c, DOI_SONG, "off", ["-ChonMmproj", "auto"]), kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhCo: "--mmproj" } }, // HST 04:25: env off + tham số auto ⇒ CÓ --mmproj
     { ten: "force-0-mmproj-off-qua-tham-so", dung: chuCu([]), chay: (c) => force(c, DOI_SONG, "auto", ["-ChonMmproj", "off"]), kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhKhong: "--mmproj" } },
     { ten: "tay-0-co-khoa-cmdline-che", kyVong: { ma: 0, pause: "khong", giaSong: 1, outCo: "--api-key-file <tep-khoa>" },
       chay: (c) => chayPs(KHOI_TAY, ["-ArgStr", `--port ${c} --api-key-file ${TEP_KHOA}`, "-Ten", "gia", "-Exe", BIN, "-Cong", String(c), "-TepTamDung", TEP_DUNG, "-ThuMucLog", LOG, "-ChoGiay", "6"], { ...DOI_SONG, LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }) });
