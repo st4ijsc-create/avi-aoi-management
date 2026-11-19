@@ -970,9 +970,13 @@ describe("doc 81 Đợt 6 fix 3 — re-send of the STOP steps of an aborted run"
     expect(abortRowId(a)).not.toBe(abortRowId(b));
   });
 
-  it("★ M4 a CONFIRMED STOP of a 130-char step is NOT re-sent by a re-send (its row is matched by the step id it records)", async () => {
-    const LONG = { ...RB_STOP, id: "r".repeat(130) };
-    const runId = await pausedAfterMotion("long130", [LONG, OT_STOP]);
+  it("★ M4 a CONFIRMED STOP of a 128-char step is NOT re-sent by a re-send (its row is matched by the step id it records)", async () => {
+    // Đổi ĐẦU VÀO theo quyết định HST (luật step id MỚI, STEP_ID_TOI_DA = 128). Trước đây id 130 ký tự: 130 vượt varchar(128), không thể
+    // tồn tại trong DB thật; luật deploy nay từ chối. 128 là id dài nhất còn deploy được;
+    // "abort:" + 128 = 134 > 128 nên hàng abort VẪN đi đường băm của abortRowId — kỳ vọng giữ nguyên.
+    const LONG = { ...RB_STOP, id: "r".repeat(128) };
+    expect(`abort:${LONG.id}`.length).toBeGreaterThan(128); // bảo đảm ca vẫn đi đường băm
+    const runId = await pausedAfterMotion("long128", [LONG, OT_STOP]);
     refuseNextOtStop();
     const first = await abortRun(runId, SUP);
     expect(first.abortStops).toMatchObject({ sent: [LONG.id], failed: ["stop"] });

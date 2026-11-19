@@ -1,0 +1,111 @@
+{
+ "ngay": "2026-11-13",
+ "nhan": "agent-f-cs-nm0-l5",
+ "commit": "75f66c3cb",
+ "cayBan": false,
+ "soMau": 1,
+ "truc": "M",
+ "maxTokens": 16000,
+ "sampling": {
+  "temperature": 0.2,
+  "top_p": 0.9
+ },
+ "giayTuong": 145,
+ "model": {
+  "tep": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+  "sha": "707a55a8a4397ecde44de0c499d3e68c1ad1d240d1da65826b4949d1043f4450",
+  "ctx": 65536,
+  "reasoningBudget": 12000,
+  "slot": 1
+ },
+ "co": {
+  "AI_AGENT_CONG_KE_HOACH": "0",
+  "AI_AGENT_CON_BAO_CAO": "0",
+  "AI_AGENT_CUU_TRAN": "1",
+  "AI_AGENT_DAU_RA_DAI": "0",
+  "AI_AGENT_DOC_TRUOC_KHI_GHI": "0",
+  "AI_AGENT_GIAO_VIEC": "0",
+  "AI_AGENT_GIU_NGHI": "1",
+  "AI_AGENT_HOUSEKEEPING_ENABLED": "false",
+  "AI_AGENT_KIEM_DAC_TA": "1",
+  "AI_AGENT_NEN_MOC": "0",
+  "AI_AGENT_NEN_SO_THAT": "0",
+  "AI_AGENT_NGHI": "1",
+  "AI_AGENT_THEO_VAI_TRO": "1",
+  "AI_AGENT_TIEP_TUC": "0",
+  "AI_AGENT_TOM_TAT_80": "0",
+  "AI_AGENT_TOOL_TIMEOUT": "0",
+  "AI_AGENT_TU_TRA_API": "1",
+  "AI_CODING_REPO_CONTEXT": "1"
+ },
+ "ghiChu": "agent-f C# do lai luot 5/6 (D0,D,D,D0,D0,D), AI_AGENT_NEN_MOC=0, may.mts da sua ProgramFiles (dinh chinh 75f66c3cb). May :3013 tren aoi_management_test, vai avi_app, dist baseline 09/11 (a4eb85df4), may.mts sua env (ProgramFiles), co khai tuong minh, RAG embed CPU, llama-server :8091 khong restart.",
+ "taiMay": {
+  "soMauTai": 1,
+  "cpuTb": 17,
+  "cpuMax": 17,
+  "tienTrinhNang": {},
+  "soLuotSlotBan": 0,
+  "sach": true
+ },
+ "dungSom": null,
+ "chuaDo": [],
+ "stacks": [
+  {
+   "stack": "cs",
+   "bai": 2,
+   "luot": 2,
+   "dat": 1,
+   "passAt1": 0.5,
+   "passAtN": 0.5,
+   "moiMau": [
+    1
+   ],
+   "cut": null,
+   "tokRaTb": 11469,
+   "msTb": 67876
+  }
+ ],
+ "tong": {
+  "stack": "TỔNG",
+  "bai": 2,
+  "luot": 2,
+  "dat": 1,
+  "passAt1": 0.5,
+  "passAtN": 0.5,
+  "moiMau": [
+   1
+  ],
+  "cut": null,
+  "tokRaTb": 11469,
+  "msTb": 67876
+ },
+ "hang": [
+  {
+   "id": "cs-dat-phong",
+   "stack": "cs",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": false,
+   "lyDo": [
+    "TEST_DO",
+    "THIEU_TEST:14<15"
+   ],
+   "cut": null,
+   "tokRa": 11847,
+   "ms": 72449,
+   "lyDoDung": "hoan-thanh"
+  },
+  {
+   "id": "cs-nhat-ky",
+   "stack": "cs",
+   "bo": "agent-f",
+   "mau": 1,
+   "dat": true,
+   "lyDo": [],
+   "cut": null,
+   "tokRa": 11091,
+   "ms": 63303,
+   "lyDoDung": "hoan-thanh"
+  }
+ ]
+}

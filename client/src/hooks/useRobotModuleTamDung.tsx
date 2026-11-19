@@ -10,6 +10,7 @@
  */
 import { createContext, useContext, type ReactNode } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { trpc } from "@/lib/trpc";
 
 export type TrangRobotModule = "bat" | "tam-dung" | "dang-tai";
@@ -25,10 +26,28 @@ export function trangTuPosture(a: { dangTai: boolean; loi: boolean; robotControl
   return a.robotControlEnabled === true ? "bat" : "tam-dung";
 }
 
+/**
+ * Thêm lớp QUYỀN trước posture: `oversight.posture` cần `machine_monitoring`/canView. Chưa đủ quyền (kể cả quyền CHƯA TẢI XONG)
+ * ⇒ "tam-dung" (ĐÓNG, không bao giờ "dang-tai"/"bat") và KHÔNG gọi thủ tục — tránh FORBIDDEN trong thân batch. Chưa đăng nhập ⇒ "bat" như cũ.
+ */
+export function trangRobotModule(a: {
+  coDangNhap: boolean;
+  coQuyen: boolean;
+  dangTai: boolean;
+  loi: boolean;
+  robotControlEnabled: boolean | undefined;
+}): TrangRobotModule {
+  if (!a.coDangNhap) return "bat";
+  if (!a.coQuyen) return "tam-dung";
+  return trangTuPosture({ dangTai: a.dangTai, loi: a.loi, robotControlEnabled: a.robotControlEnabled });
+}
+
 export function RobotModuleProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const q = trpc.oversight.posture.useQuery(undefined, { enabled: !!user, staleTime: 30_000, retry: false, refetchOnWindowFocus: false });
-  const trang: TrangRobotModule = !user ? "bat" : trangTuPosture({ dangTai: q.isLoading, loi: q.isError, robotControlEnabled: q.data?.robotControlEnabled });
+  const { hasPermission } = usePermissions();
+  const coQuyen = hasPermission("machine_monitoring", "canView");
+  const q = trpc.oversight.posture.useQuery(undefined, { enabled: !!user && coQuyen, staleTime: 30_000, retry: false, refetchOnWindowFocus: false });
+  const trang: TrangRobotModule = trangRobotModule({ coDangNhap: !!user, coQuyen, dangTai: q.isLoading, loi: q.isError, robotControlEnabled: q.data?.robotControlEnabled });
   return <Ctx.Provider value={trang}>{children}</Ctx.Provider>;
 }
 

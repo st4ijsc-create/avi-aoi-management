@@ -107,7 +107,7 @@ export async function setupKit(prefix: string): Promise<Kit> {
   await sql`UPDATE edge_nodes SET "protocolVersion" = 2 WHERE id IN ${sql([ids.nodeA, ids.nodeB])}`;
   const { encryptSecret } = await import("../security/secretBox");
   // devices — owned at INSERT (no owner change ⇒ no relock)
-  ids.robotA = await one(sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId", "stationId", "edgeNodeId") VALUES (${`RA-${DAU}`}, 'kit robot A', 'fanuc', 'tcp://10.0.0.1', true, ${ids.line}, ${ids.st}, ${ids.nodeA}) RETURNING id`);
+  ids.robotA = await one(sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId", "stationId", "edgeNodeId") VALUES (${`RA-${DAU}`}, 'kit robot A', 'fanuc', 'tcp://127.0.0.1:9', true, ${ids.line}, ${ids.st}, ${ids.nodeA}) RETURNING id`);
   ids.robotB = await one(sql`INSERT INTO robots (code, name, vendor, endpoint, "isEnabled", "lineId", "stationId", "edgeNodeId", "connectionOptions") VALUES (${`RB-${DAU}`}, 'kit robot B', 'sim', 'sim://b', true, ${ids.line}, ${ids.st}, ${ids.nodeB}, ${sql.json({ password: "B-ROBOT-SECRET" })}) RETURNING id`);
   ids.adapterA = await one(
     sql`INSERT INTO device_adapters (code, name, protocol, endpoint, "isEnabled", "machineId", "connectionOptions", "edgeNodeId") VALUES (${`AA-${DAU}`}, 'kit adapter A', 'stub', 'stub://a', true, ${ids.mOtA}, ${sql.json({ simProgram: "abc", password: encryptSecret("A-PLC-SECRET") })}, ${ids.nodeA}) RETURNING id`,

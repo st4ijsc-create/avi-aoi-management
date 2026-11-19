@@ -55,6 +55,7 @@ import {
 } from "./accessControl";
 import * as db from "../db";
 import { getDb } from "../db/connection";
+import { chonMocTheoDb } from "../testing/__chunkSanCo";
 import { users, type InsertUser } from "../../drizzle/schema";
 /**
  * Rút phần CHỮ của một biểu thức SQL drizzle (bỏ qua cột/tham số).
@@ -87,9 +88,13 @@ const CORP_B = `ACS_CORP_B_${ts}`;
  * (`gte(inspectionTime, dayStart)`) và KHÔNG có chặn trên, nên bản ghi ngày tương lai sẽ lọt
  * vào phép đếm "hôm nay" của bề mặt ③ và làm nhiễu phép đo (đã đo: 8 thay vì 3 ở lượt đầu).
  */
-const WINDOW_START = new Date("2019-05-01T00:00:00Z");
-const WINDOW_END = new Date("2019-05-10T00:00:00Z");
-const INSPECTED_AT = new Date("2019-05-05T03:00:00Z");
+// ★ X-16: khi có chunk chưa nén CÓ SẴN thì cửa sổ là ±30 s quanh một mốc đã kiểm TRỐNG (không tạo chunk mới, không xin khoá `machines`); mốc luôn ≤ hôm qua vì bảng Andon không chặn trên. Không có chunk ⇒ 2019-05 như cũ + cảnh báo.
+const MOC = await chonMocTheoDb(await getDb(), { bang: "product_inspections", cot: "inspectionTime", ts, macDinh: new Date("2019-05-05T03:00:00Z"), khongChuaGioTron: true });
+if (MOC.nguon !== "chunk-san-co") console.warn(`accessControlScope: giữ mốc 2019-05 (${MOC.nguon}) — sẽ tạo chunk mới`);
+const RONG_MS = MOC.nguon === "chunk-san-co" ? 30_000 : null;
+const WINDOW_START = RONG_MS ? new Date(MOC.at.getTime() - RONG_MS) : new Date("2019-05-01T00:00:00Z");
+const WINDOW_END = RONG_MS ? new Date(MOC.at.getTime() + RONG_MS) : new Date("2019-05-10T00:00:00Z");
+const INSPECTED_AT = MOC.at;
 
 let machineId: number;
 let machineCode: string;

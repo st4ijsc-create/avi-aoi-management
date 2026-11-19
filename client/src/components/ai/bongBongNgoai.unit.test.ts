@@ -158,6 +158,13 @@ describe("nhánh van-ban của bong bóng (T9/T11/T13/T14)", () => {
     const r = dungNguonVanBan([hoi, L({ ngoaiConvId: 4 })], 1);
     expect(r).toEqual({ nguon: { loai: "van-ban", beMat: "bong-bong", cauHoi: "hỏi gì", traLoi: "đáp" }, daCat: false });
   });
+  it("v6 — cauHoi CHỈ lấy từ lượt NGƯỜI DÙNG liền trước: lượt trước là tin trợ lý ⇒ cauHoi rỗng, không phải chữ của trợ lý", () => {
+    const truocLaTroLy = L({ content: "CHỮ CỦA TRỢ LÝ LƯỢT TRƯỚC", ngoaiConvId: 4 });
+    const r = dungNguonVanBan([truocLaTroLy, L({ content: "đáp mới", ngoaiConvId: 4 })], 1);
+    expect(r?.nguon.cauHoi).toBe("");
+    expect(r?.nguon.traLoi).toBe("đáp mới");
+    expect(JSON.stringify(r)).not.toContain("CHỮ CỦA TRỢ LÝ LƯỢT TRƯỚC");
+  });
   it("T13 — đang stream (kể cả đã abort giữa chừng) ⇒ null, không gửi traLoi dở", () => {
     expect(dungNguonVanBan([hoi, L({ ngoaiConvId: 4, streaming: true })], 1)).toBeNull();
   });

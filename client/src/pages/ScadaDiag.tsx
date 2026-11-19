@@ -27,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BangTruyenThong, coLoi, type HangDiag, type MayDung } from "@/components/scada/BangTruyenThong";
 import { ChipTruyenThong } from "@/components/scada/ChipTruyenThong";
+import { VungUrgentBen } from "@/components/scada/VungUrgentBen";
 import { NganTagAdapter } from "@/components/scada/NganTagAdapter";
 import { laLoiCanMaTotp } from "@/components/scada/HopMaTotpTroLai";
 import { TruongTotp, maTotpDu } from "@/components/scada/TruongLyDo";
@@ -145,6 +146,7 @@ export default function ScadaDiag() {
             </div>
           }
         />
+        <VungUrgentBen />
         <SectionCard
           title={t("scada.diag.danhSach", { count: hienThi.length })}
           contentClassName="overflow-x-auto"

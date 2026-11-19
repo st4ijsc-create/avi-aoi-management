@@ -11,6 +11,11 @@
  * Test rows are removed afterwards as far as the guards allow (edge nodes, adapters, robots; WORM history and acked requests stay).
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
+// D2 — this suite drives the STOP sweep's transient session to its OWN fake / sim / loopback devices on the _test DB: the DB-name
+// read (csdlDichStop) is replaced HERE (vitest only — the production module has no switch, no env, no export) so the sweep takes
+// its normal path. Without it the sweep simulates on _test (D2) and the owed STOPs of this suite stay pending.
+vi.mock("./csdlDichStop", () => ({ docCsdlDichStop: vi.fn(() => ({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null })) }));
+import { docCsdlDichStop } from "./csdlDichStop";
 import postgres from "postgres";
 
 const H = vi.hoisted(() => ({
@@ -102,6 +107,16 @@ const alerted = async () => {
   return H.alerts.join("\n");
 };
 const reqRow = async (id: number) => (await sql`SELECT "ackedAt", outcome, "centralExecutionId" IS NOT NULL AS "byExecution" FROM robot_motion_lock_requests WHERE id = ${id}`)[0];
+
+// D2 canary — chạy TRƯỚC mọi ca DB, không chạm DB: vi.mock("./csdlDichStop") ở đầu tệp phải có hiệu lực (deviceOwnershipService import đúng
+// mô-đun đó). Không ăn ⇒ vòng quét trên _test mô phỏng (D2) và các ca STOP bên dưới đỏ vì lý do KHÁC — ca này đỏ trước, nói rõ.
+describe("D2 canary — vi.mock(csdlDichStop) có hiệu lực", () => {
+  it("docCsdlDichStop là hàm mock và trả chac-khong-phai-test", () => {
+    console.log("[D2 canary]", import.meta.url, "— docCsdlDichStop là mock:", vi.isMockFunction(docCsdlDichStop)); // không có đường thuần (không DB) nào trong deviceOwnershipService tới csdlDichStop / driverRegistry khi DB sống
+    expect(vi.isMockFunction(docCsdlDichStop), "D2: vi.mock('./csdlDichStop') KHÔNG có hiệu lực — vòng quét sẽ mô phỏng trên _test; các ca STOP của tệp này không còn nghĩa").toBe(true);
+    expect(docCsdlDichStop(), "D2: mock csdlDichStop trả sai giá trị").toEqual({ trangThai: "chac-khong-phai-test", ten: "mocked", lyDo: null });
+  });
+});
 
 describe.skipIf(!onTest)("R-10-i / R-10-v / R-10-w — STOPs owed after a transfer to central; live ownership (_test)", () => {
   beforeAll(async () => {

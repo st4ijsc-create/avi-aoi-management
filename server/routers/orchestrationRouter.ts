@@ -83,7 +83,7 @@ import {
   simulateWorkflow,
   type SimulationResult,
 } from "../services/orchestration/foe/foeSimulator";
-import { validateWorkflow, type WorkflowDefinition } from "../services/orchestration/foe/workflowModel";
+import { validateWorkflow, kiemTraKyTuIdBuoc, LY_DO_I18N_THEO_MA, type WorkflowDefinition } from "../services/orchestration/foe/workflowModel";
 
 function toFoeUser(user: { id: number; role: string; name?: string | null }): FoeUser {
   return { id: user.id, role: String(user.role), name: user.name ?? null };
@@ -631,6 +631,22 @@ export const orchestrationRouter = router({
         ...(src.definitionJson as unknown as Record<string, unknown>),
         ref: newRef,
       } as typeof src.definitionJson;
+      // Luật đầu vào step id MỚI: bản sao là định nghĩa MỚI (INSERT thẳng, không qua deployWorkflow) ⇒ cũng phải qua kiểm ký tự id.
+      const kyTuId = kiemTraKyTuIdBuoc(def as unknown as WorkflowDefinition);
+      if (kyTuId.length) {
+        const e0 = kyTuId[0];
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          {
+            field: e0.path,
+            reason: LY_DO_I18N_THEO_MA[e0.code ?? ""] ?? "stepIdKyTuCam",
+            ...(e0.kyTu !== undefined ? { kyTu: e0.kyTu } : {}),
+            ...(e0.doDai !== undefined ? { doDai: e0.doDai, toiDa: e0.toiDa ?? 0 } : {}),
+          },
+          e0.message,
+        );
+      }
       const newName = input.newName?.trim() || `${src.name} (copy)`;
       const insertCopy = d
         .insert(orchestrationWorkflows)

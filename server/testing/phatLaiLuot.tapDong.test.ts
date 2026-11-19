@@ -82,3 +82,35 @@ describe("soYeuCau / soSuKien — ghi vs phát của dotnet test chạy song son
     expect(soYeuCau(yc([{ role: "assistant", content: "a\nb" }]), yc([{ role: "assistant", content: "a\n\nb" }]))).toMatchObject({ truong: "tin[0]" });
   });
 });
+
+describe("dongDeSo — ghim khoảng trống test (đột biến sống P3 (a)(b)(c) của kiem-dinh)", () => {
+  const tool = (content: string) => yc([{ role: "tool", content }]);
+  it("★★★ (a) ĐA TẬP, không phải TẬP: một dòng lặp 2 lần ≠ cùng dòng 1 lần ⇒ LỆCH (đột biến dedupe/Set ⇒ ĐỎ)", () => {
+    expect(dongDeSo("a\na")).toEqual(["a", "a"]);
+    expect(dongDeSo("a\na")).not.toEqual(dongDeSo("a"));
+    expect(soYeuCau(tool("E loi\nE loi"), tool("E loi"))).toMatchObject({ truong: "tin[0]" });
+    expect(soYeuCau(tool("E loi"), tool("E loi\nE loi"))).toMatchObject({ truong: "tin[0]" });
+    expect(soSuKien([{ loai: "ket-qua-tool", dauRa: "E a\nE a" }], [{ loai: "ket-qua-tool", dauRa: "E a" }])).toMatchObject({ duong: "suKien[0].dauRa" });
+    // đối chứng: cùng đa tập, khác thứ tự ⇒ khớp
+    expect(soYeuCau(tool("E a\nE b\nE a"), tool("E a\nE a\nE b"))).toBeNull();
+  });
+  it("★★★ (b) THỤT ĐẦU DÒNG là nội dung: hai mẩu xUnit / `Failed X [` chỉ khác thụt đầu dòng ⇒ LỆCH (đột biến bỏ (?<=\S) ở một hoặc CẢ HAI regex tách ⇒ ĐỎ)", () => {
+    // regex tách `[xUnit.net`: mẩu ở ĐẦU dòng có/không thụt
+    expect(dongDeSo("  [xUnit.net 00:00:00.19]     T.A [FAIL]")).toEqual(["  [xUnit.net 00:00:00.19]     T.A [FAIL]"]);
+    expect(dongDeSo("  [xUnit.net 00:00:00.19]     T.A [FAIL]")).not.toEqual(dongDeSo("[xUnit.net 00:00:00.19]     T.A [FAIL]"));
+    expect(soYeuCau(tool("  [xUnit.net 00:00:00.19]     T.A [FAIL]"), tool("[xUnit.net 00:00:00.19]     T.A [FAIL]"))).toMatchObject({ truong: "tin[0]" });
+    // regex tách `Failed <Tên> [`: mẩu ở ĐẦU dòng thụt 2 ≠ thụt 4
+    expect(dongDeSo("    Failed T.A [1 ms]")).toEqual(["    Failed T.A [1 ms]"]);
+    expect(dongDeSo("  Failed T.A [1 ms]")).not.toEqual(dongDeSo("    Failed T.A [1 ms]"));
+    expect(soYeuCau(tool("  Failed T.A [1 ms]"), tool("    Failed T.A [1 ms]"))).toMatchObject({ truong: "tin[0]" });
+    // đối chứng: đúng thụt + mẩu dính giữa dòng vẫn KHỚP (không nới quá)
+    expect(soYeuCau(tool("  Failed T.A [1 ms]\n[xUnit.net 00:00:00.19]     T.B [FAIL]"), tool("[xUnit.net 00:00:00.19]     T.B [FAIL]  Failed T.A [1 ms]"))).toBeNull();
+  });
+  it("★★ (c) `Failed <MỘT từ> [` mới tách: câu thường có chữ Failed + nhiều từ + `[` KHÔNG bị tách", () => {
+    expect(dongDeSo("log: Failed to load the module [x]")).toEqual(["log: Failed to load the module [x]"]);
+    expect(dongDeSo("Error: Failed step one two [3]")).toEqual(["Error: Failed step one two [3]"]);
+  });
+  it("★★ khớp CHỈ với CRLF/LF, khoảng trắng cuối, dòng trống (đã đo): giữ nguyên hành vi", () => {
+    expect(soYeuCau(tool("E a\r\nE b\r\n"), tool("E b  \n\nE a\t\n"))).toBeNull();
+  });
+});

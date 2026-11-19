@@ -147,7 +147,8 @@ export interface ThongTinModelNgoai {
   bangChung?: undefined;
 }
 
-export type ThongTinModelBatDau = ThongTinModelCucBo | ThongTinModelNgoai;
+/** `nganSachNguCanh`: (HST 15/11, máy đo cờ ép `AI_AGENT_NGAN_SACH_EP`) ngân sách HIỆU DỤNG của lượt — chỉ có khi biến đó có mặt. */
+export type ThongTinModelBatDau = (ThongTinModelCucBo | ThongTinModelNgoai) & { nganSachNguCanh?: number };
 
 /** (Đợt 10.4b L3, luong-ui u3) vết cộng dồn mọi vòng của lượt model ngoài — cùng hình `VetNgoaiLichSu` (shared/ai/sinhChuNgoai.ts), không callId. */
 export interface VetNgoaiLuot {

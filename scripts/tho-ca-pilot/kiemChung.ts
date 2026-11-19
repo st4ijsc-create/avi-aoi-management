@@ -12,6 +12,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { cheTokenCoTienTo } from "../../shared/mauBiMat";
 import type { KetQuaDotBien } from "./dotBien";
 import type { GioiHanLuotChoDriver, TranLuotKetQua } from "./tranLuot";
 
@@ -73,6 +74,13 @@ export interface KetQuaKiem {
 }
 
 const boMau = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+/**
+ * HA-11 — che token có tiền tố nhà cung cấp (sk-ant-, ghp_, AKIA…) trong đầu ra lệnh kiểm. MỘT nguồn mẫu: `shared/mauBiMat.ts` (phương án B1).
+ * Không có mẫu nào khớp ⇒ chuỗi trả về NGUYÊN VĂN từng byte. Giới hạn đã biết (theo mauBiMat): khoá OpenAI/Stripe/AWS dính liền chữ phía trước vẫn lọt.
+ */
+export const THAY_TOKEN_BI_MAT = "[REDACTED_SECRET]";
+export const cheTokenTrongDauRa = (s: string): string => cheTokenCoTienTo(s, THAY_TOKEN_BI_MAT);
 
 /**
  * `--cho-phep-db`: lọc chuỗi kết nối CSDL (có thể kèm mật khẩu) khỏi ĐẦU RA LỆNH KIỂM trước khi nó vào lời nhắc của model, JSON `kiem` hay nhật ký.
@@ -218,10 +226,10 @@ export function demCaTest(nguon: string): number {
 
 export const RE_TEP_TEST = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 
-export type KetCucKiem = "xong" | "kiem-do" | "test-rong" | "bao-sai" | "dot-bien-song" | "vi-pham" | "het-gio" | "loi-driver" | "khong-lam" | "tu-choi";
+export type KetCucKiem = "xong" | "kiem-do" | "test-rong" | "bao-sai" | "dot-bien-song" | "vi-pham" | "het-gio" | "loi-driver" | "khong-lam" | "tu-choi" | "thieu-phu" | "hau-qua-xau";
 
 /** Ketcuc nào là "đã chốt xấu" ⇒ L3 không được nâng lên (sticky). */
-const KET_CUC_XAU = new Set<KetCucKiem>(["vi-pham", "het-gio", "loi-driver", "khong-lam", "tu-choi", "kiem-do", "test-rong", "bao-sai", "dot-bien-song"]);
+const KET_CUC_XAU = new Set<KetCucKiem>(["vi-pham", "het-gio", "loi-driver", "khong-lam", "tu-choi", "kiem-do", "test-rong", "bao-sai", "dot-bien-song", "thieu-phu", "hau-qua-xau"]);
 
 export interface DauVaoQuyet {
   /** ketCuc do phần diff/driver đã quyết trước khi kiểm chứng */
@@ -236,6 +244,12 @@ export interface DauVaoQuyet {
   tsc?: KetQuaTsc | null;
   /** L3b: kết quả áp đột biến của thẻ (chỉ khi thẻ có ĐỘT BIẾN và các bước trước đều xanh); vắng/null = không áp */
   dotBien?: KetQuaDotBien | null;
+  /** HA-10: độ phủ danh sách ĐÃ DUYỆT (chỉ khi thẻ bật KIỂM PHỦ và các bước trước xanh); `dongThieu` khác rỗng ⇒ thieu-phu */
+  phu?: { dongThieu: readonly number[] } | null;
+  /** HA-6b: kiểm hậu quả (đếm hàng CSDL; chỉ khi thẻ có BẢNG ĐẾM và mọi bước trước đều xanh); ketCuc "hau-qua-xau" ⇒ KHÔNG ĐẠT, đứng SAU đột biến (đếm sau lệnh kiểm cuối) */
+  hauQua?: { ketCuc: "ok" | "hau-qua-xau"; lyDo: string | null } | null;
+  /** HA-6b phần 2: LỆNH KIỂM THẬT trên cây giả (chạy SAU mọi bước trên, TRƯỚC đếm hàng); `dat:false` ⇒ hau-qua-xau */
+  kiemThat?: { dat: boolean; lyDo: string | null } | null;
 }
 
 export interface QuyetKetCuc {
@@ -256,6 +270,9 @@ export function quyetKetCuc(v: DauVaoQuyet): QuyetKetCuc {
       return { ketCuc: "kiem-do", lyDo: `tsc: ${t.loiTrongTep.length} lỗi kiểu trong tệp model đổi — ${t.loiTrongTep.slice(0, 3).join(" | ")}` };
     }
   }
+  // HA-10: xanh mà KHÔNG thêm ca cho dòng đã duyệt ⇒ KHÔNG ĐẠT (đứng trước đột biến: đột biến trên bài làm thiếu phủ là vô nghĩa)
+  const ph = v.phu;
+  if (ph && ph.dongThieu.length > 0) return { ketCuc: "thieu-phu", lyDo: `HA-10: dòng ĐÃ DUYỆT ${ph.dongThieu.join(", ")} chưa có ca [Dk] hợp lệ (mới, có expect thật, PASSED) dù lệnh kiểm xanh` };
   const d = v.dotBien;
   if (d) {
     // lỗi CỦA BỘ CHẠY (không khôi phục sạch / tệp lạ sau revert) đi trước: kết quả đột biến không còn tin được
@@ -267,6 +284,8 @@ export function quyetKetCuc(v: DauVaoQuyet): QuyetKetCuc {
     }
     if (d.khongApDung > 0) return { ketCuc: "kiem-do", lyDo: `L3b: ${d.khongApDung}/${d.tong} đột biến không áp dụng/không kết luận được (lỗi thẻ hoặc hết hạn)` };
   }
+  if (v.kiemThat && !v.kiemThat.dat) return { ketCuc: "hau-qua-xau", lyDo: `HA-6b: LỆNH KIỂM THẬT trên cây giả KHÔNG đạt (${v.kiemThat.lyDo ?? "không rõ"}) dù lệnh kiểm xanh` };
+  if (v.hauQua && v.hauQua.ketCuc === "hau-qua-xau") return { ketCuc: "hau-qua-xau", lyDo: v.hauQua.lyDo ?? "HA-6b: hậu quả xấu" };
   return r;
 }
 
@@ -424,13 +443,14 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
     let dau = "";
     let hetGio = false;
     const env: NodeJS.ProcessEnv = { ...envSachChoTienTrinhCon(process.env, opt), CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" };
-    const locLoi = (x: string) => (opt.testDbUrl !== undefined ? xoaGiaTriBiMat(loaiUrlCsdl(x), giaTriBiMatTuUrl(opt.testDbUrl)) : x);
+    const locLoi = (x: string) => cheTokenTrongDauRa(opt.testDbUrl !== undefined ? xoaGiaTriBiMat(loaiUrlCsdl(x), giaTriBiMatTuUrl(opt.testDbUrl)) : x);
     const ketThuc = (exit: number | null, loi?: string) => {
       clearTimeout(dongHo);
       const coDb = opt.testDbUrl !== undefined;
       const tho = boMau(dau);
-      // CỜ TẮT ⇒ đầu ra KHÔNG đổi một byte; chỉ khi có `--cho-phep-db` mới lọc URL / giá trị bí mật và ghi tên ca đỏ, đầu ra đầy đủ
-      const sach = coDb ? xoaGiaTriBiMat(loaiUrlCsdl(tho), giaTriBiMatTuUrl(opt.testDbUrl)) : tho;
+      // CỜ TẮT ⇒ đầu ra KHÔNG đổi một byte NẾU không chứa token có tiền tố nhà cung cấp (HA-11: che các mẫu đó ở CẢ HAI nhánh);
+      // chỉ khi có `--cho-phep-db` mới lọc thêm URL / giá trị bí mật và ghi tên ca đỏ, đầu ra đầy đủ
+      const sach = cheTokenTrongDauRa(coDb ? xoaGiaTriBiMat(loaiUrlCsdl(tho), giaTriBiMatTuUrl(opt.testDbUrl)) : tho);
       xong({
         lenh,
         exit,

@@ -14,7 +14,10 @@
  */
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { loiNhacPhu, tinhPhu } from "./kiemPhu";
+import { quetHoSo, thuMucTamMacDinh, tomTatCanhBao, type CanhBao } from "./quetTinh";
 import { chuanDuong, kiemDiffTheoThe, vungCamCua, type TheViec } from "./theViec";
 import { chayLenhKiem, loaiUrlCsdl, xoaGiaTriBiMat, type ChayKiem, type KetQuaKiem } from "./kiemChung";
 import type { DauVaoDriver, KetQuaDriver } from "./chayMotViec";
@@ -92,6 +95,8 @@ export interface HoSoCho {
   luc: string;
   /** hạn THẬT người duyệt phải trả lời trước (ISO) — thẻ của app hết hạn sau 5 phút kể từ lúc tạo, bất kể --han-duyet */
   hetHanLuc?: string;
+  /** HA-9 — cảnh báo của bộ quét tĩnh trên phần được thêm / đổi (KHÔNG chặn; chỉ để người duyệt thấy). Vắng khi sạch. */
+  canhBao?: CanhBao[];
 }
 /** App đặt `expiresAt = createdAt + 5 phút` cho thẻ (aiCopilotActions.PENDING_TTL_MS); quá hạn thẻ `invalid` dù bộ chạy còn đợi (TC-05 lượt 2). */
 export const TTL_THE_DUYET_MS = 5 * 60_000;
@@ -133,8 +138,9 @@ export const duyetQuaTep: ChinhSachDuyet = async (h, ctx) => {
   ghiNguyenTu(tepChoDuyet(ctx.ra, h.ma), JSON.stringify(h, null, 2));
   const han = Date.now() + ctx.hanMs;
   const hetHan = h.hetHanLuc ?? new Date(han).toISOString();
-  ghiNguyenTu(tepDangCho(ctx.ra), `${h.ma} ${h.ten} ${h.duong.join(",")} id=${h.id} HET HAN ${hetHan}\n`);
-  process.stderr.write(`[tho-ca-pilot] CHỜ DUYỆT ${h.ma} ${h.ten} ${h.duong.join(",")} id=${h.id} HẾT HẠN ${hetHan} → ${tepChoDuyet(ctx.ra, h.ma)}\n`);
+  const cb = tomTatCanhBao(h.canhBao);
+  ghiNguyenTu(tepDangCho(ctx.ra), `${h.ma} ${h.ten} ${h.duong.join(",")} id=${h.id} HET HAN ${hetHan}${cb ? ` | ${cb}` : ""}\n`);
+  process.stderr.write(`[tho-ca-pilot] CHỜ DUYỆT ${h.ma} ${h.ten} ${h.duong.join(",")} id=${h.id} HẾT HẠN ${hetHan}${cb ? ` | ${cb}` : ""} → ${tepChoDuyet(ctx.ra, h.ma)}\n`);
   const xong = <T extends QuyetDinh>(q: T): T => {
     ghiNguyenTu(tepDangCho(ctx.ra), `(không có thẻ chờ) ${new Date().toISOString()}\n`);
     return q;
@@ -258,6 +264,7 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
     const nhanTuChoi = new Map<string, string>();
 
     let soTuChay = 0;
+    let soNhacPhu = 0;
     let soLanBaoHan = 0;
     const xuLyDuyet = async (id: string, de: { ten: string; thamSo: Record<string, unknown>; moTa?: string; xemTruoc?: unknown; nguonDangNgo?: string[] }, actionId: string) => {
       const loc = locTruocKhiCho(de, v.the, v.wt);
@@ -279,7 +286,18 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
         const k = await (v.chayKiem ?? dep.chayKiem ?? chayLenhKiem)(loc.lenh, v.wt, 300);
         ghiChu.push(`tự chạy lệnh kiểm lần ${soTuChay}: exit ${k.exit}${k.vitest.ca ? `, Tests ${k.vitest.ca.dat} passed / ${k.vitest.ca.tong}` : ""}`);
         // tóm tắt cho model được TÍNH và GỬI trước; tệp đầy đủ chỉ được ghi SAU đó (không có đường nào từ nội dung tệp vào lời nhắc)
-        const loiNhac = v.cheDoKiem === "chi-so" ? tomTatChiSoChoModel(k, soTuChay, v.giaTriBiMat ?? []) : tomTatKiemChoModel(k, soTuChay);
+        let loiNhac = v.cheDoKiem === "chi-so" ? tomTatChiSoChoModel(k, soTuChay, v.giaTriBiMat ?? []) : tomTatKiemChoModel(k, soTuChay);
+        // HA-10: dòng PHỦ do HOST sinh từ quét TĨNH tệp test (số dòng + tag, KHÔNG từ đầu ra test) ⇒ được kèm cả ở chế độ chi-so (không mở kênh lộ dữ liệu). Nhắc dòng THIẾU tối đa 2 lần/lượt.
+        if (v.phu) {
+          const nguon = v.phu.tepTest.map((t) => { try { return fs.readFileSync(path.join(v.wt, t), "utf8"); } catch { return ""; } }).join("\n");
+          const ph = tinhPhu(v.phu.dongDuyet, nguon, { tenCaCu: v.phu.tenCaCu });
+          const msg = loiNhacPhu(ph);
+          if (msg !== "" && (ph.dongThieu.length === 0 || soNhacPhu < 2)) {
+            loiNhac = `${loiNhac}\n${msg}`;
+            if (ph.dongThieu.length > 0) soNhacPhu++;
+            ghiChu.push(`PHỦ lần ${soTuChay}: thiếu dòng ${ph.dongThieu.join(",") || "(không)"}`);
+          }
+        }
         await dep.bac(actionId, loiNhac);
         if (v.cheDoKiem === "chi-so") {
           // đầu ra ĐẦY ĐỦ (đã lọc URL + bí mật) chỉ cho NGƯỜI duyệt đọc — tệp kết quả, không bao giờ đi vào lời nhắc của model
@@ -299,6 +317,21 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
       if (hanDuyetGiay * 1000 > hanMs && soLanBaoHan++ === 0) {
         ghiChu.push(`--han-duyet ${hanDuyetGiay}s dài hơn TTL thẻ ${TTL_THE_DUYET_MS / 1000}s ⇒ chờ người tối đa ${Math.round(hanMs / 1000)}s mỗi thẻ (thẻ hết hạn sau đó dù bộ chạy còn đợi)`);
       }
+      // HA-9: quét tĩnh phần được thêm / đổi — CHỈ cảnh báo, không chặn; lỗi của bộ quét không làm hỏng lượt
+      let canhBao: CanhBao[] = [];
+      try {
+        const thuc = (() => {
+          try {
+            return fs.realpathSync.native(os.tmpdir());
+          } catch {
+            return undefined;
+          }
+        })();
+        canhBao = quetHoSo({ xemTruoc: de.xemTruoc, thamSo: de.thamSo }, { wt: v.wt, thuMucTam: thuMucTamMacDinh(os.tmpdir(), thuc), choPhep: v.the.choPhepTrongTest });
+      } catch (e) {
+        ghiChu.push(`bộ quét tĩnh lỗi (bỏ qua): ${e instanceof Error ? e.message : String(e)}`);
+      }
+      if (canhBao.length) ghiChu.push(`thẻ ${de.ten} ${loc.duong.join(",")}: ${tomTatCanhBao(canhBao)}`);
       const q = await dep.chinhSachDuyet(
         {
           ma: v.the.ma,
@@ -312,6 +345,7 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
           nguonDangNgo: de.nguonDangNgo ?? [],
           luc: new Date().toISOString(),
           hetHanLuc: new Date(Date.now() + hanMs).toISOString(),
+          ...(canhBao.length ? { canhBao } : {}),
         },
         { ra: v.ra, hanMs },
       );
@@ -435,6 +469,7 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
     }
     if (lyDoDung !== null) kq.lyDoDung = lyDoDung;
     kq.loiCongCu = loiCongCu;
+    if (v.phu) kq.soLanNhacPhu = soNhacPhu;
     if (luuY.length > 0) kq.luuY = luuY;
     return kq;
   };

@@ -46,6 +46,7 @@ import {
   chuanHoaLichSuTiepTuc,
   docNhiemTuLichSu,
 } from "@shared/agentCore";
+import { banGhiNganSachBatDau, ganNganSachVaoThongTin } from "./ghiNganSachBatDau";
 import { checkPermission } from "../../../_core/accessControl";
 import { executeDecision, type ToolExecContext } from "../../aiLocalTools";
 import { danhSachDuAn, duAnMacDinh, phanGiaiGoc } from "../../aiLocalTools/repoProjects";
@@ -1022,6 +1023,15 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
                 },
               }
             : undefined;
+          // (HA-3) AI_AGENT_SO_LUOT_TOI_DA nâng/hạ trần lượt model (kẹp [1,120]); chưa đặt ⇒ NGUYÊN `phuThuoc.gioiHan` như cũ.
+          // (HST 15/11) tính MỘT lần: lõi và bản ghi `bat-dau.model.nganSachNguCanh` đọc CÙNG số.
+          const gioiHanLuot = capNgoai
+            ? { ...hopGioiHanLuot(phuThuoc.gioiHan, process.env), soLuotToiDa: TRAN_VONG_AGENT_NGOAI }
+            : nganSachNguCanh !== undefined
+              ? { ...hopGioiHanLuot(phuThuoc.gioiHan, process.env), nganSachNguCanhToken: nganSachNguCanh }
+              : hopGioiHanLuot(phuThuoc.gioiHan, process.env);
+          // (HST 15/11) máy đo cờ ép: ngân sách HIỆU DỤNG vào `bat-dau.model` khi biến AI_AGENT_NGAN_SACH_EP có mặt (ghiNganSachBatDau.ts).
+          const ghiNganSach = banGhiNganSachBatDau(process.env, gioiHanLuot);
           const kq = await chayVongAgent({
             ...(giaoViec ? { giaoViec } : {}),
             // (Đợt 12 · H5.4) chụp lịch sử ở ranh giới an toàn (cờ AI_AGENT_TIEP_TUC) — che bí mật + trần ở `chuanBiBanLuu`; vượt trần ⇒ XOÁ bản lưu
@@ -1048,11 +1058,11 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
             // Cờ AI_AGENT_THEO_VAI_TRO BẬT ⇒ lượt model đã được đếm qua cổng (recordPhu agent-luot) ⇒ tắt dấu vết chỉ-ghi của goiModelMayChu (tránh hai hàng/lượt); TẮT ⇒ dấu vết chỉ-ghi mang người chạy.
             goiModel: goiModelLuot,
             ...(ngoai
-              ? { thongTinModel: { nguon: "ngoai" as const, model: ngoai.chonModel, muc: ngoai.muc } }
+              ? { thongTinModel: ganNganSachVaoThongTin({ nguon: "ngoai" as const, model: ngoai.chonModel, muc: ngoai.muc }, ghiNganSach) }
               : theoVaiTro
-                ? { thongTinModel: theoVaiTro.thongTin }
+                ? { thongTinModel: ganNganSachVaoThongTin(theoVaiTro.thongTin, ghiNganSach) }
                 : modelChon
-                  ? { thongTinModel: modelChon.thongTin }
+                  ? { thongTinModel: ganNganSachVaoThongTin(modelChon.thongTin, ghiNganSach) }
                   : {}),
             boThucThi: capNgoai ? capNgoai.boThucThi : boThucThi,
             // (L3, u3) `xong` của lượt ngoài mang vết cộng dồn mọi vòng (không callId).
@@ -1063,12 +1073,7 @@ const TRANG_THAI_TIEP_TUC_DUOC: ReadonlySet<string> = new Set(["gian-doan", "loi
             },
             ...(haTuTriDauChung ? { haTuTriDau: true } : {}),
             signal: boHuy.signal,
-            // (HA-3) AI_AGENT_SO_LUOT_TOI_DA nâng/hạ trần lượt model (kẹp [1,120]); chưa đặt ⇒ NGUYÊN `phuThuoc.gioiHan` như cũ
-            gioiHan: capNgoai
-              ? { ...hopGioiHanLuot(phuThuoc.gioiHan, process.env), soLuotToiDa: TRAN_VONG_AGENT_NGOAI }
-              : nganSachNguCanh !== undefined
-                ? { ...hopGioiHanLuot(phuThuoc.gioiHan, process.env), nganSachNguCanhToken: nganSachNguCanh }
-                : hopGioiHanLuot(phuThuoc.gioiHan, process.env),
+            gioiHan: gioiHanLuot,
             ngonNgu: lang,
             uocLuongToken: uocLuongSoToken,
             // (2026-10-19) nhắc đối chiếu đặc tả sau lần test xanh đầu — tắt bằng AI_AGENT_KIEM_DAC_TA=0

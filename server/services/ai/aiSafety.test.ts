@@ -482,10 +482,15 @@ describe("StreamingSecretRedactor — long secrets streamed in tiny chunks (doc6
     const remaining = redactor.flush();
     if (remaining) emitted.push(remaining);
 
-    // Forced at least one flush before the natural end (cap reached), and never dropped or
-    // duplicated any content along the way (nothing to redact since the block never closed).
+    // Forced at least one flush before the natural end (cap reached).
     expect(emitted.length).toBeGreaterThan(1);
-    expect(emitted.join("")).toBe(fullInput);
+    // (HST 16/11, lô PEM thiếu END) BỎ GHIM HÀNH VI LỌT: bản cũ khẳng định `joined === fullInput` (khối không END nhả NGUYÊN VĂN).
+    // Nay lần xả cưỡng bức ở trần đi qua `redactSecretsOnly` ⇒ header + phần thân đã giữ bị che. Phần thân SAU lần xả còn lọt là giới hạn
+    // G4 (cheTuyenTinh.ts) — không ghim con số lọt ở đây; ca `it.fails` ở cheTuyenTinh.pemThieuEnd.test.ts giữ kỳ vọng đúng (lọt 0).
+    const joined = emitted.join("");
+    expect(joined).not.toContain(openPem.trim());
+    expect(joined.startsWith("[REDACTED_SECRET]")).toBe(true);
+    expect(joined.length).toBeLessThan(fullInput.length);
   });
 
   it("fail-safe: push/flush never throw on empty or unusual input", () => {

@@ -315,6 +315,13 @@ export interface ValidationError {
   /** Dotted path to the offending node (e.g. "steps[1].machineId"). */
   path: string;
   message: string;
+  /** Machine-readable code (optional) so a client can show its own translated sentence. Only set by `kiemTraKyTuIdBuoc`. */
+  code?: string;
+  /** For `STEP_ID_FORBIDDEN_CHAR`: the offending characters, readable (e.g. `"," and ")"`). */
+  kyTu?: string;
+  /** For `STEP_ID_TOO_LONG`: the actual length of the id / the longest length accepted. */
+  doDai?: number;
+  toiDa?: number;
 }
 
 export interface ValidationResult {
@@ -342,6 +349,98 @@ function pushIdUnique(seen: Set<string>, id: string, path: string, errors: Valid
     errors.push({ path: `${path}.id`, message: `Duplicate step id "${id}".` });
   }
   seen.add(id);
+}
+
+/**
+ * Luật ĐẦU VÀO cho step id MỚI (chỉ đường GHI định nghĩa gọi hàm này; `validateWorkflow` KHÔNG đổi hành vi nên đường đọc / chạy /
+ * mô phỏng / advisor vẫn nhận định nghĩa cũ). Lý do: trung tâm đọc danh sách id từ chữ `EDGE_OUTCOME_UNKNOWN(a,b,…)`; id chứa
+ * "," hoặc ")" làm regex tách sai hoặc cắt danh sách ⇒ đọc thiếu. "(" và xuống dòng bị cấm cùng lý do (làm vỡ khuôn dòng).
+ */
+export const KY_TU_CAM_TRONG_STEP_ID: ReadonlyArray<{ ky: string; ten: string }> = [
+  { ky: ",", ten: '","' },
+  { ky: "(", ten: '"("' },
+  { ky: ")", ten: '")"' },
+  { ky: "\n", ten: "line feed (\\n)" },
+  { ky: "\r", ten: "carriage return (\\r)" },
+];
+export const STEP_ID_FORBIDDEN_CHAR = "STEP_ID_FORBIDDEN_CHAR";
+export const STEP_ID_TOO_LONG = "STEP_ID_TOO_LONG";
+export const STEP_ID_ABORT_PREFIX = "STEP_ID_ABORT_PREFIX";
+export const STEP_ID_RESERVED_MARKER = "STEP_ID_RESERVED_MARKER";
+/**
+ * Độ dài tối đa của step id MỚI = giới hạn thật: cột `orchestration_run_steps.stepId` là varchar(128) và `zStepId` max(128).
+ * Hàng abort `abort:<stepId>` KHÔNG cần chừa tiền tố: `abortRowId` (foeEngine.ts) băm id dài (cắt + "~" + 10 hex sha256 của cả id)
+ * nên hàng abort luôn ≤ 128. (Bản đầu đặt 121 dựa trên tiền đề sai "abort:" + id ≤ 128; HST sửa thành 128.)
+ */
+export const STEP_ID_TOI_DA = 128;
+/** Bằng `ABORT_ROW_PREFIX` của foeRunStore.ts (không import vì foeRunStore import workflowModel; test ghim hai hằng bằng nhau). */
+export const TIEN_TO_HANG_ABORT = "abort:";
+/** Dấu rider nội bộ của luồng kết cục-không-rõ (A2(n)): id không được chứa chuỗi này (so khớp phân biệt hoa thường). */
+export const DAU_HIEU_RIENG_STEP_ID = "[[A2N";
+/** Khoá i18n `errors.reason.*` theo mã lỗi (đường duplicateWorkflow ném INVALID_VALUE với reason này). */
+export const LY_DO_I18N_THEO_MA: Readonly<Record<string, string>> = {
+  [STEP_ID_FORBIDDEN_CHAR]: "stepIdKyTuCam",
+  [STEP_ID_TOO_LONG]: "stepIdQuaDai",
+  [STEP_ID_ABORT_PREFIX]: "stepIdTienToAbort",
+  [STEP_ID_RESERVED_MARKER]: "stepIdDauHieuRieng",
+};
+
+/**
+ * Luật ĐẦU VÀO step id MỚI (xem `KY_TU_CAM_TRONG_STEP_ID`): ký tự cấm, dài ≤ 128, không bắt đầu "abort:", không chứa "[[A2N".
+ * Mỗi step vi phạm MỖI luật ⇒ MỘT lỗi riêng (path `steps[i].id` / `….compensation.id`, mã + thông báo nêu ĐÚNG lý do).
+ * Không ném lỗi với định nghĩa méo.
+ */
+export function kiemTraKyTuIdBuoc(def: WorkflowDefinition): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const duyet = (s: unknown, path: string): void => {
+    if (!s || typeof s !== "object") return;
+    const step = s as Record<string, unknown>;
+    if (typeof step.id === "string") {
+      const id = step.id;
+      const dau = `Step id ${JSON.stringify(id.length > 40 ? `${id.slice(0, 40)}…` : id)} at ${path}.id`;
+      const gap = KY_TU_CAM_TRONG_STEP_ID.filter((k) => id.includes(k.ky));
+      if (gap.length) {
+        const ds = gap.map((k) => k.ten).join(" and ");
+        errors.push({
+          path: `${path}.id`,
+          code: STEP_ID_FORBIDDEN_CHAR,
+          kyTu: ds,
+          message: `${dau} contains the forbidden character ${ds}: a new step id may not contain "," "(" ")" or a line break — rename the step id, then deploy again.`,
+        });
+      }
+      if (id.length > STEP_ID_TOI_DA) {
+        errors.push({
+          path: `${path}.id`,
+          code: STEP_ID_TOO_LONG,
+          doDai: id.length,
+          toiDa: STEP_ID_TOI_DA,
+          message: `${dau} is ${id.length} characters long: a new step id may be at most ${STEP_ID_TOI_DA} — rename the step id, then deploy again.`,
+        });
+      }
+      if (id.startsWith(TIEN_TO_HANG_ABORT)) {
+        errors.push({
+          path: `${path}.id`,
+          code: STEP_ID_ABORT_PREFIX,
+          message: `${dau} starts with "${TIEN_TO_HANG_ABORT}", which is reserved for the central abort rows: a new step id may not start with it — rename the step id, then deploy again.`,
+        });
+      }
+      if (id.includes(DAU_HIEU_RIENG_STEP_ID)) {
+        errors.push({
+          path: `${path}.id`,
+          code: STEP_ID_RESERVED_MARKER,
+          message: `${dau} contains the reserved marker "${DAU_HIEU_RIENG_STEP_ID}": a new step id may not contain it — rename the step id, then deploy again.`,
+        });
+      }
+    }
+    if (step.compensation) duyet(step.compensation, `${path}.compensation`);
+    for (const k of ["steps", "then", "else"] as const) {
+      const con = step[k];
+      if (Array.isArray(con)) con.forEach((c, i) => duyet(c, `${path}.${k}[${i}]`));
+    }
+  };
+  const goc = def && typeof def === "object" ? (def as { steps?: unknown }).steps : undefined;
+  if (Array.isArray(goc)) goc.forEach((s, i) => duyet(s, `steps[${i}]`));
+  return errors;
 }
 
 /**

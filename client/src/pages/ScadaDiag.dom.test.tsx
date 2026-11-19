@@ -26,6 +26,8 @@ const S = (k: string, o?: Record<string, string | number>): string => {
   return o ? v.replace(/\{\{(\w+)\}\}/g, (_, n) => String(o[n])) : v;
 };
 
+// Vùng URGENT bền có test riêng (VungUrgentBen.dom.test.tsx + .noiDay.unit.test.ts); ở đây chặn để mock trpc của trang không phải khai notification.*.
+vi.mock("@/components/scada/VungUrgentBen", () => ({ VungUrgentBen: () => null }));
 vi.mock("@/components/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));

@@ -22,6 +22,7 @@
  */
 import { appError } from "../../../_core/appError";
 import { redactSecretsAndPII } from "../aiSafety";
+import { MAU_TOKEN_CO_TIEN_TO } from "../../../../shared/mauBiMat";
 
 export const THAY = {
   biMat: "[REDACTED_SECRET]",
@@ -201,8 +202,14 @@ const RE_IPV4_NOI_BO = new RegExp(
 const RE_IPV6_NOI_BO = /(?<![0-9A-Fa-f:])(?:fe[89ab][0-9a-f]|f[cd][0-9a-f]{2})(?::[0-9a-f]{0,4}){1,7}(?![0-9A-Fa-f:])/gi;
 const RE_MAC = /(?<![0-9A-Fa-f:-])(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}(?![0-9A-Fa-f:-])/g;
 
-/** Khoá có tiền tố mà `aiSafety` chưa biết (thân có `-`): Anthropic, OpenAI dạng chung. */
-const RE_KHOA_THEM = /(?<![A-Za-z0-9])(?:sk-ant-(?:api|admin)\d{2}-[A-Za-z0-9_-]{20,}|sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,})/g;
+/**
+ * Khoá có tiền tố (thân có `-`): Anthropic, OpenAI dạng chung.
+ * ★ 2026-11-14 (lô mauBiMat, chu-du-an-HST chọn B1): mẫu Anthropic lấy từ MỘT nguồn `shared/mauBiMat.ts`, KHÔNG đòi biên trái —
+ * khoá dính chữ/số phía trước (`esk-ant-…`) trước đây lọt cả bộ này lẫn `aiSafety`. `sk-` chung GIỮ biên trái (`task-v9-probe-…`
+ * không phải khoá). GIỚI HẠN ĐÃ BIẾT: khoá OpenAI/Stripe/AWS dính chữ phía trước vẫn lọt, bằng hiện nay.
+ */
+const NGUON_ANTHROPIC = MAU_TOKEN_CO_TIEN_TO.find((m) => m.ten === "anthropic")!.nguon;
+const RE_KHOA_THEM = new RegExp(`(?:${NGUON_ANTHROPIC})|(?<![A-Za-z0-9])sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}`, "g");
 const RE_BASIC = /(Authorization["']?\s*[:=]\s*["']?Basic\s+)[A-Za-z0-9+/=]{8,}/gi;
 const RE_QUERY = /([?&](?:token|api_key|apikey|access_token|key|password|secret|sig|signature|auth)=)[^&#\s"']+/gi;
 /** URL webhook MANG bí mật trong đường dẫn (rà kiem-dinh E): Slack, Discord, Teams, bot Telegram. */
@@ -227,7 +234,7 @@ const RE_NGUOI_DUNG = /(?<![A-Za-z0-9_])((?:user(?:name)?|login|uid)["']?[ \t]*[
  *
  * ★ Rà kiem-dinh (c): nới thẳng lên 8 000 làm khối KHÔNG NHÃN 2–8 KB lọt nguyên (base64 3 / 6 KB, hex 5 KB — keystore / PFX / DER /
  * khoá dán một khối) ⇒ thêm `RE_BANG_MA_DAI`: chuỗi liền ≥ 2 000 ký tự mà TOÀN BỘ thuộc bảng base64 / base64url / hex
- * (`A–Z a–z 0–9 + / = _ -`, không có `"{}[]:,` của JSON / log) ⇒ che nguyên khối; ≥ 8 000 ký tự bất kỳ ⇒ che (`RE_KHONG_TRANG_DAI`).
+ * (`A–Z a–z 0–9 + / = _ -`, không có `"{}[]:,` của JSON / log) ⇒ che nguyên khối; ≥ 8 000 ký tự bất kỳ ⇒ che (`cheChuoiLienDai`).
  *
  * ★ Rà kiem-dinh lần 2 (BẮT BUỘC trước khi bật AI_NGOAI_ENABLED) — ba cách né khối 2–8 KB, mỗi cách một luật:
  *   (a) BỎ neo khoảng trắng: MỌI đoạn bảng base64/hex ≥ 2 000 ký tự, bất kể ký tự dính hai bên (`x:<b64>`, `<b64>.`, `(<b64>)`).
@@ -237,7 +244,58 @@ const RE_NGUOI_DUNG = /(?<![A-Za-z0-9_])((?:user(?:name)?|login|uid)["']?[ \t]*[
  *   (c) HEX CÓ NGĂN `:` / khoảng trắng: ≥ 900 cặp ⇒ che. Mô phỏng nhóm NGUYÊN TỬ bằng lookahead + tham chiếu ngược
  *       (`(?=(…+))\1`): mỗi lần thử nuốt CẢ dải tối đa rồi đi tiếp ⇒ không quay lui, mỗi dải xét một lần; độ dài xét trong hàm thay.
  */
-const RE_KHONG_TRANG_DAI = /(?<!\S)\S{8000,}/g;
+const DO_DAI_KHONG_TRANG_TOI_THIEU = 8000;
+
+/**
+ * Đúng tập `\s` của regex JS (không cờ `u`, theo ĐƠN VỊ MÃ UTF-16): WhiteSpace (TAB VT FF SP NBSP ZWNBSP + Zs) và LineTerminator
+ * (LF CR LS PS). Zs = U+0020, U+00A0, U+1680, U+2000–U+200A, U+202F, U+205F, U+3000 (U+180E rời Zs từ Unicode 6.3).
+ */
+function laKhoangTrang(c: number): boolean {
+  if (c <= 0x20) return c === 0x20 || (c >= 0x09 && c <= 0x0d);
+  if (c < 0xa0) return false;
+  return (
+    c === 0xa0 ||
+    c === 0x1680 ||
+    (c >= 0x2000 && c <= 0x200a) ||
+    c === 0x2028 ||
+    c === 0x2029 ||
+    c === 0x202f ||
+    c === 0x205f ||
+    c === 0x3000 ||
+    c === 0xfeff
+  );
+}
+
+/**
+ * ★ 2026-11-14 (do-model, chu-du-an-HST quyết 13/11): THAY regex cũ `/(?<!\S)\S{8000,}/g` (RE_KHONG_TRANG_DAI). V8 ném
+ * `RangeError: Maximum call stack size exceeded` (ngăn xếp quay lui) khi một khối liền dài ≥ ~5,6M ký tự ⇒ cheChuoi ném thay vì che.
+ * Cùng ngữ nghĩa: mọi khối ký tự KHÔNG khoảng trắng tối đa (bắt đầu ở đầu chuỗi hoặc ngay sau khoảng trắng) dài ≥ `nguong` đơn vị mã
+ * ⇒ một `THAY.biMat`, đếm `chuoi_lien_dai` một lần mỗi khối. Một vòng, không đệ quy, không regex; mỗi đơn vị mã xét đúng một lần.
+ * `nguong` chỉ để test vi sai với regex tham chiếu; mã nghiệp vụ dùng mặc định 8 000.
+ */
+export function cheChuoiLienDai(t: string, dem: (loai: string) => void, nguong = DO_DAI_KHONG_TRANG_TOI_THIEU): string {
+  if (t.length < nguong) return t;
+  const phan: string[] = [];
+  let daChep = 0;
+  let i = 0;
+  while (i < t.length) {
+    if (laKhoangTrang(t.charCodeAt(i))) {
+      i += 1;
+      continue;
+    }
+    const dau = i;
+    while (i < t.length && !laKhoangTrang(t.charCodeAt(i))) i += 1;
+    if (i - dau >= nguong) {
+      phan.push(t.slice(daChep, dau), THAY.biMat);
+      dem("chuoi_lien_dai");
+      daChep = i;
+    }
+  }
+  if (daChep === 0) return t;
+  phan.push(t.slice(daChep));
+  return phan.join("");
+}
+
 const RE_BANG_MA_DAI = /[A-Za-z0-9+/=_-]{2000,}/g;
 const RE_HEX_NGAN = /(?=((?:[0-9a-fA-F]{2}[: ])+(?:[0-9a-fA-F]{2}(?![0-9A-Za-z]))?))\1/g;
 const SO_CAP_HEX_NGAN_TOI_THIEU = 900;
@@ -599,7 +657,7 @@ function cheChuoiVao(s: string, tu: TuDienNhay, dem: (loai: string, n?: number) 
 }
 
 function cheVanBan(van: string, tu: TuDienNhay, dem: (loai: string, n?: number) => void): string {
-  let t = van.replace(RE_KHONG_TRANG_DAI, () => (dem("chuoi_lien_dai"), THAY.biMat));
+  let t = cheChuoiLienDai(van, dem);
   t = cheKhoiNhieuDong(t, dem);
   t = t.replace(RE_BANG_MA_DAI, () => (dem("chuoi_lien_dai"), THAY.biMat));
   t = t.replace(RE_HEX_NGAN, (khop: string) => (khop.length >= SO_CAP_HEX_NGAN_TOI_THIEU * 3 - 1 ? (dem("chuoi_lien_dai"), THAY.biMat) : khop));

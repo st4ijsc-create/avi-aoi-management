@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import ts from "typescript";
 import { bocGhiLuot, _datLaiGhiLuot } from "./ghiLuotModel";
 import { taoGoiModelMayChu } from "./goiModelMayChu";
 import type { GgufChatOptions, GgufStreamChunk } from "../../aiGgufEngine";
@@ -145,9 +146,21 @@ describe("goiModelMayChu — chỉ ghi khi CÓ AI_GHI_LUOT_DIR và runId", () =>
   });
 });
 
+/**
+ * NGOẠI LỆ CÓ TÊN (HST duyệt 16/11, bản a' của kiem-dinh): CHỈ MỘT tệp được nhắc tên biến mà không đọc nó. Thêm khoá vào đây là một thay đổi hiển thị cho người rà — không nới phép quét.
+ * Giá trị = lý do một dòng.
+ */
+const NGOAI_LE_TEN_LA_DU_LIEU: Readonly<Record<string, string>> = {
+  "server/testing/coAnhHuongByte.ts": "bảng cờ ảnh hưởng byte khai TÊN biến làm dữ liệu (CO_QUET_THEM + một dòng kd(...)), không đọc process.env",
+};
+const TEN_BIEN = "AI_GHI_LUOT_DIR";
+const SO_CHO_NHAC_TEN_NGOAI_LE = 2;
+
 describe("census — AI_GHI_LUOT_DIR", () => {
-  it("chỉ goiModelMayChu.ts đọc biến (ngoài chú thích), trong server/ + shared/", () => {
-    const GOC = path.join(__dirname, "../../../..");
+  const GOC = path.join(__dirname, "../../../..");
+  const boChuThich = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+  it("chỉ goiModelMayChu.ts đọc biến; ngoài ra CHỈ các tệp trong ngoại lệ có tên được nhắc (ngoài chú thích), trong server/ + shared/", () => {
     const thay: string[] = [];
     const duyet = (dd: string) => {
       for (const ten of fs.readdirSync(dd)) {
@@ -155,13 +168,47 @@ describe("census — AI_GHI_LUOT_DIR", () => {
         if (fs.statSync(p).isDirectory()) {
           if (ten !== "node_modules") duyet(p);
         } else if (/\.(ts|tsx|mjs|js)$/.test(ten) && !/\.test\./.test(ten)) {
-          const s = fs.readFileSync(p, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
-          if (s.includes("AI_GHI_LUOT_DIR")) thay.push(path.relative(GOC, p).replace(/\\/g, "/"));
+          const s = boChuThich(fs.readFileSync(p, "utf8"));
+          if (s.includes(TEN_BIEN)) thay.push(path.relative(GOC, p).replace(/\\/g, "/"));
         }
       }
     };
     duyet(path.join(GOC, "server"));
     duyet(path.join(GOC, "shared"));
-    expect(thay).toEqual(["server/services/ai/agent/goiModelMayChu.ts"]);
+    expect(thay.sort()).toEqual(["server/services/ai/agent/goiModelMayChu.ts", ...Object.keys(NGOAI_LE_TEN_LA_DU_LIEU)].sort());
+  });
+
+  it("★★★ ngoại lệ có tên: đúng MỘT tệp, có lý do, nhắc tên đúng 2 chỗ, và tệp đó KHÔNG đọc process.env ở BẤT KỲ dạng nào (member, index, destructuring, alias, import động)", () => {
+    expect(Object.keys(NGOAI_LE_TEN_LA_DU_LIEU)).toEqual(["server/testing/coAnhHuongByte.ts"]);
+    for (const [tep, lyDo] of Object.entries(NGOAI_LE_TEN_LA_DU_LIEU)) {
+      expect(lyDo.length, `${tep}: thiếu lý do`).toBeGreaterThan(10);
+      const nguon = fs.readFileSync(path.join(GOC, tep), "utf8");
+      const sf = ts.createSourceFile(tep, nguon, ts.ScriptTarget.Latest, true);
+      const choNhac = (boChuThich(nguon).match(new RegExp(TEN_BIEN, "g")) ?? []).length;
+      expect(choNhac, `${tep}: số chỗ nhắc tên biến`).toBe(SO_CHO_NHAC_TEN_NGOAI_LE);
+      const viPham: string[] = [];
+      const di = (n: ts.Node) => {
+        if (ts.isIdentifier(n) && ["process", "env", "globalThis", "require", "Reflect", "eval", "Function"].includes(n.text)) viPham.push(`định danh ${n.text}`);
+        if (ts.isMetaProperty(n)) viPham.push("import.meta");
+        if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) viPham.push("import động");
+        if (ts.isImportDeclaration(n) && !ts.isStringLiteral(n.moduleSpecifier)) viPham.push("import lạ");
+        if (ts.isStringLiteral(n) && /^(process|env)$/.test(n.text)) viPham.push(`chuỗi "${n.text}"`);
+        ts.forEachChild(n, di);
+      };
+      di(sf);
+      expect(viPham, `${tep}: không được đọc môi trường`).toEqual([]);
+      // mọi chỗ nhắc tên nằm trong chuỗi của mảng CO_QUET_THEM hoặc lời gọi kd(...): không dùng làm khoá truy cập
+      const noiNhac: string[] = [];
+      const dem = (n: ts.Node) => {
+        if (ts.isStringLiteral(n) && n.text === TEN_BIEN) {
+          const cha = n.parent;
+          const ok = (ts.isCallExpression(cha) && cha.expression.getText(sf) === "kd") || (ts.isArrayLiteralExpression(cha) && ts.isVariableDeclaration(cha.parent) && cha.parent.name.getText(sf) === "CO_QUET_THEM");
+          noiNhac.push(ok ? "dung" : `sai: ${cha.getText(sf).slice(0, 60)}`);
+        }
+        ts.forEachChild(n, dem);
+      };
+      dem(sf);
+      expect(noiNhac).toEqual(["dung", "dung"]);
+    }
   });
 });

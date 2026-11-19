@@ -49,6 +49,8 @@ vi.hoisted(() => {
 import { defectHeatmapRouter } from "./defectHeatmapRouter";
 import * as dbApi from "../db";
 import { getDb } from "../db/connection";
+import postgres from "postgres";
+import { chonThoiDiemTrongChunkSanCo, type ChayTruyVan } from "../testing/__chunkSanCo";
 import { clearAssignmentCache } from "../_core/accessControl";
 import { defectHeatmapData, users, type InsertMeasurementResult, type InsertUser } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -67,9 +69,28 @@ const CORP_B = `HMS_CORP_B_${ts}`;
 // "hotspot thời gian thực" (đo: điểm A ra 3 thay vì 1). Đó là một nét sẵn có của thủ tục, nằm
 // ngoài trục phạm-vi của task này — nhưng lưới không được im lặng dựa vào nó, nên dữ liệu cửa
 // sổ chuyển về 2019 để hai trục thời gian tách bạch hẳn.
-const WIN_START = "2019-06-01T00:00:00.000Z";
-const WIN_END = "2019-06-10T00:00:00.000Z";
-const INSPECTED_AT = new Date("2019-06-05T03:00:00Z");
+/**
+ * ★ 17/11 — KHÔNG TẠO CHUNK TIMESCALE MỚI trong giao dịch dài / ở mốc quá khứ xa: mốc dữ liệu dựng lấy trong một chunk ĐÃ CÓ của product_inspections (`server/testing/__chunkSanCo.ts`, đọc CHỈ ĐỌC trước khi mở giao dịch),
+ * ở vị trí băm theo `ts`, đã kiểm ±60 s TRỐNG; cửa sổ truy vấn co về ±60 s quanh mốc (cô lập vẫn do dữ liệu của CHÍNH lượt này). Không chọn được ⇒ giữ mốc + cửa sổ cũ và cảnh báo.
+ */
+const MOC_MAC_DINH = new Date("2019-06-05T03:00:00Z");
+async function chonMocTrongChunkSanCo() {
+  const url = process.env.DATABASE_URL;
+  if (!url) return { at: MOC_MAC_DINH, nguon: "mac-dinh:khong-co-DATABASE_URL" };
+  const cli = postgres(url, { max: 1, onnotice: () => undefined });
+  try {
+    const chay: ChayTruyVan = async (c, p) => (await cli.unsafe(c, p as never[])) as unknown as Array<Record<string, unknown>>;
+    return await chonThoiDiemTrongChunkSanCo(chay, { bang: "product_inspections", cot: "inspectionTime", ts, macDinh: MOC_MAC_DINH, nuaDoTrongMs: 60_000 });
+  } finally {
+    await cli.end({ timeout: 5 });
+  }
+}
+const MOC_CHON = await chonMocTrongChunkSanCo();
+const TRONG_CHUNK = MOC_CHON.nguon === "chunk-san-co";
+if (!TRONG_CHUNK) console.warn(`[defectHeatmapSavedScope.test.ts] không chọn được mốc trong chunk có sẵn (${MOC_CHON.nguon}) — giữ mốc + cửa sổ cũ, có thể tạo chunk mới`);
+const INSPECTED_AT = MOC_CHON.at;
+const WIN_START = TRONG_CHUNK ? new Date(INSPECTED_AT.getTime() - 60_000).toISOString() : "2019-06-01T00:00:00.000Z";
+const WIN_END = TRONG_CHUNK ? new Date(INSPECTED_AT.getTime() + 60_000).toISOString() : "2019-06-10T00:00:00.000Z";
 /** Ca "thời gian thực" cần nằm trong 1 giờ qua. */
 const RECENT_AT = new Date(Date.now() - 10 * 60 * 1000);
 
