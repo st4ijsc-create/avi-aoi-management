@@ -1279,3 +1279,39 @@ describe("X-15 — a STOP skipped by its precondition (never tried) is sent by t
     expect(r).toMatchObject({ ok: false, reason: "stopPrecondition", stepIds: ["stop"] });
   });
 });
+
+
+describe("X-23 G40 a STOP skipped by its precondition, owed at an end with no sweep", () => {
+  const DK = { precondition: { source: "param", key: "never", op: "eq", value: true }, onPreconditionFail: "skip" };
+  async function hinhG40(ref: string, coDieuKien: boolean) {
+    await deploy(ref, [GATE, { ...START, compensation: { id: "cq", type: "sequence", steps: [OT_STOP] } }]);
+    if (coDieuKien) (fake.store.get("orchestration_workflows") ?? []).find((w: Row) => w.ref === ref)!.definitionJson.steps = [GATE, { ...START, compensation: { id: "cq", type: "sequence", steps: [{ ...OT_STOP, ...DK }] } }];
+    otDispatchMock.mockImplementation(async (input?: unknown) =>
+      (input as { commandType: string }).commandType === "start" ? { ok: false, simulated: false, status: "rejected" as never, results: [], commandLogIds: [] } : { ok: true, simulated: true, status: "simulated" as const, results: [], commandLogIds: [1] },
+    );
+    const s0 = await startRun(ref, {}, OWNER);
+    const r = await resumeRun(s0.runId!, { approved: true }, SUP);
+    return { runId: s0.runId!, r };
+  }
+  /** a notification row keeps the dedup key in its metadata (criticalStopAlert.ts: metadata { kind, dedupKey }); the row has no dedupKey column */
+  const theoKhoa = (khoa: string) => (fake.store.get("notifications") ?? []).filter((n: Row) => String((n.metadata as { dedupKey?: unknown } | null)?.dedupKey ?? "") === khoa);
+  const urgentCua = (runId: number) => theoKhoa(`foe_outcome_unknown_stop_ended_unswept:${runId}:stop:-:ket`);
+  const cho = (f: () => void) => vi.waitFor(f, { timeout: 3_000 });
+
+  it("Z2 (G40) the H36 URGENT of the skipped STOP says it was skipped by its precondition and never tried", async () => {
+    const { runId } = await hinhG40("x23g40", true);
+    expect(runRow(runId).status).toBe("failed");
+    expect(otCommands().map((c) => c.commandType)).toEqual(["start"]);
+    await cho(() => expect(urgentCua(runId).length).toBeGreaterThanOrEqual(1));
+    const u = urgentCua(runId);
+    expect(String(u[0]!.message)).toContain("It was skipped by its precondition and never tried.");
+  });
+
+  it("Z3a (G40 control) the same shape with no precondition: the STOP goes, no URGENT of an end with no sweep", async () => {
+    const { runId } = await hinhG40("x23g40dc", false);
+    expect(otCommands().map((c) => c.commandType)).toEqual(["start", "stop"]);
+    // positive anchor first: the same filter catches a real row of this run (its pin URGENT), so the notifications of the run have landed
+    await cho(() => expect(theoKhoa(`foe_stop_pin_unverified:${runId}:stop:501`).length).toBeGreaterThanOrEqual(1));
+    expect(urgentCua(runId)).toEqual([]);
+  });
+});

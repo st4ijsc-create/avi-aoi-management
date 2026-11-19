@@ -443,6 +443,8 @@ export interface CanhBaoKhongRo {
   luotStopHong?: true;
   /** X-28 (G46-e) — abortDefUnread: the definition was read, the planning of the STOP sweep threw (nothing of the press out). Its own words, never "could not read the definition" */
   keHoachLoi?: true;
+  /** X-23 (G39, G40) — approvedNotSent: the compensation is STOP-typed and its precondition skipped it; stopEndedUnswept: the STOP owed was skipped by its precondition, never tried */
+  boQuaDieuKien?: true;
   /** A2(n) T7b-1c — abortStopNotSent: the words of THE classification (chuStopAbort) */
   chuAbort?: ChuStopAbort;
   /** A2(n) T7b-3 (H36) — stopEndedUnswept: how the run ended (`completed`: with a step of it failed) */
@@ -479,6 +481,8 @@ export interface NoKetThucKhongQuet {
   ghim: readonly string[];
   chuaXacMinh: readonly string[];
   khongDoc: boolean;
+  /** X-23 (G40) — of ghim / chuaXacMinh, those skipped by their precondition (never tried) */
+  boQua?: readonly string[];
 }
 /** H36 — how the run ended, in words true of every source: no claim of who or what ended it */
 const cachKetThuc = (ket: KetThucKhongQuet): string => (ket === "completed" ? "ended completed although a step of it failed" : `ended ${ket}`);
@@ -493,10 +497,10 @@ function chuBamSauKetThuc(ket: KetThucKhongQuet, nhieu: boolean): string {
     : `Abort cannot reach a run that has ${cachKetThuc(ket)} (it answers "already terminal"), so no press sends ${no}.`;
 }
 /** A2(n) T7b-3 (H36) — the words of the URGENT: the STOP by name, NOT sent, the machine on site, and what a press can do (chuBamSauKetThuc). Nothing of the run has an unknown outcome, and no word says so. */
-function chuKetThucKhongQuet(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "stopKhongXacMinh" | "ketThuc">): [string, string] {
+function chuKetThucKhongQuet(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "stopKhongXacMinh" | "ketThuc" | "boQuaDieuKien">): [string, string] {
   const ket = a.ketThuc ?? "failed";
   const dau = `Run ${a.runId} ${cachKetThuc(ket)}, and no STOP sweep ran at that end`;
-  const tay = "Check the machine on site and use its direct STOP / E-STOP.";
+  const tay = `${a.boQuaDieuKien ? "It was skipped by its precondition and never tried. " : ""}Check the machine on site and use its direct STOP / E-STOP.`; // X-23 (G40)
   if (a.stepId === BUOC_KHONG_XAC_DINH) return [`the run ${cachKetThuc(ket)}, which STOP steps were NOT sent could not be told`, `${dau}. Its records could not be read, so which STOP steps of it were NOT sent cannot be told. ${tay} ${chuBamSauKetThuc(ket, true)}`];
   if (a.stopKhongXacMinh) return [`step "${a.stepId}" NOT sent: the run ${cachKetThuc(ket)}, not verified as a pinned STOP`, `${dau}: step "${a.stepId}" could not be verified as a pinned STOP, so it was NOT sent. ${tay} ${chuBamSauKetThuc(ket, false)}`];
   return [`STOP "${a.stepId}" NOT sent: the run ${cachKetThuc(ket)} with no STOP sweep`, `${dau}: its STOP "${a.stepId}" was NOT sent. ${tay} ${chuBamSauKetThuc(ket, false)}`];
@@ -814,7 +818,9 @@ export function noiDungCanhBaoKhongRo(goc: CanhBaoKhongRo): { kind: string; titl
       stopNotHanded: [`STOP compensation ${c} NOT sent`, `Its STOP compensation ${c} was never handed to a dispatcher — check on site and use the machine's direct STOP / E-STOP if needed.`],
       noCompensation: [`no compensation of its own`, `It has no compensation of its own and it is never sent again; a compensation of a step around it may still be due. Check the device on site before running again.`],
       approvedNotConfirmed: [`compensation ${c} NOT confirmed`, `Its compensation ${c}, approved by a Continue, failed or got no answer: it may or may not have reached the device. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
-      approvedNotSent: [`compensation ${c} NOT sent`, `Its compensation ${c}, approved by a Continue, was NOT sent: its interlock does not hold, or it was refused before the dispatcher. Nothing reached the device. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
+      approvedNotSent: a.boQuaDieuKien // X-23 (G39)
+        ? [`STOP-typed compensation ${c} NOT sent: skipped by its precondition`, `Its compensation ${c}, approved by a Continue, is a STOP-typed command and was NOT sent: its precondition skipped it, and it could not be verified as a pinned STOP. No path of this run sends it. Check the machine on site and use its direct STOP / E-STOP.`]
+        : [`compensation ${c} NOT sent`, `Its compensation ${c}, approved by a Continue, was NOT sent: its interlock does not hold, or it was refused before the dispatcher. Nothing reached the device. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
       compensationUnknown: [`compensation ${c} outcome unknown`, `Its compensation ${c} went out and ITS outcome is unknown too, or an earlier segment may have sent it with no recorded result: it is never sent again. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
       inFlight: [`${c} in flight at latch time`, `Command ${c} was already handed to the dispatcher when this was decided: it cannot be recalled, and nothing says whether it reached the device. Check the machine on site.`],
       forwardNotSent: khongXd

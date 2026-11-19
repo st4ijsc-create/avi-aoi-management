@@ -151,6 +151,8 @@ export interface KetCucKhongRoBaoCao {
   stopKhongXacMinh?: true;
   /** X-26 (G46) — forwardNotSent of a stop-typed step never handed over: a STOP pass of the walk threw. Central's words only: never on the wire */
   luotStopHong?: true;
+  /** X-23 (G39) — approvedNotSent of a STOP-typed compensation its precondition skipped. Central's words only: never on the wire */
+  boQuaDieuKien?: true;
   /** A2(n) T9 — the words' marks (foeKetCucKhongRo.CanhBaoKhongRo, same names). Central's walk only: never on the wire (an edge's anomaly carries its closed fields only, chiTietAnomalyKhongRo) */
   thayCu?: "giu" | "chuaRa";
   heldStop?: true;

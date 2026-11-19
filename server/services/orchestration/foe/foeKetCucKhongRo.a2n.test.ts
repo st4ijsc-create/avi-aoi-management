@@ -3272,3 +3272,94 @@ describe("X-29 the walk-end naming of X-26 and the door of a latched run (F11): 
     }
   });
 });
+
+
+describe("X-23 a STOP skipped by its precondition is told as one (G39, G40)", () => {
+  const BO_QUA = { precondition: { source: "param", key: "never", op: "eq", value: true }, onPreconditionFail: "skip" };
+  /** an OLD definition (X-15 (4) refuses a precondition on a STOP at deploy now): deployed without it, then the stored row carries it */
+  async function chayCu(steps: WorkflowStep[], cu: WorkflowStep[]) {
+    const ref = `x23-${++refN}`;
+    const g = { id: "gate0", type: "hitl_gate", prompt: "approve" } as WorkflowStep;
+    expect((await deployWorkflow({ ref, name: ref, steps: [g, ...steps] } as WorkflowDefinition, USER)).ok).toBe(true);
+    rows("orchestration_workflows").find((w) => w.ref === ref)!.definitionJson = { ref, name: ref, steps: [g, ...cu], version: 1 };
+    const r = await startRun(ref, {}, USER);
+    const res = await resumeRun(r.runId!, { approved: true }, APPROVER);
+    return { runId: r.runId!, res };
+  }
+  const tiepX23 = (runId: number) => resumeRun(runId, { approved: true, note: "checked" }, ADMIN, {}, { scope: null });
+
+  it("Z1 (G39) an approved STOP-typed compensation skipped by its precondition: its URGENT says it is a STOP, skipped by its precondition, sent by no path, the machine's direct STOP", async () => {
+    let n = 0;
+    ghimMock.mockImplementation(async (_d, i) => ({ pinnedStop: i.commandType === "stop" && ++n === 1, loiDocGhim: null })); // N3b: the split sees a pinned STOP, the dispatch does not ⇒ held
+    const cs = { id: "cs", type: "command", machineId: 1, command: "stop" } as WorkflowStep;
+    const { runId, res } = await chayCu([main(cs)], [main({ ...cs, ...BO_QUA } as WorkflowStep)]);
+    expect(res.status).toBe("held");
+    alerts.length = 0;
+    otDispatchMock.mockClear();
+    await tiepX23(runId);
+    await vi.waitFor(() => expect(alertsOf("approvedNotSent")).toHaveLength(1));
+    const a = alertsOf("approvedNotSent")[0]!;
+    expect(String(a.title)).toContain("STOP-typed compensation \"cs\" NOT sent: skipped by its precondition");
+    expect(String(a.message)).toContain("is a STOP-typed command and was NOT sent: its precondition skipped it, and it could not be verified as a pinned STOP. No path of this run sends it. Check the machine on site and use its direct STOP / E-STOP.");
+    expect(String(a.dedupKey).startsWith(`${CANH_BAO_KHONG_RO_KIND.approvedNotSent}:${runId}:main:cs:`)).toBe(true);
+    expect(sent("stop")).toEqual([]);
+    expect(await step(runId, "cs")).toMatchObject({ status: "skipped" });
+  });
+
+  it("Z1b (G39, an unreadable classification) laStopTheoBuoc throws for the compensation at the Continue: read as a STOP (catch ⇒ true), the G39 words, one URGENT", async () => {
+    const g = globalThis as { __x26ls?: string | null };
+    let n = 0;
+    ghimMock.mockImplementation(async (_d, i) => ({ pinnedStop: i.commandType === "stop" && ++n === 1, loiDocGhim: null }));
+    const cs = { id: "cs", type: "command", machineId: 1, command: "stop" } as WorkflowStep;
+    try {
+      const { runId, res } = await chayCu([main(cs)], [main({ ...cs, ...BO_QUA } as WorkflowStep)]);
+      expect(res.status).toBe("held");
+      alerts.length = 0;
+      otDispatchMock.mockClear();
+      g.__x26ls = "cs"; // from the Continue on: the classifier of cs throws (X-26 K8's lever)
+      await tiepX23(runId);
+      await vi.waitFor(() => expect(alertsOf("approvedNotSent")).toHaveLength(1));
+      const a = alertsOf("approvedNotSent")[0]!;
+      expect(String(a.title)).toContain("STOP-typed compensation \"cs\" NOT sent: skipped by its precondition");
+      expect(String(a.message)).toContain("is a STOP-typed command and was NOT sent: its precondition skipped it, and it could not be verified as a pinned STOP. No path of this run sends it. Check the machine on site and use its direct STOP / E-STOP.");
+      expect(String(a.dedupKey).startsWith(`${CANH_BAO_KHONG_RO_KIND.approvedNotSent}:${runId}:main:cs:`)).toBe(true);
+      expect(sent("stop")).toEqual([]);
+    } finally {
+      g.__x26ls = null;
+    }
+  });
+
+  it("Z4 (G39 control) an approved compensation that is NOT stop-typed, skipped by its precondition: the old words stand", async () => {
+    const { runId } = await giuKhongRo([main({ ...resetComp("cz"), ...BO_QUA } as WorkflowStep)]);
+    alerts.length = 0;
+    await tiepX23(runId);
+    await vi.waitFor(() => expect(alertsOf("approvedNotSent")).toHaveLength(1));
+    const a = alertsOf("approvedNotSent")[0]!;
+    expect(String(a.title)).toContain('compensation "cz" NOT sent');
+    expect(String(a.message)).toContain('Its compensation "cz", approved by a Continue, was NOT sent: its interlock does not hold, or it was refused before the dispatcher.');
+    expect(String(a.title) + String(a.message)).not.toContain("STOP-typed");
+  });
+
+  it("Z5 (words) the longest ids: both new words within 800 / 200, the action not cut, the keys whole", () => {
+    const id = "s".repeat(200);
+    const c = "c".repeat(200);
+    const g39 = noiDungCanhBaoKhongRo({ loai: "approvedNotSent", runId: 2_147_483_647, stepId: id, compId: c, error: "FOE_OUTCOME_UNKNOWN: x", lan: "l", boQuaDieuKien: true } as never);
+    expect(g39.title.length).toBeLessThanOrEqual(200);
+    expect(g39.message.length).toBeLessThanOrEqual(800);
+    expect(g39.message).toContain("STOP-typed command and was NOT sent: its precondition skipped it");
+    expect(g39.message).toContain("Check the machine on site and use its direct STOP / E-STOP.");
+    expect(g39.dedupKey).toBe(`${CANH_BAO_KHONG_RO_KIND.approvedNotSent}:2147483647:${id}:${c}:l`);
+    const g40 = noiDungCanhBaoKhongRo({ loai: "stopEndedUnswept", runId: 2_147_483_647, stepId: id, compId: KHONG_CO_BU_TRU, error: "FOE_STOP_NOT_SENT", lan: "ket", ketThuc: "failed", boQuaDieuKien: true } as never);
+    expect(g40.title.length).toBeLessThanOrEqual(200);
+    expect(g40.message.length).toBeLessThanOrEqual(800);
+    expect(g40.message).toContain("It was skipped by its precondition and never tried.");
+    expect(g40.message).toContain("Check the machine on site and use its direct STOP / E-STOP.");
+    expect(g40.dedupKey).toBe(`foe_outcome_unknown_stop_ended_unswept:2147483647:${id}:-:ket`);
+  });
+
+  it("Z3b (G40 control, words) an end with no sweep of a STOP NOT skipped keeps the old words", () => {
+    const k = noiDungCanhBaoKhongRo({ loai: "stopEndedUnswept", runId: 9, stepId: "s", compId: KHONG_CO_BU_TRU, error: "FOE_STOP_NOT_SENT", lan: "ket", ketThuc: "failed" } as never);
+    expect(k.message).toContain('its STOP "s" was NOT sent. Check the machine on site and use its direct STOP / E-STOP.');
+    expect(k.message).not.toContain("skipped by its precondition");
+  });
+});

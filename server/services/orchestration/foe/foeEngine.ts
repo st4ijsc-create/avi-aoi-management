@@ -1346,7 +1346,7 @@ async function congBuTru(rc: RunContext, step: WorkflowStep, comp: WorkflowStep,
   const pre = await checkPrecondition(rc, comp);
   if (pre) {
     await giuCoKhongRo(true, rc, comp.id, rc.store.upsertStep(rc.runId, comp.id, comp.type, { status: pre.kind === "skipped" ? "skipped" : "failed", error: "error" in pre ? pre.error : null, finishedAt: new Date() }));
-    baoKetCucKhongRo(rc, { loai: "approvedNotSent", stepId: step.id, compId: comp.id, error: loi, lan: luotDiCua(rc) });
+    baoKetCucKhongRo(rc, { loai: "approvedNotSent", stepId: step.id, compId: comp.id, error: loi, lan: luotDiCua(rc), ...(pre.kind === "skipped" && (await laStopTheoBuoc(comp, rc.machineById).catch(() => true)) ? { boQuaDieuKien: true as const } : {}) }); // X-23 (G39)
     return undefined;
   }
   rc.buTruDaChay = true;
@@ -6801,7 +6801,7 @@ async function noKetThucKhongQuet(runId: number, x: { live?: RunContext | null; 
   ]);
   const ghim = plan.send.map((s) => s.id);
   const chuaXacMinh = [...khongXacMinh, ...docLai].filter((id): id is string => id !== null);
-  return ghim.length || chuaXacMinh.length ? { ketThuc: x.ketThuc, ghim, chuaXacMinh, khongDoc: false } : null;
+  return ghim.length || chuaXacMinh.length ? { ketThuc: x.ketThuc, ghim, chuaXacMinh, khongDoc: false, boQua: [...ghim, ...chuaXacMinh].filter((id) => src.boQua?.(id) === true) } : null; // X-23 (G40)
 }
 
 /** H36 — the URGENTs: one per STOP owed (one, with no step named, when the records could not be read), under ONE fixed key per (run, STOP): the event "ket". Each bounded; never a command; never throws. */
@@ -6809,7 +6809,7 @@ async function baoKetThucKhongQuet(runId: number, owner: number | null, no: NoKe
   const ds = no.khongDoc ? [{ id: BUOC_KHONG_XAC_DINH, xm: false }] : [...no.ghim.map((id) => ({ id, xm: false })), ...no.chuaXacMinh.map((id) => ({ id, xm: true }))];
   await Promise.all(
     ds.map((x) =>
-      withDeadline(canhBaoKetCucKhongRo({ loai: "stopEndedUnswept", runId, stepId: x.id, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "ket", ketThuc: no.ketThuc, ...(x.xm ? { stopKhongXacMinh: true as const } : {}), owner }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE run ${runId} STOP ${x.id} owed at its end URGENT`)
+      withDeadline(canhBaoKetCucKhongRo({ loai: "stopEndedUnswept", runId, stepId: x.id, compId: KHONG_CO_BU_TRU, error: FOE_STOP_NOT_SENT, lan: "ket", ketThuc: no.ketThuc, ...(x.xm ? { stopKhongXacMinh: true as const } : {}), ...(no.boQua?.includes(x.id) ? { boQuaDieuKien: true as const } : {}), owner }), 5 * STOP_DB_STEP_DEADLINE_MS, `FOE run ${runId} STOP ${x.id} owed at its end URGENT`)
         .then((ben) => {
           if (!ben) console.error(`[FOE] run ${runId}: the URGENT of STOP ${x.id}, owed at an end with no sweep, is not stored`);
         })
