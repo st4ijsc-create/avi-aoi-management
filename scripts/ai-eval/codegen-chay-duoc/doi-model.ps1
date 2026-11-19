@@ -226,10 +226,10 @@ $giuTamDung = $true
 $khoaNay = Doc-Khoa
 $hetKhoa = if ($khoaNay) { [DateTime]::Parse($khoaNay.hetHan).ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss') } else { '(khong doc duoc)' }
 $hetGiamSat = try { (Get-Item -LiteralPath $tepTamDung -ErrorAction Stop).LastWriteTime.AddMinutes(30).ToString('yyyy-MM-dd HH:mm:ss') } catch { '(khong doc duoc)' }
-Write-Error "HET GIO: $ten khong san sang sau $ChoGiay giay. KHONG dung con, GIU tep tam dung."
 "CON CON SONG: PID $($con.Id), CreationDate $taoCon, err.log $logErr"
 "TEP TAM DUNG: $tepTamDung | khoa khe het han $hetKhoa (KheNang :3000 co the doi khe sau moc nay) | giam sat bo qua tep sau $hetGiamSat (mac dinh LLAMA_WATCHDOG_PAUSE_MAX_MS 30 phut)"
 "VIEC NGUOI VAN HANH: truoc $hetKhoa phai (a) dung con PID $($con.Id) SAU KHI kiem PID + CreationDate + CommandLine, roi xoa tep tam dung; hoac (b) chap nhan bo giam sat dung ban thu hai."
+Write-Error "HET GIO: $ten khong san sang sau $ChoGiay giay. KHONG dung con, GIU tep tam dung."
 exit 5
 }
 finally {
