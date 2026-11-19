@@ -51,6 +51,6 @@ describe("thời gian TUYẾN TÍNH với đầu vào xấu (rà kiem-dinh F —
     if (t4 / Math.max(t1, 1) < 6) return;
     expect(t4).toBeLessThan(4000);
     const t8 = trungViMs(sinh(8 * n));
-    expect(t8 / Math.max(t1, 1)).toBeLessThan(16);
+    expect(t8 / Math.max(t1, 1), `t1=${t1} t4=${t4} t8=${t8}`).toBeLessThan(16);
   }, 120_000);
 });
