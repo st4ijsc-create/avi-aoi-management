@@ -744,4 +744,32 @@ describe("chayMotViec — lượt sửa tsc: dongSua / tepSua đếm RIÊNG lư�
     for (const dong of ['+import { it } from "vitest";', '+it("a", () => {});', '+it("b", () => {});']) expect(diff).toContain(`\n${dong}\n`);
     expect(luuYGop(r)).not.toContain("git add -N");
   });
+  const CAU_ADDN = (khi: string) => `thu() ${khi}: \`git add -N\` thất bại — tệp MỚI có thể vắng khỏi diff / \`dong\` / luotSua.tepSua của lần thu này (đọc cây thật, đừng tin diff)`;
+  it("★★★ THU-ADDN, lần thu SAU LƯỢT SỬA: lần thu đầu lành, khoá index dựng ở CUỐI lượt sửa ⇒ luuY có đúng câu 'sau lượt sửa' và KHÔNG có câu 'sau lượt đầu'", async () => {
+    const khoa = path.join(wt, ".git", "index.lock");
+    try {
+      const { drv } = lamDriver2(() => ghi(TEP, BAI), () => { ghi(TEP, BAI_SUA); fs.writeFileSync(khoa, ""); });
+      const r = await chay(the(CO), drv, lamKiem().f, lamTsc(DO, XANH).f);
+      expect(r).toMatchObject({ coLuotSua: true });
+      expect(r.luuY).toContain(CAU_ADDN("sau lượt sửa"));
+      expect(luuYGop(r)).not.toContain(CAU_ADDN("sau lượt đầu"));
+    } finally {
+      fs.rmSync(khoa, { force: true });
+    }
+  });
+  it("★★★ THU-ADDN, addNOk cập nhật sau lượt sửa: khoá chỉ có ở lượt đầu, lượt sửa gỡ khoá ⇒ luuY có câu 'sau lượt đầu' và KHÔNG có câu 'sau lượt sửa'", async () => {
+    const khoa = path.join(wt, ".git", "index.lock");
+    try {
+      const { drv } = lamDriver2(
+        () => { ghi(TEP, BAI); fs.writeFileSync(khoa, ""); },
+        () => { fs.rmSync(khoa, { force: true }); ghi(TEP, BAI_SUA); },
+      );
+      const r = await chay(the(CO), drv, lamKiem().f, lamTsc(DO, XANH).f);
+      expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
+      expect(r.luuY).toContain(CAU_ADDN("sau lượt đầu"));
+      expect(luuYGop(r)).not.toContain(CAU_ADDN("sau lượt sửa"));
+    } finally {
+      fs.rmSync(khoa, { force: true });
+    }
+  });
 });
