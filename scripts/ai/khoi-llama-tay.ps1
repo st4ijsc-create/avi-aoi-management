@@ -61,7 +61,13 @@ if ($tepKhoa -and -not (Test-Path -LiteralPath $tepKhoa -PathType Leaf)) { "LLAM
 if ($ChiKiem) { "CHI KIEM: qua chot 6 / 7 / 2 - SE KHOI $Exe cong $Cong (KHONG khoi, KHONG tao tep tam dung)"; exit 0 }
 
 $dau = "khoi-llama-tay $PID $(Get-Date -Format o)"
-Set-Content -LiteralPath $TepTamDung -Value $dau -Encoding ascii
+# HST 19/11 18:2x: ghi tep tam dung hong / doc lai khong dung dau cua minh => THOAT truoc khi khoi bat ky tien trinh nao
+# (khong co tep thi watchdog :3000 co the dung llama thu hai). Khong xoa tep: co the khong phai cua minh.
+try {
+  Set-Content -LiteralPath $TepTamDung -Value $dau -Encoding ascii -ErrorAction Stop
+  $docLai = (Get-Content -LiteralPath $TepTamDung -Raw -ErrorAction Stop).Trim()
+} catch { $docLai = $null }
+if ($docLai -ne $dau) { "KHONG GHI / DOC LAI DUOC TEP TAM DUNG ($TepTamDung) - KHONG KHOI"; exit 2 }
 function Go-TepDung {
   try { if ((Get-Content -LiteralPath $TepTamDung -Raw -ErrorAction Stop).Trim() -eq $dau) { Remove-Item -LiteralPath $TepTamDung -ErrorAction Stop } } catch { }
 }

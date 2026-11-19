@@ -119,8 +119,8 @@ fs.writeFileSync(TEP_KHOA, `khoa-gia-${Math.random().toString(16).slice(2)}\n`);
 // ── Ca ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // Mỗi ca: dung() dựng tiền cảnh, chay() trả {ma,out}, kyVong: { ma, pause: "co"|"khong", giaSong: số exe giả còn sống SAU lệnh,
 // (tuỳ) dongLenhCo: chuỗi phải có trên dòng lệnh exe giả }. Kỳ vọng ghi TRƯỚC khi chạy.
-const tay = (cong, them = [], env = {}) => chayPs(KHOI_TAY, ["-ArgStr", `--port ${cong}`, "-Ten", "gia", "-Exe", BIN, "-Cong", String(cong), "-TepTamDung", TEP_DUNG, "-ThuMucLog", LOG, "-ChoGiay", "6", ...them], env);
-const doi = (cong, them = [], env = {}) => chayPs(DOI_MODEL, ["-Model", MODEL, "-Exe", BIN, "-Cong", String(cong), "-TepTamDung", TEP_DUNG, "-ThuMucLog", LOG, "-ChoGiay", "6", "-Mmproj", "off", ...them], env);
+const tay = (cong, them = [], env = {}, tep = TEP_DUNG) => chayPs(KHOI_TAY, ["-ArgStr", `--port ${cong}`, "-Ten", "gia", "-Exe", BIN, "-Cong", String(cong), "-TepTamDung", tep, "-ThuMucLog", LOG, "-ChoGiay", "6", ...them], env);
+const doi = (cong, them = [], env = {}, tep = TEP_DUNG) => chayPs(DOI_MODEL, ["-Model", MODEL, "-Exe", BIN, "-Cong", String(cong), "-TepTamDung", tep, "-ThuMucLog", LOG, "-ChoGiay", "6", "-Mmproj", "off", ...them], env);
 const khoaKhac = () => fs.writeFileSync(TEP_DUNG, JSON.stringify({ chu: "nguoi-khac", lyDo: "kho-ps", hetHan: new Date(Date.now() + 600_000).toISOString() }));
 
 const CA = [
@@ -174,6 +174,13 @@ function force(c, them = {}) {
 if (CA_RIENG === "doi-chung-mac-dinh") {
   CA.length = 0;
   CA.push({ ten: "doi-chung-mac-dinh", chay: () => chayPs(KHOI_TAY, ["-ArgStr", "--khong-dung", "-Ten", "doi-chung", "-ChiKiem"]), kyVong: { ma: 6, pause: "khong", giaSong: 0 } });
+} else {
+  // HST 19/11 18:2x (3): tệp tạm dừng KHÔNG ghi được (thư mục cha không có, dưới D) ⇒ thoát 2, không khởi exe giả nào; doi-model
+  // KHÔNG dừng chủ cũ (đúng exe + đúng --port, đủ điều kiện bị dừng nếu script đi tiếp). Đặt sau các ca cũ: không dời dòng các điểm spawn.
+  const TEP_HONG = path.join(D, "khong-co-thu-muc", "pause");
+  CA.push({ ten: "tay-2-pause-khong-ghi-duoc", chay: (c) => tay(c, [], { LLAMA_GIA_CHE_DO: "song" }, TEP_HONG), kyVong: { ma: 2, pause: "khong", giaSong: 0 } },
+    { ten: "doi-2-pause-khong-ghi-duoc-chu-cu-song", dung: async (c) => { khoiGia(BIN, "song", c); await choCong(c, true); },
+      chay: (c) => doi(c, [], { LLAMA_GIA_CHE_DO: "song" }, TEP_HONG), kyVong: { ma: 2, pause: "khong", giaSong: 1 } });
 }
 
 // ── Chạy ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

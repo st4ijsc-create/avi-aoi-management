@@ -6,7 +6,7 @@
  *
  * Ba lượt trên CÙNG danh sách mục:
  *   (dung)      LLAMA_SERVER_API_KEY_FILE = tệp khoá giả ĐÚNG   ⇒ mỗi mục ≥ 1 yêu cầu, 0 lần 401.
- *   (khong-tep) KHÔNG đặt biến (tương đương bỏ dòng gửi khoá)   ⇒ mỗi mục ≥ 1 lần 401 (đối chứng âm).
+ *   (khong-tep) biến = "" TƯỜNG MINH (dotenv không ghi đè biến đã có ⇒ .env không chen vào) ⇒ mỗi mục ≥ 1 lần 401 (đối chứng âm).
  *   (sai-khoa)  tệp khoá giả KHÁC                               ⇒ mỗi mục ≥ 1 lần 401 (đối chứng âm).
  * ĐẠT khi cả ba đúng kỳ vọng ở MỌI mục đã phủ. Mục 0 yêu cầu ⇒ KHÔNG xanh (không trỏ vào máy giả).
  *
@@ -64,7 +64,7 @@ function envCon(tepKhoa) {
   for (const [k, v] of Object.entries(process.env)) if (!/^(LLAMA_|GGUF_|AI_)/i.test(k)) e[k] = v;
   for (const k of CO_A) e[k] = "false";
   Object.assign(e, { TEMP: D, TMP: D, LLAMA_SERVER_URL: URL_GIA, GGUF_MODELS_DIR: D, GGUF_FAST_MODEL: "khong-co-k1.gguf", DATABASE_URL: "postgres://khong:khong@127.0.0.1:9/x" });
-  if (tepKhoa) e.LLAMA_SERVER_API_KEY_FILE = tepKhoa;
+  e.LLAMA_SERVER_API_KEY_FILE = tepKhoa || ""; // kiem-dinh 18:20 / HST 18:2x: rỗng tường minh, không bỏ biến
   return e;
 }
 

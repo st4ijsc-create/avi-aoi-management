@@ -148,6 +148,10 @@ if ($khoaCu -and $khoaCu.chu -ne $GiuKhoa) {
   exit 3
 }
 Ghi-Khoa
+# HST 19/11 18:2x: doc lai khoa vua ghi; khong doc duoc / khong phai cua toi => THOAT truoc khi dung hay khoi bat ky ai
+# (ghi hong ma van dung chu cu => khong co tep tam dung => watchdog :3000 co the dung llama thu hai).
+$khoaVuaGhi = Doc-Khoa
+if (-not $khoaVuaGhi -or $khoaVuaGhi.chu -ne $chuCuaToi) { Write-Error "KHONG GHI / DOC LAI DUOC TEP TAM DUNG ($tepTamDung) - KHONG doi model, KHONG dung ai."; exit 2 }
 $giuTamDung = $false
 
 try {
