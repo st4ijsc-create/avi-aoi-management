@@ -1316,6 +1316,18 @@ describe("X-23 G40 a STOP skipped by its precondition, owed at an end with no sw
     expect(String(u[0]!.message)).toContain("It was skipped by its precondition and never tried.");
   });
 
+  it("Z2b (G40, a STOP not verified) its connection down (xm): the H36 URGENT of the skipped STOP says both, not verified as a pinned STOP and skipped by its precondition", async () => {
+    conn.fp.delete(501); // the running connection is down: the STOP cannot be verified (foeEngine noKetThucKhongQuet: plan.unverified ⇒ chuaXacMinh)
+    const { runId } = await hinhG40("x23g40xm", true);
+    expect(runRow(runId).status).toBe("failed");
+    expect(otCommands().map((c) => c.commandType)).toEqual(["start"]);
+    await cho(() => expect(urgentCua(runId).length).toBeGreaterThanOrEqual(1)); // positive anchor
+    const u = urgentCua(runId);
+    expect(String(u[0]!.title)).toContain("not verified as a pinned STOP");
+    expect(String(u[0]!.message)).toContain('step "stop" could not be verified as a pinned STOP, so it was NOT sent.');
+    expect(String(u[0]!.message)).toContain("It was skipped by its precondition and never tried.");
+  });
+
   it("Z3a (G40 control) the same shape with no precondition: the STOP goes, no URGENT of an end with no sweep", async () => {
     const { runId } = await hinhG40("x23g40dc", false);
     expect(otCommands().map((c) => c.commandType)).toEqual(["start", "stop"]);
