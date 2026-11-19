@@ -2853,7 +2853,7 @@ describe("X-28 an Abort whose STOP planning throws names the forward STOP never 
   // X-28 words (brief x28 section 2), the prefix of a latched run's URGENT (foeKetCucKhongRo.ts:784, 788, 842)
   const TIEU_DE_HOI = (runId: number) => `Run ${runId}: another command's outcome is unknown — machine state unknown — planning of the STOP sweep failed, a STOP may still not be out`;
   const THAN_HOI = (runId: number) =>
-    `The STOP sweep of run ${runId} read its definition but failed while planning which STOP steps to send, so this press sent none of them. Where the system could work them out, STOP-typed steps never handed over are named in alerts of their own; that list may be incomplete or empty, and a STOP compensation of a step that already finished is never named. Stop the machine at the machine now with its direct STOP / E-STOP, and check it on site.`;
+    `The STOP sweep of run ${runId} read its definition but failed while planning which STOP steps to send, so this press sent none of them. Where the system could work them out, STOP-typed steps never handed over are named in alerts of their own; that list may be incomplete or empty, and no STOP compensation is named. Stop the machine at the machine now with its direct STOP / E-STOP, and check it on site.`;
   const tenAbort = () => alerts.filter((a) => a.kind === KIND_TIEN && String(a.dedupKey).endsWith(":abort"));
   const hoi = () => alerts.filter((a) => a.kind === KIND_HOI);
   const cho = () => new Promise((x) => setTimeout(x, 150));
@@ -3361,5 +3361,131 @@ describe("X-23 a STOP skipped by its precondition is told as one (G39, G40)", ()
     const k = noiDungCanhBaoKhongRo({ loai: "stopEndedUnswept", runId: 9, stepId: "s", compId: KHONG_CO_BU_TRU, error: "FOE_STOP_NOT_SENT", lan: "ket", ketThuc: "failed" } as never);
     expect(k.message).toContain('its STOP "s" was NOT sent. Check the machine on site and use its direct STOP / E-STOP.');
     expect(k.message).not.toContain("skipped by its precondition");
+  });
+});
+
+
+describe("X-27 M1 + M2 the planning's words name no compensation; a STOP skipped in an earlier walk is named when a STOP pass throws (F1-BOQUA)", () => {
+  const g = globalThis as { __x26?: unknown };
+  const KIND_TIEN = CANH_BAO_KHONG_RO_KIND.forwardNotSent;
+  const LUOT_HONG = "the STOP pass of this run failed";
+  const stopX = (id: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop", ...extra }) as WorkflowStep;
+  const gateT = (id: string): WorkflowStep => ({ id, type: "hitl_gate", prompt: "x" }) as WorkflowStep;
+  const DK = { precondition: { source: "param", key: "never", op: "eq", value: true }, onPreconditionFail: "skip" };
+  const doi = (f: () => void | Promise<void>) => vi.waitFor(f, { timeout: 3_000 });
+  /** X-26's words naming one step (any walk's key) */
+  const luotHongVe = (id: string) => alerts.filter((a) => a.kind === KIND_TIEN && String(a.title).includes(LUOT_HONG) && String(a.dedupKey ?? "").split(":")[2] === id);
+  /** X-28's naming at an Abort whose planning threw (key :abort) */
+  const abortVe = (id: string) => alerts.filter((a) => a.kind === KIND_TIEN && String(a.dedupKey ?? "") .split(":")[2] === id && String(a.dedupKey ?? "").endsWith(":abort"));
+  /** the fault starts with the `start` that latches the run: every STOP pass after it throws (X-26 K1's lever) */
+  const nemTuStart = () =>
+    otDispatchMock.mockImplementation(async (i) => {
+      if (i.commandType === "start") {
+        g.__x26 = "nem";
+        return TIMEOUT;
+      }
+      return ACKED;
+    });
+  /** an OLD definition (X-15 (4) refuses a precondition on a STOP at deploy now): deployed without it, then the stored row carries it; gate0 approved ⇒ walk 1 */
+  async function chayCu(steps: WorkflowStep[], cu: WorkflowStep[]) {
+    const ref = `x27-${++refN}`;
+    const g0 = { id: "gate0", type: "hitl_gate", prompt: "approve" } as WorkflowStep;
+    expect((await deployWorkflow({ ref, name: ref, steps: [g0, ...steps] } as WorkflowDefinition, USER)).ok).toBe(true);
+    rows("orchestration_workflows").find((w) => w.ref === ref)!.definitionJson = { ref, name: ref, steps: [g0, ...cu], version: 1 };
+    const r = await startRun(ref, {}, USER);
+    const res = await resumeRun(r.runId!, { approved: true }, APPROVER);
+    return { runId: r.runId!, res };
+  }
+  /** F1's shape (thăm dò X-29 bản b): xs skipped in walk 1; g1 approved ⇒ walk 2 latches, every pass throws */
+  async function hinhF1() {
+    nemTuStart();
+    const sau = [gateT("g1"), main(resetComp("undo"))];
+    const { runId, res } = await chayCu([stopX("xs"), ...sau], [stopX("xs", DK), ...sau]);
+    expect(res.status).toBe("awaiting_confirm");
+    expect(await step(runId, "xs")).toMatchObject({ status: "skipped" });
+    await resumeRun(runId, { approved: true }, APPROVER);
+    return runId;
+  }
+
+  it("M1-MOI the words of a planning that threw name no STOP compensation (no 'already finished'); ≤ 800 with run 2 147 483 647", () => {
+    const n = noiDungCanhBaoKhongRo({ loai: "abortDefUnread", runId: 2_147_483_647, stepId: "?", compId: KHONG_CO_BU_TRU, error: "FOE_STOP_NOT_SENT", lan: "abort", keHoachLoi: true } as Parameters<typeof noiDungCanhBaoKhongRo>[0]);
+    expect(n.message).toContain("no STOP compensation is named");
+    expect(n.message).not.toContain("already finished");
+    expect(n.message.length).toBeLessThanOrEqual(800);
+  });
+
+  it("M2-DO (F1-BOQUA) a STOP skipped by its precondition in walk 1 is named in X-26's words when walk 2's STOP pass throws", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const runId = await hinhF1();
+      await doi(() => expect(luotHongVe("xs")).toHaveLength(1));
+      expect(sent("stop")).toEqual([]);
+      expect(await step(runId, "xs")).toMatchObject({ status: "skipped" });
+    } finally {
+      g.__x26 = null;
+      err.mockRestore();
+    }
+  });
+
+  it("M2-NGUOC-TT a STOP sent and done in walk 1 (row completed) is never named at walk 2's thrown pass; a STOP never reached is", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      nemTuStart();
+      const r = await chay([stopX("xs"), gateT("g1"), seq("box", [main(resetComp("undo")), stopX("xt")])]);
+      expect(r.res.status).toBe("awaiting_confirm");
+      expect(await step(r.runId, "xs")).toMatchObject({ status: "completed" });
+      await resumeRun(r.runId, { approved: true }, APPROVER);
+      await doi(() => expect(luotHongVe("xt")).toHaveLength(1)); // positive anchor: the same naming has told the STOP never reached
+      expect(luotHongVe("xs")).toEqual([]);
+    } finally {
+      g.__x26 = null;
+      err.mockRestore();
+    }
+  });
+
+  it("M2-NGUOC-AB the same run, an Abort whose planning throws (X-28): the STOP done in walk 1 is not named, the one never reached is", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      nemTuStart();
+      const r = await chay([stopX("xs"), gateT("g1"), seq("box", [main(resetComp("undo")), stopX("xt")])]);
+      await resumeRun(r.runId, { approved: true }, APPROVER);
+      await doi(() => expect(luotHongVe("xt")).toHaveLength(1));
+      g.__x26 = "settled"; // X-28's lever: the planning throws at the Abort, after the run's picture
+      await abortRun(r.runId, ADMIN, "checked", { scope: null } as never);
+      await doi(() => expect(abortVe("xt")).toHaveLength(1)); // positive anchor
+      expect(abortVe("xs")).toEqual([]);
+    } finally {
+      g.__x26 = null;
+      err.mockRestore();
+    }
+  });
+
+  it("M2-CUNGLUOT skipped and latched in the SAME walk: named (rc.completed is read at the start of a walk)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      nemTuStart();
+      const box = seq("box", [main(resetComp("undo"))]);
+      await chayCu([stopX("xs"), box], [stopX("xs", DK), box]);
+      await doi(() => expect(luotHongVe("xs")).toHaveLength(1));
+      expect(sent("stop")).toEqual([]);
+    } finally {
+      g.__x26 = null;
+      err.mockRestore();
+    }
+  });
+
+  it("M2-ABORT the F1 run held, an Abort whose planning throws: the skipped STOP is named (the rows' picture holds no skipped row as completed)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const runId = await hinhF1();
+      await doi(() => expect(String(runRow(runId).status)).toBe("held"));
+      g.__x26 = "settled";
+      await abortRun(runId, ADMIN, "checked", { scope: null } as never);
+      await doi(() => expect(abortVe("xs")).toHaveLength(1));
+      expect(sent("stop")).toEqual([]);
+    } finally {
+      g.__x26 = null;
+      err.mockRestore();
+    }
   });
 });

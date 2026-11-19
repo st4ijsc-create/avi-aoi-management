@@ -579,7 +579,7 @@ export function chuKhongDocDinhNghia(runId: number): string {
 /** A2(n) T7b-1d lượt sửa 2 (H32) — a sweep past its ceiling: nothing here was refused or unread, it has simply not answered. It goes on behind this: a STOP may be out already or may yet go. No step to name: no second picture of a sweep for this. The URGENT and the answer say the same. */
 /** X-28 (G46-e) — an Abort of a latched run whose planning threw: what it is, that the names may not be all, what to do. No press promised: the same planning throws again */
 export function chuKeHoachLoi(runId: number): string {
-  return `The STOP sweep of run ${runId} read its definition but failed while planning which STOP steps to send, so this press sent none of them. Where the system could work them out, STOP-typed steps never handed over are named in alerts of their own; that list may be incomplete or empty, and a STOP compensation of a step that already finished is never named. Stop the machine at the machine now with its direct STOP / E-STOP, and check it on site.`;
+  return `The STOP sweep of run ${runId} read its definition but failed while planning which STOP steps to send, so this press sent none of them. Where the system could work them out, STOP-typed steps never handed over are named in alerts of their own; that list may be incomplete or empty, and no STOP compensation is named. Stop the machine at the machine now with its direct STOP / E-STOP, and check it on site.`;
 }
 
 export function chuQuetChuaXong(runId: number): string {

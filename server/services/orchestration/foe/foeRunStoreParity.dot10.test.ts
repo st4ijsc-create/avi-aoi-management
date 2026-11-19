@@ -20225,3 +20225,43 @@ describe("T4 [H11] / B5 — six damaged forms of the words on the old route (cen
     expect(tachBaoCaoKhongRoEdge("plain text"), "no mark: nothing rode").toEqual({ error: "plain text", bao: [] });
   });
 });
+
+
+describe("X-27 M2 an edge walker: a STOP skipped in an earlier segment is named when a later segment latches and its STOP pass throws", () => {
+  const DK = { precondition: { source: "param", key: "never", op: "eq", value: true }, onPreconditionFail: "skip" };
+  const bao = (e: EdgeHarness) =>
+    (e.events ?? [])
+      .filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION")
+      .map((x) => (typeof x.detail === "string" ? JSON.parse(x.detail) : x.detail) as { loai?: string; stepId?: string })
+      .map((d) => `${String(d.loai)}:${String(d.stepId)}`);
+  /** [g1, xs, g2, r1]: segment 2 reaches g2; segment 3: r1 times out ⇒ latched, the STOP pass throws (sweepNem) */
+  async function hinh(ten: string, boQua: boolean) {
+    const steps = (dk: boolean) => [gate(), dk ? otStop("xs", DK) : otStop("xs"), gate("g2"), move("r1")];
+    const e = await edgeAssignedRun(def(ten, steps(false)), boQua ? def(ten, steps(true)) : undefined);
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    const s2 = await edgeSegment(e, 2);
+    expect((s2.out as { outcome?: unknown } | undefined)?.outcome).toBe("paused");
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("r1");
+    e.events = [];
+    e.sweepNem = true;
+    const n0 = h.sent.length;
+    await edgeSegment(e, 3);
+    expect(e.sweepLan ?? 0).toBeGreaterThanOrEqual(1);
+    expect(h.sent.slice(n0).map((x) => x.stepId)).toEqual(["r1"]);
+    return e;
+  }
+
+  it("M2-EDGE (F1-BOQUA on an edge) xs skipped by its precondition in segment 2 (an OLD definition): the latched segment names it, once", async () => {
+    const e = await hinh("x27-edge-boqua", true);
+    await waitFor(() => bao(e).includes("noCompensation:r1"), "the segment's reports"); // positive anchor
+    expect(bao(e).filter((x) => x === "forwardNotSent:xs")).toHaveLength(1);
+  });
+
+  it("M2-NGUOC-EDGE xs sent and done in segment 2: never named by the latched segment", async () => {
+    const e = await hinh("x27-edge-xong", false);
+    await waitFor(() => bao(e).includes("noCompensation:r1"), "the segment's reports"); // positive anchor
+    expect(bao(e).filter((x) => x === "forwardNotSent:xs")).toEqual([]);
+  });
+});

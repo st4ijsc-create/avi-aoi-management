@@ -1744,7 +1744,7 @@ function baoBuocTienBiBo(rc: RunContext, lan: string): void {
  */
 async function tenStopTienChuaGiao(rc: RunContext, vao = new Set<string>()): Promise<Set<string>> {
   for (const s of rc.def.steps.flatMap(buocTienCua)) {
-    if (s.type === "command" && !rc.completed.has(s.id) && !rc.attempted.has(s.id) && !rc.prior.attempted.has(s.id) && !rc.diStop?.has(s.id) && !rc.chuaRaStop?.has(s.id) && (await laStopTheoBuoc(s, rc.machineById).catch(() => true))) vao.add(s.id);
+    if (s.type === "command" && !rc.attempted.has(s.id) && !rc.prior.attempted.has(s.id) && !rc.diStop?.has(s.id) && !rc.chuaRaStop?.has(s.id) && (await laStopTheoBuoc(s, rc.machineById).catch(() => true))) vao.add(s.id);
   }
   return vao;
 }
