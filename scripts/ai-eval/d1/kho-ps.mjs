@@ -161,15 +161,15 @@ const conNode = [];
 function khoiNodeNghe(c) {
   return spawn(process.execPath, ["-e", `require("net").createServer(()=>{}).listen(${Number(c)},"127.0.0.1")`], { env: envCon(), stdio: "ignore", windowsHide: true });
 }
-function force(c, them = {}) {
+function force(c, them = {}, cheDo = "off", thamThem = []) { // D1c C4: cheDo = LLAMA_SERVER_MMPROJ trong force.env; thamThem = cờ thêm (vd -ChonMmproj off)
   const cay = path.join(D, "repo", "scripts", "ai");
   fs.mkdirSync(cay, { recursive: true });
   fs.copyFileSync(START, path.join(cay, "start-llama-server.ps1"));
   fs.copyFileSync(TIM_MMPROJ, path.join(cay, "tim-mmproj.ps1"));
   const env = path.join(D, "force.env");
   fs.writeFileSync(env, [`GGUF_MODELS_DIR=${D}`, `LLAMA_SERVER_MODEL=${path.basename(MODEL)}`, `LLAMA_SERVER_URL=http://127.0.0.1:${c}`, `LLAMA_SERVER_BIN=${BIN}`,
-    `LLAMA_SERVER_SELECTION_FILE=${path.join(D, "khong-co.json")}`, "LLAMA_SERVER_MMPROJ=off"].join("\n"));
-  return chayPs(path.join(cay, "start-llama-server.ps1"), ["-EnvFile", env, "-Force", "-WaitSeconds", "6"], them);
+    `LLAMA_SERVER_SELECTION_FILE=${path.join(D, "khong-co.json")}`, `LLAMA_SERVER_MMPROJ=${cheDo}`].join("\n"));
+  return chayPs(path.join(cay, "start-llama-server.ps1"), ["-EnvFile", env, "-Force", "-WaitSeconds", "6", ...thamThem], them);
 }
 if (CA_RIENG === "doi-chung-mac-dinh") {
   CA.length = 0;
@@ -215,6 +215,9 @@ if (CA_RIENG === "doi-chung-mac-dinh") {
     { ten: "doi-2-m5-7-KhongKhoa-mau-thuan", chay: (c) => doi(c, ["-KhongKhoa"], { ...DOI_SONG, LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }), kyVong: { ma: 2, pause: "khong", giaSong: 0 } },
     { ten: "doi-0-m5-2-cong-trong-khong-bien", chay: (c) => doi(c, [], DOI_SONG), kyVong: { ma: 0, pause: "khong", giaSong: 1, outCo: "KHONG CO CHU CONG" } },
     // D1c C2 (HST 03:03): khoi-llama-tay khởi CÓ khoá ⇒ dòng `CMDLINE:` phải che đường tệp khoá thành `<tep-khoa>` (kiểm chung bên dưới bắt đường thật).
+    // D1c C4: đối chứng (auto + có tệp mmproj cạnh model ⇒ có --mmproj) rồi -ChonMmproj off thắng cấu hình env ⇒ KHÔNG --mmproj.
+    { ten: "force-0-mmproj-auto-doi-chung", dung: async (c) => { fs.writeFileSync(path.join(D, "Gia-mmproj-F16.gguf"), ""); await chuCu([])(c); }, chay: (c) => force(c, DOI_SONG, "auto"), kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhCo: "--mmproj" } },
+    { ten: "force-0-mmproj-off-qua-tham-so", dung: chuCu([]), chay: (c) => force(c, DOI_SONG, "auto", ["-ChonMmproj", "off"]), kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhKhong: "--mmproj" } },
     { ten: "tay-0-co-khoa-cmdline-che", kyVong: { ma: 0, pause: "khong", giaSong: 1, outCo: "--api-key-file <tep-khoa>" },
       chay: (c) => chayPs(KHOI_TAY, ["-ArgStr", `--port ${c} --api-key-file ${TEP_KHOA}`, "-Ten", "gia", "-Exe", BIN, "-Cong", String(c), "-TepTamDung", TEP_DUNG, "-ThuMucLog", LOG, "-ChoGiay", "6"], { ...DOI_SONG, LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }) });
 }

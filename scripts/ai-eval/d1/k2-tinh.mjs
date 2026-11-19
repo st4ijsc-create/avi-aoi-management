@@ -84,6 +84,8 @@ if (!(tay.indexOf("if ($ChiKiem)") > 0 && tay.indexOf("if ($ChiKiem)") < tay.ind
 const tepSh = []; const quetSh = (d) => { for (const t of fs.readdirSync(path.join(GOC, d), { withFileTypes: true })) { const r = `${d}/${t.name}`; if (t.isDirectory()) quetSh(r); else if (r.endsWith(".sh")) tepSh.push(r); } };
 quetSh("scripts");
 for (const f of tepSh) for (const d of doc(f).split("\n")) if (/CommandLine/.test(d) && /\blog\b/.test(d) && !/grep -[oq]/.test(d) && !/<tep-khoa>/.test(d) && !d.trim().startsWith("#")) loi.push(`${f}: dòng ghi log CommandLine chưa che <tep-khoa>`);
+// D1c C4 (HST 20/11 04:08): KHÔNG .sh nào dưới scripts/ chép `.env` (cp …/.env …); `.env.example` không tính.
+for (const f of tepSh) for (const d of doc(f).split("\n")) if (/\bcp\b/.test(d) && /(?<![\w.-])\.env(?![\w.-])/.test(d) && !d.trim().startsWith("#")) loi.push(`${f}: dòng chép .env`);
 const goc2 = (() => { const i = process.argv.indexOf("--them-goc"); return i > 0 ? process.argv[i + 1] : ""; })();
 if (goc2) {
   // Thư mục ngoài repo (D:/DO-AI): chỉ LIỆT KÊ tệp có 8091 kèm lời gọi (fetch/curl/Invoke-WebRequest) để người rà phân loại; không tính đỏ.

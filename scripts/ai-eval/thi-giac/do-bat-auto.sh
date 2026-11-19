@@ -7,15 +7,13 @@ log() { echo "=== $(date +%T) $*"; }
 CHU="do-bat-auto.sh (phien do-model)"
 M35="D:/SOURCES/16.AI/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
 O=tmp/thi-giac/bat-auto; mkdir -p $O
-ENVT="$(cygpath -w "$TEMP")\\do-bat-auto-$$.env"
-cp /d/SOURCES/avi-aoi-management/.env "$(cygpath -u "$ENVT")" && printf '\nLLAMA_SERVER_MMPROJ=auto\n' >> "$(cygpath -u "$ENVT")"
-trap 'rm -f "$(cygpath -u "$ENVT")"' EXIT
+# Lô D1c C4 (HST 20/11): KHÔNG chép .env nữa — start-llama-server đọc .env cây chính TẠI CHỖ (-EnvFile), mmproj qua -ChonMmproj.
 node scripts/ai-eval/lib/khoaKhe.mjs giu "$CHU" "do bat mmproj auto" --co-dung tmp/dung-khoa-ba-$$ > $O/khoa.log 2>&1 & KHOA=$!
 sleep 2
 pid3013() { powershell.exe -NoProfile -Command "(Get-NetTCPConnection -LocalPort 3013 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess" | tr -d '\r'; }
 
 doMot() { # $1 nhãn, $2 basename model
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai/start-llama-server.ps1 -EnvFile "$ENVT" -Force -Model "$2" > $O/sp-$1.log 2>&1
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai/start-llama-server.ps1 -EnvFile 'D:\SOURCES\avi-aoi-management\.env' -ChonMmproj auto -Force -Model "$2" > $O/sp-$1.log 2>&1
   log "$1: start-llama-server rc=$? · $(tr -d '\r' < $O/sp-$1.log | grep -aE 'mmproj' | tr '\n' ' ')"
   local logErr; logErr=$(tr -d '\r' < $O/sp-$1.log | sed -n 's/.*log *: *\(.*\)\.out\.log.*/\1.err.log/p' | tail -1)
   log "$1: /props modalities = $(node scripts/ai-eval/lib/goi-llama.mjs /props | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).modalities))}catch{console.log("?")}})')"
