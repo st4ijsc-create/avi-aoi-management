@@ -1,6 +1,6 @@
 #!/bin/bash
 # Cổng (A) bật LLAMA_SERVER_MMPROJ=auto (spec 2026-10-24-ai-local-doc-anh-tro-ly-lap-trinh.md §6 — cổng viết trước, dieu-phoi duyệt mức).
-# ĐƯỜNG SẢN PHẨM start-llama-server.ps1 -Force trên BẢN SAO TẠM .env cây chính + LLAMA_SERVER_MMPROJ=auto|off (xoá khi xong).
+# ĐƯỜNG SẢN PHẨM start-llama-server.ps1 -Force đọc TẠI CHỖ .env cây chính (-EnvFile) + -ChonMmproj auto|off (D1c C4: không chép .env).
 # Mỗi model: auto (X chữ 20 + Y 13 ảnh [+ e2e ở 35B]) rồi off (X chữ 20 + Y' 13 câu chữ chung tiền tố). Cuối: 35B qua doi-model.
 cd "$(dirname "$0")/../../.." || exit 1
 log() { echo "=== $(date +%T) $*"; }

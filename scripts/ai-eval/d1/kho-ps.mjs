@@ -127,6 +127,7 @@ const CA = [
   { ten: "tay-6-co-gia-nghe", dung: async (c) => { khoiGia(BIN, "song", c); await choCong(c, true); }, chay: (c) => tay(c), kyVong: { ma: 6, pause: "khong", giaSong: 1 } },
   { ten: "tay-7-pause-co", dung: async () => fs.writeFileSync(TEP_DUNG, "nguoi-khac"), chay: (c) => tay(c), kyVong: { ma: 7, pause: "co", giaSong: 0 } },
   { ten: "tay-2-khai-khoa-thieu-co", chay: (c) => tay(c, [], { LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }), kyVong: { ma: 2, pause: "khong", giaSong: 0 } },
+  { ten: "tay-2-tep-khoa-khong-co", chay: (c) => chayPs(KHOI_TAY, ["-ArgStr", `--port ${c} --api-key-file ${path.join(D, "khong-co.key")}`, "-Ten", "gia", "-Exe", BIN, "-Cong", String(c), "-TepTamDung", TEP_DUNG, "-ThuMucLog", LOG, "-ChoGiay", "6"], { LLAMA_SERVER_API_KEY_FILE: path.join(D, "khong-co.key") }), kyVong: { ma: 2, pause: "khong", giaSong: 0 } }, // HST 06:23 (a3): chốt :62 KHÔNG in đường; kiểm chung bắt khong-co.key
   { ten: "tay-4-thoat-som", chay: (c) => tay(c, [], { LLAMA_GIA_CHE_DO: "thoat" }), kyVong: { ma: 4, pause: "khong", giaSong: 0 } },
   { ten: "tay-8-hai-tien-trinh", chay: (c) => tay(c, [], { LLAMA_GIA_CHE_DO: "nhan-doi" }), kyVong: { ma: 8, pause: "khong", giaSong: 2 } },
   { ten: "tay-5-het-gio", chay: (c) => tay(c, [], { LLAMA_GIA_CHE_DO: "cham" }), kyVong: { ma: 5, pause: "co", giaSong: 1 } },

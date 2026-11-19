@@ -1,6 +1,6 @@
 #!/bin/bash
 # Cổng BẬT LLAMA_SERVER_MMPROJ=auto mặc định (spec 2026-10-24-ai-local-doc-anh-tro-ly-lap-trinh.md §6 — cổng viết trước).
-# ĐƯỜNG SẢN PHẨM start-llama-server.ps1 -Force với BẢN SAO TẠM .env cây chính + LLAMA_SERVER_MMPROJ=auto (xoá khi xong).
+# ĐƯỜNG SẢN PHẨM start-llama-server.ps1 -Force đọc TẠI CHỖ .env cây chính (-EnvFile) + -ChonMmproj auto (D1c C4: không chép .env).
 # 35B rồi 27B: Tải A 20 lượt chữ + 13 ảnh, mẫu Private 10 s + VRAM 2 s. e2e :3013 (/v1 + KB stream) trên 35B. Cuối: 35B qua doi-model.
 cd "$(dirname "$0")/../../.." || exit 1
 log() { echo "=== $(date +%T) $*"; }
