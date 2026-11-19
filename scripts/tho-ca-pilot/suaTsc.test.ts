@@ -647,4 +647,101 @@ describe("chayMotViec — lượt sửa tsc: dongSua / tepSua đếm RIÊNG lư�
     expect(r.luotSua?.tepSua).toEqual([{ duong: TEP, them: 1, xoa: 1 }, { duong: F2, them: 1, xoa: 1 }]);
     expect(r.luotSua?.dongSua).toEqual({ them: 2, xoa: 2 });
   });
+  it("★★★ mốc index HỎNG (git add thất bại thật: `.git/index.lock` đang tồn tại lúc đặt mốc) ⇒ dongSua null, tepSua null (KHÔNG phải 0), luuY nói rõ; không có câu 'NGOÀI tệp test'; ketCuc vẫn xong; r.dong (so HEAD) vẫn đếm", async () => {
+    const khoa = path.join(wt, ".git", "index.lock");
+    const { drv } = lamDriver2(
+      () => { ghi(TEP, BAI); fs.writeFileSync(khoa, ""); }, // khoá dựng ở cuối lượt 1 ⇒ thu() `add -N` và mốc `git add` đều thất bại
+      () => { fs.rmSync(khoa, { force: true }); ghi(TEP, BAI_SUA); }, // gỡ khoá đầu lượt sửa ⇒ thu() sau lượt sửa chạy bình thường
+    );
+    const r = await chay(the(CO), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(fs.existsSync(khoa)).toBe(false);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
+    expect(r.luotSua?.dongSua).toBeNull();
+    expect(r.luotSua?.tepSua).toBeNull();
+    expect(r.luuY).toContain("LƯỢT SỬA TSC: không đặt được mốc index nên `luotSua.dongSua` / `tepSua` là null (không đếm được, KHÔNG phải 0)");
+    expect(luuYGop(r)).not.toContain("NGOÀI tệp test");
+    expect(r.luotSua).toMatchObject({ viPham: 0, crlf: 0 });
+    expect(r.dong).toEqual({ them: 3, xoa: 0 });
+  });
+  it("★★ đối chứng mốc: KHÔNG có khoá ⇒ cùng thẻ cho dongSua {1,1} và KHÔNG có câu 'không đặt được mốc' (câu chỉ xuất hiện khi mốc hỏng)", async () => {
+    const { drv } = lamDriver2(() => ghi(TEP, BAI), () => ghi(TEP, BAI_SUA));
+    const r = await chay(the(CO), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(r.luotSua?.dongSua).toEqual({ them: 1, xoa: 1 });
+    expect(luuYGop(r)).not.toContain("không đặt được mốc index");
+  });
+  it("★★ lượt sửa đổi tệp NHỊ PHÂN (numstat ghi `-`): số là 0 chứ không NaN; dongSua {1,1} chỉ từ tệp test; tepSua có mục nhị phân 0/0; luuY nêu (+0/−0)", async () => {
+    const B = "client/src/lib/b.bin";
+    fs.mkdirSync(path.join(wt, "client/src/lib"), { recursive: true });
+    fs.writeFileSync(path.join(wt, B), Buffer.from([0, 1, 2, 3]));
+    git(wt, "add", ".");
+    git(wt, "commit", "-q", "-m", "bin");
+    const { drv } = lamDriver2(
+      () => ghi(TEP, BAI),
+      () => { ghi(TEP, BAI_SUA); fs.writeFileSync(path.join(wt, B), Buffer.from([0, 1, 2, 4])); },
+    );
+    const r = await chay(theCho(B), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
+    expect(r.luotSua?.tepSua).toEqual([{ duong: TEP, them: 1, xoa: 1 }, { duong: B, them: 0, xoa: 0 }]);
+    expect(r.luotSua?.dongSua).toEqual({ them: 1, xoa: 1 });
+    expect(r.luuY).toContain(CAU_NGOAI(`${B} (+0/−0)`));
+  });
+  // ── THU-ADDN: thu() chỉ `git add -N` các đường CÒN trên đĩa; rc được báo (chayMotViec.ts, thu()) ──
+  it("★★★ THU-ADDN: lượt đầu XOÁ tệp tracked, lượt sửa TẠO tệp mới ⇒ tệp mới có trong tepDoi, diff, dong và tepSua (trước: `add -N` nguyên khối hỏng vì đường đã xoá nên tệp mới vắng)", async () => {
+    caiF();
+    const G = "client/src/lib/g.ts";
+    const { drv } = lamDriver2(
+      () => { ghi(TEP, BAI); fs.rmSync(path.join(wt, F)); },
+      () => { ghi(TEP, BAI_SUA); ghi(G, "x\ny\n"); },
+    );
+    const r = await chay(theCho(F, G), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
+    expect(r.tepDoi).toEqual([TEP, F, G]);
+    expect(r.dong).toEqual({ them: 5, xoa: 3 }); // a.test.ts mới +3, f.ts xoá −3 (3 dòng), g.ts mới +2
+    expect(fs.readFileSync(r.diff ?? "", "utf8")).toContain("client/src/lib/g.ts");
+    expect(r.luotSua?.tepSua).toEqual([{ duong: TEP, them: 1, xoa: 1 }, { duong: G, them: 2, xoa: 0 }]);
+    expect(r.luotSua?.dongSua).toEqual({ them: 3, xoa: 1 });
+    expect(r.luuY).toContain(CAU_NGOAI(`${G} (+2/−0)`));
+    expect(luuYGop(r)).not.toContain("git add -N");
+  });
+  it("★★ lượt sửa XOÁ tệp nguồn tracked ⇒ dòng xoá được tính: tepSua có f.ts 0/3, dongSua {1,4}; luuY nêu (+0/−3)", async () => {
+    caiF();
+    const { drv } = lamDriver2(() => ghi(TEP, BAI), () => { ghi(TEP, BAI_SUA); fs.rmSync(path.join(wt, F)); });
+    const r = await chay(theCho(F), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
+    expect(r.tepDoi).toEqual([TEP, F]);
+    expect(r.dong).toEqual({ them: 3, xoa: 3 });
+    expect(r.luotSua?.tepSua).toEqual([{ duong: TEP, them: 1, xoa: 1 }, { duong: F, them: 0, xoa: 3 }]);
+    expect(r.luotSua?.dongSua).toEqual({ them: 1, xoa: 4 });
+    expect(r.luuY).toContain(CAU_NGOAI(`${F} (+0/−3)`));
+  });
+  it("★★ lượt sửa ĐỔI TÊN tệp nguồn (f.ts → f2.ts y hệt) ⇒ tepSua liệt kê CẢ hai (xoá 0/3 và thêm 3/0), không bị gộp thành một mục đổi tên làm mất cả hai", async () => {
+    caiF();
+    const F2 = "client/src/lib/f2.ts";
+    const { drv } = lamDriver2(() => ghi(TEP, BAI), () => { ghi(TEP, BAI_SUA); fs.renameSync(path.join(wt, F), path.join(wt, F2)); });
+    const r = await chay(theCho(F, F2), drv, lamKiem().f, lamTsc(DO, XANH).f);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
+    expect(r.luotSua?.tepSua).toEqual([{ duong: TEP, them: 1, xoa: 1 }, { duong: F, them: 0, xoa: 3 }, { duong: F2, them: 3, xoa: 0 }]);
+    expect(r.luotSua?.dongSua).toEqual({ them: 4, xoa: 4 });
+    expect(r.luuY).toContain(CAU_NGOAI(`${F} (+0/−3), ${F2} (+3/−0)`));
+  });
+  it("★★★ THU-ADDN: `git add -N` của thu() sau lượt ĐẦU hỏng thật (index.lock đang tồn tại) ⇒ luuY nêu rõ (không im); ketCuc theo lệnh kiểm; không lượt sửa", async () => {
+    const { drv } = lamDriver2(() => { ghi(TEP, BAI); fs.writeFileSync(path.join(wt, ".git", "index.lock"), ""); }, () => undefined);
+    const r = await chay(the(CO), drv, lamKiem().f, lamTsc(XANH).f);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: false });
+    expect(r.luuY).toContain("thu() sau lượt đầu: `git add -N` thất bại — tệp MỚI có thể vắng khỏi diff / `dong` / luotSua.tepSua của lần thu này (đọc cây thật, đừng tin diff)");
+  });
+  it("★★★ THU-ADDN, ảnh hưởng lượt ĐẦU: lượt đầu XOÁ tệp tracked (không lượt sửa) ⇒ tepDoi, dong và văn bản diff (so HEAD) đúng như trước sửa: f.ts xoá 3 dòng, a.test.ts mới 3 dòng", async () => {
+    caiF();
+    const { drv } = lamDriver2(() => { ghi(TEP, BAI); fs.rmSync(path.join(wt, F)); }, () => undefined);
+    const r = await chay(theCho(F), drv, lamKiem().f, lamTsc(XANH).f);
+    expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: false });
+    expect(r.tepDoi).toEqual([TEP, F]);
+    expect(r.dong).toEqual({ them: 3, xoa: 3 });
+    const diff = fs.readFileSync(r.diff ?? "", "utf8");
+    expect(diff).toContain(`diff --git a/${F} b/${F}\ndeleted file mode 100644`);
+    for (const dong of ["-export const f = 1;", "-export const g = 2;", "-export const h = 3;"]) expect(diff).toContain(`\n${dong}\n`);
+    expect(diff).toContain(`diff --git a/${TEP} b/${TEP}\nnew file mode 100644`);
+    for (const dong of ['+import { it } from "vitest";', '+it("a", () => {});', '+it("b", () => {});']) expect(diff).toContain(`\n${dong}\n`);
+    expect(luuYGop(r)).not.toContain("git add -N");
+  });
 });

@@ -799,7 +799,10 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   // gọi hai lần khi thẻ có LƯỢT SỬA TSC: lần hai thu lại diff + mọi kiểm tra diff trên cây SAU lượt sửa
   const thu = () => {
     const tepDoi = thuTepDoi(wt, cach === "ghi-de");
-    if (tepDoi.length > 0) git(["add", "-N", "--", ...tepDoi], wt);
+    // `git add -N` là MỘT lệnh nguyên khối: một đường không còn trong index lẫn trên đĩa (tệp tracked đã bị xoá và việc xoá đã được ghi nhận ở mốc) làm hỏng CẢ lệnh,
+    // tệp mới khác không được i-t-a và vắng khỏi `git diff HEAD`. Chỉ đưa các đường CÒN trên đĩa (tệp xoá đã có sẵn trong `git diff HEAD`); rc trả ra để chỗ gọi báo, không im.
+    const tepCoMat = tepDoi.filter((t) => fs.existsSync(path.join(wt, t)));
+    const addNOk = tepCoMat.length === 0 || git(["add", "-N", "--", ...tepCoMat], wt).ok;
     const dong = tepDoi.length ? demDong(wt, tepDoi) : { them: 0, xoa: 0 };
     const diffText = tepDoi.length ? git(["diff", "HEAD", "--", ...tepDoi], wt).out : "";
     fs.writeFileSync(diffPath, diffText, "utf8");
@@ -830,10 +833,12 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
       for (const g of quetGhimNghiNgo(nguon)) ghimNghiNgo.push({ duong: t, ...g });
     }
     const crlf = tepCrlf(wt, tepDoi);
-    return { tepDoi, dong, viPham, ghimNghiNgo, crlf };
+    return { tepDoi, dong, viPham, ghimNghiNgo, crlf, addNOk };
   };
-  let { tepDoi, dong, viPham, ghimNghiNgo, crlf } = thu();
+  let { tepDoi, dong, viPham, ghimNghiNgo, crlf, addNOk } = thu();
   const luuY: string[] = [...luuY0, ...(kq.luuY ?? [])];
+  const canhBaoAddN = (khi: string) => `thu() ${khi}: \`git add -N\` thất bại — tệp MỚI có thể vắng khỏi diff / \`dong\` / luotSua.tepSua của lần thu này (đọc cây thật, đừng tin diff)`;
+  if (!addNOk) luuY.push(canhBaoAddN("sau lượt đầu"));
   if (p.coAiAgent?.AI_AGENT_CONG_KE_HOACH === "1") {
     luuY.push("cổng duyệt kế hoạch 11.3-C BẬT chỉ trong env tiến trình pilot này (lượt đo thử). kiem-dinh CHƯA rà ĐẠT 11.3-C (dieu-phoi 2026-11-08) ⇒ mặc định của cờ trong ứng dụng KHÔNG đổi.");
   }
@@ -883,13 +888,13 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
         const caTruoc = tepTest;
         const nguon = () => caTruoc.map((c) => { try { return fs.readFileSync(path.join(wt, c.duong), "utf8"); } catch { return ""; } }).join("\n");
         const nguonTruoc = nguon();
-        // mốc index (MỌI tệp đổi, không chỉ tệp test) để đếm dòng RIÊNG của lượt sửa. Chỉ tệp CÒN trên đĩa: tệp bị xoá đã được thu() `add -N` ghi nhận xoá vào index, `git add` lần nữa trên đường đó báo lỗi pathspec
-        const tepCoMat = tepDoi.filter((t) => fs.existsSync(path.join(wt, t)));
-        const mocIndexOk = tepCoMat.length === 0 || git(["add", "--", ...tepCoMat], wt).ok;
+        // mốc index (MỌI tệp đổi, kể cả tệp lượt đầu xoá — thu() không còn ghi nhận xoá vào index) để đếm dòng RIÊNG của lượt sửa
+        const mocIndexOk = tepDoi.length === 0 || git(["add", "--", ...tepDoi], wt).ok;
         const t2 = Date.now();
         const kq2 = await goiDriver(nhac, ns.hanGiay, ns.gioiHan);
         for (const g of kq2.ghiChu) nhatKy(g);
-        ({ tepDoi, dong, viPham, ghimNghiNgo, crlf } = thu());
+        ({ tepDoi, dong, viPham, ghimNghiNgo, crlf, addNOk } = thu());
+        if (!addNOk) luuY.push(canhBaoAddN("sau lượt sửa"));
         tepTest = demTepTest(wt, tepDoi);
         const giam = [...caTestGiam(caTruoc, tepTest), ...soDemGiam(nguonTruoc, nguon())];
         const hong = kq2.hetGio || kq2.loi ? `lượt sửa ${kq2.hetGio ? "hết giờ" : `lỗi: ${kq2.loi}`}` : null;
