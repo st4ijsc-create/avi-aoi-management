@@ -182,7 +182,7 @@ describe("--cho-phep-db — máy chủ, cổng, vai (danh sách trắng) và tok
 describe("--cho-phep-db — chayKiem tới driver (vòng tự chạy trong lượt)", () => {
   it("★★★ có cờ ⇒ driver nhận đúng hàm do nhà máy dựng với testDbUrl; không cờ và không tiêm ⇒ driver KHÔNG nhận chayKiem (giữ DB chết mặc định)", async () => {
     const dung = async (van: string, co: boolean) => {
-      let nhan: ChayKiem | undefined | "chua" = "chua";
+      const luu: { nhan: ChayKiem | undefined | "chua" } = { nhan: "chua" };
       const tuNhaMay: ChayKiem[] = [];
       const taoChayKiem = ((opt: { testDbUrl?: string } = {}) => {
         const f: ChayKiem = async (l, w, h) => chayKiemXanh(l, w, h);
@@ -191,11 +191,11 @@ describe("--cho-phep-db — chayKiem tới driver (vòng tự chạy trong lư�
         return f;
       }) as never;
       const drv: Driver = async (v) => {
-        nhan = v.chayKiem;
+        luu.nhan = v.chayKiem;
         return { ghiChu: [], vong: 1, token: null, hetGio: false } as never;
       };
       await chayMotViec({ van, wt, base: "HEAD", driver: drv, ra, choPhepKhoRieng: true, luat: "# l\n", taoChayKiem, choPhepDb: co, testDbUrl: URL_TEST, khoGhi: { [TEP_DB]: TEST_MOI, "client/src/lib/a.test.ts": TEST_MOI } });
-      return { nhan, tuNhaMay };
+      return { nhan: luu.nhan, tuNhaMay };
     };
     const bat = await dung(the(), true);
     expect(bat.nhan).not.toBe("chua");

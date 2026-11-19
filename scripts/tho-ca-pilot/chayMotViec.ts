@@ -33,7 +33,7 @@ import { chayKiemThat, chupWt, type KetQuaKiemThat } from "./kiemThat";
 import { CAU_LUAT_PHU, docDongDaDuyet, docVitestJson, tenMoiCa, tinhPhu, type DongDuyet, type KetQuaPhu } from "./kiemPhu";
 import { dongBaoTran, dongCanhBaoKep, gioiHanChoLuot, tinhTranLuot, type GioiHanLuotChoDriver, type TranLuotKetQua } from "./tranLuot";
 import { apDungDotBien, kiemDotBienTrenBase, quetGhimNghiNgo, quetKhangDinhCam, tepTestDoi, type KetQuaDotBien } from "./dotBien";
-import { canChayTsc, chayLenhTsc, giaTriBiMatTuUrl, taoChayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
+import { canChayTsc, canSuaTsc, caTestGiam, chayLenhTsc, RE_TEP_TEST, loiNhacSuaTsc, nganSachSuaTsc, soDemGiam, giaTriBiMatTuUrl, taoChayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
 
 export type TenDriver = "kho" | "cli" | "host";
 
@@ -141,6 +141,29 @@ export async function tinhPhuCuoi(a: {
   return { ...ket, xacNhanPassed, soLanNhac: a.soLanNhac, ...(loi ? { loi } : {}) };
 }
 
+/** LƯỢT SỬA TSC: kết cục (theo quyetKetCuc) ở một mốc — ghi vào truocSuaTsc / sauSuaTsc */
+export interface KetCucSuaTsc {
+  ketCuc: string;
+  lyDo: string | null;
+}
+
+/** LƯỢT SỬA TSC: số đo riêng của lượt sửa (ghi vào luotSua) */
+export interface LuotSuaTscJson {
+  soLuotModel: number | null;
+  giay: number;
+  hong?: string;
+  giamCa?: string[];
+  /** dòng thêm/xoá RIÊNG của lượt sửa trên MỌI tệp (không chỉ tệp test); null = không đặt được mốc index nên không đếm được */
+  dongSua: { them: number; xoa: number } | null;
+  /** từng tệp lượt sửa đổi (số dòng riêng của lượt sửa, xếp theo đường); null như `dongSua` */
+  tepSua: Array<{ duong: string; them: number; xoa: number }> | null;
+  viPham: number;
+  crlf: number;
+  /** chỉ khi thẻ có KIỂM PHỦ */
+  soLanNhacPhu?: number;
+  biNhacPhu?: boolean;
+}
+
 export interface KetQuaViec {
   ma: string | null;
   ok: boolean;
@@ -188,6 +211,11 @@ export interface KetQuaViec {
   luatCach?: LuatCach;
   /** chỉ khi `ghep`: AGENTS.md của BASE (B1) model đọc — sha256/byte của đúng nội dung ở base (null nếu base không có), và worktree sau lượt còn KHỚP base hay không */
   b1?: { nguon: string; sha256: string | null; byte: number; saoLuotKhop: boolean };
+  /** LƯỢT SỬA TSC (chỉ khi thẻ có khoá): có chạy lượt sửa hay không */
+  coLuotSua?: boolean;
+  truocSuaTsc?: KetCucSuaTsc;
+  sauSuaTsc?: KetCucSuaTsc | null;
+  luotSua?: LuotSuaTscJson;
   /** HA-10: độ phủ danh sách ĐÃ DUYỆT (chỉ khi thẻ bật KIỂM PHỦ) */
   phu?: PhuJson;
   /** HA-6b: kiểm hậu quả (đếm hàng CSDL trước/sau; chỉ khi thẻ có BẢNG ĐẾM) */
@@ -498,7 +526,8 @@ function noiDungB1(wt: string, baseSha: string): string | null {
 }
 
 function thuTepDoi(wt: string, boQuaAgentsMd = true): string[] {
-  const r = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], wt);
+  // --no-renames: mốc index của lượt sửa (mọi tệp đổi được `git add`) làm status gộp "xoá A + thêm B giống A" thành một mục R và NUỐT đường A; tắt dò đổi tên ⇒ cả hai đều được liệt kê
+  const r = git(["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"], wt);
   const ra: string[] = [];
   const mucs = r.out.split("\0").filter((x) => x !== "");
   for (let i = 0; i < mucs.length; i++) {
@@ -511,10 +540,10 @@ function thuTepDoi(wt: string, boQuaAgentsMd = true): string[] {
   return ra.sort();
 }
 
-function demDong(wt: string, tep: string[]): { them: number; xoa: number } {
+function demDong(wt: string, tep: string[], soVoiHead = true): { them: number; xoa: number } {
   let them = 0;
   let xoa = 0;
-  const r = git(["diff", "--numstat", "HEAD", "--", ...tep], wt);
+  const r = git(["diff", "--numstat", ...(soVoiHead ? ["HEAD"] : []), "--", ...tep], wt);
   for (const dong of r.out.split("\n")) {
     const m = /^(\d+|-)\t(\d+|-)\t/.exec(dong);
     if (m) {
@@ -523,6 +552,19 @@ function demDong(wt: string, tep: string[]): { them: number; xoa: number } {
     }
   }
   return { them, xoa };
+}
+
+/** numstat TỪNG tệp (`-z`: đường không bị trích dẫn; không dò đổi tên). Chỉ tệp có đổi; xếp theo đường. Danh sách rỗng ⇒ [] (không để git diff toàn cây). */
+function demDongTungTep(wt: string, tep: string[], soVoiHead = true): Array<{ duong: string; them: number; xoa: number }> {
+  if (tep.length === 0) return [];
+  const r = git(["diff", "--numstat", "--no-renames", "-z", ...(soVoiHead ? ["HEAD"] : []), "--", ...tep], wt);
+  const ra: Array<{ duong: string; them: number; xoa: number }> = [];
+  for (const muc of r.out.split("\0")) {
+    const m = /^(\d+|-)\t(\d+|-)\t([\s\S]+)$/.exec(muc);
+    const duong = m?.[3];
+    if (m && duong !== undefined) ra.push({ duong, them: m[1] === "-" ? 0 : Number(m[1]), xoa: m[2] === "-" ? 0 : Number(m[2]) });
+  }
+  return ra.sort((a, b) => (a.duong < b.duong ? -1 : a.duong > b.duong ? 1 : 0));
 }
 
 function tepCrlf(wt: string, tep: string[]): string[] {
@@ -745,46 +787,58 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     const b = git(["show", `${baseSha}:${t}`], wt);
     if (b.ok) for (const ten of tenMoiCa(b.out)) tenCaCuPhu.add(ten);
   }
-  const kq = await driver({ the: theChoDriver, wt, lenh: ghepLenh(the, luat, tran), hanGiay: tran?.phutThucDung ? tran.phutThucDung * 60 : the.gioiHan.giay, ...(gioiHanLuot ? { gioiHanLuot } : {}), ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {}, ...(p.chayKiem || dbCho ? { chayKiem: chayKiemDung } : {}), ...(dbCho ? { cheDoKiem: "chi-so" as const, giaTriBiMat: giaTriBiMatTuUrl(p.testDbUrl) } : {}), ...(the.kiemPhu ? { phu: { dongDuyet, tenCaCu: tenCaCuPhu, tepTest: tepTestPhu } } : {}) });
+  const hanGiay0 = tran?.phutThucDung ? tran.phutThucDung * 60 : the.gioiHan.giay;
+  const goiDriver = (lenh: string, hanGiay: number, gh: GioiHanLuotChoDriver | undefined) => driver({ the: theChoDriver, wt, lenh, hanGiay, ...(gh ? { gioiHanLuot: gh } : {}), ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {}, ...(p.chayKiem || dbCho ? { chayKiem: chayKiemDung } : {}), ...(dbCho ? { cheDoKiem: "chi-so" as const, giaTriBiMat: giaTriBiMatTuUrl(p.testDbUrl) } : {}), ...(the.kiemPhu ? { phu: { dongDuyet, tenCaCu: tenCaCuPhu, tepTest: tepTestPhu } } : {}) });
+  const kq = await goiDriver(ghepLenh(the, luat, tran), hanGiay0, gioiHanLuot);
   const giayTuong = Math.round(((Date.now() - t0) / 1000) * 10) / 10;
   for (const g of kq.ghiChu) nhatKy(g);
 
   // thu diff: đánh dấu tệp mới là "ý định thêm" để `git diff` thấy; chỉ chạm index của worktree pilot, không commit
-  const tepDoi = thuTepDoi(wt, cach === "ghi-de");
-  if (tepDoi.length > 0) git(["add", "-N", "--", ...tepDoi], wt);
-  const dong = tepDoi.length ? demDong(wt, tepDoi) : { them: 0, xoa: 0 };
-  const diffText = tepDoi.length ? git(["diff", "HEAD", "--", ...tepDoi], wt).out : "";
   fs.mkdirSync(p.ra, { recursive: true });
   const diffPath = path.join(p.ra, `${the.ma}.diff`);
-  fs.writeFileSync(diffPath, diffText, "utf8");
+  // gọi hai lần khi thẻ có LƯỢT SỬA TSC: lần hai thu lại diff + mọi kiểm tra diff trên cây SAU lượt sửa
+  const thu = () => {
+    const tepDoi = thuTepDoi(wt, cach === "ghi-de");
+    // `git add -N` là MỘT lệnh nguyên khối: một đường không còn trong index lẫn trên đĩa (tệp tracked đã bị xoá và việc xoá đã được ghi nhận ở mốc) làm hỏng CẢ lệnh,
+    // tệp mới khác không được i-t-a và vắng khỏi `git diff HEAD`. Chỉ đưa các đường CÒN trên đĩa (tệp xoá đã có sẵn trong `git diff HEAD`); rc trả ra để chỗ gọi báo, không im.
+    const tepCoMat = tepDoi.filter((t) => fs.existsSync(path.join(wt, t)));
+    const addNOk = tepCoMat.length === 0 || git(["add", "-N", "--", ...tepCoMat], wt).ok;
+    const dong = tepDoi.length ? demDong(wt, tepDoi) : { them: 0, xoa: 0 };
+    const diffText = tepDoi.length ? git(["diff", "HEAD", "--", ...tepDoi], wt).out : "";
+    fs.writeFileSync(diffPath, diffText, "utf8");
 
-  const viPham = kiemDiffTheoThe(tepDoi, the.tepDuocPhep);
-  // tệp test do Thợ Cả viết/sửa mà chạm DB ⇒ vi phạm (dieu-phoi KHÔNG được chạy nó).
-  // `--cho-phep-db`: miễn ĐÚNG các tệp test có trong LỆNH KIỂM (chính tệp thẻ cho phép chạy trên _test); tệp test khác chạm DB vẫn vi phạm.
-  const tepTestDuocCho = new Set(dbCho ? tepTestTrongLenh(the.lenhKiem).map(chuanDuong).filter((x): x is string => x !== null) : []);
-  for (const t of tepDoi) {
-    if (!/\.test\.[cm]?[jt]sx?$/.test(t)) continue;
-    try {
-      const dau = quetChamDb(t, fs.readFileSync(path.join(wt, t), "utf8"));
-      if (dau.length > 0 && !tepTestDuocCho.has(t)) viPham.push({ duong: t, loai: "cham-db", chiTiet: dau.join(", ") });
-    } catch {
-      /* tệp bị xoá */
+    const viPham = kiemDiffTheoThe(tepDoi, the.tepDuocPhep);
+    // tệp test do Thợ Cả viết/sửa mà chạm DB ⇒ vi phạm (dieu-phoi KHÔNG được chạy nó).
+    // `--cho-phep-db`: miễn ĐÚNG các tệp test có trong LỆNH KIỂM (chính tệp thẻ cho phép chạy trên _test); tệp test khác chạm DB vẫn vi phạm.
+    const tepTestDuocCho = new Set(dbCho ? tepTestTrongLenh(the.lenhKiem).map(chuanDuong).filter((x): x is string => x !== null) : []);
+    for (const t of tepDoi) {
+      if (!/\.test\.[cm]?[jt]sx?$/.test(t)) continue;
+      try {
+        const dau = quetChamDb(t, fs.readFileSync(path.join(wt, t), "utf8"));
+        if (dau.length > 0 && !tepTestDuocCho.has(t)) viPham.push({ duong: t, loai: "cham-db", chiTiet: dau.join(", ") });
+      } catch {
+        /* tệp bị xoá */
+      }
     }
-  }
-  // L3b: KHÔNG ĐƯỢC KHẲNG ĐỊNH (vi phạm) + nhãn nghi ghim lỗi (chỉ cảnh báo)
-  const ghimNghiNgo: Array<{ duong: string; dong: number; trich: string }> = [];
-  for (const t of tepTestDoi(tepDoi)) {
-    let nguon: string;
-    try {
-      nguon = fs.readFileSync(path.join(wt, t), "utf8");
-    } catch {
-      continue;
+    // L3b: KHÔNG ĐƯỢC KHẲNG ĐỊNH (vi phạm) + nhãn nghi ghim lỗi (chỉ cảnh báo)
+    const ghimNghiNgo: Array<{ duong: string; dong: number; trich: string }> = [];
+    for (const t of tepTestDoi(tepDoi)) {
+      let nguon: string;
+      try {
+        nguon = fs.readFileSync(path.join(wt, t), "utf8");
+      } catch {
+        continue;
+      }
+      for (const h of quetKhangDinhCam(nguon, the.khangDinhCam ?? [])) viPham.push({ duong: t, loai: "khang-dinh-cam", chiTiet: `dòng ${h.dong}: ${h.cam} — ${h.trich}` });
+      for (const g of quetGhimNghiNgo(nguon)) ghimNghiNgo.push({ duong: t, ...g });
     }
-    for (const h of quetKhangDinhCam(nguon, the.khangDinhCam ?? [])) viPham.push({ duong: t, loai: "khang-dinh-cam", chiTiet: `dòng ${h.dong}: ${h.cam} — ${h.trich}` });
-    for (const g of quetGhimNghiNgo(nguon)) ghimNghiNgo.push({ duong: t, ...g });
-  }
-  const crlf = tepCrlf(wt, tepDoi);
+    const crlf = tepCrlf(wt, tepDoi);
+    return { tepDoi, dong, viPham, ghimNghiNgo, crlf, addNOk };
+  };
+  let { tepDoi, dong, viPham, ghimNghiNgo, crlf, addNOk } = thu();
   const luuY: string[] = [...luuY0, ...(kq.luuY ?? [])];
+  const canhBaoAddN = (khi: string) => `thu() ${khi}: \`git add -N\` thất bại — tệp MỚI có thể vắng khỏi diff / \`dong\` / luotSua.tepSua của lần thu này (đọc cây thật, đừng tin diff)`;
+  if (!addNOk) luuY.push(canhBaoAddN("sau lượt đầu"));
   if (p.coAiAgent?.AI_AGENT_CONG_KE_HOACH === "1") {
     luuY.push("cổng duyệt kế hoạch 11.3-C BẬT chỉ trong env tiến trình pilot này (lượt đo thử). kiem-dinh CHƯA rà ĐẠT 11.3-C (dieu-phoi 2026-11-08) ⇒ mặc định của cờ trong ứng dụng KHÔNG đổi.");
   }
@@ -799,10 +853,14 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   if (viPham.length > 0 || crlf.length > 0) ketCuc = "vi-pham";
 
   // ── L3a: bộ chạy TỰ chạy LỆNH KIỂM và ĐỌC kết quả (chỉ khi còn đáng chạy: ứng viên "xong") ──
-  const tepTest = demTepTest(wt, tepDoi);
+  let tepTest = demTepTest(wt, tepDoi);
   let kiem: KetQuaKiem | null = null;
   let tsc: KetQuaTsc | null = null;
   let dotBien: KetQuaDotBien | null = null;
+  // LƯỢT SỬA TSC (chỉ khi thẻ có khoá): kết cục (theo quyetKetCuc) ngay sau L3c TRƯỚC / SAU lượt sửa; luotSua = số đo của lượt sửa
+  let truocSua: KetCucSuaTsc | null = null;
+  let sauSua: KetCucSuaTsc | null = null;
+  let luotSua: LuotSuaTscJson | null = null;
   let phu: PhuJson | null = null;
   let hauQua: KetQuaHauQua | null = null;
   let kiemThat: KetQuaKiemThat | null = null;
@@ -819,6 +877,45 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
       nhatKy("chạy tsc --noEmit -p tsconfig.tests.json (L3c)");
       tsc = await (p.chayTsc ?? chayLenhTsc)(wt, tepDoi, p.hanTscGiay ?? 900);
       qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc });
+      truocSua = sauSua = { ketCuc: qd.ketCuc, lyDo: qd.lyDo };
+      const xin = canSuaTsc(the.suaTsc, tsc);
+      const ns = xin ? nganSachSuaTsc(tran, hanGiay0, kq.token?.soLuotModel ?? null, giayTuong - (kq.duyet?.giayChoDuyet ?? 0)) : null;
+      const tepOk = tepDoi.filter((t) => kiemDiffTheoThe([t], the.tepDuocPhep).length === 0);
+      const nhac = ns ? loiNhacSuaTsc(the.ma, the.tepDuocPhep, tepOk, the.lenhKiem, tsc.loiTrongTep) : null;
+      if (xin && !(ns && nhac)) luuY.push("LƯỢT SỬA TSC: không áp — thẻ cần TRẦN LƯỢT MODEL (không kèm TRẦN TOKEN RA) còn ≥ 2 lượt và ≥ 30 s, và tsc còn lỗi của tệp được phép");
+      if (ns && nhac) {
+        nhatKy(`L3c: tsc đỏ — MỘT lượt sửa kiểu (còn ${ns.gioiHan.soLuotToiDa} lượt model, ${ns.hanGiay} s)`);
+        const caTruoc = tepTest;
+        const nguon = () => caTruoc.map((c) => { try { return fs.readFileSync(path.join(wt, c.duong), "utf8"); } catch { return ""; } }).join("\n");
+        const nguonTruoc = nguon();
+        // mốc index (MỌI tệp đổi, kể cả tệp lượt đầu xoá — thu() không còn ghi nhận xoá vào index) để đếm dòng RIÊNG của lượt sửa
+        const mocIndexOk = tepDoi.length === 0 || git(["add", "--", ...tepDoi], wt).ok;
+        const t2 = Date.now();
+        const kq2 = await goiDriver(nhac, ns.hanGiay, ns.gioiHan);
+        for (const g of kq2.ghiChu) nhatKy(g);
+        ({ tepDoi, dong, viPham, ghimNghiNgo, crlf, addNOk } = thu());
+        if (!addNOk) luuY.push(canhBaoAddN("sau lượt sửa"));
+        tepTest = demTepTest(wt, tepDoi);
+        const giam = [...caTestGiam(caTruoc, tepTest), ...soDemGiam(nguonTruoc, nguon())];
+        const hong = kq2.hetGio || kq2.loi ? `lượt sửa ${kq2.hetGio ? "hết giờ" : `lỗi: ${kq2.loi}`}` : null;
+        const tepSua = mocIndexOk ? demDongTungTep(wt, tepDoi, false) : null;
+        const dongSua = tepSua ? { them: tepSua.reduce((s, t) => s + t.them, 0), xoa: tepSua.reduce((s, t) => s + t.xoa, 0) } : null;
+        const suaNgoaiTest = (tepSua ?? []).filter((t) => !RE_TEP_TEST.test(t.duong));
+        if (suaNgoaiTest.length > 0) luuY.push(`LƯỢT SỬA TSC đổi tệp NGOÀI tệp test: ${suaNgoaiTest.map((t) => `${t.duong} (+${t.them}/−${t.xoa})`).join(", ")} — người duyệt xem diff của lượt sửa; bộ chạy không phán đúng/sai việc đổi này`);
+        if (!mocIndexOk) luuY.push("LƯỢT SỬA TSC: không đặt được mốc index nên `luotSua.dongSua` / `tepSua` là null (không đếm được, KHÔNG phải 0)");
+        luotSua = { soLuotModel: kq2.token?.soLuotModel ?? null, giay: Math.round((Date.now() - t2) / 100) / 10, ...(hong ? { hong } : {}), ...(giam.length > 0 ? { giamCa: giam } : {}), dongSua, tepSua, viPham: viPham.length, crlf: crlf.length, ...(the.kiemPhu ? { soLanNhacPhu: kq2.soLanNhacPhu ?? 0, biNhacPhu: (kq2.soLanNhacPhu ?? 0) > 0 } : {}) };
+        const kiemTruoc = kiem;
+        if (viPham.length > 0 || crlf.length > 0) qd = { ketCuc: "vi-pham", lyDo: `sửa tsc: ${viPham.length} vi phạm diff, ${crlf.length} tệp CRLF sau lượt sửa` };
+        else if (giam.length > 0) qd = { ketCuc: "kiem-do", lyDo: `sửa tsc làm GIẢM ca test: ${giam.join("; ")}` };
+        else if (hong) qd = { ketCuc: "kiem-do", lyDo: hong };
+        else {
+          kiem = await chayKiemDung(the.lenhKiem, wt, p.hanKiemGiay ?? 300);
+          tsc = await (p.chayTsc ?? chayLenhTsc)(wt, tepDoi, p.hanTscGiay ?? 900);
+          qd = quyetKetCuc({ truoc: "xong", dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc });
+        }
+        if (kiem === kiemTruoc) luuY.push("LƯỢT SỬA TSC bị chặn trước khi chạy lại: `kiem` và `tsc` trong JSON là kết quả TRƯỚC lượt sửa (tepDoi, dong, diff, viPham là của SAU lượt sửa)");
+        sauSua = { ketCuc: qd.ketCuc, lyDo: qd.lyDo };
+      }
     }
     // HA-10: lệnh kiểm + tsc xanh vẫn chưa đủ — mọi dòng ĐÃ DUYỆT (trừ GIỮ:) phải có ca [Dk] MỚI, có expect thật, PASSED
     if (qd.ketCuc === "xong" && the.kiemPhu) {
@@ -946,6 +1043,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
       : {}),
     ...(p.boChay ? { boChay: p.boChay } : {}),
     ...(tsc ? { tsc } : {}),
+    ...(the.suaTsc ? { coLuotSua: luotSua !== null, ...(truocSua ? { truocSuaTsc: truocSua, sauSuaTsc: sauSua } : {}), ...(luotSua ? { luotSua } : {}) } : {}),
     ...(dotBien ? { dotBien } : {}),
     ...(ghimNghiNgo.length > 0 ? { ghimNghiNgo } : {}),
     ...(tepTest.length > 0 ? { tepTest } : {}),
