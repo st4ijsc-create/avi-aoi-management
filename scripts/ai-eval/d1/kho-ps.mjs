@@ -191,6 +191,9 @@ if (CA_RIENG === "doi-chung-mac-dinh") {
     // M1: thư mục log hỏng ⇒ 2 TRƯỚC khi dừng chủ cũ (bản cũ: dừng chủ rồi exit 4).
     { ten: "doi-2-log-khong-tao-duoc-chu-cu-song", dung: chuCu([]), kyVong: { ma: 2, pause: "khong", giaSong: 1 },
       chay: (c) => chayPs(DOI_MODEL, ["-Model", MODEL, "-Exe", BIN, "-Cong", String(c), "-TepTamDung", TEP_DUNG, "-ThuMucLog", path.join(TEP_CHAN, "log"), "-ChoGiay", "6", "-Mmproj", "off"], DOI_SONG) },
+    // M1, đúng lỗi kiem-dinh 01:05 đo được (HST 01:08): ĐƯỜNG log CHÍNH LÀ một TỆP ⇒ New-Item -Force không ném ⇒ hậu điều kiện ⇒ 2, chủ cũ còn.
+    { ten: "doi-2-log-la-tep-chu-cu-song", dung: chuCu([]), kyVong: { ma: 2, pause: "khong", giaSong: 1, outCo: "KHONG TAO DUOC THU MUC LOG" },
+      chay: (c) => chayPs(DOI_MODEL, ["-Model", MODEL, "-Exe", BIN, "-Cong", String(c), "-TepTamDung", TEP_DUNG, "-ThuMucLog", TEP_CHAN, "-ChoGiay", "6", "-Mmproj", "off"], DOI_SONG) },
     // M2: start-llama-server -Force, `<RepoRoot>/logs` là TỆP ⇒ 2 TRƯỚC khối -Force (chủ cũ còn sống).
     { ten: "force-2-log-khong-tao-duoc-chu-cu-song", dung: async (c) => { const lg = path.join(D, "repo", "logs"); fs.rmSync(lg, { recursive: true, force: true }); fs.mkdirSync(path.dirname(lg), { recursive: true }); fs.writeFileSync(lg, ""); await chuCu([])(c); },
       chay: (c) => force(c, DOI_SONG), kyVong: { ma: 2, pause: "khong", giaSong: 1 } },
