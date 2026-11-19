@@ -48,22 +48,30 @@ param(
   [string]$Exe = 'D:\SOURCES\16.AI\llama-cuda\llama-server.exe',
   [int]$Cong = 8091,
   [string]$ThuMucLog = 'D:\SOURCES\avi-aoi-management\tmp\audit-ai',
-  [string]$TepTamDung = ""
+  [string]$TepTamDung = "",
+  # Lo D1b M5 (HST 20/11 00:50): chu y dung llama KHONG khoa khi chu cong hien tai CO khoa (mac dinh: tu choi, ma 11).
+  [switch]$KhongKhoa
 )
 
-# MA THOAT (lo D1-script): 0 san sang | 2 cau hinh (model / exe / tep khoa / mmproj) - KIEM TRUOC khi tao khoa va truoc khi dung ai
-#   | 3 khe dang bi khoa boi chu khac | 9 chu cong khong phai DUNG MOT tien trinh $Exe nghe --port $Cong, hoac co tien trinh cung ten
-#   exe khong nghe cong (co the dang nap), hoac dung/doi danh tinh hong - KHONG dung ai | 4 tien trinh moi thoat som / khong khoi duoc
-#   | 5 het gio, con CON SONG: GIU tep tam dung, KHONG dung con (HST q2).
-if (-not (Test-Path -LiteralPath $Model -PathType Leaf)) { Write-Error "KHONG co tep model: $Model"; exit 2 }
-if (-not (Test-Path -LiteralPath $Exe -PathType Leaf)) { Write-Error "KHONG co exe: $Exe"; exit 2 }
+# MA THOAT (lo D1-script): 0 san sang | 2 cau hinh (model / exe / tep khoa / mmproj / -KhongKhoa mau thuan) hoac khong tao duoc thu
+#   muc log - KIEM TRUOC khi dung ai | 3 khe dang bi khoa boi chu khac | 9 chu cong khong phai DUNG MOT tien trinh $Exe nghe --port $Cong,
+#   hoac co tien trinh cung ten exe khong nghe cong (co the dang nap), hoac dung/doi danh tinh hong - KHONG dung ai | 4 tien trinh moi
+#   thoat som / khong khoi duoc | 5 het gio, con CON SONG: GIU tep tam dung, KHONG dung con (HST q2)
+#   | 10 (D1b M3) SAN SANG nhung khoa KHONG chuyen duoc cho -GiuKhoa | 11 (D1b M5) chu cong CO khoa ma lan doi nay se khoi khong khoa /
+#   khac tep khoa - KHONG dung ai.
+# Lo D1b M4: loi in bang [Console]::Error.WriteLine (KHONG Write-Error): nguoi goi bat ErrorAction Stop thi Write-Error thanh loi dung,
+#   `exit N` khong toi, ma thanh 1 (do toy 20/11). Nguoi goi qua -Command van phai them `; exit $LASTEXITCODE`.
+if (-not (Test-Path -LiteralPath $Model -PathType Leaf)) { [Console]::Error.WriteLine("KHONG co tep model: $Model"); exit 2 }
+if (-not (Test-Path -LiteralPath $Exe -PathType Leaf)) { [Console]::Error.WriteLine("KHONG co exe: $Exe"); exit 2 }
 $exeThat = (Resolve-Path -LiteralPath $Exe).ProviderPath
 $tenTienTrinh = [System.IO.Path]::GetFileName($exeThat)
 $log = $ThuMucLog
 # Lo D1-script: khoa llama-server CHI qua DUONG DAN (llama-server tu doc tep) - khong dua gia tri khoa len dong lenh.
 # Bien co gia tri ma tep khong co => thoat 2 TRUOC khi dung ai (khong dung server KHONG khoa khi da khai khoa).
 $tepKhoa = "$env:LLAMA_SERVER_API_KEY_FILE".Trim()
-if ($tepKhoa -and -not (Test-Path -LiteralPath $tepKhoa -PathType Leaf)) { Write-Error "LLAMA_SERVER_API_KEY_FILE khong ton tai: $tepKhoa"; exit 2 }
+if ($tepKhoa -and -not (Test-Path -LiteralPath $tepKhoa -PathType Leaf)) { [Console]::Error.WriteLine("LLAMA_SERVER_API_KEY_FILE khong ton tai: $tepKhoa"); exit 2 }
+# D1b M5 dong 7: -KhongKhoa ma shell CO bien khoa => mau thuan, dung truoc khi ghi tep tam dung.
+if ($KhongKhoa -and $tepKhoa) { [Console]::Error.WriteLine("-KhongKhoa MAU THUAN voi LLAMA_SERVER_API_KEY_FILE dang dat - KHONG lam gi."); exit 2 }
 
 # Dung tham so TRUOC khi dung ai: loi cau hinh (mmproj) => thoat 2 khi server cu van con nguyen.
 $ten = [System.IO.Path]::GetFileNameWithoutExtension($Model)
@@ -75,7 +83,7 @@ $thamSo = @('-m', $Model, '--host', '127.0.0.1', '--port', "$Cong", '-c', "$Ctx"
 if ($NganSachNghi -ge 0) { $thamSo += @('--reasoning-budget', "$NganSachNghi") }
 if ($tepKhoa) { $thamSo += @('--api-key-file', $tepKhoa) }
 . (Join-Path $PSScriptRoot '..\..\ai\tim-mmproj.ps1')
-try { $mm = Resolve-Mmproj -ModelPath $Model -CheDo $Mmproj } catch { Write-Error "MMPROJ: $_"; exit 2 }
+try { $mm = Resolve-Mmproj -ModelPath $Model -CheDo $Mmproj } catch { [Console]::Error.WriteLine("MMPROJ: $_"); exit 2 }
 if ($mm) { $thamSo += @('--mmproj', $mm); "MMPROJ: $mm" }
 $thamSo += $ThemArgs
 
@@ -127,8 +135,13 @@ function Cham-TamDung {
   } catch { }
 }
 # Ban giao /health xanh: -GiuKhoa => ghi khoa cua nguoi nhan (han 2 phut); khong => go nhu cu.
+# D1b M3 (HST 20/11 00:50): doc lai sau khi ghi; khoa khong mang chu nguoi nhan => KHONG in "BAN GIAO", thoat 10 (finally go khoa cua toi).
 function Ban-Giao {
-  if ($GiuKhoa) { Ghi-Khoa $GiuKhoa 2; "BAN GIAO khoa cho: $GiuKhoa (han 2 phut)" } else { Go-TamDung }
+  if (-not $GiuKhoa) { Go-TamDung; return }
+  try { Ghi-Khoa $GiuKhoa 2 } catch { }
+  $kBg = Doc-Khoa
+  if ((-not $kBg) -or ($kBg.chu -ne $GiuKhoa)) { [Console]::Error.WriteLine("SAN SANG nhung KHOA KHONG CHUYEN DUOC cho: $GiuKhoa ($tepTamDung) - giam sat cua app tro lai sau khi go khoa."); exit 10 }
+  "BAN GIAO khoa cho: $GiuKhoa (han 2 phut)"
 }
 # Lo D1-script: danh tinh tien trinh qua CIM; loi CIM => $null (nguoi goi coi la KHONG xac dinh => khong dung).
 function Doc-TienTrinh([int]$id) {
@@ -142,19 +155,23 @@ function Exe-Cua($ci) {
 function Chu-Cong {
   return @(Get-NetTCPConnection -LocalPort $Cong -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique)
 }
+# D1b M5: duong day du de so tep khoa; hong => '' (nguoi goi coi la KHAC => tu choi).
+function Duong-Day([string]$p) { try { return [System.IO.Path]::GetFullPath($p) } catch { return '' } }
 $khoaCu = Doc-Khoa
 if ($khoaCu -and $khoaCu.chu -ne $GiuKhoa) {
-  Write-Error ("KHE DANG BI KHOA boi '" + $khoaCu.chu + "' toi " + $khoaCu.hetHan + " (" + $khoaCu.lyDo + ") - KHONG doi model. Dung -GiuKhoa '<chu>' neu ban la nguoi giu.")
+  [Console]::Error.WriteLine("KHE DANG BI KHOA boi '" + $khoaCu.chu + "' toi " + $khoaCu.hetHan + " (" + $khoaCu.lyDo + ") - KHONG doi model. Dung -GiuKhoa '<chu>' neu ban la nguoi giu.")
   exit 3
 }
 Ghi-Khoa
 # HST 19/11 18:2x: doc lai khoa vua ghi; khong doc duoc / khong phai cua toi => THOAT truoc khi dung hay khoi bat ky ai
 # (ghi hong ma van dung chu cu => khong co tep tam dung => watchdog :3000 co the dung llama thu hai).
 $khoaVuaGhi = Doc-Khoa
-if (-not $khoaVuaGhi -or $khoaVuaGhi.chu -ne $chuCuaToi) { Write-Error "KHONG GHI / DOC LAI DUOC TEP TAM DUNG ($tepTamDung) - KHONG doi model, KHONG dung ai."; exit 2 }
+if (-not $khoaVuaGhi -or $khoaVuaGhi.chu -ne $chuCuaToi) { [Console]::Error.WriteLine("KHONG GHI / DOC LAI DUOC TEP TAM DUNG ($tepTamDung) - KHONG doi model, KHONG dung ai."); exit 2 }
 $giuTamDung = $false
 
 try {
+# D1b M1 (HST 20/11): thu muc log tao TRUOC khoi dung chu cu, trong try de finally go tep tam dung cua toi. Hong => thoat 2, chu cu nguyen.
+try { if (-not (Test-Path -LiteralPath $log -PathType Container)) { New-Item -ItemType Directory -Path $log -Force -ErrorAction Stop | Out-Null } } catch { [Console]::Error.WriteLine("KHONG TAO DUOC THU MUC LOG ($log) - KHONG dung ai, KHONG khoi."); exit 2 }
 # 1. Lo D1-script: KHONG con giet vo dieu kien theo ten (ban cu: Get-Process llama-server | Stop-Process).
 #    Chi dung khi chu cong $Cong la DUNG MOT tien trinh co ExecutablePath = $Exe, CommandLine co --port $Cong, va KHONG co tien
 #    trinh cung ten exe nao khac (dang nap, chua bind). CreationDate doc lai ngay truoc khi dung phai trung luc kiem.
@@ -162,32 +179,43 @@ try {
 $chu = @(Chu-Cong)
 try {
   $cungTen = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.Name -ieq $tenTienTrinh } | Select-Object -ExpandProperty ProcessId)
-} catch { Write-Error "Khong doc duoc danh sach tien trinh (CIM) - KHONG dung ai."; exit 9 }
-if ($chu.Count -gt 1) { Write-Error ("Cong $Cong co " + $chu.Count + " chu (PID " + ($chu -join ', ') + ") - KHONG dung ai."); exit 9 }
+} catch { [Console]::Error.WriteLine("Khong doc duoc danh sach tien trinh (CIM) - KHONG dung ai."); exit 9 }
+if ($chu.Count -gt 1) { [Console]::Error.WriteLine("Cong $Cong co " + $chu.Count + " chu (PID " + ($chu -join ', ') + ") - KHONG dung ai."); exit 9 }
 $khac = @($cungTen | Where-Object { $chu -notcontains $_ })
-if ($khac.Count -gt 0) { Write-Error ("Co $tenTienTrinh KHONG nghe cong $Cong (PID " + ($khac -join ', ') + ", co the dang nap) - KHONG dung ai, KHONG khoi them."); exit 9 }
+if ($khac.Count -gt 0) { [Console]::Error.WriteLine("Co $tenTienTrinh KHONG nghe cong $Cong (PID " + ($khac -join ', ') + ", co the dang nap) - KHONG dung ai, KHONG khoi them."); exit 9 }
 if ($chu.Count -eq 1) {
   $id = [int]$chu[0]
   $ci = Doc-TienTrinh $id
   $exeCu = Exe-Cua $ci
   if ((-not $ci) -or (-not $exeCu) -or ($exeCu -ine $exeThat) -or ("$($ci.CommandLine)" -notmatch "--port\s+$Cong(\s|$)")) {
-    Write-Error "Chu cong $Cong PID $id KHONG du dieu kien (doc duoc tien trinh + exe = $exeThat + --port $Cong) - KHONG dung."
+    [Console]::Error.WriteLine("Chu cong $Cong PID $id KHONG du dieu kien (doc duoc tien trinh + exe = $exeThat + --port $Cong) - KHONG dung.")
     exit 9
   }
   $taoLuc = $ci.CreationDate
   $lai = Doc-TienTrinh $id
-  if ((-not $lai) -or ($lai.CreationDate -ne $taoLuc)) { Write-Error "PID $id doi danh tinh / khong con giua luc kiem va luc dung - KHONG dung."; exit 9 }
+  if ((-not $lai) -or ($lai.CreationDate -ne $taoLuc)) { [Console]::Error.WriteLine("PID $id doi danh tinh / khong con giua luc kiem va luc dung - KHONG dung."); exit 9 }
+  # D1b M5 (HST 20/11 00:50, bang 8 dong): tin hieu khoa = CommandLine cua chu cong (khong doc .env). KHONG in nguyen CommandLine.
+  $clCu = "$($ci.CommandLine)"
+  $tepCu = if ($clCu -match '--api-key-file\s+(?:"([^"]+)"|(\S+))') { if ($Matches[1]) { $Matches[1] } else { $Matches[2] } } else { '' }
+  $coKhoaCu = [bool]$tepCu -or ($clCu -match '--api-key(\s|=)')
+  if ($coKhoaCu -and (-not $tepKhoa) -and (-not $KhongKhoa)) { [Console]::Error.WriteLine("CHU CONG $Cong PID $id DANG CO KHOA; shell thieu LLAMA_SERVER_API_KEY_FILE - KHONG dung, KHONG khoi llama khong khoa. Dat bien, hoac -KhongKhoa neu chu y."); exit 11 }
+  if ($coKhoaCu -and $tepKhoa -and ((-not $tepCu) -or ((Duong-Day $tepCu) -ine (Duong-Day $tepKhoa)) -or (-not (Duong-Day $tepCu)))) {
+    $moTaCu = if ($tepCu) { "--api-key-file $tepCu" } else { '--api-key <che>' }
+    [Console]::Error.WriteLine("TEP KHOA KHAC chu cong $Cong PID $id ($moTaCu / bien $tepKhoa) - KHONG dung, KHONG khoi."); exit 11
+  }
+  if ($coKhoaCu -and $KhongKhoa) { "KHONG KHOA THEO -KhongKhoa: llama moi KHONG co khoa (chu cu PID $id co khoa)." }
   "DUNG PID $id (CreationDate $($taoLuc.ToString('o')), exe + --port $Cong da kiem)"
-  try { Stop-Process -Id $id -Force -ErrorAction Stop } catch { Write-Error "Stop-Process PID $id hong - KHONG bao thanh cong."; exit 9 }
+  try { Stop-Process -Id $id -Force -ErrorAction Stop } catch { [Console]::Error.WriteLine("Stop-Process PID $id hong - KHONG bao thanh cong."); exit 9 }
   # CHO cong nha that (<= 60 s).
   $het = (Get-Date).AddSeconds(60)
   while (((@(Chu-Cong)).Count -gt 0) -and ((Get-Date) -lt $het)) { Cham-TamDung; Start-Sleep -Milliseconds 500 }
-  if ((@(Chu-Cong)).Count -gt 0) { Write-Error "Cong $Cong chua nha sau 60 s - KHONG khoi them."; exit 9 }
+  if ((@(Chu-Cong)).Count -gt 0) { [Console]::Error.WriteLine("Cong $Cong chua nha sau 60 s - KHONG khoi them."); exit 9 }
 }
+# D1b M5 dong 2: khong co chu cong => khong co tin hieu khoa cu (gioi han neu ten).
+if (($chu.Count -eq 0) -and (-not $tepKhoa)) { "KHONG CO CHU CONG $Cong - khong biet khoa cu; khoi KHONG khoa (shell khong co LLAMA_SERVER_API_KEY_FILE)." }
 
 # Dot 9 (2026-10-24, dieu-phoi duyet P2): log CO DAU GIO, KHONG ghi de (su co 22:20: log luc 27B chet bi lan khoi dong sau xoa mat).
-# Giu 10 ban gan nhat CUA MODEL NAY; chi don trong dung thu muc log nay, dung mau ten ls-<model>-<dau gio>.
-if (-not (Test-Path -LiteralPath $log)) { New-Item -ItemType Directory -Path $log -Force | Out-Null }
+# Giu 10 ban gan nhat CUA MODEL NAY; chi don trong dung thu muc log nay, dung mau ten ls-<model>-<dau gio>. Thu muc da tao o D1b M1.
 $dauGio = Get-Date -Format 'yyyyMMdd-HHmmss'
 $logOut = "$log\ls-$ten-$dauGio.log"; $logErr = "$log\ls-$ten-$dauGio.err.log"
 Get-ChildItem -LiteralPath $log -Filter "ls-$ten-*.err.log" -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -Skip 9 | ForEach-Object {
@@ -198,7 +226,7 @@ Get-ChildItem -LiteralPath $log -Filter "ls-$ten-*.err.log" -ErrorAction Silentl
 try {
   $con = Start-Process -FilePath $exeThat -ArgumentList $thamSo -WindowStyle Hidden `
     -RedirectStandardOutput $logOut -RedirectStandardError $logErr -PassThru -ErrorAction Stop
-} catch { Write-Error "KHONG khoi duoc $exeThat - xem $logErr"; exit 4 }
+} catch { [Console]::Error.WriteLine("KHONG khoi duoc $exeThat - xem $logErr"); exit 4 }
 $ciCon = Doc-TienTrinh $con.Id
 $taoCon = if ($ciCon) { $ciCon.CreationDate.ToString('o') } else { '(khong doc duoc)' }
 "PID CON: $($con.Id) (CreationDate $taoCon)"
@@ -206,7 +234,7 @@ $taoCon = if ($ciCon) { $ciCon.CreationDate.ToString('o') } else { '(khong doc d
 # 2. CHO SAN SANG THAT. Nap mot model day mat hang phut; "da goi lenh" khong phai "da san sang".
 $het = (Get-Date).AddSeconds($ChoGiay)
 while ((Get-Date) -lt $het) {
-  if ($con.HasExited) { Write-Error "THOAT SOM: $ten (PID $($con.Id), ma $($con.ExitCode)) - xem $logErr"; exit 4 }
+  if ($con.HasExited) { [Console]::Error.WriteLine("THOAT SOM: $ten (PID $($con.Id), ma $($con.ExitCode)) - xem $logErr"); exit 4 }
   try {
     $r = Invoke-WebRequest -Uri "http://127.0.0.1:$Cong/health" -TimeoutSec 3 -UseBasicParsing
     if ($r.StatusCode -eq 200) {
@@ -219,7 +247,7 @@ while ((Get-Date) -lt $het) {
   Cham-TamDung
   Start-Sleep -Seconds 3
 }
-if ($con.HasExited) { Write-Error "THOAT SOM: $ten (PID $($con.Id), ma $($con.ExitCode)) - xem $logErr"; exit 4 }
+if ($con.HasExited) { [Console]::Error.WriteLine("THOAT SOM: $ten (PID $($con.Id), ma $($con.ExitCode)) - xem $logErr"); exit 4 }
 # HET GIO, con CON SONG (HST q2): GIU tep tam dung, KHONG dung con. Gia han khoa lan cuoi roi in cac moc het hieu luc.
 Cham-TamDung
 $giuTamDung = $true
@@ -229,7 +257,7 @@ $hetGiamSat = try { (Get-Item -LiteralPath $tepTamDung -ErrorAction Stop).LastWr
 "CON CON SONG: PID $($con.Id), CreationDate $taoCon, err.log $logErr"
 "TEP TAM DUNG: $tepTamDung | khoa khe het han $hetKhoa (KheNang :3000 co the doi khe sau moc nay) | giam sat bo qua tep sau $hetGiamSat (mac dinh LLAMA_WATCHDOG_PAUSE_MAX_MS 30 phut)"
 "VIEC NGUOI VAN HANH: truoc $hetKhoa phai (a) dung con PID $($con.Id) SAU KHI kiem PID + CreationDate + CommandLine, roi xoa tep tam dung; hoac (b) chap nhan bo giam sat dung ban thu hai."
-Write-Error "HET GIO: $ten khong san sang sau $ChoGiay giay. KHONG dung con, GIU tep tam dung."
+[Console]::Error.WriteLine("HET GIO: $ten khong san sang sau $ChoGiay giay. KHONG dung con, GIU tep tam dung.")
 exit 5
 }
 finally {

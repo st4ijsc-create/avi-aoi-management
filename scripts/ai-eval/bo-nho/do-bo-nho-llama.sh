@@ -28,7 +28,7 @@ chay() { # $1 nhãn, $2 đường, $3 model, $4 ThemArgs
     log "$nhan: start-llama-server rc=$?"
     logErr=$(tr -d '\r' < tmp/bn-doi-$nhan.log | sed -n 's/.*log *: *\(.*\)\.out\.log.*/\1.err.log/p' | tail -1)
   else
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$m' -GiuKhoa '$CHU' $them" > tmp/bn-doi-$nhan.log 2>&1
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$m' -GiuKhoa '$CHU' $them; exit \$LASTEXITCODE" > tmp/bn-doi-$nhan.log 2>&1
     log "$nhan: doi-model rc=$? · $(tr -d '\r' < tmp/bn-doi-$nhan.log | grep -E 'SAN SANG|BAN GIAO|HET GIO|KHOA' | tr '\n' ' ')"
     logErr=$(tr -d '\r' < tmp/bn-doi-$nhan.log | sed -n 's/^LOG: //p' | tail -1)
   fi
@@ -50,7 +50,7 @@ chay() { # $1 nhãn, $2 đường, $3 model, $4 ThemArgs
     console.log('mau '+L.length+' · private dau '+p[0]+' GB · max '+Math.max(...p)+' GB · cuoi '+p.at(-1)+' GB · max-dau '+(Math.max(...p)-p[0]).toFixed(2)+' GB · commit trong OS min '+Math.min(...os)+' GB · prompt_save '+L.at(-1)[5])")"
 }
 for c in "$@"; do IFS=: read -r nhan duong model them <<< "$c"; chay "$nhan" "$duong" "$model" "$them"; done
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '${MODEL[35b]}' -GiuKhoa '$CHU'" > tmp/bn-doi-ve-nha.log 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '${MODEL[35b]}' -GiuKhoa '$CHU'; exit \$LASTEXITCODE" > tmp/bn-doi-ve-nha.log 2>&1
 log "về 35B: doi-model rc=$? · $(tr -d '\r' < tmp/bn-doi-ve-nha.log | grep -E 'SAN SANG|HET GIO|LOG' | tr '\n' ' ')"
 goKhoa
 log "HẾT :8091 = $(node scripts/ai-eval/lib/goi-llama.mjs /v1/models | head -c 90)"

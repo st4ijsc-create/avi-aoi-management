@@ -9,7 +9,7 @@ O=tmp/bo-nho/ctxcp; [ "${CHI_35B:-}" = "1" ] || rm -rf $O; mkdir -p $O
 node scripts/ai-eval/lib/khoaKhe.mjs giu "$CHU" "do ctx-checkpoints" --co-dung tmp/dung-khoa-cp-$$ > $O/khoa.log 2>&1 & KHOA=$!
 sleep 2
 chay() { # $1 nhãn, $2 N, $3 số vòng
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$M27' -GiuKhoa '$CHU' -ThemArgs @('--ctx-checkpoints','$2')" > $O/doi-$1.log 2>&1
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$M27' -GiuKhoa '$CHU' -ThemArgs @('--ctx-checkpoints','$2'); exit \$LASTEXITCODE" > $O/doi-$1.log 2>&1
   log "$1: doi-model rc=$? · $(tr -d '\r' < $O/doi-$1.log | grep -E 'SAN SANG|HET GIO|MMPROJ' | tr '\n' ' ')"
   local logErr; logErr=$(tr -d '\r' < $O/doi-$1.log | sed -n 's/^LOG: //p' | tail -1)
   log "$1: dòng lệnh: $(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\").CommandLine" | tr -d '\r' | grep -o -- '--ctx-checkpoints [0-9]*\|--mmproj [^ ]*\|--cache-ram [0-9]*' | tr '\n' ' ')"
@@ -44,7 +44,7 @@ if [ -n "${N_35B:-}" ]; then
   chay X35-32 32 1
   chay X35-$N_35B $N_35B 1
 fi
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$M35' -GiuKhoa '$CHU'" > $O/ve-nha.log 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$M35' -GiuKhoa '$CHU'; exit \$LASTEXITCODE" > $O/ve-nha.log 2>&1
 log "về 35B: rc=$? $(tr -d '\r' < $O/ve-nha.log | grep -E 'SAN SANG|HET GIO|MMPROJ' | tr '\n' ' ')"
 node scripts/ai-eval/lib/khoaKhe.mjs dung tmp/dung-khoa-cp-$$; wait $KHOA 2>/dev/null
 echo EXIT=0

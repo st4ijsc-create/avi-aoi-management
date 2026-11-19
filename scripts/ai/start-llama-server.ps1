@@ -290,6 +290,9 @@ if ((-not $Force) -and (Test-ServerAlive)) {
     Write-Step "ĐÃ CHẠY — $healthUrl trả 200. Không spawn thêm (idempotent). Thoát 0."
     exit 0
 }
+# Lô D1b M2 (HST 20/11): thư mục logs tạo TRƯỚC khối -Force — hỏng ⇒ thoát 2 khi chủ cổng còn nguyên (bản cũ: ném sau khi đã dừng chủ).
+$logDir = Join-Path $RepoRoot 'logs'
+try { if (-not (Test-Path -LiteralPath $logDir -PathType Container)) { New-Item -ItemType Directory -Path $logDir -ErrorAction Stop | Out-Null } } catch { Write-Bad "KHÔNG TẠO ĐƯỢC THƯ MỤC logs ($logDir) — KHÔNG dừng ai, KHÔNG khởi."; exit 2 }
 if ($Force) {
     # Đợt 6 — `-Force` (API đổi model) dừng llama-server giữ cổng CẢ KHI nó chưa trả /health (đang nạp dở /
     # treo — đúng ca QUAY VỀ sau một model mới nạp hỏng). Kiểm HẾT chủ cổng TRƯỚC khi dừng ai.
@@ -334,9 +337,7 @@ else {
     }
 }
 
-# ── Spawn ────────────────────────────────────────────────────────────────────────────────────────
-$logDir = Join-Path $RepoRoot 'logs'
-if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
+# ── Spawn ──────────────────────────────────────────────────────────────────────────────────────── (thư mục logs: đã tạo ở D1b M2)
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $outLog = Join-Path $logDir "llama-server-$stamp.out.log"
 $errLog = Join-Path $logDir "llama-server-$stamp.err.log"
