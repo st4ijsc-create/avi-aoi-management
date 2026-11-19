@@ -32,7 +32,7 @@ doMot() { # $1 nhãn, $2 basename model, $3 auto|off, $4 lệnh pha Y, $5 lệnh
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai/start-llama-server.ps1 -EnvFile "$TW\\do-cong-a-$3-$$.env" -Force -Model "$2" > $O/sp-$1.log 2>&1
   log "$1: start-llama-server rc=$?"
   local logErr; logErr=$(tr -d '\r' < $O/sp-$1.log | sed -n 's/.*log *: *\(.*\)\.out\.log.*/\1.err.log/p' | tail -1)
-  log "$1: /props modalities = $(curl -s -m 5 http://127.0.0.1:8091/props | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).modalities))}catch{console.log("?")}})') · $(cmdl | grep -o -- '--mmproj [^ ]*' || echo 'không --mmproj') · $(cmdl | grep -o -- '--cache-ram [0-9]*')"
+  log "$1: /props modalities = $(node scripts/ai-eval/lib/goi-llama.mjs /props | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).modalities))}catch{console.log("?")}})') · $(cmdl | grep -o -- '--mmproj [^ ]*' || echo 'không --mmproj') · $(cmdl | grep -o -- '--cache-ram [0-9]*')"
   rm -f $O/dung-$1
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-eval/bo-nho/lay-mau-bo-nho.ps1 -Csv "$O/bn-$1.csv" -Dung "$O/dung-$1" -Log "$logErr" -Giay 10 > /dev/null 2>&1 & local MAU=$!
   ( while [ ! -f $O/dung-$1 ]; do echo "$(date +%T),$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | tr -d '\r ')"; sleep 2; done ) > $O/vram-$1.csv & local VR=$!

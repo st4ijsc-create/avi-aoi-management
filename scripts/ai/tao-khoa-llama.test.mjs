@@ -1,6 +1,7 @@
 // Chạy: node --test scripts/ai/tao-khoa-llama.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -111,7 +112,7 @@ test("khoá 32 byte base64url, mỗi lần khác", () => {
   assert.notEqual(taoKhoa(), taoKhoa());
 });
 
-test("chạy thật: ghi tệp, chỉ in 4 ký tự cuối, lần hai không ghi đè", () => {
+test("chạy thật: ghi tệp, chỉ in vân tay sha256[0:16] (lô D1-script), lần hai không ghi đè", () => {
   const d = moi();
   const p = path.join(d, "k", "llama.key");
   try {
@@ -120,7 +121,7 @@ test("chạy thật: ghi tệp, chỉ in 4 ký tự cuối, lần hai không ghi
     const khoa = fs.readFileSync(p, "utf8").trim();
     assert.match(khoa, /^[A-Za-z0-9_-]{43}$/);
     assert.ok(!r.stdout.includes(khoa), "không được in cả khoá");
-    assert.ok(r.stdout.includes(khoa.slice(-4)));
+    assert.ok(r.stdout.includes(crypto.createHash("sha256").update(khoa).digest("hex").slice(0, 16)), "thiếu vân tay sha256[0:16]");
     if (process.platform === "win32") {
       // Quyền thật trên tệp: không mục kế thừa "(I)", chỉ tài khoản đang chạy.
       const acl = spawnSync("icacls", [p], { encoding: "utf8", windowsHide: true }).stdout;

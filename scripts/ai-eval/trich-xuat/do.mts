@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { tieuDeLlamaCho } from "../lib/tieuDeLlama.mjs";
 
 type Truong = { ten: string; kieu: "chuoi" | "so" | "boolean" | "danh-sach"; batBuoc?: boolean; moTa: string };
 type Bai = { id: string; vanBan: string; truong: Truong[]; dapAn: Record<string, unknown> };
@@ -108,7 +109,7 @@ if (DICH === "4b") {
     const t0 = Date.now();
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...tieuDeLlamaCho(url) },
       body: JSON.stringify({
         messages: [{ role: "system", content: HE_THONG }, { role: "user", content: nhacBai(b) }],
         temperature: 0, max_tokens: NGHI ? 12000 : 2000,
@@ -139,7 +140,7 @@ let modelThuc = DICH === "4b" ? path.basename(process.env.GGUF_FAST_MODEL || "Qw
 if (DICH !== "4b") {
   try {
     const u = new URL(arg("--url", "http://127.0.0.1:8091/v1/chat/completions"));
-    const m = (await (await fetch(`${u.origin}/v1/models`)).json()) as { data?: { id?: string }[] };
+    const m = (await (await fetch(`${u.origin}/v1/models`, { headers: tieuDeLlamaCho(`${u.origin}/v1/models`) })).json()) as { data?: { id?: string }[] };
     modelThuc = String(m.data?.[0]?.id ?? "?").split(/[\\/]/).pop() ?? "?";
   } catch { /* để "?" */ }
 }

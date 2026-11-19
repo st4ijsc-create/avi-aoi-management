@@ -2,6 +2,7 @@
 //  A = prompt đúng như node (logprobs top 10)  ·  B = prompt KHÁC (nhãn đánh số, thứ tự đảo) ⇒ so khớp A/B.
 // Chạy: node scripts/ai-eval/flow-tin-cay/do-tin-cay-35b.mjs  (KHOÁ KHE GPU trước — do-model)
 import { readFileSync, writeFileSync } from "node:fs";
+import { tieuDeLlamaCho } from "../lib/tieuDeLlama.mjs";
 const URL_ = process.env.LLAMA_SERVER_URL ?? "http://127.0.0.1:8091";
 const vang = JSON.parse(readFileSync(process.argv[2] ?? "server/services/flow/eval/phieuBaoTri.vang.json", "utf8"));
 const mau = JSON.parse(readFileSync("server/services/flow/mau/phieu-bao-tri-phan-loai.json", "utf8"));
@@ -19,7 +20,7 @@ async function goi(nguoiDung) {
   const t0 = Date.now();
   const r = await fetch(`${URL_}/v1/chat/completions`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...tieuDeLlamaCho(`${URL_}/v1/chat/completions`) },
     body: JSON.stringify({
       messages: [{ role: "system", content: HT }, { role: "user", content: nguoiDung }],
       max_tokens: 32, temperature: 0, logprobs: true, top_logprobs: 10,
