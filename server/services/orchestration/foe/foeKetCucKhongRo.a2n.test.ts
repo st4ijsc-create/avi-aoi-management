@@ -237,6 +237,7 @@ import { FOE_STOP_NOT_SENT, MA_CHUA_GHI, loiChuaRaStop, loiGiuChuaRa, maTuChoiCu
   canhBaoTuBaoCaoEdge,
   ganBaoCaoKhongRoEdge,
   KHONG_CO_BU_TRU,
+  chuLuotStopHongBuTru,
   tachBaoCaoKhongRoEdge,
   nhanBuocSauChot,
   type BangChungBuoc,
@@ -2678,7 +2679,9 @@ vi.mock("./foeStepClass", async (importOriginal) => {
   return {
     ...o,
     laStopTheoBuoc: async (...a: Parameters<typeof o.laStopTheoBuoc>) => {
-      const g = globalThis as { __x26ls?: string | null; __x28treo?: string | null; __x28stack?: string[] };
+      const g = globalThis as { __x26ls?: string | null; __x28treo?: string | null; __x28stack?: string[]; __x23ls?: string | null };
+      // X-27b (Z1b) — throws for ONE step id only when called from congBuTru (foeEngine, the G39 site): the STOP pass's own reads stay real (a synchronous frame, as __x28treo)
+      if (g.__x23ls === a[0].id && /congBuTru/.test(String(new Error().stack))) throw new Error("laStopTheoBuoc down (X-23 Z1b)");
       if (g.__x26ls === a[0].id) {
         const loi = new Error("laStopTheoBuoc down (X-26 K8)");
         (g.__x28stack ??= []).push(String(loi.stack));
@@ -2729,9 +2732,9 @@ describe("X-26 a STOP pass that throws names the forward STOP never handed over"
         expect(luotHong()).toHaveLength(2); // the Continue's walk: its own event
         expect(new Set(luotHong().map((a) => a.dedupKey)).size).toBe(2);
         expect(sent("stop")).toEqual([]); // no new send path
-        // (a) NOT decided (HST 19/11): the run still ends failed — pinned as today's end, not as a safety expectation
-        expect(c.status).toBe("failed");
-        expect(runRow(r.runId).status).toBe("failed");
+        // X-27 (1) / X-27b (chủ dự án 19/11 "1.chặn"): the Continue's first STOP pass threw ⇒ nothing of the tree, no compensation sent, the run held
+        expect(c.status).toBe("held");
+        expect(runRow(r.runId).status).toBe("held");
       } finally {
         datX26(null);
         err.mockRestore();
@@ -3192,11 +3195,12 @@ describe("X-29 the walk-end naming of X-26 and the door of a latched run (F11): 
       await doi(async () => expect((await step(r.runId, "xs"))?.status).toBe("failed")); // positive anchor of walk 1 // handed over and refused: prior.attempted at the next walk (priorStepsOf: failed)
       expect(sent("reset")).toEqual([]);
       await tiep(r.runId).catch(() => undefined);
-      // positive anchor: the Continue walked (its approved compensation went) and its walk ended
+      // positive anchor (X-27b): the Continue's walk ended held; its words: the state C of xs (name, REJECTED) first, then X-27 (1)'s sentence (foeEngine duongKetThuc)
       await doi(() => {
-        expect(sent("reset"), "the Continue walked (its approved compensation went)").toEqual(["reset"]);
-        expect(["failed", "held", "completed", "aborted"]).toContain(String(runRow(r.runId).status));
+        expect(String(runRow(r.runId).status)).toBe("held");
+        expect(String(runRow(r.runId).error ?? "")).toMatch(/STOP "xs" did NOT go out[\s\S]*REJECTED[\s\S]*sent NONE of the approved compensations/);
       });
+      expect(sent("reset")).toEqual([]);
       expect(luotHong().filter((a) => String(a.dedupKey).split(":")[2] === "xs")).toEqual([]);
     } finally {
       g.__x26 = null;
@@ -3307,7 +3311,7 @@ describe("X-23 a STOP skipped by its precondition is told as one (G39, G40)", ()
   });
 
   it("Z1b (G39, an unreadable classification) laStopTheoBuoc throws for the compensation at the Continue: read as a STOP (catch ⇒ true), the G39 words, one URGENT", async () => {
-    const g = globalThis as { __x26ls?: string | null };
+    const g = globalThis as { __x23ls?: string | null };
     let n = 0;
     ghimMock.mockImplementation(async (_d, i) => ({ pinnedStop: i.commandType === "stop" && ++n === 1, loiDocGhim: null }));
     const cs = { id: "cs", type: "command", machineId: 1, command: "stop" } as WorkflowStep;
@@ -3316,16 +3320,19 @@ describe("X-23 a STOP skipped by its precondition is told as one (G39, G40)", ()
       expect(res.status).toBe("held");
       alerts.length = 0;
       otDispatchMock.mockClear();
-      g.__x26ls = "cs"; // from the Continue on: the classifier of cs throws (X-26 K8's lever)
+      g.__x23ls = "cs"; // from the Continue on, at congBuTru only: the classifier of cs throws (X-27b: the STOP pass does not)
       await tiepX23(runId);
       await vi.waitFor(() => expect(alertsOf("approvedNotSent")).toHaveLength(1));
+      // the shape: the Continue's STOP pass did NOT throw (no X-26 words), and cs went the compensation's way to its precondition
+      expect(alerts.filter((x) => String(x.title).includes("the STOP pass of this run failed"))).toEqual([]);
+      expect(await step(runId, "cs")).toMatchObject({ status: "skipped" });
       const a = alertsOf("approvedNotSent")[0]!;
       expect(String(a.title)).toContain("STOP-typed compensation \"cs\" NOT sent: skipped by its precondition");
       expect(String(a.message)).toContain("is a STOP-typed command and was NOT sent: its precondition skipped it, and it could not be verified as a pinned STOP. No path of this run sends it. Check the machine on site and use its direct STOP / E-STOP.");
       expect(String(a.dedupKey).startsWith(`${CANH_BAO_KHONG_RO_KIND.approvedNotSent}:${runId}:main:cs:`)).toBe(true);
       expect(sent("stop")).toEqual([]);
     } finally {
-      g.__x26ls = null;
+      g.__x23ls = null;
     }
   });
 
@@ -3487,5 +3494,106 @@ describe("X-27 M1 + M2 the planning's words name no compensation; a STOP skipped
       g.__x26 = null;
       err.mockRestore();
     }
+  });
+});
+
+
+describe("X-27 (1) a Continue of a latched run whose first STOP pass throws sends no compensation: held, the approval spent (chủ dự án 19/11 \"1.chặn\")", () => {
+  const g = globalThis as { __x26?: unknown };
+  const LUOT_HONG = "the STOP pass of this run failed";
+  const stopX = (id: string): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop" }) as WorkflowStep;
+  const doi = (f: () => void | Promise<void>) => vi.waitFor(f, { timeout: 3_000 });
+  const tiep = (runId: number) => resumeRun(runId, { approved: true, note: "checked on site" }, ADMIN, {}, { scope: null });
+  const luotHongVe = (id: string) => alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.forwardNotSent && String(a.title).includes(LUOT_HONG) && String(a.dedupKey ?? "").split(":")[2] === id);
+  const batKhiStart = () =>
+    otDispatchMock.mockImplementation(async (i) => {
+      if (i.commandType === "start") {
+        g.__x26 = "nem";
+        return TIMEOUT;
+      }
+      return ACKED;
+    });
+
+  it("P1-DO (R1K-nem) every STOP pass throws: the Continue sends no reset, the run held in its words, xs named, the approval spent; a second Continue sends none either", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      batKhiStart();
+      const r = await chay([seq("box", [main(resetComp("undo")), stopX("xs")])]);
+      expect(r.res.status).toBe("held");
+      await tiep(r.runId).catch(() => undefined);
+      await doi(() => {
+        expect(String(runRow(r.runId).status)).toBe("held");
+        expect(String(runRow(r.runId).error ?? "")).toContain("sent NONE of the approved compensations");
+      });
+      expect(String(runRow(r.runId).error ?? "")).toBe(chuLuotStopHongBuTru(r.runId)); // no state C half: the sentence alone
+      expect(sent("reset")).toEqual([]);
+      expect(sent("stop")).toEqual([]);
+      expect(luotHongVe("xs").length).toBeGreaterThanOrEqual(2); // walk 1 and the Continue's walk, each its own event (X-26)
+      expect(runRow(r.runId).contextJson[KHONG_RO_DUYET_CTX_KEY]).toBeUndefined(); // the approval is spent with its walk (foeEngine finishWalk)
+      await tiep(r.runId).catch(() => undefined);
+      await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+      expect(sent("reset")).toEqual([]);
+    } finally {
+      g.__x26 = null;
+      err.mockRestore();
+    }
+  });
+
+  it("P1-NGUOC the pass threw once in walk 1, the Continue's pass is healthy: the reset goes as before (X-26 K6's shape)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      batKhiStart();
+      const r = await chay([seq("box", [main(resetComp("undo")), stopX("xs")])]).finally(() => (g.__x26 = null));
+      expect(r.res.status).toBe("held");
+      await tiep(r.runId);
+      await doi(() => expect(sent("reset")).toEqual(["reset"]));
+      expect(String(runRow(r.runId).error ?? "")).not.toContain("sent NONE of the approved compensations");
+    } finally {
+      g.__x26 = null;
+      err.mockRestore();
+    }
+  });
+
+  it("P1-CHAM (a named limit) the Continue's first pass answers after D, then throws: C-7 as before, the reset goes (X27DUONG, measured 18:11)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const m = (await import("./foeRunStore")) as unknown as { centralRunStore: Record<string, (...a: unknown[]) => Promise<unknown>> };
+    const st = m.centralRunStore;
+    const goc = st.verifyStops!;
+    let cheDo: "lanh" | "nem" | "cham" = "lanh";
+    try {
+      otDispatchMock.mockImplementation(async (i) => {
+        if (i.commandType === "start") {
+          cheDo = "nem";
+          return TIMEOUT;
+        }
+        return ACKED;
+      });
+      st.verifyStops = async (...a: unknown[]) => {
+        if (cheDo === "nem") throw new Error("verifyStops down (X-27 P1-CHAM)");
+        if (cheDo === "cham") {
+          await new Promise((x) => setTimeout(x, 2_000)); // > D (1 s) by 1 s: the wait of C-7 is over before it throws (a slow timer can only make the case red, never green)
+          throw new Error("verifyStops slow then down (X-27 P1-CHAM)");
+        }
+        return goc(...a);
+      };
+      const r = await chay([seq("box", [main(resetComp("undo")), stopX("xs")])]);
+      expect(r.res.status).toBe("held");
+      cheDo = "cham";
+      await tiep(r.runId).catch(() => undefined);
+      await vi.waitFor(() => expect(sent("reset")).toEqual(["reset"]), { timeout: 5_000 });
+    } finally {
+      st.verifyStops = goc;
+      err.mockRestore();
+    }
+  }, 15_000);
+
+  it("P1-CHU the words: the approval spent, no STOP compensation named, nothing promised; ≤ 800 with run 2 147 483 647", () => {
+    const t = chuLuotStopHongBuTru(2_147_483_647);
+    expect(t.length).toBeLessThanOrEqual(800);
+    expect(t).toContain("sent NONE of the approved compensations");
+    expect(t).toContain("That approval is spent: a later Continue needs a new approval");
+    expect(t).toContain("no STOP compensation is named");
+    expect(t).not.toContain("is still running");
+    expect(t).not.toContain("Abort can send");
   });
 });

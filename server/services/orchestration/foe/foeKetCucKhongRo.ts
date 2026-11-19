@@ -582,6 +582,11 @@ export function chuKeHoachLoi(runId: number): string {
   return `The STOP sweep of run ${runId} read its definition but failed while planning which STOP steps to send, so this press sent none of them. Where the system could work them out, STOP-typed steps never handed over are named in alerts of their own; that list may be incomplete or empty, and no STOP compensation is named. Stop the machine at the machine now with its direct STOP / E-STOP, and check it on site.`;
 }
 
+/** X-27 (1) (chủ dự án 19/11 "1.chặn") — a compensation-only Continue of a latched run whose first STOP pass threw: no compensation sent, the run held, the approval spent; what to do */
+export function chuLuotStopHongBuTru(runId: number): string {
+  return `A Continue of run ${runId} sent NONE of the approved compensations: its STOP pass failed, so the system cannot say the STOP steps of this run are out. That approval is spent: a later Continue needs a new approval, and sends the compensations only if its STOP pass does not fail. Where the system could work them out, STOP-typed steps never handed over are named in alerts of their own; that list may be incomplete or empty, and no STOP compensation is named. Stop the machine at the machine now with its direct STOP / E-STOP and check it on site; Abort sends STOP steps only.`;
+}
+
 export function chuQuetChuaXong(runId: number): string {
   return `The STOP sweep of run ${runId} has not finished and is still running: STOP steps of this run may have gone out or may still go, which ones is not known, and nothing confirms them yet. Check the machine on site and use its direct STOP / E-STOP if needed. Abort can be pressed again.`;
 }
