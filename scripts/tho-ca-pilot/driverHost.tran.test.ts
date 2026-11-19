@@ -51,7 +51,7 @@ describe("phuThuocHostThat.taoLuot — trần lượt (HA-3)", () => {
     await dep.taoLuot({ cauHoi: "q", projectId: "p", gioiHan: { soLuotToiDa: 20 } });
     dep.nghe("run-ql1", () => undefined);
     dep.huy("run-ql1");
-    await dep.trangThaiLuot("run-ql1");
+    await dep.trangThaiLuot!("run-ql1");
     expect(h.dsQl[1].nghe).toHaveBeenCalledTimes(1);
     expect(h.dsQl[1].huy).toHaveBeenCalledTimes(1);
     expect(h.dsQl[1].chiTiet).toHaveBeenCalledTimes(1);

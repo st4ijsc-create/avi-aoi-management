@@ -141,6 +141,26 @@ export async function tinhPhuCuoi(a: {
   return { ...ket, xacNhanPassed, soLanNhac: a.soLanNhac, ...(loi ? { loi } : {}) };
 }
 
+/** LƯỢT SỬA TSC: kết cục (theo quyetKetCuc) ở một mốc — ghi vào truocSuaTsc / sauSuaTsc */
+export interface KetCucSuaTsc {
+  ketCuc: string;
+  lyDo: string | null;
+}
+
+/** LƯỢT SỬA TSC: số đo riêng của lượt sửa (ghi vào luotSua) */
+export interface LuotSuaTscJson {
+  soLuotModel: number | null;
+  giay: number;
+  hong?: string;
+  giamCa?: string[];
+  dongSua: { them: number; xoa: number };
+  viPham: number;
+  crlf: number;
+  /** chỉ khi thẻ có KIỂM PHỦ */
+  soLanNhacPhu?: number;
+  biNhacPhu?: boolean;
+}
+
 export interface KetQuaViec {
   ma: string | null;
   ok: boolean;
@@ -188,6 +208,11 @@ export interface KetQuaViec {
   luatCach?: LuatCach;
   /** chỉ khi `ghep`: AGENTS.md của BASE (B1) model đọc — sha256/byte của đúng nội dung ở base (null nếu base không có), và worktree sau lượt còn KHỚP base hay không */
   b1?: { nguon: string; sha256: string | null; byte: number; saoLuotKhop: boolean };
+  /** LƯỢT SỬA TSC (chỉ khi thẻ có khoá): có chạy lượt sửa hay không */
+  coLuotSua?: boolean;
+  truocSuaTsc?: KetCucSuaTsc;
+  sauSuaTsc?: KetCucSuaTsc | null;
+  luotSua?: LuotSuaTscJson;
   /** HA-10: độ phủ danh sách ĐÃ DUYỆT (chỉ khi thẻ bật KIỂM PHỦ) */
   phu?: PhuJson;
   /** HA-6b: kiểm hậu quả (đếm hàng CSDL trước/sau; chỉ khi thẻ có BẢNG ĐẾM) */
@@ -811,9 +836,9 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   let tsc: KetQuaTsc | null = null;
   let dotBien: KetQuaDotBien | null = null;
   // LƯỢT SỬA TSC (chỉ khi thẻ có khoá): kết cục (theo quyetKetCuc) ngay sau L3c TRƯỚC / SAU lượt sửa; luotSua = số đo của lượt sửa
-  let truocSua: { ketCuc: string; lyDo: string | null } | null = null;
-  let sauSua = truocSua;
-  let luotSua: Record<string, unknown> | null = null;
+  let truocSua: KetCucSuaTsc | null = null;
+  let sauSua: KetCucSuaTsc | null = null;
+  let luotSua: LuotSuaTscJson | null = null;
   let phu: PhuJson | null = null;
   let hauQua: KetQuaHauQua | null = null;
   let kiemThat: KetQuaKiemThat | null = null;

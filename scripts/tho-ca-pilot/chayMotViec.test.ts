@@ -129,7 +129,7 @@ describe("ghepLenh & driverKho", () => {
     expect(l).toContain("LỆNH KIỂM: npx vitest run");
   });
   it("driverKho bỏ qua đường thoát ra ngoài worktree", async () => {
-    const r = await driverKho({ the: {} as never, wt, lenh: "", hanGiay: 1, ghiLuotDir: null, khoGhi: { "../thoat.txt": "x" } });
+    const r = await driverKho({ the: {} as never, wt, lenh: "", hanGiay: 1, ra: wt, ghiLuotDir: null, khoGhi: { "../thoat.txt": "x" } });
     expect(fs.existsSync(path.join(goc, "thoat.txt"))).toBe(false);
     expect(r.ghiChu.join(" ")).toMatch(/bỏ qua/);
   });

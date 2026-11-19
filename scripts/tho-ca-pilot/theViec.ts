@@ -53,7 +53,7 @@ export interface TheViec {
   gioiHan: { giay: number; vong: number };
 }
 
-const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
+const KHOA: Record<string, keyof TheViec | "tepDuocPhep" | "tranLuotModel" | "tranPhut" | "tranTokenRa"> = {
   "MA": "ma",
   "MUC TIEU": "mucTieu",
   "TEP DUOC PHEP SUA/TAO": "tepDuocPhep",

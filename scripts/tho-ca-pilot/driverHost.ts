@@ -563,7 +563,7 @@ export function bamKhoaKyTam(env: Record<string, string | undefined>): { ok: boo
 }
 
 /** Khoá đếm lỗi công cụ: `ma` của kết quả tool (vd CHECKPOINT_LOI); nếu tóm tắt nêu thêm một mã IN HOA (vd KHONG_CO_KHOA) thì `ma:MÃ`. Thuần. */
-export function keLoiCongCu(e: { ma?: unknown; tomTat?: unknown }): string {
+export function keLoiCongCu(e: { ma?: unknown; tomTat?: unknown; [khoa: string]: unknown }): string {
   const ma = typeof e.ma === "string" && e.ma !== "" ? e.ma : "KHONG_RO";
   const tt = typeof e.tomTat === "string" ? e.tomTat : "";
   const m = /\b([A-Z][A-Z0-9]*_[A-Z0-9_]{2,})\b/.exec(tt);
