@@ -265,6 +265,7 @@ try {
     for (const n of conNode.splice(0)) n.kill();
     await ngu(300);
     fs.rmSync(TEP_DUNG, { force: true });
+    fs.rmSync(path.join(D, "repo", "logs"), { recursive: true, force: true }); // D1c (HST 04:38): gỡ tận gốc — ca M2 để `D/repo/logs` là TỆP; mọi ca sau bắt đầu sạch
     if (that !== that0) { console.error("⛔ llama-server THẬT / chủ 8091 đổi — DỪNG lượt"); break; }
   }
 } finally {
