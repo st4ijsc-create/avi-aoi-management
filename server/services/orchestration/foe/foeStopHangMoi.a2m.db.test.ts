@@ -316,7 +316,8 @@ describe.skipIf(!DB_URL)("A2(m) — an FOE pinned STOP gets a FRESH authorisatio
       expect(lan2.every((r) => r.status === "executed" && r.id.startsWith(`${orchestrationActionId(khoa)}#stop-a1-`))).toBe(true);
       expect(lan2.find((r) => r.id === lan1[0]!.id)?.executedAt?.getTime()).toBe(executedAt1); // the spent row is not touched again
       expect(await hangUyQuyen(tx, orchestrationActionId(khoa)).then((x) => x.filter((r) => r.id === orchestrationActionId(khoa)))).toHaveLength(0); // never the deterministic row
-      const ketQua = (await soCuaKhoa(tx, `${khoa}#stop-`)).filter((r) => r.status === "acked");
+      // X-25 (1) — D2 of T9 (51cde227a, ke-hoach.md:623-627): a STOP handed again after its own unknown is read back, so its row says acked_verified (measured 19/11 08:00), never loosened to "any acked"
+      const ketQua = (await soCuaKhoa(tx, `${khoa}#stop-`)).filter((r) => r.status === "acked_verified");
       expect(ketQua).toHaveLength(1);
       expect(ketQua[0]!.actionId).toBe(lan2.find((r) => r.id !== lan1[0]!.id)!.id); // written under the NEW row
       expect(await tx.select().from(commandLog).where(and(like(commandLog.actionId, `foe-run${runId}-main-a%`), eq(commandLog.status, "rejected")))).toHaveLength(0); // no NOT_CONFIRMED

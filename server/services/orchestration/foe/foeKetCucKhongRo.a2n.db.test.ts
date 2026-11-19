@@ -28,6 +28,8 @@ const H = vi.hoisted(() => ({
   drivers: new Map<number, unknown>(),
   fingerprints: new Map<number, string>(),
   alerts: [] as Array<Record<string, unknown>>,
+  /** X-25 (2) — run_end URGENTs raised while the frame calls the walker dead (H.chet): kept apart, never stored */
+  alertsChet: [] as Array<Record<string, unknown>>,
   /** A2(n) extension — the process "dies" the moment the latch reached the DB (chotRoiChet) */
   chetSauChot: false,
   chet: false,
@@ -76,7 +78,17 @@ vi.mock("../runEventStore", () => ({ appendRunEvent: async () => undefined }));
 vi.mock("../../robot/criticalStopAlert", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../../robot/criticalStopAlert")>();
   // A2(n) T7 — the end gate reads baoBen: a mock that never answers holds every latched run (stored, as the real alert answers)
-  return { ...orig, raiseCriticalStopAlert: async (a: Record<string, unknown>) => void (H.alerts.push(a), (a.baoBen as ((b: boolean) => void) | undefined)?.(true)) };
+  // X-25 (2) (HST 15:02) — a run_end raised while the frame calls the walker dead is kept apart and never stored: a walker that really died runs no end gate (foeEngine.ts finishWalk /
+  // ketThucNgoaiLe → foeRunStore.ts quyetDinhKetThucAnh). Named limit: it would swallow the run_end of the URGENT obligation sweep too (foeRunStore.ts quetMotRun) if T12 wires it into this
+  // window — nothing calls it yet (foeRunStore.ts:856); split it again then. Any OTHER kind raised while dead goes the plain way, so a case sees it
+  return {
+    ...orig,
+    raiseCriticalStopAlert: async (a: Record<string, unknown>) => {
+      if (H.chet && a.kind === "foe_outcome_unknown_run_end") return void H.alertsChet.push(a);
+      H.alerts.push(a);
+      (a.baoBen as ((b: boolean) => void) | undefined)?.(true);
+    },
+  };
 });
 
 // A2(n) extension — the crash boundary: the real central store up to the latch's write; after it the store answers as a dead process (nothing lands, nobody is told, no STOP).
@@ -298,6 +310,7 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     H.bay = 0;
     H.bayStack.length = 0;
     H.alerts.length = 0;
+    H.alertsChet.length = 0;
     H.chet = false;
     H.chetSauChot = false;
     H.boc = null;
@@ -784,6 +797,8 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     await trongGiaoDich(async (tx) => {
       const pdu0 = soPduGhi();
       const { runId } = await chotRoiChet(tx, ({ m2 }) => [buocChinh(m2)]);
+      // X-25 (2) — by the rule: no compensation, so the dead walker reached finishWalk → the end gate (foeEngine.ts:3701) → ONE run_end of `…:main:-:chot` (foeRunStore.ts:697)
+      expect(H.alertsChet.map((a) => a.kind)).toEqual(["foe_outcome_unknown_run_end"]);
       await khoiDong(runId);
       await vanKhongRo(tx, runId);
       expect(soPduGhi() - pdu0).toBe(0);
@@ -905,6 +920,8 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
         expect(a.abortStops?.sent ?? []).toContain("st");
         expect(canhBao("stopNotSent", runId).filter((x) => String(x.dedupKey).split(":")[2] === "st")).toEqual([]);
         expect(String((await buoc(tx, runId, "st"))?.error ?? "")).not.toMatch(/^FOE_STOP_NOT_SENT/);
+        // X-25 (4) — recordAbortStop writes abort:<id> bounded, not awaited (the Abort answers before it lands, by design: 50-control.md:565): wait for it, 2 s at most (a DB case: the real clock); never ⇒ red
+        await vi.waitFor(async () => expect((await buoc(tx, runId, "abort:st"))?.status).toBe("completed"), { timeout: 2_000, interval: 25 });
         expect((await buoc(tx, runId, "abort:st"))?.status).toBe("completed");
       });
       expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
@@ -922,6 +939,31 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
           return (bang: Parameters<Tx["insert"]>[0]) => {
             if (bat() && String((bang as unknown as Record<symbol, unknown>)[Symbol.for("drizzle:Name")]) === "ai_pending_actions") throw new Error("authorisation row not written (test)");
             return (v as (x: unknown) => unknown).call(t, bang);
+          };
+        },
+      });
+  };
+  /** X-25 (3) — as tuChoiThat, but only an authorisation row NOT of `main` (a command step's row id is `foe-run<run>-<step>-a…`, foeStopHangMoi.a2m.db.test.ts:315; a pinned STOP's is
+   * stopActionIdMoi, foeRunStore.ts:1491): `main` is authorised, the STOP is refused. Thrown in `.values`, before any SQL: the transaction stays usable */
+  const tuChoiTruMain = (runId: number, bat: () => boolean) => {
+    H.boc = (tx) =>
+      new Proxy(tx as object, {
+        get(t, k, r) {
+          const v = Reflect.get(t, k, r) as unknown;
+          if (k !== "insert") return typeof v === "function" ? (v as (...x: unknown[]) => unknown).bind(t) : v;
+          return (bang: Parameters<Tx["insert"]>[0]) => {
+            const b = (v as (x: unknown) => object).call(t, bang);
+            if (String((bang as unknown as Record<symbol, unknown>)[Symbol.for("drizzle:Name")]) !== "ai_pending_actions") return b;
+            return new Proxy(b, {
+              get(bt, bk, br) {
+                const bv = Reflect.get(bt, bk, br) as unknown;
+                if (bk !== "values") return typeof bv === "function" ? (bv as (...x: unknown[]) => unknown).bind(bt) : bv;
+                return (row: unknown) => {
+                  if (bat() && [row].flat().some((x) => !String((x as { id?: unknown } | null)?.id ?? "").startsWith(`foe-run${runId}-main-`))) throw new Error("authorisation row not written (test)");
+                  return (bv as (x: unknown) => unknown).call(bt, row);
+                };
+              },
+            });
           };
         },
       });
@@ -977,7 +1019,7 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       const d = await dungThietBi(tx);
       const runId = await dungRun([buocChinh(d.m2), buTruStop(d.m1, "st")]);
       let tuChoi = true;
-      tuChoiThat(() => tuChoi);
+      tuChoiTruMain(runId, () => tuChoi); // X-25 (3) — main authorised, st refused: the walker reaches st and stands in its back-off
       const di = khoiDong(runId);
       await vi.waitFor(async () => expect((await buoc(tx, runId, "st"))?.status).toBe("running"), { timeout: 10_000 });
       const pdu0 = soPduGhi();

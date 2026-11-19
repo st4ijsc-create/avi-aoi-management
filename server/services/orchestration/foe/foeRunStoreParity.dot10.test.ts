@@ -4736,9 +4736,13 @@ describe("R1b-2b-2a A2(n) fix round 3 — the edge: S-1, C-B", () => {
     const e = await denBuoc(def("n3-w3", [gate(), par("p", [move("r1"), move("r2")], { compensation: robotStop("bs") })]));
     trangThai(e, { r1: { state: "doneFailed", error: "EDGE_OUTCOME_UNKNOWN: x", khongRo: true } });
     e.offlineSteps = new Set(["r2"]);
+    e.events = [];
     const s = await edgeSegment(e, 2);
     expect(s.out).toMatchObject({ outcome: "failed" }); // X-24: r2 meets the door (foeEngine.ts:1075-1076, 1577) and is never dispatched, so never held
     expect(h.sent.map((x) => x.stepId)).toEqual(["bs"]);
+    // X-25 (5) — r2, cut at the door, is named at the walk's end (foeEngine.ts:1728-1735), an anomaly event on the edge (edgeRunStore.ts:617-627)
+    const baoR2 = e.events.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION").map((x) => (typeof x.detail === "string" ? JSON.parse(x.detail) : x.detail) as { loai?: string; stepId?: string });
+    expect(baoR2.filter((x) => x.loai === "forwardNotSent" && x.stepId === "r2")).toHaveLength(1);
   });
 
   it("S-1 edge: a re-walk reads the latch from the resume state: a KNOWN failure of the segment is held, its compensation not sent", async () => {
@@ -4966,6 +4970,9 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
       expect(s.out).toMatchObject({ outcome: "failed" });
       expect(e.authorizeCalls.filter((a) => a.stepId === "r3")).toHaveLength(0); // X-24: the door stands before any authorisation (foeEngine.ts:1075-1076, 1577)
       expect((e.events ?? []).filter((v) => v.kind === "anomaly" && v.code === "notSentRunLatched")).toHaveLength(1);
+      // X-25 (5) — r3, cut at the door, is named at the walk's end (foeEngine.ts:1728-1735), an anomaly event on the edge (edgeRunStore.ts:617-627)
+      const baoR3 = (e.events ?? []).filter((v) => v.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION").map((v) => (typeof v.detail === "string" ? JSON.parse(v.detail) : v.detail) as { loai?: string; stepId?: string });
+      expect(baoR3.filter((x) => x.loai === "forwardNotSent" && x.stepId === "r3")).toHaveLength(1);
       expect(e.unused).toEqual([]); // X-24: no authorisation was asked, so none is reported unused
       expect(e.records.filter((r) => r.kind === "step" && r.stepId === "r3" && r.status === "failed").map((r) => (r as { jti?: unknown }).jti)).toEqual([null]); // a quoted jti is evidence of use
       expect((fake.store.get("edge_step_authorizations") ?? []).find((a) => a.stepId === "r3")).toBeUndefined(); // X-24: no authorisation row to supersede

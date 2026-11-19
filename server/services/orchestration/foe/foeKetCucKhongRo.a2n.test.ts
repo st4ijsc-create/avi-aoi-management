@@ -1822,6 +1822,8 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
       expect((await step(runId, "r3"))!.error).toMatch(khongGui);
       await vi.waitFor(() => expect(auditBuoc()).toHaveLength(1));
       expect((auditBuoc()[0]!.details as { metadata: Record<string, unknown> }).metadata).toMatchObject({ stepId: "r3", attempt: 0 }); // X-24: the door audits attempt 0 (foeEngine.ts:1576)
+      // X-25 (5) — the door's cut is named at the walk's end, one URGENT per step dropped (foeEngine.ts:1728-1735 baoBuocTienBiBo)
+      await vi.waitFor(() => expect(alertsOf("forwardNotSent").filter((x) => String(x.dedupKey).split(":")[2] === "r3")).toHaveLength(1));
     }
   });
   it("★ (1) a parallel with failFast false whose ONLY failure is the refusal does not swallow it: the run ends failed, never 'completed'", async () => {
