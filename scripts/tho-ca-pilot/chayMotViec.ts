@@ -849,7 +849,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
         tepTest = demTepTest(wt, tepDoi);
         const giam = [...caTestGiam(caTruoc, tepTest), ...soDemGiam(nguonTruoc, nguon())];
         const hong = kq2.hetGio || kq2.loi ? `lượt sửa ${kq2.hetGio ? "hết giờ" : `lỗi: ${kq2.loi}`}` : null;
-        luotSua = { soLuotModel: kq2.token?.soLuotModel ?? null, giay: Math.round((Date.now() - t2) / 100) / 10, ...(hong ? { hong } : {}), ...(giam.length > 0 ? { giamCa: giam } : {}), dongSua: demDong(wt, caTruoc.map((c) => c.duong), false), viPham: viPham.length, crlf: crlf.length };
+        luotSua = { soLuotModel: kq2.token?.soLuotModel ?? null, giay: Math.round((Date.now() - t2) / 100) / 10, ...(hong ? { hong } : {}), ...(giam.length > 0 ? { giamCa: giam } : {}), dongSua: demDong(wt, caTruoc.map((c) => c.duong), false), viPham: viPham.length, crlf: crlf.length, ...(the.kiemPhu ? { soLanNhacPhu: kq2.soLanNhacPhu ?? 0, biNhacPhu: (kq2.soLanNhacPhu ?? 0) > 0 } : {}) };
         const kiemTruoc = kiem;
         if (viPham.length > 0 || crlf.length > 0) qd = { ketCuc: "vi-pham", lyDo: `sửa tsc: ${viPham.length} vi phạm diff, ${crlf.length} tệp CRLF sau lượt sửa` };
         else if (giam.length > 0) qd = { ketCuc: "kiem-do", lyDo: `sửa tsc làm GIẢM ca test: ${giam.join("; ")}` };

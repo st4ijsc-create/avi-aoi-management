@@ -406,9 +406,9 @@ describe("chayMotViec — lượt sửa tsc: thời gian chờ NGƯỜI duyệt 
   });
 });
 
-describe("chayMotViec — lượt sửa tsc + KIỂM PHỦ: ghim lựa chọn CHƯA được HST nhận (tho-ca-agent, khi gộp main vào nhánh sửa tsc)", () => {
-  // Lựa chọn khi giải xung đột: lượt sửa gọi driver bằng CÙNG `goiDriver` nên mang tuỳ chọn `phu` như lượt đầu; `phu.soLanNhac` chỉ lấy số nhắc của lượt đầu.
-  // Hai ca dưới ghim ĐÚNG hành vi hiện có; nếu HST chọn khác (lượt sửa không mang `phu`, hoặc cộng số nhắc) thì sửa mã và đổi hai ca này.
+describe("chayMotViec — lượt sửa tsc + KIỂM PHỦ: lượt sửa mang `phu`, số nhắc ghi riêng (HST duyệt 19/11 13:14)", () => {
+  // HST 19/11 13:14: lượt sửa gọi driver bằng CÙNG `goiDriver` nên mang tuỳ chọn `phu` như lượt đầu; `phu.soLanNhac` giữ nghĩa "lượt 1";
+  // số nhắc của lượt sửa ghi riêng ở `luotSua.soLanNhacPhu`, cờ `luotSua.biNhacPhu` (lượt sửa có bị nhắc về phủ hay không).
   const BAI_PHU = `import { it, expect } from "vitest";\nconst f = (x: number) => x;\nit("[D1] một", () => { expect(f(1)).toBe(1); });\nit("[D2] hai", () => { expect(f(2)).toBe(2); });\n`;
   const BAI_PHU_SUA = BAI_PHU.replace("(x: number) => x", "(x: number): number => x");
   const VAN_PHU = `MÃ: TC-90\nQUY TRÌNH: Làm ngay.\nĐÃ DUYỆT:\n1. Ca một.\n2. Ca hai.\nKIỂM PHỦ: CÓ\nMỤC TIÊU: thử phủ ở lượt sửa\nTỆP ĐƯỢC PHÉP SỬA/TẠO: ${TEP}\nLỆNH KIỂM: npx vitest run ${TEP}\nGIỚI HẠN: 15 phút, 8 vòng${CO}`;
@@ -431,7 +431,7 @@ describe("chayMotViec — lượt sửa tsc + KIỂM PHỦ: ghim lựa chọn CH
     return { lenh, ...kiemXanh };
   };
 
-  it("lượt sửa CÓ mang `phu`, giống lượt đầu (lựa chọn CHƯA được HST nhận): hai lời gọi driver, cả hai có phu = {2 dòng ĐÃ DUYỆT k=1,2 không GIỮ, tenCaCu rỗng, tepTest=[TEP]}", async () => {
+  it("lượt sửa CÓ mang `phu`, giống lượt đầu: hai lời gọi driver, cả hai có phu = {2 dòng ĐÃ DUYỆT k=1,2 không GIỮ, tenCaCu rỗng, tepTest=[TEP]}", async () => {
     const { drv, phuCuaLoiGoi } = lamDriverPhu([3, 5]);
     const r = await chay(VAN_PHU, drv, kiemPhuGia, lamTsc(DO, XANH).f);
     expect(phuCuaLoiGoi).toHaveLength(2);
@@ -440,10 +440,25 @@ describe("chayMotViec — lượt sửa tsc + KIỂM PHỦ: ghim lựa chọn CH
     expect(r).toMatchObject({ ok: true, ketCuc: "xong", coLuotSua: true });
   });
 
-  it("`phu.soLanNhac` = số nhắc của LƯỢT ĐẦU (3); số nhắc của lượt sửa (5) không được cộng (lựa chọn CHƯA được HST nhận)", async () => {
+  it("`phu.soLanNhac` = số nhắc của LƯỢT ĐẦU (3); số nhắc của lượt sửa (5) không được cộng vào đó mà ghi riêng ở luotSua.soLanNhacPhu", async () => {
     const { drv } = lamDriverPhu([3, 5]);
     const r = await chay(VAN_PHU, drv, kiemPhuGia, lamTsc(DO, XANH).f);
     expect(r.phu).toMatchObject({ dongThieu: [], dongDaPhu: [1, 2], xacNhanPassed: true });
+    expect(r.phu!.soLanNhac).toBe(3);
+    expect((r as { luotSua?: unknown }).luotSua).toMatchObject({ soLanNhacPhu: 5, biNhacPhu: true });
+  });
+
+  it("lượt sửa bị nhắc 1 lần ⇒ luotSua.soLanNhacPhu = 1, biNhacPhu = true; phu.soLanNhac vẫn là số của lượt đầu (3)", async () => {
+    const { drv } = lamDriverPhu([3, 1]);
+    const r = await chay(VAN_PHU, drv, kiemPhuGia, lamTsc(DO, XANH).f);
+    expect((r as { luotSua?: unknown }).luotSua).toMatchObject({ soLanNhacPhu: 1, biNhacPhu: true });
+    expect(r.phu!.soLanNhac).toBe(3);
+  });
+
+  it("lượt sửa KHÔNG bị nhắc (0) ⇒ biNhacPhu = false, soLanNhacPhu = 0 (dongSua của lượt đó là sửa kiểu thuần)", async () => {
+    const { drv } = lamDriverPhu([3, 0]);
+    const r = await chay(VAN_PHU, drv, kiemPhuGia, lamTsc(DO, XANH).f);
+    expect((r as { luotSua?: unknown }).luotSua).toMatchObject({ soLanNhacPhu: 0, biNhacPhu: false });
     expect(r.phu!.soLanNhac).toBe(3);
   });
 });
