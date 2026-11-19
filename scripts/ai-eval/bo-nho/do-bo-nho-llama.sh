@@ -53,5 +53,5 @@ for c in "$@"; do IFS=: read -r nhan duong model them <<< "$c"; chay "$nhan" "$d
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '${MODEL[35b]}' -GiuKhoa '$CHU'" > tmp/bn-doi-ve-nha.log 2>&1
 log "về 35B: doi-model rc=$? · $(tr -d '\r' < tmp/bn-doi-ve-nha.log | grep -E 'SAN SANG|HET GIO|LOG' | tr '\n' ' ')"
 goKhoa
-log "HẾT :8091 = $(curl -s -m 5 http://127.0.0.1:8091/v1/models | head -c 90)"
+log "HẾT :8091 = $(node scripts/ai-eval/lib/goi-llama.mjs /v1/models | head -c 90)"
 echo EXIT=0

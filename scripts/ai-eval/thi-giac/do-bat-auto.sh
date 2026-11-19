@@ -18,7 +18,7 @@ doMot() { # $1 nhãn, $2 basename model
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai/start-llama-server.ps1 -EnvFile "$ENVT" -Force -Model "$2" > $O/sp-$1.log 2>&1
   log "$1: start-llama-server rc=$? · $(tr -d '\r' < $O/sp-$1.log | grep -aE 'mmproj' | tr '\n' ' ')"
   local logErr; logErr=$(tr -d '\r' < $O/sp-$1.log | sed -n 's/.*log *: *\(.*\)\.out\.log.*/\1.err.log/p' | tail -1)
-  log "$1: /props modalities = $(curl -s -m 5 http://127.0.0.1:8091/props | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).modalities))}catch{console.log("?")}})')"
+  log "$1: /props modalities = $(node scripts/ai-eval/lib/goi-llama.mjs /props | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).modalities))}catch{console.log("?")}})')"
   log "$1: dòng lệnh mmproj: $(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\").CommandLine" | tr -d '\r' | grep -o -- '--mmproj [^ ]*') · cache-ram: $(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\").CommandLine" | tr -d '\r' | grep -o -- '--cache-ram [0-9]*')"
   rm -f $O/dung-$1
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-eval/bo-nho/lay-mau-bo-nho.ps1 -Csv "$O/bn-$1.csv" -Dung "$O/dung-$1" -Log "$logErr" -Giay 10 > /dev/null 2>&1 & local MAU=$!

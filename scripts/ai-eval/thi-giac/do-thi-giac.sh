@@ -46,5 +46,5 @@ vramDung B
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-eval/thi-giac/model-tham-chieu.ps1 -Lam tat
 doi ve-nha "$M35" ""
 node scripts/ai-eval/lib/khoaKhe.mjs dung tmp/dung-khoa-tg-$$; wait $KHOA 2>/dev/null
-log "HẾT :8091 = $(curl -s -m 5 http://127.0.0.1:8091/v1/models | head -c 90)"
+log "HẾT :8091 = $(node scripts/ai-eval/lib/goi-llama.mjs /v1/models | head -c 90)"
 echo EXIT=0

@@ -11,6 +11,7 @@
  * cheDoNghi (pipeline).
  */
 import { Agent, fetch as fetchUndici } from "undici";
+import { tieuDeLlamaCho } from "../../lib/tieuDeLlama.mjs";
 
 /**
  * ★ Đợt 9 (2026-10-22, A/B /v1 lần 7: "TypeError: fetch failed" ở lượt > 300 s) — `fetch` của Node có `headersTimeout`
@@ -46,7 +47,7 @@ export function taoGoiModel(o) {
     const t0 = Date.now();
     const res = await fetch(rawUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...tieuDeLlamaCho(rawUrl) },
       body: JSON.stringify({
         ...(o.model ? { model: o.model } : {}),
         messages,
@@ -66,7 +67,7 @@ export function taoGoiModel(o) {
     const t0 = Date.now();
     const res = await fetch(`${goc}/v1/completions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...tieuDeLlamaCho(`${goc}/v1/completions`) },
       body: JSON.stringify({ ...(o.model ? { model: o.model } : {}), prompt, stop, ...sampling(), max_tokens: o.maxTokens, stream: false }),
     });
     if (!res.ok) return { text: "", err: `HTTP ${res.status} ${(await res.text()).slice(0, 200)}`, totalMs: Date.now() - t0, cut: false };
@@ -167,7 +168,7 @@ export function taoGoiModel(o) {
   async function kiemSong(luc, { pipeline = false, thoat = true } = {}) {
     const thu = async (url, ten) => {
       try {
-        const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        const r = await fetch(url, { headers: tieuDeLlamaCho(url), signal: AbortSignal.timeout(5000) });
         if (r.status >= 500 || (url.endsWith("/health") && r.status !== 200)) throw new Error(`HTTP ${r.status}`);
         return true;
       } catch (e) {
@@ -186,7 +187,7 @@ export function taoGoiModel(o) {
   async function modelDangChay() {
     try {
       const u = new URL(rawUrl);
-      const j = await (await fetch(`${u.origin}/v1/models`, { signal: AbortSignal.timeout(5000) })).json();
+      const j = await (await fetch(`${u.origin}/v1/models`, { headers: tieuDeLlamaCho(`${u.origin}/v1/models`), signal: AbortSignal.timeout(5000) })).json();
       const id = String(j?.data?.[0]?.id ?? "");
       return id ? id.split(/[\\/]/).pop() : null;
     } catch {

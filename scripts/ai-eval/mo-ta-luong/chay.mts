@@ -15,6 +15,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { tieuDeLlamaCho } from "../lib/tieuDeLlama.mjs";
 import { chamBo, NGUONG_HOP_LE, type BaoCaoCham, type MoTa } from "./cham";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -36,7 +37,7 @@ if (OPENAI) {
   datHamGoiAi(async ({ heThong, nguoiDung, maxTokens }) => {
     const r = await fetch(`${OPENAI.replace(/\/$/, "")}/v1/chat/completions`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...tieuDeLlamaCho(`${OPENAI.replace(/\/$/, "")}/v1/chat/completions`) },
       body: JSON.stringify({ model: MODEL, temperature: 0.2, max_tokens: maxTokens, messages: [{ role: "system", content: heThong }, { role: "user", content: nguoiDung }], chat_template_kwargs: { enable_thinking: false } }),
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 300)}`);

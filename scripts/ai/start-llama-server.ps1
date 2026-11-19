@@ -25,9 +25,10 @@
     Đường dẫn .env (mặc định: .env ở gốc repo).
 
 .PARAMETER Force
-    Giết tiến trình llama-server đang giữ cổng (kể cả khi chưa trả /health), CHỜ cổng nhả, rồi khởi động
-    lại. MẶC ĐỊNH KHÔNG — script bình thường không bao giờ giết tiến trình đang chạy. Đường dùng: API đổi
-    model (server/services/ai/doiModelLlamaServer.ts). Chủ cổng không phải llama-server ⇒ thoát 3.
+    Dừng chủ cổng (kể cả khi chưa trả /health), CHỜ cổng nhả, rồi khởi động lại. MẶC ĐỊNH KHÔNG — script bình
+    thường không bao giờ dừng tiến trình đang chạy. Đường dùng: API đổi model (server/services/ai/doiModelLlamaServer.ts).
+    Lô D1-script: chỉ dừng chủ cổng có ExecutablePath = LLAMA_SERVER_BIN, CommandLine có `--port <cổng>`, CreationDate không
+    đổi giữa lúc kiểm và lúc dừng. Thiếu một (kể cả không đọc được tiến trình, Stop-Process hỏng) ⇒ thoát 3, không dừng ai.
 
 .PARAMETER Model
     Model nạp LẦN NÀY — basename `.gguf` CÓ trong GGUF_MODELS_DIR (cùng danh sách trắng dạng tên với tệp lựa
@@ -262,7 +263,13 @@ try { $mmproj = Resolve-Mmproj -ModelPath $modelPath -CheDo $cheDoMmproj } catch
 if ($mmproj) { $srvArgs += @('--mmproj', $mmproj); Write-Step "mmproj: $mmproj (LLAMA_SERVER_MMPROJ=$cheDoMmproj)" }
 elseif ($cheDoMmproj -ine 'off') { Write-Step "mmproj: không có cho $(Split-Path -Leaf $modelPath) (LLAMA_SERVER_MMPROJ=$cheDoMmproj) — chạy chữ" }
 
-if ($InThamSo) { (@{ model = $modelPath; args = $srvArgs } | ConvertTo-Json -Compress); exit 0 }
+# Lô D1-script: che Ở NGUỒN — phần tử ngay sau '--api-key' (so chính xác, không đụng '--api-key-file') in thành '<che>'.
+# Đường khởi thật bên dưới vẫn truyền $srvArgs gốc cho llama-server, không đổi.
+if ($InThamSo) {
+    $inRa = $srvArgs.Clone()
+    for ($i = 0; $i -lt $inRa.Count - 1; $i++) { if ($inRa[$i] -ceq '--api-key') { $inRa[$i + 1] = '<che>' } }
+    (@{ model = $modelPath; args = $inRa } | ConvertTo-Json -Compress); exit 0
+}
 
 # ── IDEMPOTENT: đã sống thì THOÁT, không spawn cái thứ hai ──────────────────────────────────────
 function Test-ServerAlive {
@@ -285,17 +292,32 @@ if ((-not $Force) -and (Test-ServerAlive)) {
 }
 if ($Force) {
     # Đợt 6 — `-Force` (API đổi model) dừng llama-server giữ cổng CẢ KHI nó chưa trả /health (đang nạp dở /
-    # treo — đúng ca QUAY VỀ sau một model mới nạp hỏng). Kiểm HẾT chủ cổng TRƯỚC khi dừng ai: có một chủ
-    # KHÔNG phải llama-server ⇒ không đụng gì, thoát 3.
+    # treo — đúng ca QUAY VỀ sau một model mới nạp hỏng). Kiểm HẾT chủ cổng TRƯỚC khi dừng ai.
+    # Lô D1-script (q3): chỉ dừng chủ cổng ĐỦ ba điều kiện — (1) ExecutablePath = LLAMA_SERVER_BIN, (2) CommandLine có
+    # `--port <cổng>`, (3) CreationDate lúc dừng = lúc kiểm. Thiếu một (kể cả PID ≤ 0, CIM lỗi, ExecutablePath rỗng vì
+    # không đủ quyền đọc, Stop-Process hỏng) ⇒ thoát 3. Không còn so tên `llama-server*`.
+    $exeThat = (Resolve-Path -LiteralPath $bin).ProviderPath
+    $daKiem = @{}
     $owners = Get-PortOwners
     foreach ($procId in $owners) {
-        $p = Get-Process -Id $procId -ErrorAction SilentlyContinue
-        if (-not ($p -and $p.ProcessName -like 'llama-server*')) {
-            Write-Bad "  PID $procId ($($p.ProcessName)) KHÔNG phải llama-server — KHÔNG đụng vào."
+        $ci = $null; $exe = ''
+        try {
+            if ($procId -gt 0) { $ci = Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction Stop }
+            if ($ci -and $ci.ExecutablePath) { $exe = [IO.Path]::GetFullPath($ci.ExecutablePath) }
+        } catch { $ci = $null }
+        if ((-not $ci) -or (-not $exe) -or ($exe -ine $exeThat) -or ("$($ci.CommandLine)" -notmatch "--port\s+$srvPort(\s|$)")) {
+            Write-Bad "  PID $procId KHÔNG đủ điều kiện (đọc được tiến trình + exe = LLAMA_SERVER_BIN + --port $srvPort) — KHÔNG đụng vào."
             exit 3
         }
+        $daKiem[$procId] = $ci.CreationDate
     }
-    foreach ($procId in $owners) { Write-Step "-Force: stop llama-server PID $procId"; Stop-Process -Id $procId -Force }
+    foreach ($procId in $owners) {
+        $lai = $null
+        try { $lai = Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction Stop } catch { $lai = $null }
+        if ((-not $lai) -or ($lai.CreationDate -ne $daKiem[$procId])) { Write-Bad "  PID $procId đổi danh tính hoặc không còn giữa lúc kiểm và lúc dừng — KHÔNG đụng vào."; exit 3 }
+        Write-Step "-Force: stop llama-server PID $procId (exe + cổng + CreationDate đã kiểm)"
+        try { Stop-Process -Id $procId -Force -ErrorAction Stop } catch { Write-Bad "  Stop-Process PID $procId hỏng — KHÔNG báo thành công."; exit 3 }
+    }
     # CHỜ cổng nhả THẬT (≤ 60 s) — `Start-Sleep 2` cũ đôi khi chưa đủ ⇒ bản mới không bind được ⇒ exit 4.
     $hetNha = (Get-Date).AddSeconds(60)
     while (((Get-PortOwners).Count -gt 0) -and ((Get-Date) -lt $hetNha)) { Start-Sleep -Milliseconds 500 }
