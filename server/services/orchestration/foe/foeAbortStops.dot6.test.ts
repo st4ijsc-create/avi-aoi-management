@@ -17,6 +17,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeDb, makeEq, makeAnd, resetSeq } from "../../../routers/__otFakeDb";
+import { __quenBoNhoKhuTrungChoTest } from "../../robot/criticalStopAlert";
+import { _resetSafetyCriticalDedupForTests } from "../../notificationService";
 
 const { otDispatchMock, robotDispatchMock, audit, conn, order } = vi.hoisted(() => {
   const order: string[] = [];
@@ -1282,6 +1284,13 @@ describe("X-15 — a STOP skipped by its precondition (never tried) is sent by t
 
 
 describe("X-23 G40 a STOP skipped by its precondition, owed at an end with no sweep", () => {
+  // X-23 (khe nặng 19/11 21:07) — the fake DB restarts ONE id sequence every case (routers/__otFakeDb.ts:31-32, :132), so a run id, and every dedupKey built on it, repeats across
+  // cases; the REAL alert's in-process dedup (criticalStopAlert.ts:107-110, :131 vuaGhi) then drops a later case's row for the same (recipient, key). The two cases here read stored rows:
+  // that memory is forgotten before each (the module's own test seams), never their anchors loosened
+  beforeEach(() => {
+    __quenBoNhoKhuTrungChoTest();
+    _resetSafetyCriticalDedupForTests();
+  });
   const DK = { precondition: { source: "param", key: "never", op: "eq", value: true }, onPreconditionFail: "skip" };
   async function hinhG40(ref: string, coDieuKien: boolean) {
     await deploy(ref, [GATE, { ...START, compensation: { id: "cq", type: "sequence", steps: [OT_STOP] } }]);
