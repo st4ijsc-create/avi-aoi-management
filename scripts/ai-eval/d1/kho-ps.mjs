@@ -247,6 +247,8 @@ try {
     if (kv.outKhong && out.includes(kv.outKhong)) loi.push(`dau ra CO "${kv.outKhong}"`);
     // D1c C2 kiểm CHUNG (mọi ca): đầu ra không lộ ĐƯỜNG tệp khoá giả (lời báo chỉ được nói có/không, trùng/khác).
     for (const t of [TEP_KHOA, path.join(D, "khoa-gia-2.key"), path.join(D, "khong-co.key")]) if (out.includes(t)) loi.push(`dau ra LO duong tep khoa ${path.basename(t)}`);
+    // kiem-dinh 03:54 (c): thêm theo TÊN TỆP, không phân biệt hoa/thường (bắt cả dạng `/`, 8.3, khác hoa/thường của thư mục cha).
+    if (/khoa-gia(-2)?\.key|khong-co\.key/i.test(out)) loi.push("dau ra LO ten tep khoa gia");
     if (kv.chuCuBiDung && truoc.some((id) => sau.some((g) => g.id === id))) loi.push("chu cong cu KHONG bi dung");
     if (kv.nodeSong && !conNode.some((n) => n.exitCode === null && n.signalCode === null)) loi.push("chu cong node KHONG con song");
     if (!kv.chuCuBiDung && truoc.some((id) => !sau.some((g) => g.id === id)) && kv.ma !== 0) loi.push("tien trinh co truoc bi DUNG");
