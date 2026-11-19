@@ -87,9 +87,9 @@ function khoiGia(exe, cheDo, cong, them = {}, thamThem = []) { // D1b M5: thamTh
   c.unref();
   return c.pid;
 }
-const chayPs = (tep, thamSo, them = {}) => {
-  const r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tep, ...thamSo], { encoding: "utf8", env: envCon(them), cwd: D, windowsHide: true, timeout: 180_000 });
-  return { ma: r.status, out: `${r.stdout ?? ""}\n${r.stderr ?? ""}` };
+let soChay = 0; const chayPs = (tep, thamSo, them = {}) => { const n = ++soChay, fo = path.join(D, `ra-${n}.out`), fe = path.join(D, `ra-${n}.err`), o = fs.openSync(fo, "w"), e = fs.openSync(fe, "w"); let r; try { // D1c C1: TỆP, không ỐNG (exe giả thừa kế ống ⇒ spawnSync chờ hết 180 s)
+  r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tep, ...thamSo], { stdio: ["ignore", o, e], env: envCon(them), cwd: D, windowsHide: true, timeout: 180_000 });
+  } finally { fs.closeSync(o); fs.closeSync(e); } return { ma: r.status, out: `${fs.readFileSync(fo, "utf8")}\n${fs.readFileSync(fe, "utf8")}` };
 };
 const coTep = (p) => fs.existsSync(p);
 
@@ -213,7 +213,10 @@ if (CA_RIENG === "doi-chung-mac-dinh") {
     { ten: "doi-0-m5-5p-chu-co-khoa-KhongKhoa", dung: chuCu(["--api-key-file", TEP_KHOA]), chay: (c) => doi(c, ["-KhongKhoa"], DOI_SONG),
       kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhKhong: "--api-key", outCo: "KHONG KHOA THEO -KhongKhoa" } },
     { ten: "doi-2-m5-7-KhongKhoa-mau-thuan", chay: (c) => doi(c, ["-KhongKhoa"], { ...DOI_SONG, LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }), kyVong: { ma: 2, pause: "khong", giaSong: 0 } },
-    { ten: "doi-0-m5-2-cong-trong-khong-bien", chay: (c) => doi(c, [], DOI_SONG), kyVong: { ma: 0, pause: "khong", giaSong: 1, outCo: "KHONG CO CHU CONG" } });
+    { ten: "doi-0-m5-2-cong-trong-khong-bien", chay: (c) => doi(c, [], DOI_SONG), kyVong: { ma: 0, pause: "khong", giaSong: 1, outCo: "KHONG CO CHU CONG" } },
+    // D1c C2 (HST 03:03): khoi-llama-tay khởi CÓ khoá ⇒ dòng `CMDLINE:` phải che đường tệp khoá thành `<tep-khoa>` (kiểm chung bên dưới bắt đường thật).
+    { ten: "tay-0-co-khoa-cmdline-che", kyVong: { ma: 0, pause: "khong", giaSong: 1, outCo: "--api-key-file <tep-khoa>" },
+      chay: (c) => chayPs(KHOI_TAY, ["-ArgStr", `--port ${c} --api-key-file ${TEP_KHOA}`, "-Ten", "gia", "-Exe", BIN, "-Cong", String(c), "-TepTamDung", TEP_DUNG, "-ThuMucLog", LOG, "-ChoGiay", "6"], { ...DOI_SONG, LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }) });
 }
 
 // ── Chạy ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -242,6 +245,8 @@ try {
     if (kv.dongLenhKhong && sau.some((g) => String(g.cl ?? "").includes(kv.dongLenhKhong))) loi.push(`dong lenh CO ${kv.dongLenhKhong}`); // D1b
     if (kv.outCo && !out.includes(kv.outCo)) loi.push(`dau ra thieu "${kv.outCo}"`);
     if (kv.outKhong && out.includes(kv.outKhong)) loi.push(`dau ra CO "${kv.outKhong}"`);
+    // D1c C2 kiểm CHUNG (mọi ca): đầu ra không lộ ĐƯỜNG tệp khoá giả (lời báo chỉ được nói có/không, trùng/khác).
+    for (const t of [TEP_KHOA, path.join(D, "khoa-gia-2.key"), path.join(D, "khong-co.key")]) if (out.includes(t)) loi.push(`dau ra LO duong tep khoa ${path.basename(t)}`);
     if (kv.chuCuBiDung && truoc.some((id) => sau.some((g) => g.id === id))) loi.push("chu cong cu KHONG bi dung");
     if (kv.nodeSong && !conNode.some((n) => n.exitCode === null && n.signalCode === null)) loi.push("chu cong node KHONG con song");
     if (!kv.chuCuBiDung && truoc.some((id) => !sau.some((g) => g.id === id)) && kv.ma !== 0) loi.push("tien trinh co truoc bi DUNG");
