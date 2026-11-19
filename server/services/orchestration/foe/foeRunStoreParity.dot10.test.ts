@@ -4600,15 +4600,20 @@ describe("R1b-2b-2a A2(n) fix round 2 — the edge: the unknown flag outranks a 
     expect(String(runRow(e.runId).error ?? "")).not.toContain("[[A2N");
   });
 
-  it("★ C-A (c) a sibling held for ANOTHER reason: the container's STOP still goes, and it is told", async () => {
+  it("★ C-A (c) a sibling that would be held for ANOTHER reason (offline) is cut at the door after the latch: the container's STOP still goes, and it is told", async () => {
     const e = await denBuoc(def("n2-c", [gate(), par("p", [move("r1"), box("later", [lai, move("r2")])], { compensation: robotStop("bs") })]));
     h.timeoutDispatch.add("r1");
     e.offlineSteps = new Set(["r2"]);
     e.events = [];
     const s2 = await edgeSegment(e, 2);
-    expect(s2.out).toMatchObject({ outcome: "held" });
+    expect(s2.out).toMatchObject({ outcome: "failed" }); // X-24: r2 meets the door after the latch (foeEngine.ts:1075-1076) and is never dispatched, so never held
     expect(h.sent.map((x) => x.stepId)).toEqual(["r1", "bs"]);
-    expect(e.events.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION" && !String(x.detail).includes('"noCompensation"'))).toHaveLength(1); // the I-L one goes too
+    // X-24 (measured 19/11 13:37, probe 6e952ecc262b1ce6): two reports ride on this segment, of two steps — the I-L one of p/bs, and r2, cut at the door, named at the walk's end as forward work dropped
+    // (foeEngine.ts:1728-1735 baoBuocTienBiBo; every report of an edge walker is an anomaly event, edgeRunStore.ts:617-627). Not a second report of one step
+    const bao = e.events.filter((x) => x.code === "FOE_OUTCOME_UNKNOWN_COMPENSATION" && !String(x.detail).includes('"noCompensation"')).map((x) => (typeof x.detail === "string" ? JSON.parse(x.detail) : x.detail) as { loai?: string; stepId?: string; compId?: string });
+    expect(bao.filter((d) => d.stepId === "p" && d.compId === "bs")).toHaveLength(1); // the I-L one goes too
+    expect(bao.filter((d) => d.loai === "forwardNotSent" && d.stepId === "r2")).toHaveLength(1); // r2: NOT handed to a dispatcher, forward work dropped
+    expect(bao).toHaveLength(2);
   });
 
   it("★ I-E an unknown step with no compensation is NEVER re-sent on a new claim: gate sibling, approval, next segment", async () => {
@@ -4719,19 +4724,20 @@ describe("R1b-2b-2a A2(n) fix round 3 — the edge: S-1, C-B", () => {
     await edgeSegment(e, 2);
     expect(h.sent.map((x) => x.stepId)).toEqual(["bs"]);
   });
-  it("★ C-A on a re-walk: a gate beside the unknown branch, the container's STOP goes", async () => {
+  it("★ C-A on a re-walk: a gate beside the unknown branch is cut at the door (no pause), the container's STOP goes", async () => {
     const e = await denBuoc(def("n3-w2", [gate(), par("p", [move("r1"), gate("g2")], { compensation: robotStop("bs") })]));
     trangThai(e, { r1: { state: "doneFailed", error: "EDGE_OUTCOME_UNKNOWN: x", khongRo: true } });
     const s = await edgeSegment(e, 2);
-    expect(s.out).toMatchObject({ outcome: "paused" });
+    expect(s.out).toMatchObject({ outcome: "failed" }); // X-24: the resume state's khongRo latches the run; g2 meets the door (foeEngine.ts:1566) — refused, never asked
+    expect(stepRows(e.runId).find((x) => x.stepId === "g2")).toBeUndefined(); // the door writes no row for a non-command step (foeEngine.ts:1566)
     expect(h.sent.map((x) => x.stepId)).toEqual(["bs"]);
   });
-  it("★ C-A on a re-walk: a sibling held for another reason, the container's STOP goes", async () => {
+  it("★ C-A on a re-walk: a sibling that would be held for another reason (offline) is cut at the door, the container's STOP goes", async () => {
     const e = await denBuoc(def("n3-w3", [gate(), par("p", [move("r1"), move("r2")], { compensation: robotStop("bs") })]));
     trangThai(e, { r1: { state: "doneFailed", error: "EDGE_OUTCOME_UNKNOWN: x", khongRo: true } });
     e.offlineSteps = new Set(["r2"]);
     const s = await edgeSegment(e, 2);
-    expect(s.out).toMatchObject({ outcome: "held" });
+    expect(s.out).toMatchObject({ outcome: "failed" }); // X-24: r2 meets the door (foeEngine.ts:1075-1076, 1577) and is never dispatched, so never held
     expect(h.sent.map((x) => x.stepId)).toEqual(["bs"]);
   });
 
@@ -4944,12 +4950,12 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
     expect(ids()).toEqual(["x", "u"]);
     expect(String(hang(e, "r2")!.error)).toMatch(khongGui);
     expect(hang(e, "r2")).toMatchObject({ status: "failed" });
-    expect(e.authorizeCalls.filter((a) => a.stepId === "r2").length).toBe(n + 1); // one attempt, no retry
+    expect(e.authorizeCalls.filter((a) => a.stepId === "r2").length).toBe(n); // X-24: segment 3 asks /authorize for r2 no more — the door stands before it (foeEngine.ts:1075-1076, 1577)
     expect(s3.out).toMatchObject({ outcome: "failed" });
   });
 
   for (const failFast of [true, false]) {
-    it(`★ probe B edge, failFast ${failFast}: r3 behind a delay is NOT sent after x went unknown; failed with the code; an edge audit; its authorisation reported unused`, async () => {
+    it(`★ probe B edge, failFast ${failFast}: r3 behind a delay is NOT sent after x went unknown; failed with the code; an edge audit; never authorised (the door stands before it)`, async () => {
       const e = await denBuoc(def(`x-b${failFast}`, [gate(), parF("p", [move("x"), box("b", [delay("w", 80), move("r3")], {})], failFast)]));
       e.unused = [];
       h.timeoutDispatch.add("x");
@@ -4958,11 +4964,11 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
       expect(String(hang(e, "r3")!.error)).toMatch(khongGui);
       expect(hang(e, "r3")).toMatchObject({ status: "failed" });
       expect(s.out).toMatchObject({ outcome: "failed" });
-      expect(e.authorizeCalls.filter((a) => a.stepId === "r3")).toHaveLength(1);
+      expect(e.authorizeCalls.filter((a) => a.stepId === "r3")).toHaveLength(0); // X-24: the door stands before any authorisation (foeEngine.ts:1075-1076, 1577)
       expect((e.events ?? []).filter((v) => v.kind === "anomaly" && v.code === "notSentRunLatched")).toHaveLength(1);
-      expect(e.unused).toEqual([expect.objectContaining({ stepId: "r3", reason: "run_latched" })]); // (4) — the forward authorisation is superseded too
+      expect(e.unused).toEqual([]); // X-24: no authorisation was asked, so none is reported unused
       expect(e.records.filter((r) => r.kind === "step" && r.stepId === "r3" && r.status === "failed").map((r) => (r as { jti?: unknown }).jti)).toEqual([null]); // a quoted jti is evidence of use
-      expect((fake.store.get("edge_step_authorizations") ?? []).find((a) => a.stepId === "r3")!.supersededAt).toBeInstanceOf(Date);
+      expect((fake.store.get("edge_step_authorizations") ?? []).find((a) => a.stepId === "r3")).toBeUndefined(); // X-24: no authorisation row to supersede
     });
     it(`★ probe B central, failFast ${failFast}: the same one line`, async () => {
       const d = def(`x-bc${failFast}`, [gate(), parF("p", [move("x"), box("b", [delay("w", 80), move("r3")], {})], failFast)]);
@@ -5007,7 +5013,7 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
     expect(ids()).toEqual(["x3", "st"]);
   });
 
-  it("★ a forward STOP-typed step that is not verified: not sent, the code; maxAttempts: 3 on a forward step: 0 hand-overs, one authorisation, no a2", async () => {
+  it("★ a forward STOP-typed step that is not verified: not sent, the code; maxAttempts: 3 on a forward step: 0 hand-overs, no authorisation (the door stands before it)", async () => {
     const e = await denBuoc(def("x-u", [gate(), parF("p", [move("x"), box("b", [delay("w", 60), stopTyped("st")], {})], false)]));
     h.timeoutDispatch.add("x");
     await edgeSegment(e, 2);
@@ -5018,16 +5024,16 @@ describe("R1b-2b-2a A2(n) fix round 4 — the edge: THE fact crosses a segment b
     h.timeoutDispatch.add("x2");
     await edgeSegment(e2, 2);
     expect(ids()).toEqual(["x2"]);
-    expect(e2.authorizeCalls.filter((a) => a.stepId === "r3").map((a) => a.attempt)).toEqual([1]);
-    expect(hang(e2, "r3")).toMatchObject({ status: "failed", attempt: 1 });
+    expect(e2.authorizeCalls.filter((a) => a.stepId === "r3").map((a) => a.attempt)).toEqual([]); // X-24: the door stands before any authorisation (foeEngine.ts:1075-1076, 1577)
+    expect(hang(e2, "r3")).toMatchObject({ status: "failed", attempt: 0 }); // X-24: the door's row has no attempt ⇒ the edge record's `attempt ?? 0` (edgeRunStore.ts:387)
   });
 
-  it("★ a container with a retry budget, whose only failure is the refusal, is not walked again on the edge: one /authorize (central's walk has the resume state too)", async () => {
+  it("★ a container with a retry budget, whose only failure is the refusal, is not walked again on the edge: no /authorize (the door stands before it; central's walk has the resume state too)", async () => {
     const e = await denBuoc(def("x-r", [gate(), parF("p", [box("b", [move("r5")], {})], false, { maxAttempts: 2 })]));
     runRow(e.runId).contextJson = { ...(runRow(e.runId).contextJson ?? {}), [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "zz", ma: "FOE_OUTCOME_UNKNOWN", at: "t" } };
     await edgeSegment(e, 2);
     expect(ids()).toEqual([]);
-    expect(e.authorizeCalls.filter((a) => a.stepId === "r5")).toHaveLength(1);
+    expect(e.authorizeCalls.filter((a) => a.stepId === "r5")).toHaveLength(0); // X-24: latched before the segment: r5 meets the door before any authorisation (foeEngine.ts:1075-1076, 1577)
   });
 
   it("★ a finding on the edge: a robot STOP unknown once, confirmed next, forward work dropped: a person IS told", async () => {

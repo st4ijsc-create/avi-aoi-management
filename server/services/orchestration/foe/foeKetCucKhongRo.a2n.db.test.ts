@@ -110,7 +110,7 @@ import { _setPinReadProbeForTests } from "../../ot/stopPin";
 import { bamLenhOt, perWriteKey } from "../../ot/commandDispatcher";
 import { fetchOrchestrationHeld } from "../../../routers/oversightRouter";
 import { makeFoeGateRun } from "./__foeGateRunFixture";
-import { abortRun, autoResumeInterruptedRuns, FOE_OUTCOME_UNKNOWN, rehydrateInterruptedRuns, resumeRun } from "./foeEngine";
+import { abortRun, autoResumeInterruptedRuns, FOE_NOT_SENT_RUN_LATCHED, FOE_OUTCOME_UNKNOWN, rehydrateInterruptedRuns, resumeRun } from "./foeEngine";
 import { ensureOrchestrationAction } from "./foeRunStore";
 import { buildEquipmentCommand, orchestrationActionId } from "./foeStepClass";
 import { CANH_BAO_KHONG_RO_KIND, KET_CUC_KHONG_RO_AUDIT_ACTION, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY } from "./foeKetCucKhongRo";
@@ -355,7 +355,7 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
 
-  it("★ N3 the pins of the STOP compensation's adapter cannot be read ⇒ treated as NOT a pinned STOP ⇒ held, 0 PDU", async () => {
+  it("★ N3 the pins of the STOP compensation's adapter cannot be read ⇒ still sent on the marked route (F4): exactly 1 PDU, the STOP tag, compensated, the run failed", async () => {
     await trongGiaoDich(async (tx) => {
       const d = await dungThietBi(tx);
       _setPinReadProbeForTests(async (adapterId) => {
@@ -365,11 +365,14 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       await yDinhTruoc(tx, { ...d, runId });
       const pdu0 = soPduGhi();
       await khoiDong(runId);
-      expect(soPduGhi() - pdu0).toBe(0);
-      expect((await runCua(tx, runId)).status).toBe("held");
-      expect((await ctxCua(tx, runId)).foeResumeState.main.state).toBe("compensationHeld");
-      expect(await uyQuyenCua(tx, `foe-run${runId}-undo-`)).toEqual([]); // decided before any authorisation
-      await choCanhBao("held", runId, 1);
+      // X-24 (F4, owner's ruling 07/11 — pins unreadable ⇒ still sent, the marked route; measured 19/11 08:00): ONE write, the STOP tag `a` = 0 of type stop — never "at least one"
+      expect(soPduGhi() - pdu0).toBe(1);
+      expect((await soCuaKhoa(tx, `run${runId}-undo`)).map((r) => [r.tagKey, r.requestedValue, r.commandType])).toEqual([["a", 0, "stop"]]);
+      expect((await runCua(tx, runId)).status).toBe("failed");
+      expect((await buoc(tx, runId, "undo"))?.status).toBe("compensated");
+      // the marked route: one fresh authorisation row, marked (hangMoiStopGhim), executed
+      expect((await uyQuyenCua(tx, `foe-run${runId}-undo-`)).map((r) => ({ status: r.status, danhDau: JSON.stringify(r.previewJson ?? {}).includes("hangMoiStopGhim") }))).toEqual([{ status: "executed", danhDau: true }]);
+      await choCanhBao("stopSent", runId, 1); // handed over and accepted (foeEngine.ts:2209)
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
@@ -438,7 +441,7 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
 
-  it("★ C-A (a) a gate beside a failed unknown branch: the container's pinned STOP goes before any approval (1 PDU), the run waits at the gate, URGENT", async () => {
+  it("★ C-A (a) a gate beside a failed unknown branch: the container's pinned STOP goes before any approval (1 PDU); the gate is cut at the door, the run fails, URGENT", async () => {
     await trongGiaoDich(async (tx) => {
       const d = await dungThietBi(tx);
       const runId = await dungRun([{ id: "p", type: "parallel", failFast: true, compensation: buTruStop(d.m1, "boxStop"), steps: [buocChinh(d.m2), { id: "w", type: "sequence", steps: [{ id: "d0", type: "delay", ms: 400 } as WorkflowStep, { id: "g2", type: "hitl_gate", prompt: "other" } as WorkflowStep] } as WorkflowStep] } as WorkflowStep]);
@@ -447,7 +450,13 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       await khoiDong(runId);
       await chacKhongRo(tx, runId);
       expect(soPduGhi() - pdu0).toBe(1);
-      expect((await runCua(tx, runId)).status).toBe("awaiting_confirm");
+      // X-24 (the door of 9387d01c9, measured 19/11 08:00): run failed; w failed naming g2 with the latch's code; NO row of g2; boxStop compensated
+      expect((await runCua(tx, runId)).status).toBe("failed");
+      const w = await buoc(tx, runId, "w");
+      expect(w?.status).toBe("failed");
+      expect(String(w?.error ?? "")).toMatch(new RegExp(`^${FOE_NOT_SENT_RUN_LATCHED}: not sent: run latched — command step "g2" `));
+      expect(await buoc(tx, runId, "g2")).toBeUndefined();
+      expect((await buoc(tx, runId, "boxStop"))?.status).toBe("compensated");
       await choCanhBao("stopSent", runId, 1);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);

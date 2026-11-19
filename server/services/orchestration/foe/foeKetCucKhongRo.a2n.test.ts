@@ -405,9 +405,9 @@ describe("A2(n) n1 — the split by energy direction (outcome unknown × compens
 
   it("N3b classified pinned, but the dispatch-time authorisation does NOT see a pinned STOP (pins changed) ⇒ never handed over, held", async () => {
     let n = 0;
-    ghimMock.mockImplementation(async (_d, i) => ({ pinnedStop: i.commandType === "stop" && ++n === 1, loiDocGhim: null })); // 1st = the split, 2nd = the store's
+    ghimMock.mockImplementation(async (_d, i) => ({ pinnedStop: i.commandType === "stop" && ++n === 1, loiDocGhim: null })); // 1st = the split, 2nd = the authorisation at dispatch, 3rd = the final STOP pass (not pinned: nothing sent)
     const { runId } = await giuKhongRo([main(stopComp())]);
-    expect(n).toBe(2);
+    // X-24 (N2, measured 19/11 12:51): a 3rd pin read is the final STOP pass re-classifying the held `undo` (duongKetThuc → guiStopSauChot → stopToTienSauGiu → laBuTruStop), it sends nothing; so this case rests on the consequences below, not on a count of reads
     expect(sent("stop")).toHaveLength(0);
     expect(await step(runId, "undo")).toMatchObject({ status: "held" });
     await waitAlerts(1);
@@ -1820,7 +1820,7 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
       expect(await step(runId, "r3")).toMatchObject({ status: "failed" });
       expect((await step(runId, "r3"))!.error).toMatch(khongGui);
       await vi.waitFor(() => expect(auditBuoc()).toHaveLength(1));
-      expect((auditBuoc()[0]!.details as { metadata: Record<string, unknown> }).metadata).toMatchObject({ stepId: "r3", attempt: 1 });
+      expect((auditBuoc()[0]!.details as { metadata: Record<string, unknown> }).metadata).toMatchObject({ stepId: "r3", attempt: 0 }); // X-24: the door audits attempt 0 (foeEngine.ts:1576)
     }
   });
   it("★ (1) a parallel with failFast false whose ONLY failure is the refusal does not swallow it: the run ends failed, never 'completed'", async () => {
@@ -1835,9 +1835,9 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
   it("★ (1) maxAttempts: 3 ⇒ exactly 0 hand-overs and no second attempt; a container's retry is not walked again either", async () => {
     const { runId } = await chay([par("p", [main(), sau("b", pause("r3", { maxAttempts: 3 }))], { failFast: false })]);
     expect(sent("pause")).toHaveLength(0);
-    expect(await step(runId, "r3")).toMatchObject({ attempt: 1 });
+    expect(await step(runId, "r3")).toMatchObject({ attempt: 0 }); // X-24: the door's row carries no attempt (foeEngine.ts:1577) ⇒ the store's default (foeRunStore.ts:1172)
     const n = rows("ai_pending_actions").filter((a) => /-r3-a/.test(String(a.id))).length;
-    expect(n).toBeLessThanOrEqual(1); // no `-a2` authorisation
+    expect(n).toBe(0); // X-24: the door stands before any authorisation — no `-a1`, no `-a2`
     expect(rows("ai_pending_actions").some((a) => /-r3-a2/.test(String(a.id)))).toBe(false);
   });
   it("★ (1) a container with a retry budget, whose only failure is the refusal: not walked again (no second attempt of its child)", async () => {
@@ -1860,7 +1860,7 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
     expect(sent("stop")).toHaveLength(0);
     expect((await step(runId, "st"))!.error).toMatch(khongGui);
   });
-  it("★ (1) the refused step's own compensation is not due, not even a STOP: it was never sent; the container's still takes the split (STOP at once, non-STOP held)", async () => {
+  it("★ (1) the refused step's own compensation: a non-STOP one is not due (it was never sent); a STOP one goes at once (F11); the container's still takes the split (STOP at once, non-STOP held)", async () => {
     const a = await chay([par("p", [main(), seq("b", [delay("w", 60), pause("r3", { compensation: resetComp("c3") })], stopComp("bs"))], { failFast: false })]);
     expect(sent("reset")).toHaveLength(0);
     expect(await step(a.runId, "c3")).toBeUndefined();
@@ -1868,7 +1868,8 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
     expect(a.res.status).toBe("failed");
     otDispatchMock.mockClear();
     const b = await chay([par("p", [main(), seq("b", [delay("w", 60), pause("r4", { compensation: stopComp("c4") })], resetComp("bu"))], { failFast: false })]);
-    expect(sent("stop")).toHaveLength(0); // r4's own STOP: nothing to undo
+    expect(sent("stop")).toEqual(["stop"]); // X-24 (F11, owner's decision 1, 07/11): r4's own STOP compensation c4 goes at the door (datStopCuaBuoc → stopToTienSauGiu)
+    expect(await step(b.runId, "c4")).toMatchObject({ status: "compensated" });
     expect(sent("reset")).toHaveLength(0);
     expect(b.res.status).toBe("held");
     expect(await step(b.runId, "bu")).toMatchObject({ status: "held" });
@@ -1882,7 +1883,7 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
     });
     const { runId, res } = await chay([par("p", [main(), pause("r6", { maxAttempts: 2, compensation: resetComp("c6") })], { failFast: false })]);
     expect(n).toBe(1); // attempt 1 was handed over; attempt 2 met the latch
-    expect((await step(runId, "r6"))!.error).toMatch(khongGui);
+    expect((await step(runId, "r6"))!.error).toBe('Command "pause" rejected (rejected).'); // X-24 (C5, HST 18/11): no attempt 2 on a latched run (foeEngine.ts:1158); the row keeps attempt 1's words (foeEngine.ts:2312)
     expect(res.status).toBe("held");
     expect(await step(runId, "c6")).toMatchObject({ status: "held" });
   });
@@ -2041,13 +2042,13 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
     await new Promise((r) => setTimeout(r, 20));
     expect(alertsOf("forwardNotSent")).toHaveLength(1);
   });
-  it("(a known failure of an earlier walk is not 'may have gone out': the code, and it is not an unknown)", async () => {
+  it("(a known failure of an earlier walk is not 'may have gone out': its row keeps the device's own word (F12-9), and it is not an unknown)", async () => {
     const { runId } = await chay([par("p", [pause("y")], { failFast: false })], (id) => {
       runRow(id).contextJson = { ...(runRow(id).contextJson ?? {}), foeKetCucKhongRoChot: { stepId: "zz", ma: "FOE_OUTCOME_UNKNOWN", at: "t" } };
       rows("orchestration_run_steps").push({ id: 99_004, runId: id, stepId: "y", stepType: "command", status: "failed", error: "rejected", attempt: 1, resultJson: null, startedAt: new Date(), finishedAt: null });
     });
     expect(sent("pause")).toHaveLength(0);
-    expect((await step(runId, "y"))!.error).toMatch(khongGui);
+    expect(await step(runId, "y")).toMatchObject({ status: "failed", error: "rejected", attempt: 1 }); // X-24 (F12-9, HST 18/11): settled by the earlier walk (foeRunStore.ts:329) ⇒ the door writes nothing (foeEngine.ts:1572)
   });
 
   it("(4) pure: the URGENT of a compensation unknown never says an earlier segment DID send it; a known code is known to the code filter's constant", () => {
