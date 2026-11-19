@@ -107,7 +107,7 @@ describe("duyệt hành động / bác / duyệt kế hoạch sau khi lượt n�
     await dep.taoLuot({ cauHoi: "q", projectId: "p", gioiHan: { soLuotToiDa: 2 } });
     expect(await dep.duyet("act-1")).toEqual({ ok: true, daGhi: true, status: "approved" });
     await dep.bac("act-2", "vì sao");
-    expect(await dep.duyetKeHoach("run-ql1", "bam-1", "duyet")).toEqual({ ok: true, note: null });
+    expect(await dep.duyetKeHoach!("run-ql1", "bam-1", "duyet")).toEqual({ ok: true, note: null });
     expect(vi.mocked(thuTucDuyet).mock.calls).toEqual([[NGUOI, { actionId: "act-1", lang: "vi" }]]);
     expect(vi.mocked(thuTucBac).mock.calls).toEqual([[NGUOI, { actionId: "act-2", lyDo: "vì sao" }]]);
     expect(vi.mocked(thuTucDuyetKeHoach).mock.calls).toEqual([[NGUOI, { runId: "run-ql1", bam: "bam-1", quyetDinh: "duyet" }]]);
