@@ -3593,6 +3593,7 @@ describe("X-27 (1) a Continue of a latched run whose first STOP pass throws send
     expect(t).toContain("sent NONE of the approved compensations");
     expect(t).toContain("That approval is spent: a later Continue needs a new approval");
     expect(t).toContain("no STOP compensation is named");
+    expect(t).toContain("Abort sends STOP steps only."); // kiem-dinh c1: the one promise about Abort, word for word
     expect(t).not.toContain("is still running");
     expect(t).not.toContain("Abort can send");
   });
