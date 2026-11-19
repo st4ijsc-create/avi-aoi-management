@@ -700,6 +700,10 @@ interface RunContext extends LiveRunHandle, RunStoreContext {
   khongRoHang?: Set<string>;
   /** A2(n) T6 (decision 3, H13) — the forward work this latched walk dropped, read at its end from the evidence over the whole tree (buocTienBiBo): one step per branch. */
   khongGuiDs?: string[];
+  /** X-26 (G46) — a STOP pass of this walk threw (guiStopSauChot): what it would have planned is unknown */
+  luotStopHong?: boolean;
+  /** X-26 (G46) — the forward stop-typed steps never handed over, read when a pass threw from the definition and this walk's memory only: never the planner, the sweep source, the evidence */
+  tenLuotHong?: Set<string>;
   /** A2(n) T6a fix 1 (P1) — the last pass's reading: stop-typed steps whose pin read ANSWERED "not pinned". No STOP: forward work, read once, by the planner. */
   khongGhimCuoi?: Set<string>;
   /** A2(n) T6e lượt sửa 1 (dieu-phoi 08/11 T6e-K1, A) — of khongGhimCuoi: stop-typed steps the sweep's verifier read as not pinned while the dispatcher's own predicate, asked at the last pass,
@@ -1659,49 +1663,55 @@ function guiMotStop(rc: RunContext, s: WorkflowStep, loi: string): Promise<void>
  * also says what stays unsent. A second pass finds nothing left.
  */
 async function guiStopSauChot(rc: RunContext, cuoi = false): Promise<void> {
-  if (rc.aborting) return;
-  const src = await rc.store.sweepSource({ live: rc, hasLiveDriver: () => true });
-  if (!src) return;
-  const v = await rc.store.verifyStops(rc.runId, rc.def, rc.machineById);
-  const plan = await lapKeHoachStop(rc, src, v, cuoi);
-  const loi = loiCuaChot(rc);
-  const viec = plan.send.map((s) => guiMotStop(rc, s, loi));
-  // what the sweep's verifier could not tell: a forward one still has its own authorisation and the sink, a compensation the split's predicate. T5 (H1) — a step nothing resolves goes too: its row says why
-  for (const id of plan.unverified) {
-    const s = findStepDeep(rc.def.steps, id);
-    if (s?.type === "command" && (await laStopTheoBuoc(s, rc.machineById))) viec.push(guiMotStop(rc, s, loi));
-  }
-  // T5 (C-3) — the verifier cannot tell "read: not pinned" from "no adapter to read": sorted again here, the shared verifier unchanged, after the STOPs above have started. Only a read that answered is "not pinned"
-  const xep = await Promise.all(
-    plan.notPinned.map(async (id) => {
+  // X-26 (G46) — a pass that throws is MARKED, the error goes on as before (its three callers log it, unchanged): the end of the walk names what it never handed over
+  try {
+    if (rc.aborting) return;
+    const src = await rc.store.sweepSource({ live: rc, hasLiveDriver: () => true });
+    if (!src) return;
+    const v = await rc.store.verifyStops(rc.runId, rc.def, rc.machineById);
+    const plan = await lapKeHoachStop(rc, src, v, cuoi);
+    const loi = loiCuaChot(rc);
+    const viec = plan.send.map((s) => guiMotStop(rc, s, loi));
+    // what the sweep's verifier could not tell: a forward one still has its own authorisation and the sink, a compensation the split's predicate. T5 (H1) — a step nothing resolves goes too: its row says why
+    for (const id of plan.unverified) {
       const s = findStepDeep(rc.def.steps, id);
-      return { id, s, la: s ? await laBuTruStop(rc, s) : ("khong" as const) };
-    }),
-  );
-  plan.notPinned = xep.filter((x) => x.la !== "chuaDoc").map((x) => x.id);
-  // T6e K1 (A) — "stop" too: the verifier read no pin, the dispatcher's predicate says one (two moments). Still not sent (no direction B here): named, every one, as a STOP not verified
-  if (cuoi) rc.khongXacMinhGhim = new Set(rc.store.kind === "central" ? xep.filter((x) => x.la === "stop").map((x) => x.id) : []);
-  if (cuoi) rc.khongGhimCuoi = new Set([...xep.filter((x) => x.la === "khong" || rc.khongXacMinhGhim?.has(x.id) === true).map((x) => x.id), ...plan.notPinnedUntaken]); // P1 — the end of the walk names them; an unreadable pin goes by the marked route (F4). T6c (Q1) — and a branch never evaluated: never sent, named
-  for (const x of xep) if (x.la === "chuaDoc" && x.s) viec.push(guiMotStop(rc, x.s, loi));
-  if (cuoi) {
-    if (plan.untakenBranch.length) rc.store.auditAbort(rc.user, rc.runId, "abortStopSkippedUntakenBranch", { stepIds: plan.untakenBranch, latched: true });
-    if (plan.notPinned.length) rc.store.auditAbort(rc.user, rc.runId, "abortStopNotPinned", { stepIds: plan.notPinned, latched: true });
-    for (const id of plan.untakenBranch) baoNhanhChuaChon(rc, id, loi);
-    for (const id of plan.notPinned) {
-      const chuaRa = rc.chuaRaStop?.has(id) === true || src.chuaRa?.has(id) === true; // T5 (C-CLR) — the read answered: not a STOP. Nothing is owed any more, a person gets out of the hold
-      if (!rc.denCuaStop?.has(id) && !chuaRa) continue;
-      const hangNo = (src.hang ?? []).find((r) => r.stepId === id);
-      // T9 lượt sửa 3e (A1-7) — the row's code, else its dispatcher's own answer (structured: a refusal stays "not sent")
-      const vi = rc.chuaRaStop?.get(id) ?? viChuaRaCuaLoi(hangNo?.error) ?? viTuKetQuaHang(hangNo);
-      datChuaRa(rc, id, undefined);
-      // read, not a STOP: not sent. One that may already have gone out never reads so; a row in state C says itself whether it did (an earlier walk's unsettled row is not "no last word")
-      // T9 lượt sửa 3e (A1-7) — a debt nothing describes (the context's list alone, its row lost: T7b-1): it may have gone (the cautious words), never "not sent"
-      const coTheDaRa = chuaRa ? vi === undefined || vi.nguon === "driverLoi" || rc.stopCoTheRa?.has(id) === true : ketCucRiengKhongRo(rc, id);
-      const error = coTheDaRa ? loiCoMaKhongRo(`command step "${id}" has no recorded outcome from an earlier attempt`) : loiKhongGuiChot(id);
-      await giuCoKhongRo(true, rc, id, rc.store.upsertStep(rc.runId, id, "command", { status: "failed", error, finishedAt: new Date() }));
+      if (s?.type === "command" && (await laStopTheoBuoc(s, rc.machineById))) viec.push(guiMotStop(rc, s, loi));
     }
+    // T5 (C-3) — the verifier cannot tell "read: not pinned" from "no adapter to read": sorted again here, the shared verifier unchanged, after the STOPs above have started. Only a read that answered is "not pinned"
+    const xep = await Promise.all(
+      plan.notPinned.map(async (id) => {
+        const s = findStepDeep(rc.def.steps, id);
+        return { id, s, la: s ? await laBuTruStop(rc, s) : ("khong" as const) };
+      }),
+    );
+    plan.notPinned = xep.filter((x) => x.la !== "chuaDoc").map((x) => x.id);
+    // T6e K1 (A) — "stop" too: the verifier read no pin, the dispatcher's predicate says one (two moments). Still not sent (no direction B here): named, every one, as a STOP not verified
+    if (cuoi) rc.khongXacMinhGhim = new Set(rc.store.kind === "central" ? xep.filter((x) => x.la === "stop").map((x) => x.id) : []);
+    if (cuoi) rc.khongGhimCuoi = new Set([...xep.filter((x) => x.la === "khong" || rc.khongXacMinhGhim?.has(x.id) === true).map((x) => x.id), ...plan.notPinnedUntaken]); // P1 — the end of the walk names them; an unreadable pin goes by the marked route (F4). T6c (Q1) — and a branch never evaluated: never sent, named
+    for (const x of xep) if (x.la === "chuaDoc" && x.s) viec.push(guiMotStop(rc, x.s, loi));
+    if (cuoi) {
+      if (plan.untakenBranch.length) rc.store.auditAbort(rc.user, rc.runId, "abortStopSkippedUntakenBranch", { stepIds: plan.untakenBranch, latched: true });
+      if (plan.notPinned.length) rc.store.auditAbort(rc.user, rc.runId, "abortStopNotPinned", { stepIds: plan.notPinned, latched: true });
+      for (const id of plan.untakenBranch) baoNhanhChuaChon(rc, id, loi);
+      for (const id of plan.notPinned) {
+        const chuaRa = rc.chuaRaStop?.has(id) === true || src.chuaRa?.has(id) === true; // T5 (C-CLR) — the read answered: not a STOP. Nothing is owed any more, a person gets out of the hold
+        if (!rc.denCuaStop?.has(id) && !chuaRa) continue;
+        const hangNo = (src.hang ?? []).find((r) => r.stepId === id);
+        // T9 lượt sửa 3e (A1-7) — the row's code, else its dispatcher's own answer (structured: a refusal stays "not sent")
+        const vi = rc.chuaRaStop?.get(id) ?? viChuaRaCuaLoi(hangNo?.error) ?? viTuKetQuaHang(hangNo);
+        datChuaRa(rc, id, undefined);
+        // read, not a STOP: not sent. One that may already have gone out never reads so; a row in state C says itself whether it did (an earlier walk's unsettled row is not "no last word")
+        // T9 lượt sửa 3e (A1-7) — a debt nothing describes (the context's list alone, its row lost: T7b-1): it may have gone (the cautious words), never "not sent"
+        const coTheDaRa = chuaRa ? vi === undefined || vi.nguon === "driverLoi" || rc.stopCoTheRa?.has(id) === true : ketCucRiengKhongRo(rc, id);
+        const error = coTheDaRa ? loiCoMaKhongRo(`command step "${id}" has no recorded outcome from an earlier attempt`) : loiKhongGuiChot(id);
+        await giuCoKhongRo(true, rc, id, rc.store.upsertStep(rc.runId, id, "command", { status: "failed", error, finishedAt: new Date() }));
+      }
+    }
+    await Promise.allSettled(viec);
+  } catch (err) {
+    rc.luotStopHong = true;
+    throw err;
   }
-  await Promise.allSettled(viec);
 }
 
 /** A2(n) T9 (MAT-HET-CS, H15) — the STOP compensations the containers around `id` declare, innermost first, read from the definition (a compensation of several steps: its STOP-typed commands). */
@@ -1717,12 +1727,12 @@ async function stopBuTruQuanh(rc: RunContext, id: string): Promise<string[]> {
 
 /** A2(n) T6 (H13) — forward work dropped, one URGENT per branch dropped, what rc.khongGuiDs names. T7b-1d (H25) — the walk's end and an Abort: `lan` is the event of the key; once per step per walk. */
 function baoBuocTienBiBo(rc: RunContext, lan: string): void {
-  for (const id of rc.khongGuiDs ?? []) {
+  for (const id of new Set([...(rc.khongGuiDs ?? []), ...(rc.tenLuotHong ?? [])])) {
     if (rc.khongGuiDaBao?.has(id)) continue;
     (rc.khongGuiDaBao ??= new Set()).add(id);
     const ma = rc.dispatcherNoiKhongGhim?.get(id); // T6c — handed over and answered "no pinned STOP": not "NOT handed to a dispatcher" (H11)
     const banGhi = ma === undefined && !rc.khongXacMinhGhim?.has(id) ? rc.khongBanGhi?.get(id) : undefined; // T9 (MAT-HET-CS) — no record of an earlier hand-over
-    baoKetCucKhongRo(rc, { loai: "forwardNotSent", stepId: id, compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot(id), lan, ...(ma !== undefined ? { vi: { nguon: "tuChoi" as const, ma } } : {}), ...(rc.khongXacMinhGhim?.has(id) ? { stopKhongXacMinh: true as const } : {}), ...(banGhi ? { khongBanGhi: true as const, stopBuTru: banGhi } : {}) });
+    baoKetCucKhongRo(rc, { loai: "forwardNotSent", stepId: id, compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot(id), lan, ...(ma !== undefined ? { vi: { nguon: "tuChoi" as const, ma } } : {}), ...(rc.khongXacMinhGhim?.has(id) ? { stopKhongXacMinh: true as const } : {}), ...(rc.tenLuotHong?.has(id) ? { luotStopHong: true as const } : {}), ...(banGhi ? { khongBanGhi: true as const, stopBuTru: banGhi } : {}) });
   }
 }
 
@@ -3649,6 +3659,10 @@ async function finishWalk(rc: RunContext, ketQuaDi: StepOutcome): Promise<Orches
       const cid = findStepDeep(rc.def.steps, stepId)?.compensation?.id;
       if (!(cid && daDuyetBuTruKhongRo(rc.context, stepId, cid) && rc.buTruDaGui?.has(cid))) baoKetCucKhongRo(rc, { loai: "noCompensation", stepId, compId: KHONG_CO_BU_TRU, error: loiCoMaKhongRo(loiKhongRoKet), lan });
     }
+  }
+  // X-26 (G46) — a STOP pass threw: every forward stop-typed step never handed over (no row of it went, no state C of its own) is named. An unreadable classification reads as a STOP
+  for (const s of rc.luotStopHong ? rc.def.steps.flatMap(buocTienCua) : []) {
+    if (s.type === "command" && !rc.completed.has(s.id) && !rc.attempted.has(s.id) && !rc.prior.attempted.has(s.id) && !rc.diStop?.has(s.id) && !rc.chuaRaStop?.has(s.id) && (await laStopTheoBuoc(s, rc.machineById).catch(() => true))) (rc.tenLuotHong ??= new Set()).add(s.id);
   }
   // A2(n) (decision 3) — forward work dropped: said in its own words, whatever else this walk told. T6 (H13) — one URGENT per branch dropped, read by duongKetThuc
   baoBuocTienBiBo(rc, luotDiCua(rc));

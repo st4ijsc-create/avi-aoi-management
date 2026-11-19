@@ -149,6 +149,8 @@ export interface KetCucKhongRoBaoCao {
   biet?: boolean;
   /** A2(n) T6e K1 — forwardNotSent of a stop-typed step whose pin the sweep could not verify (the dispatcher's predicate said pinned). Central only: never on the wire */
   stopKhongXacMinh?: true;
+  /** X-26 (G46) — forwardNotSent of a stop-typed step never handed over: a STOP pass of the walk threw. Central's words only: never on the wire */
+  luotStopHong?: true;
   /** A2(n) T9 — the words' marks (foeKetCucKhongRo.CanhBaoKhongRo, same names). Central's walk only: never on the wire (an edge's anomaly carries its closed fields only, chiTietAnomalyKhongRo) */
   thayCu?: "giu" | "chuaRa";
   heldStop?: true;

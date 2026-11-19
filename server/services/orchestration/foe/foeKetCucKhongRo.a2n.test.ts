@@ -2626,3 +2626,163 @@ describe("A2(n) T8 — CENSUS: quetUrgentChuaBen reaches no command and writes n
     expect(daBen, "the Abort's end duty: the walker's word only").toEqual(["    const daBen = ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY] != null;"]);
   });
 });
+
+// ── X-26 (G46, AGENTS-ngoai-le.md X-26, chu-du-an-HST 19/11) — a STOP pass of a latched run that throws: every forward stop-typed step never handed over is NAMED in a durable URGENT
+// (forwardNotSent, `luotStopHong`), its name read from the definition and the walk's memory only; nothing more is sent and the run's end is unchanged ((a) not decided).
+// The store is wrapped for these cases only (a global flag; off ⇒ the real functions): "nem" — verifyStops throws (the measured R1K-nem shape); "settled" — the sweep source's
+// `settled` throws at every call, i.e. the throw is INSIDE planAbortSweep (a deterministic fault of the planning part).
+vi.mock("./foeRunStore", async (importOriginal) => {
+  const o = await importOriginal<typeof import("./foeRunStore")>();
+  const s = o.centralRunStore;
+  const co = () => (globalThis as { __x26?: "nem" | "settled" | null }).__x26 ?? null;
+  return {
+    ...o,
+    centralRunStore: {
+      ...s,
+      sweepSource: async (...a: Parameters<typeof s.sweepSource>) => {
+        const r = await s.sweepSource(...a);
+        if (co() !== "settled" || !r) return r;
+        return {
+          ...r,
+          settled: (): boolean => {
+            throw new Error("settled down (X-26 K2)");
+          },
+        };
+      },
+      verifyStops: async (...a: Parameters<typeof s.verifyStops>) => {
+        if (co() === "nem") throw new Error("verifyStops down (X-26 K1)");
+        return s.verifyStops(...a);
+      },
+    },
+  };
+});
+describe("X-26 a STOP pass that throws names the forward STOP never handed over", () => {
+  const datX26 = (v: "nem" | "settled" | null) => void ((globalThis as { __x26?: unknown }).__x26 = v);
+  const tiepX26 = (runId: number) => resumeRun(runId, { approved: true, note: "checked" }, ADMIN, {}, { scope: null });
+  const stopX = (id: string): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop" }) as WorkflowStep;
+  const KIND_TIEN = CANH_BAO_KHONG_RO_KIND.forwardNotSent;
+  const TIEU_DE = (runId: number, id: string) => `Run ${runId}: another command's outcome is unknown — machine state unknown — STOP-typed step "${id}" NOT sent: the STOP pass of this run failed`;
+  const THAN = (id: string) => `Step "${id}" is a STOP-typed command and it was NOT sent: the STOP pass of this run failed, so the system cannot be relied on to send it. Stop the machine at the machine now with its direct STOP / E-STOP, and check it on site.`;
+  const luotHong = () => alerts.filter((a) => a.kind === KIND_TIEN && String(a.title).includes("the STOP pass of this run failed"));
+  /** the fault starts with the `start` that latches the run: what went before it (the STOP of K5) met a healthy store */
+  const batKhiStart = (dang: "nem" | "settled") =>
+    otDispatchMock.mockImplementation(async (i) => {
+      if (i.commandType === "start") {
+        datX26(dang);
+        return TIMEOUT;
+      }
+      return ACKED;
+    });
+
+  for (const [ten, dang] of [
+    ["K1 verifyStops throws at every pass (R1K-nem)", "nem"],
+    ["K2 the planner throws at every pass (settled, inside planAbortSweep)", "settled"],
+  ] as const) {
+    it(`${ten}: one URGENT naming xs per walk, nothing sent, the run's end unchanged`, async () => {
+      const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      try {
+        batKhiStart(dang);
+        const r = await chay([seq("box", [main(resetComp("undo")), stopX("xs")])]);
+        await new Promise((x) => setTimeout(x, 150));
+        // the fault is where the case says: in the STOP pass, not elsewhere
+        expect(err.mock.calls.some((c) => /STOP work after the latch failed: (verifyStops|settled) down \(X-26 K[12]\)/.test(String(c[0])))).toBe(true);
+        expect(r.res.status).toBe("held");
+        expect(luotHong().map((a) => a.title)).toEqual([TIEU_DE(r.runId, "xs")]);
+        expect(String(luotHong()[0]!.message)).toContain(THAN("xs"));
+        expect(String(luotHong()[0]!.dedupKey)).toMatch(new RegExp(`^${KIND_TIEN}:${r.runId}:xs:-:`));
+        expect(String(luotHong()[0]!.dedupKey).endsWith(":chot")).toBe(false);
+        const c = await tiepX26(r.runId);
+        await new Promise((x) => setTimeout(x, 150));
+        expect(luotHong()).toHaveLength(2); // the Continue's walk: its own event
+        expect(new Set(luotHong().map((a) => a.dedupKey)).size).toBe(2);
+        expect(sent("stop")).toEqual([]); // no new send path
+        // (a) NOT decided (HST 19/11): the run still ends failed — pinned as today's end, not as a safety expectation
+        expect(c.status).toBe("failed");
+        expect(runRow(r.runId).status).toBe("failed");
+      } finally {
+        datX26(null);
+        err.mockRestore();
+      }
+    });
+  }
+
+  it("K3 control: a healthy STOP pass raises no URGENT of this kind (green before and after)", async () => {
+    try {
+      const r = await chay([seq("box", [main(resetComp("undo")), stopX("xs")])]);
+      await new Promise((x) => setTimeout(x, 150));
+      expect(sent("stop")).toEqual(["stop"]);
+      expect(alerts.map((a) => String(a.kind))).toEqual(["foe_outcome_unknown_compensation_held"]);
+      expect(luotHong()).toEqual([]);
+      expect(r.res.status).toBe("held");
+    } finally {
+      datX26(null);
+    }
+  });
+
+  it("K4 the words: about this step and the STOP pass only; ≤ 800 / ≤ 200 with a 200-character step id and run 2 147 483 647; the act never cut", () => {
+    const n = noiDungCanhBaoKhongRo({ loai: "forwardNotSent", runId: 9, stepId: "xs", compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot("xs"), lan: "L1", biet: true, luotStopHong: true } as Parameters<typeof noiDungCanhBaoKhongRo>[0]);
+    expect(n.kind).toBe(KIND_TIEN);
+    expect(n.title).toBe(TIEU_DE(9, "xs"));
+    expect(n.message).toContain(THAN("xs"));
+    expect(n.message).not.toMatch(/no STOP of this run|every STOP|all STOP|Abort (sends|can)|press Abort/i);
+    const dai = "s".repeat(200);
+    const m = noiDungCanhBaoKhongRo({ loai: "forwardNotSent", runId: 2_147_483_647, stepId: dai, compId: KHONG_CO_BU_TRU, error: loiKhongGuiChot(dai), lan: "L1", biet: true, luotStopHong: true } as Parameters<typeof noiDungCanhBaoKhongRo>[0]);
+    expect(m.title.length).toBeLessThanOrEqual(200);
+    expect(m.message.length).toBeLessThanOrEqual(800);
+    expect(m.title).toContain("NOT sent: the STOP pass of this run failed");
+    expect(m.message).toContain("Stop the machine at the machine now with its direct STOP / E-STOP, and check it on site.");
+    expect(m.dedupKey).toBe(`${KIND_TIEN}:2147483647:${dai}:${KHONG_CO_BU_TRU}:L1`);
+  });
+
+  it("K5 a STOP that went before the latch is never named, and the words do not say more than this step", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      batKhiStart("nem");
+      const r = await chay([seq("box", [stopX("xa"), main(resetComp("undo")), stopX("xs")])]);
+      await new Promise((x) => setTimeout(x, 150));
+      expect((await step(r.runId, "xa"))?.status).toBe("completed");
+      expect(sent("stop")).toEqual(["stop"]); // xa's own
+      expect(luotHong().map((a) => a.title)).toEqual([TIEU_DE(r.runId, "xs")]);
+      expect(alerts.filter((a) => /"xa"/.test(String(a.title)) || /"xa"/.test(String(a.message)))).toEqual([]);
+      expect(String(luotHong()[0]!.message)).not.toMatch(/no STOP of this run|every STOP|all STOP/i);
+    } finally {
+      datX26(null);
+      err.mockRestore();
+    }
+  });
+
+  it("K6 a pass that throws ONCE, then a healthy Continue sends xs: one URGENT at the first walk, none at the Continue, one STOP (intended, HST 10:02 point 3)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      batKhiStart("nem");
+      const r = await chay([seq("box", [main(resetComp("undo")), stopX("xs")])]).finally(() => datX26(null));
+      await new Promise((x) => setTimeout(x, 150));
+      expect(luotHong().map((a) => a.title)).toEqual([TIEU_DE(r.runId, "xs")]);
+      expect(sent("stop")).toEqual([]);
+      await tiepX26(r.runId);
+      await new Promise((x) => setTimeout(x, 150));
+      expect(luotHong()).toHaveLength(1);
+      expect(sent("stop")).toEqual(["stop"]);
+      expect((await step(r.runId, "xs"))?.status).toBe("completed");
+    } finally {
+      datX26(null);
+      err.mockRestore();
+    }
+  });
+
+  it("K7 over-naming, INTENDED (HST 10:22 point 2): a STOP in a branch arm never taken is named too when the pass threw (the safe side; a healthy pass lists it, untakenBranch)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      batKhiStart("nem");
+      const br = { id: "br", type: "branch", condition: { source: "const", key: "x", op: "eq", value: "x" }, then: [main(resetComp("undo"))], else: [stopX("xe")] } as unknown as WorkflowStep;
+      const r = await chay([seq("box", [br, stopX("xs")])]);
+      await new Promise((x) => setTimeout(x, 150));
+      expect(r.res.status).toBe("held");
+      expect(luotHong().map((a) => a.title)).toEqual([TIEU_DE(r.runId, "xe"), TIEU_DE(r.runId, "xs")]);
+      expect(sent("stop")).toEqual([]);
+    } finally {
+      datX26(null);
+      err.mockRestore();
+    }
+  });
+});

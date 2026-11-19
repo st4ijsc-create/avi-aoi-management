@@ -439,6 +439,8 @@ export interface CanhBaoKhongRo {
   vi?: ViChuaRa;
   /** A2(n) T6e K1 (dieu-phoi 08/11 T6e-K1, A) — forwardNotSent: a stop-typed step whose pin the STOP sweep could not verify (central's own walk only) */
   stopKhongXacMinh?: true;
+  /** X-26 (G46) — forwardNotSent: a stop-typed step never handed over, and a STOP pass of the walk threw. The words speak of this step and that pass only */
+  luotStopHong?: true;
   /** A2(n) T7b-1c — abortStopNotSent: the words of THE classification (chuStopAbort) */
   chuAbort?: ChuStopAbort;
   /** A2(n) T7b-3 (H36) — stopEndedUnswept: how the run ended (`completed`: with a step of it failed) */
@@ -779,7 +781,7 @@ export function noiDungCanhBaoKhongRo(goc: CanhBaoKhongRo): { kind: string; titl
   const kind = CANH_BAO_KHONG_RO_KIND[a.loai];
   const ma = maKetCucKhongRoCua(a.error);
   const khongXd = goc.loai === "forwardNotSent" && goc.stepId === BUOC_KHONG_XAC_DINH; // T6 — no step to name (lượt sửa 3c: compared on the whole id)
-  const nhanh = a.loai === "stopUntakenBranch" || a.loai === "abortDefUnread" || a.loai === "abortSweepUnfinished" || khongXd || (a.loai === "abortStopNotSent" && (a.chuAbort === "khongXacMinhKhongHan" || a.chuAbort === "khongXacMinh15")); // `stepId` is the listed STOP: nothing happened to it
+  const nhanh = a.loai === "stopUntakenBranch" || a.loai === "abortDefUnread" || a.loai === "abortSweepUnfinished" || khongXd || (a.loai === "forwardNotSent" && a.luotStopHong === true) || (a.loai === "abortStopNotSent" && (a.chuAbort === "khongXacMinhKhongHan" || a.chuAbort === "khongXacMinh15")); // `stepId` is the listed STOP: nothing happened to it
   // T7b-1d (H26) — a run that never latched and reached another end: no command of it has an unknown outcome, so no word says one has
   // T7b-3 (H36) — the same for a run that ended with no sweep and never latched. X-11 (P3) — `choNut`: at the press the run was not latched, so no word opens with an unknown outcome
   const khongChot = (a.loai === "abortStopNotSent" && (a.chuAbort === "daKetThucChuaKhoa" || a.chuAbort === "daKetThucKhongXacMinh" || a.chuAbort === "choNut" || a.chuAbort === "chuaKhoaKhongXacMinh" || a.chuAbort === "chuaKhoaKetNoi" || a.chuAbort === "chuaKhoaKhongBen")) || a.loai === "stopEndedUnswept" || a.loai === "edgeStreamStuck";
@@ -816,7 +818,10 @@ export function noiDungCanhBaoKhongRo(goc: CanhBaoKhongRo): { kind: string; titl
         : a.vi
           ? // T6c (Q2) — handed to its dispatcher on the marked route, answered "no pinned STOP" before any driver: nothing written (H11, true of the source)
             [`command NOT sent, forward work dropped`, `Command "${a.stepId}" was refused by its dispatcher before any driver (${a.vi.ma}): it is no pinned STOP, nothing was written, and nothing further goes forward. Check the machine on site.`]
-          : a.stopKhongXacMinh
+          : a.luotStopHong
+            ? // X-26 (G46) — a STOP pass threw: this step only, never what other STOPs did; no press promised (after `failed` an Abort sends nothing)
+              [`STOP-typed step "${a.stepId}" NOT sent: the STOP pass of this run failed`, `Step "${a.stepId}" is a STOP-typed command and it was NOT sent: the STOP pass of this run failed, so the system cannot be relied on to send it. Stop the machine at the machine now with its direct STOP / E-STOP, and check it on site.`]
+            : a.stopKhongXacMinh
             ? // T6e K1 (A) — the pins read at two moments: the dispatcher's predicate said pinned, the sweep could not verify it. Not sent, no Abort promised (it is no state C)
               [`STOP-typed step "${a.stepId}" NOT sent: the STOP sweep could not verify its pin`, `Step "${a.stepId}" is a STOP-typed command, but the STOP sweep could not verify it as a pinned STOP, so it was NOT sent, and nothing further goes forward. Check the machine on site and use its direct STOP / E-STOP if needed.`]
             : [`command NOT sent, forward work dropped`, `Command "${a.stepId}" was NOT handed to a dispatcher, and nothing further goes forward. Check the machine on site.`],
