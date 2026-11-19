@@ -16,7 +16,7 @@ vram() { # $1 nhãn — chạy nền tới khi có tmp/thi-giac/dung-vram
 vramDung() { touch tmp/thi-giac/dung-vram; wait $VRAM; log "$1: VRAM đỉnh $(cut -d, -f2 tmp/thi-giac/vram-$1.csv | sort -n | tail -1) MiB · mẫu $(wc -l < tmp/thi-giac/vram-$1.csv)"; }
 doi() { # $1 nhãn, $2 model, $3 ThemArgs
   local them=""; [ -n "$3" ] && them="-ThemArgs $3"
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$2' -GiuKhoa '$CHU' $them" > tmp/thi-giac/doi-$1.log 2>&1
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$2' -GiuKhoa '$CHU' $them; exit \$LASTEXITCODE" > tmp/thi-giac/doi-$1.log 2>&1
   log "$1: doi-model rc=$? · $(tr -d '\r' < tmp/thi-giac/doi-$1.log | grep -E 'LOG:|SAN SANG|HET GIO' | tr '\n' ' ')"
 }
 taiChu() { node scripts/ai-eval/bo-nho/tai-dai.mjs 5 > tmp/thi-giac/chu-$1.log 2>&1; log "$1: Tải A 5 lượt: $(grep -o '[0-9]* ms' tmp/thi-giac/chu-$1.log | tr '\n' ' ')"; }

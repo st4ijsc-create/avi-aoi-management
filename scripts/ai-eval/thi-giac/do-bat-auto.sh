@@ -49,7 +49,7 @@ e2e() {
 }
 doMot P35 Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf e2e
 doMot P27 Qwen3.6-27B-UD-Q4_K_XL.gguf
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$M35' -GiuKhoa '$CHU'" > $O/ve-nha.log 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$M35' -GiuKhoa '$CHU'; exit \$LASTEXITCODE" > $O/ve-nha.log 2>&1
 log "về 35B: rc=$? $(tr -d '\r' < $O/ve-nha.log | grep -E 'SAN SANG|HET GIO' | tr '\n' ' ')"
 node scripts/ai-eval/lib/khoaKhe.mjs dung tmp/dung-khoa-ba-$$; wait $KHOA 2>/dev/null
 echo EXIT=0

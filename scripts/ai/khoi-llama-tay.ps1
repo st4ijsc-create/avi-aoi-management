@@ -16,6 +16,8 @@
   MA THOAT: 0 san sang (hoac -ChiKiem: qua het chot) | 6 da co tien trinh ten exe nay, HOAC cong dang LISTEN | 7 tep tam dung da co
     | 2 cau hinh | 4 thoat som / khong khoi duoc | 8 sau khi xanh co != 1 tien trinh ten exe nay (KHONG dung ai) | 5 het gio, con con song.
   Moi CommandLine in ra deu qua Che-DongLenh: an gia tri sau `--api-key` (giu `--api-key-file <duong>`).
+  Lo D1b M5: KHONG can chot "chu cong co khoa" rieng - chot 6 da tu choi MOI chu cong / MOI tien trinh cung ten exe truoc khi khoi.
+    Gioi han chung voi doi-model.ps1: khong co llama nao (cong trong) thi khong co tin hieu khoa cu.
   Goi tu bash: powershell -NoProfile -File scripts/ai/khoi-llama-tay.ps1 -ArgStr "<chuoi>" -Ten <nhan> > log 2>&1
 #>
 param(

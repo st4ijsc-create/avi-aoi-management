@@ -82,8 +82,8 @@ async function choCong(cong, coNghe, giay = 15) {
   return false;
 }
 /** Khởi exe giả do CHÍNH ca tạo (không qua script). */
-function khoiGia(exe, cheDo, cong, them = {}) {
-  const c = spawn(exe, ["--port", String(cong)], { env: envCon({ LLAMA_GIA_CHE_DO: cheDo, ...them }), detached: true, stdio: "ignore", windowsHide: true });
+function khoiGia(exe, cheDo, cong, them = {}, thamThem = []) { // D1b M5: thamThem = cờ thêm trên DÒNG LỆNH chủ cũ (vd --api-key-file <tệp giả>)
+  const c = spawn(exe, ["--port", String(cong), ...thamThem], { env: envCon({ LLAMA_GIA_CHE_DO: cheDo, ...them }), detached: true, stdio: "ignore", windowsHide: true });
   c.unref();
   return c.pid;
 }
@@ -96,14 +96,14 @@ const coTep = (p) => fs.existsSync(p);
 // ── Dựng exe giả (C#, .NET Framework qua Add-Type) ────────────────────────────────────────────────────────────────────────────
 const NGUON_CS = `using System; using System.Diagnostics; using System.Net; using System.Net.Sockets; using System.Text; using System.Threading;
 public static class LlamaGia { public static int Main(string[] a) {
-  string cd = Environment.GetEnvironmentVariable("LLAMA_GIA_CHE_DO") ?? "song"; int cong = 0;
+  string cd = Environment.GetEnvironmentVariable("LLAMA_GIA_CHE_DO") ?? "song"; int cong = 0; string kd = Environment.GetEnvironmentVariable("LLAMA_GIA_KHOA_CHI_DOC");
   for (int i = 0; i < a.Length - 1; i++) if (a[i] == "--port") int.TryParse(a[i + 1], out cong);
   int c2; string ep = Environment.GetEnvironmentVariable("LLAMA_GIA_CONG"); if (ep != null && int.TryParse(ep, out c2)) cong = c2;
   if (cd == "thoat") return 3;
   if (cd == "khong-nghe") { Thread.Sleep(Timeout.Infinite); return 0; }
   if (cd == "nhan-doi") { var p = new ProcessStartInfo(Process.GetCurrentProcess().MainModule.FileName, "--con-khong-nghe"); p.UseShellExecute = false; p.EnvironmentVariables["LLAMA_GIA_CHE_DO"] = "khong-nghe"; Process.Start(p); }
   var l = new TcpListener(IPAddress.Loopback, cong); l.Start();
-  while (true) { using (var c = l.AcceptTcpClient()) { var s = c.GetStream(); s.ReadTimeout = 2000; var b = new byte[8192]; try { s.Read(b, 0, b.Length); } catch { }
+  while (true) { using (var c = l.AcceptTcpClient()) { var s = c.GetStream(); s.ReadTimeout = 2000; var b = new byte[8192]; try { s.Read(b, 0, b.Length); } catch { } if (kd != null && cd == "song") { try { System.IO.File.SetAttributes(kd, System.IO.FileAttributes.ReadOnly); } catch { } }
     string than = cd == "cham" ? "{\\"error\\":\\"loading\\"}" : "{\\"status\\":\\"ok\\"}"; string tt = cd == "cham" ? "503 Service Unavailable" : "200 OK";
     var r = Encoding.ASCII.GetBytes("HTTP/1.1 " + tt + "\\r\\nContent-Type: application/json\\r\\nContent-Length: " + than.Length + "\\r\\nConnection: close\\r\\n\\r\\n" + than); s.Write(r, 0, r.Length); } }
 } }`;
@@ -181,6 +181,39 @@ if (CA_RIENG === "doi-chung-mac-dinh") {
   CA.push({ ten: "tay-2-pause-khong-ghi-duoc", chay: (c) => tay(c, [], { LLAMA_GIA_CHE_DO: "song" }, TEP_HONG), kyVong: { ma: 2, pause: "khong", giaSong: 0 } },
     { ten: "doi-2-pause-khong-ghi-duoc-chu-cu-song", dung: async (c) => { khoiGia(BIN, "song", c); await choCong(c, true); },
       chay: (c) => doi(c, [], { LLAMA_GIA_CHE_DO: "song" }, TEP_HONG), kyVong: { ma: 2, pause: "khong", giaSong: 1 } });
+  // ── Lô D1b (HST 20/11 00:50). Chỉ thêm ở đây: không dời dòng các điểm spawn đã khai (vramAllocationSites). ──
+  const TEP_CHAN = path.join(D, "tep-chan"); // một TỆP: thư mục log "dưới" nó không tạo được
+  const TEP_KHOA2 = path.join(D, "khoa-gia-2.key");
+  fs.writeFileSync(TEP_CHAN, ""); fs.writeFileSync(TEP_KHOA2, `khoa-gia-2-${Math.random().toString(16).slice(2)}\n`);
+  const chuCu = (co = []) => async (c) => { khoiGia(BIN, "song", c, {}, co); await choCong(c, true); };
+  const DOI_SONG = { LLAMA_GIA_CHE_DO: "song" };
+  CA.push(
+    // M1: thư mục log hỏng ⇒ 2 TRƯỚC khi dừng chủ cũ (bản cũ: dừng chủ rồi exit 4).
+    { ten: "doi-2-log-khong-tao-duoc-chu-cu-song", dung: chuCu([]), kyVong: { ma: 2, pause: "khong", giaSong: 1 },
+      chay: (c) => chayPs(DOI_MODEL, ["-Model", MODEL, "-Exe", BIN, "-Cong", String(c), "-TepTamDung", TEP_DUNG, "-ThuMucLog", path.join(TEP_CHAN, "log"), "-ChoGiay", "6", "-Mmproj", "off"], DOI_SONG) },
+    // M1, đúng lỗi kiem-dinh 01:05 đo được (HST 01:08): ĐƯỜNG log CHÍNH LÀ một TỆP ⇒ New-Item -Force không ném ⇒ hậu điều kiện ⇒ 2, chủ cũ còn.
+    { ten: "doi-2-log-la-tep-chu-cu-song", dung: chuCu([]), kyVong: { ma: 2, pause: "khong", giaSong: 1, outCo: "KHONG TAO DUOC THU MUC LOG" },
+      chay: (c) => chayPs(DOI_MODEL, ["-Model", MODEL, "-Exe", BIN, "-Cong", String(c), "-TepTamDung", TEP_DUNG, "-ThuMucLog", TEP_CHAN, "-ChoGiay", "6", "-Mmproj", "off"], DOI_SONG) },
+    // M2: start-llama-server -Force, `<RepoRoot>/logs` là TỆP ⇒ 2 TRƯỚC khối -Force (chủ cũ còn sống).
+    { ten: "force-2-log-khong-tao-duoc-chu-cu-song", dung: async (c) => { const lg = path.join(D, "repo", "logs"); fs.rmSync(lg, { recursive: true, force: true }); fs.mkdirSync(path.dirname(lg), { recursive: true }); fs.writeFileSync(lg, ""); await chuCu([])(c); },
+      chay: (c) => force(c, DOI_SONG), kyVong: { ma: 2, pause: "khong", giaSong: 1 } },
+    // M3: đối chứng dương (bàn giao được ⇒ 0, khoá của người nhận còn) rồi ca âm (exe giả đặt ReadOnly lên tệp tạm dừng khi trả /health ⇒ 10).
+    { ten: "doi-0-ban-giao-khoa-chuyen", chay: (c) => doi(c, ["-GiuKhoa", "nguoi-nhan-gia"], DOI_SONG), kyVong: { ma: 0, pause: "co", giaSong: 1, outCo: "BAN GIAO khoa cho: nguoi-nhan-gia" } },
+    { ten: "doi-10-ban-giao-khoa-khong-chuyen", chay: (c) => doi(c, ["-GiuKhoa", "nguoi-nhan-gia"], { ...DOI_SONG, LLAMA_GIA_KHOA_CHI_DOC: TEP_DUNG }),
+      kyVong: { ma: 10, pause: "khong", giaSong: 1, outCo: "KHOA KHONG CHUYEN DUOC", outKhong: "BAN GIAO khoa cho" } },
+    // M5 (bảng 8 dòng; dòng 1, 3 = mã 9 sẵn có; dòng 6 = doi-0-dung-dung-chu-roi-khoi; dòng 8 = giới hạn, không dựng được).
+    { ten: "doi-0-m5-4a-chu-co-khoa-cung-tep", dung: chuCu(["--api-key-file", TEP_KHOA]), chay: (c) => doi(c, [], { ...DOI_SONG, LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }),
+      kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhCo: "--api-key-file" } },
+    { ten: "doi-11-m5-4b-chu-co-khoa-khac-tep", dung: chuCu(["--api-key-file", TEP_KHOA]), chay: (c) => doi(c, [], { ...DOI_SONG, LLAMA_SERVER_API_KEY_FILE: TEP_KHOA2 }),
+      kyVong: { ma: 11, pause: "khong", giaSong: 1, outCo: "TEP KHOA KHAC" } },
+    { ten: "doi-11-m5-4c-chu-co-api-key-gia-tri", dung: chuCu(["--api-key", "gia-tri-gia-khong-phai-khoa"]), chay: (c) => doi(c, [], { ...DOI_SONG, LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }),
+      kyVong: { ma: 11, pause: "khong", giaSong: 1, outCo: "--api-key <che>", outKhong: "gia-tri-gia-khong-phai-khoa" } },
+    { ten: "doi-11-m5-5-chu-co-khoa-shell-thieu-bien", dung: chuCu(["--api-key-file", TEP_KHOA]), chay: (c) => doi(c, [], DOI_SONG),
+      kyVong: { ma: 11, pause: "khong", giaSong: 1, outCo: "DANG CO KHOA" } },
+    { ten: "doi-0-m5-5p-chu-co-khoa-KhongKhoa", dung: chuCu(["--api-key-file", TEP_KHOA]), chay: (c) => doi(c, ["-KhongKhoa"], DOI_SONG),
+      kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhKhong: "--api-key", outCo: "KHONG KHOA THEO -KhongKhoa" } },
+    { ten: "doi-2-m5-7-KhongKhoa-mau-thuan", chay: (c) => doi(c, ["-KhongKhoa"], { ...DOI_SONG, LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }), kyVong: { ma: 2, pause: "khong", giaSong: 0 } },
+    { ten: "doi-0-m5-2-cong-trong-khong-bien", chay: (c) => doi(c, [], DOI_SONG), kyVong: { ma: 0, pause: "khong", giaSong: 1, outCo: "KHONG CO CHU CONG" } });
 }
 
 // ── Chạy ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -206,6 +239,9 @@ try {
     if (pause !== kv.pause) loi.push(`pause ${pause} != ${kv.pause}`);
     if (sau.length !== kv.giaSong) loi.push(`gia song ${sau.length} != ${kv.giaSong}`);
     if (kv.dongLenhCo && !sau.some((g) => String(g.cl ?? "").includes(kv.dongLenhCo))) loi.push(`dong lenh thieu ${kv.dongLenhCo}`);
+    if (kv.dongLenhKhong && sau.some((g) => String(g.cl ?? "").includes(kv.dongLenhKhong))) loi.push(`dong lenh CO ${kv.dongLenhKhong}`); // D1b
+    if (kv.outCo && !out.includes(kv.outCo)) loi.push(`dau ra thieu "${kv.outCo}"`);
+    if (kv.outKhong && out.includes(kv.outKhong)) loi.push(`dau ra CO "${kv.outKhong}"`);
     if (kv.chuCuBiDung && truoc.some((id) => sau.some((g) => g.id === id))) loi.push("chu cong cu KHONG bi dung");
     if (kv.nodeSong && !conNode.some((n) => n.exitCode === null && n.signalCode === null)) loi.push("chu cong node KHONG con song");
     if (!kv.chuCuBiDung && truoc.some((id) => !sau.some((g) => g.id === id)) && kv.ma !== 0) loi.push("tien trinh co truoc bi DUNG");
