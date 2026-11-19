@@ -3079,3 +3079,196 @@ describe("X-28 an Abort whose STOP planning throws names the forward STOP never 
     }
   });
 });
+
+
+describe("X-29 the walk-end naming of X-26 and the door of a latched run (F11): one case per surviving mutation", () => {
+  const g = globalThis as { __x26?: unknown; __x26ls?: string | null };
+  const KIND_TIEN = CANH_BAO_KHONG_RO_KIND.forwardNotSent;
+  // X-26 words, unchanged (foeKetCucKhongRo.ts, the luotStopHong title)
+  const TIEU_DE = (runId: number, id: string) => `Run ${runId}: another command's outcome is unknown — machine state unknown — STOP-typed step "${id}" NOT sent: the STOP pass of this run failed`;
+  const LUOT_HONG = "the STOP pass of this run failed";
+  const stopX = (id: string): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop" }) as WorkflowStep;
+  const cmd = (id: string, command: string, extra: Record<string, unknown> = {}): WorkflowStep => ({ id, type: "command", machineId: 1, command, ...extra }) as WorkflowStep;
+  const par = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as WorkflowStep;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as WorkflowStep;
+  const tiep = (runId: number) => resumeRun(runId, { approved: true, note: "checked" }, ADMIN, {}, { scope: null });
+  /** every X-26 URGENT (forwardNotSent with the words of a failed STOP pass) */
+  const luotHong = () => alerts.filter((a) => a.kind === KIND_TIEN && String(a.title).includes(LUOT_HONG));
+  /** the alerts naming one step, by the step slot of the key */
+  const ve = (id: string) => alerts.filter((a) => String(a.dedupKey ?? "").split(":")[2] === id);
+  /** a positive anchor before any "NOT named": wait for what the same walk must have told */
+  const doi = (f: () => void | Promise<void>) => vi.waitFor(f, { timeout: 3_000 });
+  const REJECTED = { ok: false, simulated: false, status: "rejected", results: [], commandLogIds: [] } as Record<string, unknown>;
+  /** the fault starts with the `start` that latches the run: every STOP pass after it throws (the store lever of X-26 K1) */
+  const nemTuStart = (khac: (i: Record<string, unknown>) => Record<string, unknown> = () => ACKED) =>
+    otDispatchMock.mockImplementation(async (i) => {
+      if (i.commandType === "start") {
+        g.__x26 = "nem";
+        return TIMEOUT;
+      }
+      return khac(i);
+    });
+  /** the first STOP pass after the latch throws ONCE, the later ones go to `sau` (the real verifier when absent) */
+  async function nemMotLan<T>(than: () => Promise<T>, sau?: (r: { ids: Set<string>; unsure: Set<string> }) => unknown): Promise<T> {
+    const m = (await import("./foeRunStore")) as unknown as { centralRunStore: Record<string, (...a: unknown[]) => Promise<unknown>> };
+    const st = m.centralRunStore;
+    const goc = st.verifyStops!;
+    let chot = false;
+    let nem = 0;
+    otDispatchMock.mockImplementation(async (i) => {
+      if (i.commandType === "start") {
+        chot = true;
+        return TIMEOUT;
+      }
+      return ACKED;
+    });
+    st.verifyStops = async (...a: unknown[]) => {
+      if (chot && nem === 0) {
+        nem++;
+        throw new Error("verifyStops down once (X-29)");
+      }
+      const r = (await goc(...a)) as { ids: Set<string>; unsure: Set<string> };
+      return sau ? sau(r) : r;
+    };
+    try {
+      const out = await than();
+      expect(nem, "the first STOP pass after the latch threw").toBe(1);
+      return out;
+    } finally {
+      st.verifyStops = goc;
+    }
+  }
+
+  it("P-f7 (laStopTheoBuoc) a forward command that is NOT stop-typed and never went is not named: only the STOP xs", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      nemTuStart();
+      const r = await chay([seq("box", [main(resetComp("undo")), stopX("xs"), cmd("xp", "pause")])]);
+      await doi(() => expect(luotHong().map((a) => a.title)).toContain(TIEU_DE(r.runId, "xs"))); // positive anchor: the same naming has told xs
+      expect(r.res.status).toBe("held");
+      expect(luotHong().map((a) => a.title)).toEqual([TIEU_DE(r.runId, "xs")]);
+      expect(ve("xp").filter((a) => String(a.title).includes(LUOT_HONG))).toEqual([]); // X-26 words only: xp's plain forward-dropped URGENT is H13's (baoBuocTienBiBo), not this rule's
+    } finally {
+      g.__x26 = null;
+      err.mockRestore();
+    }
+  });
+
+  it("P-f6 (type === command) a gate never walked is not named, even when its classification throws (read as a STOP)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      nemTuStart();
+      g.__x26ls = "gx";
+      const r = await chay([seq("box", [main(resetComp("undo")), stopX("xs"), { id: "gx", type: "hitl_gate", prompt: "x" } as WorkflowStep])]);
+      await doi(() => expect(luotHong().map((a) => a.title)).toContain(TIEU_DE(r.runId, "xs"))); // positive anchor
+      expect(luotHong().map((a) => a.title)).toEqual([TIEU_DE(r.runId, "xs")]);
+      expect(ve("gx").filter((a) => String(a.title).includes(LUOT_HONG))).toEqual([]);
+    } finally {
+      g.__x26ls = null;
+      g.__x26 = null;
+      err.mockRestore();
+    }
+  });
+
+  it("P-f4 (diStop) a STOP the healthy last pass took (unverified ⇒ diStopTien) is told by that pass, never in the words of a failed pass", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      ghimMock.mockImplementation(async () => ({ pinnedStop: false, loiDocGhim: null }));
+      const r = await nemMotLan(() => chay([seq("box", [main(resetComp("undo")), stopX("xs")])]));
+      await doi(() => expect(ve("xs").filter((a) => a.kind === KIND_TIEN)).toHaveLength(1)); // positive anchor: the last pass told xs in its own words
+      expect(luotHong()).toEqual([]);
+      expect(r.res.status).toBe("held");
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("P-f3 (prior.attempted) a STOP handed to its dispatcher in walk 1 (refused) is not named at the Continue whose every pass throws", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      nemTuStart((i) => (i.commandType === "stop" ? REJECTED : ACKED));
+      const r = await chay([par("p", [stopX("xs"), seq("b", [delay("w", 50), main(resetComp("undo"))])])]);
+      expect(r.res.status).toBe("held");
+      await doi(async () => expect((await step(r.runId, "xs"))?.status).toBe("failed")); // positive anchor of walk 1 // handed over and refused: prior.attempted at the next walk (priorStepsOf: failed)
+      expect(sent("reset")).toEqual([]);
+      await tiep(r.runId).catch(() => undefined);
+      // positive anchor: the Continue walked (its approved compensation went) and its walk ended
+      await doi(() => {
+        expect(sent("reset"), "the Continue walked (its approved compensation went)").toEqual(["reset"]);
+        expect(["failed", "held", "completed", "aborted"]).toContain(String(runRow(r.runId).status));
+      });
+      expect(luotHong().filter((a) => String(a.dedupKey).split(":")[2] === "xs")).toEqual([]);
+    } finally {
+      g.__x26 = null;
+      err.mockRestore();
+    }
+  });
+
+  it("P-t1 (order of the words) a STOP the last pass reads not pinned while its dispatcher says pinned, after a pass that threw: the X-26 words come first", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const r = await nemMotLan(
+        () => chay([seq("box", [main(resetComp("undo")), stopX("xs")])]),
+        (v) => ({ ...v, ids: new Set([...v.ids].filter((x) => x !== "xs")), unsure: new Set([...v.unsure].filter((x) => x !== "xs")) }),
+      );
+      await doi(() => expect(ve("xs").filter((a) => a.kind === KIND_TIEN).map((a) => a.title)).toEqual([TIEU_DE(r.runId, "xs")]));
+      expect(sent("stop")).toEqual([]);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("P-d3 (F11) the STOP compensation of a step the door cuts goes AT the door, while a sibling is still out (its dispatch held by the test)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let nha: () => void = () => undefined;
+    const giu = new Promise<void>((x) => (nha = x));
+    try {
+      otDispatchMock.mockImplementation(async (i) => {
+        if (i.commandType === "start") return TIMEOUT;
+        if (i.commandType === "reset") {
+          await giu;
+          return ACKED;
+        }
+        return ACKED;
+      });
+      const di = chay([par("p", [main(), seq("b", [delay("w", 60), cmd("r4", "pause", { compensation: stopComp("c4") })]), cmd("lau", "reset", { machineId: 3 })])]);
+      await vi.waitFor(() => expect(sent("stop")).toEqual(["stop"]), { timeout: 3_000 });
+      await vi.waitFor(async () => expect((await step(runIdCua(), "c4"))?.status).toBe("compensated"), { timeout: 3_000 });
+      expect(sent("reset")).toEqual(["reset"]); // the sibling is still out: the walk has not ended
+      nha();
+      await di;
+    } finally {
+      nha();
+      err.mockRestore();
+    }
+  });
+  /** the run of the case: the newest run row */
+  const runIdCua = () => Math.max(...rows("orchestration_runs").map((x) => Number(x.id)));
+
+  it("P-f5 (chuaRaStop) a STOP refused before the latch carries its own debt: not named in the words of a failed pass", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const m = (await import("./foeRunStore")) as unknown as { centralRunStore: Record<string, (...a: unknown[]) => Promise<unknown>> };
+    const st = m.centralRunStore;
+    const gocUq = st.authorizeCommand!;
+    let tuChoi = 0;
+    try {
+      st.authorizeCommand = async (...a: unknown[]) => {
+        if ((a[1] as { id?: string } | undefined)?.id === "xs") {
+          tuChoi++;
+          return { ok: false, verdict: "refused", error: "FOE_GATE_REQUIRED(x29)" };
+        }
+        return gocUq(...a);
+      };
+      nemTuStart();
+      const r = await chay([par("p", [stopX("xs"), seq("b", [delay("w", 50), main(resetComp("undo"))])])]);
+      expect(tuChoi).toBeGreaterThanOrEqual(1);
+      expect(r.res.status).toBe("held");
+      await doi(() => expect(ve("xs").map((a) => String(a.kind))).toContain(CANH_BAO_KHONG_RO_KIND.stopNotSent)); // positive anchor: its own debt told
+      expect(luotHong()).toEqual([]);
+    } finally {
+      st.authorizeCommand = gocUq;
+      g.__x26 = null;
+      err.mockRestore();
+    }
+  });
+});
