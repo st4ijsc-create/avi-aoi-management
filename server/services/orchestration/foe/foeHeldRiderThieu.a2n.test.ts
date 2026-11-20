@@ -315,3 +315,43 @@ describe("T4 — dạng 4, the cases of the review (rider short or unreadable)",
     expect(tachBaoCaoKhongRoEdge(w, (x) => x.claimSeq === 2), "filtered by the claim check: not short").toEqual({ error: "text", bao: [] });
   });
 });
+
+// X-33 (AGENTS-ngoai-le.md dòng 47) — b1a / b1d: at the end gate (congCuoi) khongRoCuaDoan is the only source of foeOutcomeUnknown (held() reads the ledger again, :2205, and hides them)
+describe("X-33 — the end gate of an edge segment, held for a STOP owed: the commands that may have gone, from central's rows and ledger", () => {
+  const DEF = { ref: "x33", name: "x33", steps: [move("x"), move("y"), otStop("st")] } as never as WorkflowDefinition;
+  const ketFailed = async () => {
+    const { loiGiuChuaRa } = await import("./foeKetCucKhongRo");
+    d.store.set("orchestration_run_steps", [
+      { runId: RUN, stepId: "x", stepType: "command", status: "running", attempt: 1, error: null, resultJson: null },
+      { runId: RUN, stepId: "st", stepType: "command", status: "failed", attempt: 1, error: loiGiuChuaRa("st", { nguon: "tuChoi", ma: "CHUA_GHIM_STOP" }), resultJson: null },
+    ]);
+    const r = await applyEdgeSegmentEnd(d as never, RUN, { outcome: "failed", error: 'COMMAND_FAILED: step "y" failed [[A2N:[]]]', nodeCode: "EDGE-A", claimSeq: 1, def: DEF });
+    await wait();
+    return { r, ctx: ((d.store.get("orchestration_runs") as Array<Record<string, any>>)[0].contextJson ?? {}) as Record<string, unknown> };
+  };
+  it("X33-CONG-SO-LOI (b1a + b1d) the ledger read fails at the end gate: fail-closed — x, whose row is not final, may have gone: named unknown, the run latched", async () => {
+    const goc = d.select.bind(d);
+    (d as any).select = (p?: unknown) => {
+      const q = goc(p as never);
+      const from = q.from.bind(q);
+      q.from = (t: any) => {
+        if (t?.[Symbol.for("drizzle:Name")] === "edge_step_authorizations") throw Object.assign(new Error("ledger (X-33 test)"), { code: "42501" });
+        return from(t);
+      };
+      return q;
+    };
+    const { r, ctx } = await ketFailed();
+    expect(r).toMatchObject({ ok: true, status: "held", changed: true });
+    expect(ctx.interruptedBy, "held by the end gate (congCuoi), not by held()").toBe("end gate");
+    expect(ctx.foeOutcomeUnknown, "fail-closed: the command whose row is not final").toEqual(["x"]);
+    expect(runDaChotKhongRo(ctx)).toBe(true);
+  });
+  it("X33-CONG-SO-DOC (b1d) the ledger read: x authorised, no result, its row running: named unknown at the end gate, the run latched", async () => {
+    d.store.set("edge_step_authorizations", [so("x")]);
+    const { r, ctx } = await ketFailed();
+    expect(r).toMatchObject({ ok: true, status: "held", changed: true });
+    expect(ctx.interruptedBy, "held by the end gate (congCuoi), not by held()").toBe("end gate");
+    expect(ctx.foeOutcomeUnknown).toEqual(["x"]);
+    expect(runDaChotKhongRo(ctx)).toBe(true);
+  });
+});

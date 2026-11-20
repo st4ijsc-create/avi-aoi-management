@@ -2861,6 +2861,29 @@ describe("X-26 a STOP pass that throws names the forward STOP never handed over"
       err.mockRestore();
     }
   });
+
+  // X-33 (dòng 47; thăm dò T9A8A-KE đo 23:39 @629c22197) — a8a: debt in the context alone + a STOP pass that throws ⇒ giuStopChuaRa `vi ??= VI_KHONG_BAO` (foeEngine.ts:1879)
+  it("T9-A8A-GIU-KHONG-MA a STOP owed in the context alone, the Continue's STOP pass throws: the run says it is not confirmed out — it may have reached the device — never that it did not go", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      batKhiStart("nem");
+      const r = await chay([seq("box", [main(resetComp("undo")), stopX("xs")])]);
+      await new Promise((x) => setTimeout(x, 150));
+      runRow(r.runId).contextJson = { ...((runRow(r.runId).contextJson ?? {}) as Record<string, unknown>), foeStopChuaRa: ["xs"] };
+      await tiepX26(r.runId).catch(() => undefined);
+      await new Promise((x) => setTimeout(x, 150));
+      expect(runRow(r.runId).status).toBe("held");
+      expect(await step(r.runId, "xs"), "no row of xs: the debt is the context's alone").toBeUndefined();
+      expect(String(runRow(r.runId).error)).toContain('STOP "xs" is not confirmed out: it may have reached the device (NOT_REPORTED)');
+      expect(String(runRow(r.runId).error)).not.toContain("did NOT go out");
+      expect(alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.stopNotSent && String(a.dedupKey).includes(`:${r.runId}:xs:`)).map((a) => String(a.title))).toEqual([expect.stringContaining('STOP "xs" NOT confirmed out')]);
+      expect(sent("stop")).toEqual([]);
+      expect(new Set(luotHong().map((a) => String(a.dedupKey))).size, "one forwardNotSent of xs per walk, under its own key").toBe(2);
+    } finally {
+      datX26(null);
+      err.mockRestore();
+    }
+  });
 });
 
 describe("X-28 an Abort whose STOP planning throws names the forward STOP never handed over", () => {

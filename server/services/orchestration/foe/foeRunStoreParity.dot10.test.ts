@@ -17036,6 +17036,22 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
     expect(ids()).toEqual([]);
   });
 
+  // X-33 (AGENTS-ngoai-le.md dòng 47) — b11b: khoa from chotTuHang(src.hang) alone (foeEngine.ts:6926); the catch's URGENT (:7209) then rests on `khoa ||` only
+  it("X33-QUET-NEM-HANG (b11b) a run latched by its rows alone, the sweep throws: khongDocDuoc, the URGENT of RA2-5 all the same", async () => {
+    const c = await centralRun(def("x33qnh", [gate("g0"), ot("x"), gate("g1"), otStop("s2")]), 1);
+    await wait(30);
+    expect(runRow(c).status).toBe("awaiting_confirm");
+    Object.assign(stepRows(c).find((s) => s.stepId === "x")!, { status: "failed", error: "FOE_OUTCOME_UNKNOWN: command x may have reached the device" });
+    runRow(c).status = "held";
+    h.traTimeout = 1;
+    expect((await import("./foeKetCucKhongRo")).runDaChotKhongRo(ctxCua(c)), "the context does not latch it: only the rows do").toBe(false);
+    hongDinhNghia(c);
+    const a = await bam(c);
+    expect(a.abortStops?.khongDocDuoc).toBe(true);
+    expect(urgentCua("abortDefUnread").length).toBe(1);
+    expect(ids()).toEqual([]);
+  });
+
   // ── every way out of abortRun lets the waiting walk go (RM-THA-*): a walker latched behind the Abort ends long before the bound of the wait ────────────────
   const dungTrongX = async (ref: string) => {
     h.timeoutDispatch.add("x");
