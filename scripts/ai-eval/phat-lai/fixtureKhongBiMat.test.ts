@@ -31,10 +31,11 @@ describe("fixture phát lại và bộ lọc locCo", () => {
   });
 });
 describe("(iii) kiểm TĨNH nguồn — PHATLAI-KIEM-TINH", () => {
-  it("dongGoi.ts ghi vào fixture phần `co` của locCo, không ghi moiTruong thô", () => {
+  it("dongGoi.ts lọc qua mô-đun thuần locMoiTruong.ts (PHATLAI-2), ghi `co`, không lọc tại chỗ, không ghi moiTruong thô", () => {
     const nguon = docNguon("dongGoi.ts");
-    expect(nguon).toMatch(/^import \{ locCo \} from "\.\.\/tasks\/run-eval\.mjs";$/m);
-    expect(nguon).toMatch(/const \{ co \} = locCo\(moiTruong\);/);
+    expect(nguon).toMatch(/^import \{ locMoiTruongFixture \} from "\.\/locMoiTruong";$/m);
+    expect(nguon).toMatch(/= locMoiTruongFixture\(/);
+    expect(nguon).not.toMatch(/matchAll\(/); // vòng lọc .env tại chỗ đã chuyển sang mô-đun thuần (ca hành vi: locMoiTruong.test.ts)
     expect(nguon).toMatch(/^\s*moiTruong: co,$/m);
     expect(nguon).not.toMatch(/^\s*moiTruong,$/m);
   });
