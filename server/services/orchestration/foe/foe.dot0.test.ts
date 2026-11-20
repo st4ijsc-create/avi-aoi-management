@@ -14,7 +14,7 @@
  * DB = FakeDb dùng chung (`server/routers/__otFakeDb.ts`) — nó hỗ trợ `update … returning()`,
  * đúng thứ CAS cần để biết số hàng. eq/and/ne/inArray được mock thành vị từ JS.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { FakeDb, makeEq, makeAnd, resetSeq } from "../../../routers/__otFakeDb";
 
 const { otDispatchMock, robotDispatchMock, auditMock } = vi.hoisted(() => ({
@@ -111,6 +111,18 @@ async function waitFor(pred: () => boolean, ms = 2000): Promise<void> {
 function codeOf(e: unknown): string | undefined {
   return (e as { code?: string } | null)?.code;
 }
+
+// X-31 (G41, hàng AGENTS-ngoai-le.md dòng 42) — lần gửi cảnh báo URGENT ĐẦU TIÊN của một tiến trình vitest nạp động, lần đầu, hai mô-đun mà tệp này
+// không giả lập: `ecosystemEvents` (robot/criticalStopAlert.ts:137) và `notificationService` (:99). Nạp lần đầu dưới vitest là biên dịch + chạy cả cây import của
+// chúng: đo G41D (20/11) ~2,7 s riêng eco, ~0,7 s riêng notif (~0,15 s sau eco); đỏ-trước X-31 ở b97e0b8a2: ORC-01 chạy riêng 2591 ms > 1000 (:167), `wait_state`
+// chạy riêng 226 ms (xanh, không URGENT). Ở bản dựng thật hai mô-đun khởi tạo lúc nạp bundle: đọc tệp gói esbuild của nhánh ở ed55a6c5d (sha16 06f23f1761cbf4ef;
+// doc-r.txt f7c10f945773e0de, doc-r5.txt de32daec5be77b94) — đọc tệp gói, KHÔNG phải đo trên máy chủ đang chạy; bản dev `tsx watch` không phủ (G41-DEV).
+// Nạp thật, chỉ sớm hơn: mọi chậm ở MỖI lần Abort (lần chờ URGENT, DB, hẹn giờ) vẫn bị hai mốc `toBeLessThan(1000)` của ORC-01 và `wait_state` bắt.
+// Thứ tự eco rồi notif: không đổi nghĩa; eco nạp trước thì notif rẻ (G41D: notif ~0,15 s sau eco, ~0,7 s một mình), vì hai cây import dùng chung nhiều mô-đun.
+beforeAll(async () => {
+  await import("../../ecosystem/ecosystemEvents");
+  await import("../../notificationService");
+});
 
 beforeEach(() => {
   fake.store.clear();
