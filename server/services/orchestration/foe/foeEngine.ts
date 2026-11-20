@@ -1889,7 +1889,7 @@ async function giuStopChuaRa(rc: RunContext, src: AbortSweepSource | null): Prom
  * steps ends when every command of its body went so. A hold the walk returned gives way to its failure only if no container around it still owes a compensation. T6 (S3) — a hold
  * lifted never names the run while another one stands.
  */
-async function goGiuDaDi(rc: RunContext, out: StepOutcome): Promise<StepOutcome> {
+export async function goGiuDaDi(rc: RunContext, out: StepOutcome): Promise<StepOutcome> {
   const daDi = new Map<string, boolean>();
   const di = async (id: string): Promise<boolean> => {
     if (!daDi.has(id)) {
@@ -5089,6 +5089,7 @@ async function driveRunFromResume(rc: RunContext): Promise<OrchestrationRun["sta
     if (!stillOurs) return "aborted";
     if (daChotKhongRo(rc)) {
       batDauLuotStop(rc); // A2(n) (I-F) — a walk that finds the run latched: boot, Continue, a gate approval, the next edge segment
+      // C7-XN lượt 2 (kiem-dinh 20/11, g7 / p2): on a walk that is not compensation-only NO await stands between batDauLuotStop and the two gates below, so they read rc.luotStopHong / rc.chuaRaStop before the pass ran: adding an await here reopens g7 / p2
       // A2(n) (C-7) — a STOP goes before a compensation a person approved, or at the same moment: a hung one does not hold that compensation past D
       if (duongBuTruCua(rc)) await withDeadline(Promise.allSettled(rc.stopNen ?? []), STOP_DB_STEP_DEADLINE_MS, `FOE run ${rc.runId} first STOP pass`).catch(() => undefined);
       // X-27 (1) (chủ dự án 19/11 "1.chặn") — that first STOP pass threw: nothing of the tree, so no compensation that is no STOP goes; held in its words, the approval spent (finishWalk)
