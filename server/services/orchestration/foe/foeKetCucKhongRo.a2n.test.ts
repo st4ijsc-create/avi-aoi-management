@@ -238,6 +238,7 @@ import { FOE_STOP_NOT_SENT, MA_CHUA_GHI, loiChuaRaStop, loiGiuChuaRa, maTuChoiCu
   ganBaoCaoKhongRoEdge,
   KHONG_CO_BU_TRU,
   chuLuotStopHongBuTru,
+  chuStopChuaGiaoBuTru,
   tachBaoCaoKhongRoEdge,
   nhanBuocSauChot,
   type BangChungBuoc,
@@ -1143,9 +1144,25 @@ describe("A2(n) fix round 2 — the unknown flag outranks every sibling state; a
     const b = await giuKhongRo([par("p", [main(resetComp("undo")), seq("k", [{ id: "stopX", type: "command", machineId: 1, command: "stop" } as WorkflowStep], resetComp("kUndo", 1))])]);
     expect(sent("reset")).toHaveLength(1);
     otDispatchMock.mockClear();
+    // C7-XNb (chủ dự án 19/11 "1.chặn", C7-XN P1): stopX is refused again at the Continue's first pass, a STOP known not handed over ⇒ no compensation that is not a STOP goes
+    const cb = await tiep(b.runId);
+    expect(String(cb.status)).toBe("held"); // positive anchor: resumeRun returns once the walk ended
+    expect(sent("reset")).toEqual([]); // C7-XNb: neither undo nor kUndo (was: undo once) — the behaviour first
+    expect(String(runRow(b.runId).error ?? "").endsWith(` ${chuStopChuaGiaoBuTru(b.runId)}`)).toBe(true); // it was the C7-XN gate that held it
+    expect(sent("stop").length).toBeGreaterThan(0); // the STOP re-sent, with its default of attempts
+  });
+
+  it("I-A-UNDO-MOT-LAN (C7-XNb) the same container, stopX refused in walk 1 and ACCEPTED at the Continue: no STOP known not handed over, undo goes once, kUndo not a second time", async () => {
+    const treTimeout = async (ms: number) => (await new Promise((r) => setTimeout(r, ms)), TIMEOUT);
+    let luot = 1;
+    otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? treTimeout(1_100) : i.commandType === "stop" ? (luot === 1 ? REJECTED : ACKED) : ACKED));
+    const b = await giuKhongRo([par("p", [main(resetComp("undo")), seq("k", [{ id: "stopX", type: "command", machineId: 1, command: "stop" } as WorkflowStep], resetComp("kUndo", 1))])]);
+    expect(sent("reset")).toHaveLength(1); // kUndo: a known failure, as before
+    otDispatchMock.mockClear();
+    luot = 2;
     await tiep(b.runId);
     expect(sent("reset")).toHaveLength(1); // undo; kUndo not a second time
-    expect(sent("stop").length).toBeGreaterThan(0); // the STOP re-sent, with its default of attempts
+    expect(sent("stop").length).toBeGreaterThan(0); // the STOP re-sent, accepted
   });
 
   it("I-A a Continue that finds nothing to walk (an unreadable marker, no state) never reads 'completed': the run fails, nothing is sent", async () => {
@@ -3666,5 +3683,211 @@ describe("X-27c the words of X-27 (1) when the STOP pass threw AFTER it had star
       HX.rowSlowMs = null;
       err.mockRestore();
     }
+  });
+});
+
+
+describe("C7-XN (P1) a Continue of a latched run whose healthy first STOP pass leaves a STOP known not handed over sends no compensation that is not a STOP: held, the approval spent (chủ dự án 19/11 \"1.chặn\")", () => {
+  const g = globalThis as { __x26?: unknown };
+  const LUOT_HONG = "the STOP pass of this run failed";
+  const C7_MAU = "is known not handed over";
+  const XS_CHU = 'STOP "xs" did NOT go out';
+  const stopX = (id: string): WorkflowStep => ({ id, type: "command", machineId: 1, command: "stop" }) as WorkflowStep;
+  const par = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as WorkflowStep;
+  const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as WorkflowStep;
+  const doi = (f: () => void | Promise<void>, timeout = 3_000) => vi.waitFor(f, { timeout });
+  const tiep = (runId: number) => resumeRun(runId, { approved: true, note: "checked on site" }, ADMIN, {}, { scope: null });
+  const loi = (runId: number) => String(runRow(runId).error ?? "");
+  const veXs = () => alerts.filter((a) => a.kind === CANH_BAO_KHONG_RO_KIND.stopNotSent && String(a.dedupKey ?? "").split(":")[2] === "xs");
+  const hongX26 = () => alerts.filter((a) => String(a.title).includes(LUOT_HONG));
+  // the C7XN shape (measured 19:08 at 3223554e3): xs a pinned STOP of machine 1 beside a sequence whose `main` start (compensation: reset machine 3) times out and latches the run
+  const hinhA = () => chay([par("p", [stopX("xs"), seq("b", [delay("w", 50), main(resetComp("undo"))])])]);
+  const adapterCua = (i: Record<string, unknown>) => (i as { adapterId?: unknown }).adapterId;
+
+  it("C7-A (C7XN shape A) xs refused at every send, the Continue's STOP pass healthy: no reset, held, the state C words of xs first and C7-XN's sentence last, the approval spent; a second Continue sends none either", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "stop" ? REJECTED : ACKED));
+      const r = await hinhA();
+      await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+      // positive anchor: resumeRun returns once the Continue's walk has ended (it awaits driveRunFromResume, foeEngine.ts:4994): whatever it sent, it has sent
+      const c = await tiep(r.runId);
+      expect(String(c.status)).toBe("held");
+      expect(sent("reset")).toEqual([]); // HST 03:42: the behaviour first (the original code SENDS it: C7XN A, 19:08)
+      expect(String(runRow(r.runId).status)).toBe("held");
+      expect(loi(r.runId).endsWith(` ${chuStopChuaGiaoBuTru(r.runId)}`)).toBe(true);
+      const e = loi(r.runId);
+      expect(e.indexOf(XS_CHU)).toBeGreaterThanOrEqual(0);
+      expect(e.indexOf(XS_CHU)).toBeLessThan(e.indexOf(chuStopChuaGiaoBuTru(r.runId))); // HST 03:27: "(named above)" holds only in this order
+      expect(runRow(r.runId).contextJson[KHONG_RO_DUYET_CTX_KEY]).toBeUndefined(); // the approval is spent with its walk (foeEngine finishWalk)
+      expect(veXs().length).toBeGreaterThanOrEqual(1); // xs named in its own state C URGENT
+      expect(hongX26()).toEqual([]); // the shape: no STOP pass threw (X-27 (1) is not what held it)
+      const c2 = await tiep(r.runId); // the second Continue: a new approval, the same refusal
+      expect(String(c2.status)).toBe("held");
+      expect(sent("reset")).toEqual([]);
+      expect(loi(r.runId).endsWith(` ${chuStopChuaGiaoBuTru(r.runId)}`)).toBe(true);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("C7-A-SEND (C7XN shape A, the verifier accepting xs's pins at the Continue: xs in plan.send, not unverified) xs refused at its send: no reset, held in C7-XN's words", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const m = (await import("./foeRunStore")) as unknown as { centralRunStore: Record<string, (...a: unknown[]) => Promise<unknown>> };
+    const st = m.centralRunStore;
+    const goc = st.verifyStops!;
+    let nhan = false;
+    try {
+      // KRT-STOP-OT-KHONGCHAC: this file's verifier calls every OT STOP unsure; here, from the Continue on, it accepts xs's pins (as X27C-DADI does for undo): xs goes in plan.send
+      st.verifyStops = async (...a: unknown[]) => {
+        const v = (await goc(...a)) as { ids: Set<string>; unsure: Set<string> } & Record<string, unknown>;
+        if (!nhan || !JSON.stringify(a[1] ?? null).includes('"xs"')) return v;
+        const ids = new Set(v.ids);
+        ids.add("xs");
+        const unsure = new Set(v.unsure);
+        unsure.delete("xs");
+        return { ...v, ids, unsure };
+      };
+      otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "stop" ? REJECTED : ACKED));
+      const r = await hinhA();
+      await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+      nhan = true;
+      const truoc = sent("stop").length;
+      // positive anchor: resumeRun returns once the Continue's walk has ended (foeEngine.ts:4994)
+      const c = await tiep(r.runId);
+      expect(String(c.status)).toBe("held");
+      expect(sent("stop").length).toBeGreaterThan(truoc); // the shape first (HST 04:50): xs was sent at the Continue (and refused)
+      expect(sent("reset")).toEqual([]); // then the behaviour (the original code sends it)
+      expect(loi(r.runId).endsWith(` ${chuStopChuaGiaoBuTru(r.runId)}`)).toBe(true);
+      expect(hongX26()).toEqual([]);
+    } finally {
+      st.verifyStops = goc;
+      err.mockRestore();
+    }
+  });
+
+  it("C7-B (C7XN shape B) xs refused in walk 1 only, accepted at the Continue: the reset goes, no C7-XN words", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let luot = 1;
+    try {
+      otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "stop" ? (luot === 1 ? REJECTED : ACKED) : ACKED));
+      const r = await hinhA();
+      await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+      luot = 2;
+      await tiep(r.runId);
+      await doi(() => expect(sent("reset")).toEqual(["reset"]));
+      expect(loi(r.runId)).not.toContain(C7_MAU);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("C7-DRIVERLOI xs refused in walk 1, its send THROWS at the Continue (state C from the driver: it may have gone out): not known, the reset goes", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let luot = 1;
+    try {
+      otDispatchMock.mockImplementation(async (i) => {
+        if (i.commandType === "start") return TIMEOUT;
+        if (i.commandType === "stop") {
+          if (luot === 2) throw new Error("driver lost mid-write (C7-XN P1-DRIVERLOI)");
+          return REJECTED;
+        }
+        return ACKED;
+      });
+      const r = await hinhA();
+      await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+      luot = 2;
+      await tiep(r.runId).catch(() => undefined);
+      await doi(() => expect(sent("reset")).toEqual(["reset"]));
+      expect(hongX26()).toEqual([]); // the shape: the throw stayed inside the send (execCommand), the pass did not throw
+      expect(loi(r.runId)).not.toContain(C7_MAU);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("C7-KHONGGHIM xs stop-typed but read NOT pinned (R-5-j), refused: never state C, the reset goes", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      ghimMock.mockImplementation(async (_d, i) => ({ pinnedStop: i.commandType === "stop" && i.adapterId !== 501, loiDocGhim: null }));
+      otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "stop" ? REJECTED : ACKED));
+      const r = await hinhA();
+      await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+      await tiep(r.runId).catch(() => undefined);
+      await doi(() => expect(sent("reset")).toEqual(["reset"]));
+      expect(loi(r.runId)).not.toContain(C7_MAU);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("C7-CHAM (a named limit) xs refused, the refusal at the Continue answering after D: C-7 as before, the reset goes", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let luot = 1;
+    try {
+      otDispatchMock.mockImplementation(async (i) => {
+        if (i.commandType === "start") return TIMEOUT;
+        if (i.commandType === "stop") {
+          if (luot === 2) await new Promise((x) => setTimeout(x, 2_000)); // > D (1 s) by 1 s: a slow timer can only make the case red, never green
+          return REJECTED;
+        }
+        return ACKED;
+      });
+      const r = await hinhA();
+      await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+      luot = 2;
+      await tiep(r.runId).catch(() => undefined);
+      await vi.waitFor(() => expect(sent("reset")).toEqual(["reset"]), { timeout: 5_000 });
+    } finally {
+      err.mockRestore();
+    }
+  }, 15_000);
+
+  it("C7-GOGIU the approved STOP compensation u3 goes in the Continue's healthy first pass, xs is refused: the gate's hold is not lifted, held in C7-XN's words", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let n = 0;
+    let hoi = false;
+    try {
+      // u3 (machine 3, adapter 503): pinned at the first read, not pinned after (K2 khongGhim: the pass holds it); pinned again at the Continue (hoi)
+      ghimMock.mockImplementation(async (_d, i) => {
+        if (i.commandType !== "stop") return { pinnedStop: false, loiDocGhim: null };
+        if (i.adapterId !== 503) return { pinnedStop: true, loiDocGhim: null };
+        if (hoi || ++n === 1) return { pinnedStop: true, loiDocGhim: null };
+        await new Promise((x) => setTimeout(x, 40));
+        return { pinnedStop: false, loiDocGhim: null };
+      });
+      HX.rowSlowMs = (row) => (row.stepId === "main" && row.status === "failed" ? 30 : 0);
+      otDispatchMock.mockImplementation(async (i) => (i.commandType === "start" ? TIMEOUT : i.commandType === "stop" && adapterCua(i) === 501 ? REJECTED : ACKED));
+      const r = await chay([par("p", [stopX("xs"), seq("box", [main()], stopComp("u3", 3))])]);
+      await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+      // the shape (else a named limit): u3 held by walk 1, never sent; xs refused
+      expect(await step(r.runId, "u3")).toMatchObject({ status: "held" });
+      const stop503 = () => otDispatchMock.mock.calls.filter((c) => (c[0] as { commandType: unknown }).commandType === "stop" && adapterCua(c[0] as Record<string, unknown>) === 503).length;
+      expect(stop503()).toBe(0);
+      hoi = true;
+      HX.rowSlowMs = null;
+      await tiep(r.runId).catch(() => undefined);
+      await doi(() => expect(stop503()).toBe(1)); // the shape: u3 went in the Continue's first pass
+      await doi(() => {
+        expect(String(runRow(r.runId).status)).toBe("held");
+        expect(loi(r.runId).endsWith(` ${chuStopChuaGiaoBuTru(r.runId)}`)).toBe(true);
+      });
+      expect(loi(r.runId).indexOf(XS_CHU)).toBeGreaterThanOrEqual(0);
+    } finally {
+      HX.rowSlowMs = null;
+      err.mockRestore();
+    }
+  });
+
+  it("C7-CHU the words: no compensation that is not a STOP sent, a STOP compensation may have gone, the approval spent, never NONE; ≤ 800 with run 2 147 483 647", () => {
+    const t = chuStopChuaGiaoBuTru(2_147_483_647);
+    expect(t.length).toBeLessThanOrEqual(800);
+    expect(t).toContain("sent no approved compensation that is not a STOP");
+    expect(t).toContain(C7_MAU);
+    expect(t).toContain("An approved compensation that is a STOP may have been sent by this Continue's STOP pass."); // C7-XN bản 3 (HST 03:40): said straight
+    expect(t).toContain("That approval is spent: a later Continue needs a new approval");
+    expect(t).toContain("Abort sends STOP steps only.");
+    expect(t).not.toContain("NONE");
+    expect(t).not.toContain("is still running");
   });
 });

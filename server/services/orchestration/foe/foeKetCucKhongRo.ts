@@ -587,6 +587,11 @@ export function chuLuotStopHongBuTru(runId: number): string {
   return `A Continue of run ${runId} sent no approved compensation that is not a STOP: its STOP pass failed, so the system cannot say the STOP steps of this run are out. An approved compensation that is a STOP may or may not have been sent by that pass. That approval is spent: a later Continue needs a new approval, and sends the compensations that are not STOPs only if its STOP pass does not fail. Where the system could work them out, STOP-typed steps never handed over are named in alerts of their own; that list may be incomplete or empty, and no STOP compensation is named. Stop the machine at the machine now with its direct STOP / E-STOP and check it on site; Abort sends STOP steps only.`;
 }
 
+/** C7-XN (chủ dự án 19/11 "1.chặn", P1) — a compensation-only Continue of a latched run whose healthy first STOP pass left a STOP known not handed over (state C, not "may have gone"): no compensation that is not a STOP sent, the run held (the state C words first), the approval spent */
+export function chuStopChuaGiaoBuTru(runId: number): string {
+  return `This Continue of run ${runId} sent no approved compensation that is not a STOP: a STOP of this run is known not handed over (named above). An approved compensation that is a STOP may have been sent by this Continue's STOP pass. That approval is spent: a later Continue needs a new approval, and sends the compensations that are not STOPs only once its STOP pass leaves no STOP known not handed over. A compensation may be the move that makes another machine safe: it is not sent either. Stop the machine at the machine now with its direct STOP / E-STOP and check it on site; Abort sends STOP steps only.`;
+}
+
 export function chuQuetChuaXong(runId: number): string {
   return `The STOP sweep of run ${runId} has not finished and is still running: STOP steps of this run may have gone out or may still go, which ones is not known, and nothing confirms them yet. Check the machine on site and use its direct STOP / E-STOP if needed. Abort can be pressed again.`;
 }

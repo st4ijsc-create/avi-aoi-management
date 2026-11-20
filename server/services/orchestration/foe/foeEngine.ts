@@ -103,7 +103,7 @@ import {
   type PhanLoaiBuTru,
 } from "./foeBuTruBiNgat";
 // R1b-2b-2a A2(n) — an UNKNOWN outcome never triggers a device write from a non-STOP compensation: split by energy direction
-import { type DangDauVetAbort, type ChuStopAbort, type PhanLoaiStopAbort, chuBamSauKhongDoc, chuKeHoachLoi, chuKhongDocDinhNghia, chuLuotStopHongBuTru, chuQuetChuaXong, chuStopAbort, MOC_CUA_SO, STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_XAC_NHAN_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, VI_KHONG_BAO, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo, chuBamDaKetThuc, type KetThucKhongQuet, type NoKetThucKhongQuet } from "./foeKetCucKhongRo";
+import { type DangDauVetAbort, type ChuStopAbort, type PhanLoaiStopAbort, chuBamSauKhongDoc, chuKeHoachLoi, chuKhongDocDinhNghia, chuLuotStopHongBuTru, chuQuetChuaXong, chuStopChuaGiaoBuTru, chuStopAbort, MOC_CUA_SO, STOP_CHUA_RA_CTX_KEY, canhBaoKetCucKhongRo, stopChuaRaTuNguCanh, BUOC_KHONG_XAC_DINH, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_XAC_NHAN_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaDocHang, KHONG_RO_DUYET_CTX_KEY, loiChuaRaStop, loiGiuChuaRa, maTuChoiCua, nguonCuaKetQua, viChuaRaCuaLoi, VI_KHONG_BAO, type ViChuaRa, buTruKhongRoCho, buocCoTheDaBayTuHang, chotTuHang, daDuyetBuTruKhongRo, dauKetCucKhongRoCua, nhanBuocSauChot, runDaChotKhongRo, type NhanSauChot, ghiAuditKetCucKhongRo, loiCoMaKhongRo, loiGiuBuTruKhongRo, loiLaKetCucKhongRo, maKetCucKhongRoCua, xetTiepTucKetCucKhongRo, type LoaiCanhBaoKhongRo, chuBamDaKetThuc, type KetThucKhongQuet, type NoKetThucKhongQuet } from "./foeKetCucKhongRo";
 export { ensureOrchestrationAction, FOE_ACTION_TOOL, FOE_GATE_REQUIRED, FOE_NOT_SENT_RUN_LATCHED, FOE_STOP_NOT_SENT } from "./foeRunStore";
 // doc 81 Đợt 10 C — what central's edge report / complete endpoints (group B) apply: the SAME row and status rules as the walk.
 export { recordEdgeStepRows, applyEdgeSegmentEnd, edgePriorPictureOf, type EdgeStepRowWrite, type EdgeSegmentEndApply, type EdgeSegmentEndResult } from "./foeRunStore";
@@ -1909,7 +1909,7 @@ async function goGiuDaDi(rc: RunContext, out: StepOutcome): Promise<StepOutcome>
   if (!go.size) return out;
   const dung = [...(rc.giuCon?.values() ?? [])].find((g) => rc.buTruDaGiu?.has(g.stepId));
   if (dung || !rc.buTruDaGiu?.size) rc.giuNen = dung; // a hold no record names keeps the old words: they still hold the run
-  if (out.kind !== "held" || out.reason !== "outcomeUnknown" || !go.has(out.stepId)) return out;
+  if (out.kind !== "held" || out.chanBuTru === true || out.reason !== "outcomeUnknown" || !go.has(out.stepId)) return out; // C7-XN (P1-GOGIU): the gate's hold stands
   if (rc.buTruDaGiu?.size) return rc.giuNen ?? out;
   const chu = chuBuTruCua(rc, out.stepId);
   const conNo = chu !== null && toTienCua(rc.def.steps, chu.step.id).some((h) => h.compensation && !daXongBuTru(rc, h.compensation.id));
@@ -5094,6 +5094,9 @@ async function driveRunFromResume(rc: RunContext): Promise<OrchestrationRun["sta
       // X-27 (1) (chủ dự án 19/11 "1.chặn") — that first STOP pass threw: nothing of the tree, so no compensation that is no STOP goes; held in its words, the approval spent (finishWalk)
       const duyet = rc.context[KHONG_RO_DUYET_CTX_KEY] as { stepIds?: unknown[] } | undefined;
       if (duongBuTruCua(rc) && rc.luotStopHong) return finishWalk(rc, { kind: "held", stepId: String(duyet?.stepIds?.[0] ?? ""), reason: "outcomeUnknown", error: chuLuotStopHongBuTru(rc.runId), chanBuTru: true });
+      // C7-XN (chủ dự án 19/11 "1.chặn", P1) — the pass answered within D and a STOP of it is known not handed over (state C: refused, or nobody could decide; never "may have gone"): no compensation that is not a STOP goes
+      const chuaGiao = [...(rc.chuaRaStop ?? [])].some(([id, vi]) => vi.nguon !== "driverLoi" && !rc.stopCoTheRa?.has(id));
+      if (duongBuTruCua(rc) && chuaGiao) return finishWalk(rc, { kind: "held", stepId: String(duyet?.stepIds?.[0] ?? ""), reason: "outcomeUnknown", error: chuStopChuaGiaoBuTru(rc.runId), chanBuTru: true });
     }
     const out = await execSequence(rc, rc.def.steps);
     return finishWalk(rc, out);
