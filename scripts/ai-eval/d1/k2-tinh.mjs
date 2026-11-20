@@ -81,11 +81,28 @@ if (!(tay.indexOf("if ($ChiKiem)") > 0 && tay.indexOf("if ($ChiKiem)") < tay.ind
 
 // D1c C2 (HST 03:03): dòng .sh dưới scripts/ GHI LOG CommandLine llama (`log` + `CommandLine`) mà không chỉ `grep -o`/`grep -q` một cờ
 // ⇒ phải che `<tep-khoa>` (không lộ đường tệp khoá). Duyệt bằng fs, không thêm lời gọi tiến trình.
-const tepSh = []; const quetSh = (d) => { for (const t of fs.readdirSync(path.join(GOC, d), { withFileTypes: true })) { const r = `${d}/${t.name}`; if (t.isDirectory()) quetSh(r); else if (r.endsWith(".sh")) tepSh.push(r); } };
+const tepSh = [], tepMa = []; const quetSh = (d) => { for (const t of fs.readdirSync(path.join(GOC, d), { withFileTypes: true })) { const r = `${d}/${t.name}`; if (t.isDirectory()) quetSh(r); else if (r.endsWith(".sh")) tepSh.push(r); else if (/\.(ps1|mjs|mts|cjs|js)$/.test(r) && r !== "scripts/ai-eval/d1/k2-tinh.mjs") tepMa.push(r); } };
 quetSh("scripts");
-for (const f of tepSh) for (const d of doc(f).split("\n")) if (/CommandLine/.test(d) && /\blog\b/.test(d) && !/grep -[oq]/.test(d) && !/<tep-khoa>/.test(d) && !d.trim().startsWith("#")) loi.push(`${f}: dòng ghi log CommandLine chưa che <tep-khoa>`);
+// D1d K2-CHE-NHAN (kiem-dinh a7b sống ở D1c): đòi ĐÚNG biểu thức sed che (do-bo-nho-llama.sh:36), không chỉ chữ nhãn <tep-khoa>.
+const CHE_SED = String.raw`s/(--api[-_]key[-_]file)[ =]("[^"]*"|[^ ]+)/\1 <tep-khoa>/g`;
+for (const f of tepSh) for (const d of doc(f).split("\n")) if (/CommandLine/.test(d) && /\blog\b/.test(d) && !/grep -[oq]/.test(d) && !d.includes(CHE_SED) && !d.trim().startsWith("#")) loi.push(`${f}: dòng ghi log CommandLine chưa che bằng sed chuẩn (K2-CHE-NHAN)`);
 // D1c C4 (HST 20/11 04:08): KHÔNG .sh nào dưới scripts/ chép `.env` (cp …/.env …); `.env.example` không tính.
 for (const f of tepSh) for (const d of doc(f).split("\n")) if (/\bcp\b/.test(d) && /(?<![\w.-])\.env(?![\w.-])/.test(d) && !d.trim().startsWith("#")) loi.push(`${f}: dòng chép .env`);
+// D1d K2-CHEP-PS (kiem-dinh d1c sống ở D1c; HST 11:4x): bắt theo NGUỒN của lệnh chép ở .ps1/.mjs/.mts/.cjs/.js. Copy-Item [-Path|-LiteralPath] <nguồn>, copyFile[Sync]/cpSync(<nguồn>:
+// nguồn kết thúc bằng `.env` TRẦN ⇒ đỏ. Giới hạn có tên: không bắt alias copy/cp của PowerShell, lệnh batch trong chuỗi, nguồn là biến/biểu thức.
+const nguonEnv = (x) => /(^|[\\/\s])\.env$/.test(x.replace(/^["'`]|["'`]$/g, ""));
+for (const f of tepMa) for (const d of doc(f).split("\n")) if (!/^\s*(#|\/\/|\*)/.test(d) && [...d.matchAll(/\bCopy-Item\s+(?:-(?:Literal)?Path\s+)?("[^"]*"|'[^']*'|[^\s;|)]+)/gi), ...d.matchAll(/\b(?:copyFileSync|copyFile|cpSync)\(\s*("[^"]*"|'[^']*'|`[^`]*`|[^,)\s]+)/g)].some((m) => nguonEnv(m[1]))) loi.push(`${f}: dòng chép .env (K2-CHEP-PS)`);
+// D1d K2-LOG-NGOAI-REPO (HST 10:3x): hằng thư mục log ngoài repo; mặc định -ThuMucLog của 3 .ps1 và 4 chuỗi phía khách cùng tiền tố hằng; 3 tệp server dùng hằng.
+const TEP_HANG = "server/services/ai/duongLogLlama.ts", HANG = fs.existsSync(path.join(GOC, TEP_HANG)) ? (doc(TEP_HANG).match(/THU_MUC_LOG_LLAMA = ("[^"]+")/) || [])[1] : undefined;
+const TIEN_TO_LOG = HANG ? JSON.parse(HANG) : "";
+if (!TIEN_TO_LOG || path.resolve(TIEN_TO_LOG).toLowerCase().startsWith(GOC.toLowerCase())) loi.push(`K2-LOG-NGOAI-REPO: thiếu hằng THU_MUC_LOG_LLAMA ở ${TEP_HANG}, hoặc hằng nằm trong repo`);
+else {
+  for (const f of ["scripts/ai/start-llama-server.ps1", "scripts/ai/khoi-llama-tay.ps1", "scripts/ai-eval/codegen-chay-duoc/doi-model.ps1"]) { const v = [...doc(f).matchAll(/\$ThuMucLog = '([^']+)'/g)].map((x) => x[1]); if (!v.length || v.some((x) => !x.startsWith(`${TIEN_TO_LOG}\\`))) loi.push(`K2-LOG-NGOAI-REPO: ${f}: mặc định -ThuMucLog thiếu hoặc lệch tiền tố hằng`); }
+  const tsx = (doc("client/src/components/aiCoding/ThanhTrangThaiAiLocal.tsx").match(/"([^"]*llama-server-\*\.err\.log[^"]*)"/) || [])[1];
+  const khach = { tsx: tsx === undefined ? undefined : JSON.parse(`"${tsx}"`), ...Object.fromEntries(["vi", "en", "zh"].map((n) => [n, JSON.parse(doc(`client/src/i18n/locales/${n}.json`)).ttAiLocal?.tipBoCuoc])) };
+  for (const [k, v] of Object.entries(khach)) if (typeof v !== "string" || !v.includes(`${TIEN_TO_LOG}\\server\\llama-server-*.err.log`)) loi.push(`K2-LOG-NGOAI-REPO: chuỗi khách ${k} không nêu đường log theo hằng`);
+  for (const f of ["server/services/ai/giamSatLlamaServer.ts", "server/_core/aiReadiness.ts", "server/services/ai/doiModelLlamaServer.ts"]) if (doc(f).includes("logs/llama-server-*.err.log") || !doc(f).includes("duongLogLlama")) loi.push(`K2-LOG-NGOAI-REPO: ${f} còn chữ đường log cũ hoặc không dùng hằng`);
+}
 const goc2 = (() => { const i = process.argv.indexOf("--them-goc"); return i > 0 ? process.argv[i + 1] : ""; })();
 if (goc2) {
   // Thư mục ngoài repo (D:/DO-AI): chỉ LIỆT KÊ tệp có 8091 kèm lời gọi (fetch/curl/Invoke-WebRequest) để người rà phân loại; không tính đỏ.
