@@ -87,9 +87,9 @@ function khoiGia(exe, cheDo, cong, them = {}, thamThem = []) { // D1b M5: thamTh
   c.unref();
   return c.pid;
 }
-const chayPs = (tep, thamSo, them = {}) => {
-  const r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tep, ...thamSo], { encoding: "utf8", env: envCon(them), cwd: D, windowsHide: true, timeout: 180_000 });
-  return { ma: r.status, out: `${r.stdout ?? ""}\n${r.stderr ?? ""}` };
+let soChay = 0; const chayPs = (tep, thamSo, them = {}) => { const n = ++soChay, fo = path.join(D, `ra-${n}.out`), fe = path.join(D, `ra-${n}.err`), o = fs.openSync(fo, "w"), e = fs.openSync(fe, "w"); let r; try { // D1c C1: TỆP, không ỐNG (exe giả thừa kế ống ⇒ spawnSync chờ hết 180 s)
+  r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tep, ...thamSo], { stdio: ["ignore", o, e], env: envCon(them), cwd: D, windowsHide: true, timeout: 180_000 });
+  } finally { fs.closeSync(o); fs.closeSync(e); } return { ma: r.status, out: `${fs.readFileSync(fo, "utf8")}\n${fs.readFileSync(fe, "utf8")}` };
 };
 const coTep = (p) => fs.existsSync(p);
 
@@ -127,6 +127,7 @@ const CA = [
   { ten: "tay-6-co-gia-nghe", dung: async (c) => { khoiGia(BIN, "song", c); await choCong(c, true); }, chay: (c) => tay(c), kyVong: { ma: 6, pause: "khong", giaSong: 1 } },
   { ten: "tay-7-pause-co", dung: async () => fs.writeFileSync(TEP_DUNG, "nguoi-khac"), chay: (c) => tay(c), kyVong: { ma: 7, pause: "co", giaSong: 0 } },
   { ten: "tay-2-khai-khoa-thieu-co", chay: (c) => tay(c, [], { LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }), kyVong: { ma: 2, pause: "khong", giaSong: 0 } },
+  { ten: "tay-2-tep-khoa-khong-co", chay: (c) => chayPs(KHOI_TAY, ["-ArgStr", `--port ${c} --api-key-file ${path.join(D, "khong-co.key")}`, "-Ten", "gia", "-Exe", BIN, "-Cong", String(c), "-TepTamDung", TEP_DUNG, "-ThuMucLog", LOG, "-ChoGiay", "6"], { LLAMA_SERVER_API_KEY_FILE: path.join(D, "khong-co.key") }), kyVong: { ma: 2, pause: "khong", giaSong: 0 } }, // HST 06:23 (a3): chốt :62 KHÔNG in đường; kiểm chung bắt khong-co.key
   { ten: "tay-4-thoat-som", chay: (c) => tay(c, [], { LLAMA_GIA_CHE_DO: "thoat" }), kyVong: { ma: 4, pause: "khong", giaSong: 0 } },
   { ten: "tay-8-hai-tien-trinh", chay: (c) => tay(c, [], { LLAMA_GIA_CHE_DO: "nhan-doi" }), kyVong: { ma: 8, pause: "khong", giaSong: 2 } },
   { ten: "tay-5-het-gio", chay: (c) => tay(c, [], { LLAMA_GIA_CHE_DO: "cham" }), kyVong: { ma: 5, pause: "co", giaSong: 1 } },
@@ -161,15 +162,15 @@ const conNode = [];
 function khoiNodeNghe(c) {
   return spawn(process.execPath, ["-e", `require("net").createServer(()=>{}).listen(${Number(c)},"127.0.0.1")`], { env: envCon(), stdio: "ignore", windowsHide: true });
 }
-function force(c, them = {}) {
+function force(c, them = {}, cheDo = "off", thamThem = []) { // D1c C4: cheDo = LLAMA_SERVER_MMPROJ trong force.env; thamThem = cờ thêm (vd -ChonMmproj off)
   const cay = path.join(D, "repo", "scripts", "ai");
   fs.mkdirSync(cay, { recursive: true });
   fs.copyFileSync(START, path.join(cay, "start-llama-server.ps1"));
   fs.copyFileSync(TIM_MMPROJ, path.join(cay, "tim-mmproj.ps1"));
   const env = path.join(D, "force.env");
   fs.writeFileSync(env, [`GGUF_MODELS_DIR=${D}`, `LLAMA_SERVER_MODEL=${path.basename(MODEL)}`, `LLAMA_SERVER_URL=http://127.0.0.1:${c}`, `LLAMA_SERVER_BIN=${BIN}`,
-    `LLAMA_SERVER_SELECTION_FILE=${path.join(D, "khong-co.json")}`, "LLAMA_SERVER_MMPROJ=off"].join("\n"));
-  return chayPs(path.join(cay, "start-llama-server.ps1"), ["-EnvFile", env, "-Force", "-WaitSeconds", "6"], them);
+    `LLAMA_SERVER_SELECTION_FILE=${path.join(D, "khong-co.json")}`, `LLAMA_SERVER_MMPROJ=${cheDo}`].join("\n"));
+  return chayPs(path.join(cay, "start-llama-server.ps1"), ["-EnvFile", env, "-Force", "-WaitSeconds", "6", ...thamThem], them);
 }
 if (CA_RIENG === "doi-chung-mac-dinh") {
   CA.length = 0;
@@ -213,7 +214,14 @@ if (CA_RIENG === "doi-chung-mac-dinh") {
     { ten: "doi-0-m5-5p-chu-co-khoa-KhongKhoa", dung: chuCu(["--api-key-file", TEP_KHOA]), chay: (c) => doi(c, ["-KhongKhoa"], DOI_SONG),
       kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhKhong: "--api-key", outCo: "KHONG KHOA THEO -KhongKhoa" } },
     { ten: "doi-2-m5-7-KhongKhoa-mau-thuan", chay: (c) => doi(c, ["-KhongKhoa"], { ...DOI_SONG, LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }), kyVong: { ma: 2, pause: "khong", giaSong: 0 } },
-    { ten: "doi-0-m5-2-cong-trong-khong-bien", chay: (c) => doi(c, [], DOI_SONG), kyVong: { ma: 0, pause: "khong", giaSong: 1, outCo: "KHONG CO CHU CONG" } });
+    { ten: "doi-0-m5-2-cong-trong-khong-bien", chay: (c) => doi(c, [], DOI_SONG), kyVong: { ma: 0, pause: "khong", giaSong: 1, outCo: "KHONG CO CHU CONG" } },
+    // D1c C2 (HST 03:03): khoi-llama-tay khởi CÓ khoá ⇒ dòng `CMDLINE:` phải che đường tệp khoá thành `<tep-khoa>` (kiểm chung bên dưới bắt đường thật).
+    // D1c C4: đối chứng (auto + có tệp mmproj cạnh model ⇒ có --mmproj) rồi -ChonMmproj off thắng cấu hình env ⇒ KHÔNG --mmproj.
+    { ten: "force-0-mmproj-auto-doi-chung", dung: async (c) => { fs.writeFileSync(path.join(D, "Gia-mmproj-F16.gguf"), ""); await chuCu([])(c); }, chay: (c) => force(c, DOI_SONG, "auto"), kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhCo: "--mmproj" } },
+    { ten: "force-0-mmproj-auto-qua-tham-so", dung: async (c) => { fs.writeFileSync(path.join(D, "Gia-mmproj-F16.gguf"), ""); await chuCu([])(c); }, chay: (c) => force(c, DOI_SONG, "off", ["-ChonMmproj", "auto"]), kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhCo: "--mmproj" } }, // HST 04:25: env off + tham số auto ⇒ CÓ --mmproj
+    { ten: "force-0-mmproj-off-qua-tham-so", dung: chuCu([]), chay: (c) => force(c, DOI_SONG, "auto", ["-ChonMmproj", "off"]), kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhKhong: "--mmproj" } },
+    { ten: "tay-0-co-khoa-cmdline-che", kyVong: { ma: 0, pause: "khong", giaSong: 1, outCo: "--api-key-file <tep-khoa>" },
+      chay: (c) => chayPs(KHOI_TAY, ["-ArgStr", `--port ${c} --api-key-file ${TEP_KHOA}`, "-Ten", "gia", "-Exe", BIN, "-Cong", String(c), "-TepTamDung", TEP_DUNG, "-ThuMucLog", LOG, "-ChoGiay", "6"], { ...DOI_SONG, LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }) });
 }
 
 // ── Chạy ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -242,6 +250,10 @@ try {
     if (kv.dongLenhKhong && sau.some((g) => String(g.cl ?? "").includes(kv.dongLenhKhong))) loi.push(`dong lenh CO ${kv.dongLenhKhong}`); // D1b
     if (kv.outCo && !out.includes(kv.outCo)) loi.push(`dau ra thieu "${kv.outCo}"`);
     if (kv.outKhong && out.includes(kv.outKhong)) loi.push(`dau ra CO "${kv.outKhong}"`);
+    // D1c C2 kiểm CHUNG (mọi ca): đầu ra không lộ ĐƯỜNG tệp khoá giả (lời báo chỉ được nói có/không, trùng/khác).
+    for (const t of [TEP_KHOA, path.join(D, "khoa-gia-2.key"), path.join(D, "khong-co.key")]) if (out.includes(t)) loi.push(`dau ra LO duong tep khoa ${path.basename(t)}`);
+    // kiem-dinh 03:54 (c): thêm theo TÊN TỆP, không phân biệt hoa/thường (bắt cả dạng `/`, 8.3, khác hoa/thường của thư mục cha).
+    if (/khoa-gia(-2)?\.key|khong-co\.key/i.test(out)) loi.push("dau ra LO ten tep khoa gia");
     if (kv.chuCuBiDung && truoc.some((id) => sau.some((g) => g.id === id))) loi.push("chu cong cu KHONG bi dung");
     if (kv.nodeSong && !conNode.some((n) => n.exitCode === null && n.signalCode === null)) loi.push("chu cong node KHONG con song");
     if (!kv.chuCuBiDung && truoc.some((id) => !sau.some((g) => g.id === id)) && kv.ma !== 0) loi.push("tien trinh co truoc bi DUNG");
@@ -254,6 +266,7 @@ try {
     for (const n of conNode.splice(0)) n.kill();
     await ngu(300);
     fs.rmSync(TEP_DUNG, { force: true });
+    fs.rmSync(path.join(D, "repo", "logs"), { recursive: true, force: true }); // D1c (HST 04:38): gỡ tận gốc — ca M2 để `D/repo/logs` là TỆP; mọi ca sau bắt đầu sạch
     if (that !== that0) { console.error("⛔ llama-server THẬT / chủ 8091 đổi — DỪNG lượt"); break; }
   }
 } finally {

@@ -55,7 +55,10 @@ param(
     [int]$WaitSeconds = 300,
     # Đợt 9 (2026-10-24) — CHỈ in tham số đã dựng (một dòng JSON) rồi thoát 0: không hỏi /health, không dừng, không spawn gì.
     # Dùng cho test (KheNang đổi 35B↔27B mang đúng --mmproj) và để người vận hành xem trước.
-    [switch]$InThamSo
+    [switch]$InThamSo,
+    # Lô D1c C4 (HST 20/11): chọn mmproj KHÔNG cần chép .env (auto | off); vắng ⇒ như cũ (LLAMA_SERVER_MMPROJ trong tệp env, mặc định auto).
+    # TÊN KHÁC $mmproj / $cheDoMmproj: biến PowerShell không phân biệt hoa thường và ValidateSet bám theo biến ⇒ gán đường mmproj sẽ NÉM (đo toy 20/11).
+    [ValidateSet('auto', 'off')][string]$ChonMmproj
 )
 
 $ErrorActionPreference = 'Stop'
@@ -220,7 +223,7 @@ $srvArgs = @(
 $apiKeyFile = $cfg['LLAMA_SERVER_API_KEY_FILE']
 $apiKey = $cfg['LLAMA_SERVER_API_KEY']
 if (-not [string]::IsNullOrWhiteSpace($apiKeyFile)) {
-    if (-not (Test-Path -LiteralPath $apiKeyFile -PathType Leaf)) { Write-Bad "LLAMA_SERVER_API_KEY_FILE khong ton tai: $apiKeyFile"; exit 2 }
+    if (-not (Test-Path -LiteralPath $apiKeyFile -PathType Leaf)) { Write-Bad "LLAMA_SERVER_API_KEY_FILE dat nhung tep KHONG ton tai (D1c: khong in duong)."; exit 2 }
     $srvArgs += @('--api-key-file', $apiKeyFile)
 } elseif (-not [string]::IsNullOrWhiteSpace($apiKey)) { $srvArgs += @('--api-key', $apiKey) }
 # D1: bi danh cho client (GET /v1/models). Ten tep that van doc o /props.model_path.
@@ -258,7 +261,7 @@ $srvArgs += @('--ctx-checkpoints', $ctxCheckpoints)
 # Server biết khe đọc được ảnh qua `/props` modalities.vision (aiLlamaServerClient.kheDangCoThiGiac).
 . (Join-Path $PSScriptRoot 'tim-mmproj.ps1')
 # MẶC ĐỊNH 'auto' (dieu-phoi duyệt 2026-10-24 sau cổng (A) — spec §6). Tắt: LLAMA_SERVER_MMPROJ=off trong .env.
-$cheDoMmproj = if ($cfg['LLAMA_SERVER_MMPROJ']) { "$($cfg['LLAMA_SERVER_MMPROJ'])".Trim() } else { 'auto' }
+$cheDoMmproj = if ($ChonMmproj) { $ChonMmproj } elseif ($cfg['LLAMA_SERVER_MMPROJ']) { "$($cfg['LLAMA_SERVER_MMPROJ'])".Trim() } else { 'auto' }
 try { $mmproj = Resolve-Mmproj -ModelPath $modelPath -CheDo $cheDoMmproj } catch { Write-Bad "$_"; exit 2 }
 if ($mmproj) { $srvArgs += @('--mmproj', $mmproj); Write-Step "mmproj: $mmproj (LLAMA_SERVER_MMPROJ=$cheDoMmproj)" }
 elseif ($cheDoMmproj -ine 'off') { Write-Step "mmproj: không có cho $(Split-Path -Leaf $modelPath) (LLAMA_SERVER_MMPROJ=$cheDoMmproj) — chạy chữ" }
@@ -267,7 +270,7 @@ elseif ($cheDoMmproj -ine 'off') { Write-Step "mmproj: không có cho $(Split-Pa
 # Đường khởi thật bên dưới vẫn truyền $srvArgs gốc cho llama-server, không đổi.
 if ($InThamSo) {
     $inRa = $srvArgs.Clone()
-    for ($i = 0; $i -lt $inRa.Count - 1; $i++) { if ($inRa[$i] -ceq '--api-key') { $inRa[$i + 1] = '<che>' } }
+    for ($i = 0; $i -lt $inRa.Count - 1; $i++) { if ($inRa[$i] -ceq '--api-key') { $inRa[$i + 1] = '<che>' } elseif ($inRa[$i] -ceq '--api-key-file') { $inRa[$i + 1] = '<tep-khoa>' } }
     (@{ model = $modelPath; args = $inRa } | ConvertTo-Json -Compress); exit 0
 }
 

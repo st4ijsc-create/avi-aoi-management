@@ -82,13 +82,17 @@ describe.runIf(WIN)("start-llama-server.ps1 -InThamSo — khoá", () => {
     expect((r.args ?? []).some((a) => a.startsWith("--api-key=")), "có phần tử '--api-key=…'").toBe(false);
   }, 120_000);
 
-  it("LLAMA_SERVER_API_KEY_FILE có tệp (khoá GIẢ) ⇒ '--api-key-file <đường>', KHÔNG có '--api-key', nội dung tệp không lọt", () => {
+  // Lô D1c C2 (HST 20/11 03:03, bảng thêm/bớt pham-vi-lo-d1c.md): -InThamSo KHÔNG in đường tệp khoá — SỬA kỳ vọng `toBe(tep)` ⇒ "<tep-khoa>", THÊM "đầu ra không chứa đường".
+  it("LLAMA_SERVER_API_KEY_FILE có tệp (khoá GIẢ) ⇒ '--api-key-file <tep-khoa>', KHÔNG có '--api-key', nội dung tệp và ĐƯỜNG tệp không lọt", () => {
     const tep = path.join(kho, "k.key");
     const khoa = TIEN_TO + crypto.randomBytes(12).toString("hex");
     fs.writeFileSync(tep, khoa);
     const r = chay([`LLAMA_SERVER_API_KEY_FILE=${tep}`]);
     expect(r.status, r.out.replaceAll(khoa, `${TIEN_TO}<…>`)).toBe(0);
-    expect(sau(r.args, "--api-key-file")).toBe(tep);
+    // expect.soft: khẳng định :92 đỏ KHÔNG che khẳng định "không chứa đường" bên dưới (đỏ-trước phải thấy CẢ HAI).
+    expect.soft(sau(r.args, "--api-key-file")).toBe("<tep-khoa>");
+    // JSON của -InThamSo thoát `\` thành `\\` ⇒ so cả dạng thô lẫn dạng đã thoát JSON (chỉ so dạng thô thì kiểm này xanh giả).
+    expect.soft(r.out.includes(tep) || r.out.includes(JSON.stringify(tep).slice(1, -1)), "đường tệp khoá lọt ra stdout/stderr").toBe(false);
     expect((r.args ?? []).includes("--api-key")).toBe(false);
     expect(r.out.includes(khoa), `nội dung tệp ${TIEN_TO}<…> lọt ra`).toBe(false);
   }, 120_000);
@@ -97,5 +101,6 @@ describe.runIf(WIN)("start-llama-server.ps1 -InThamSo — khoá", () => {
     const r = chay([`LLAMA_SERVER_API_KEY_FILE=${path.join(kho, "khong-co.key")}`]);
     expect(r.status).toBe(2);
     expect(r.args).toBeNull();
+    expect(r.out.includes(path.join(kho, "khong-co.key")), "lời báo lộ đường tệp khoá (D1c C2)").toBe(false);
   }, 120_000);
 });

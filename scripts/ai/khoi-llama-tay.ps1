@@ -15,7 +15,7 @@
 
   MA THOAT: 0 san sang (hoac -ChiKiem: qua het chot) | 6 da co tien trinh ten exe nay, HOAC cong dang LISTEN | 7 tep tam dung da co
     | 2 cau hinh | 4 thoat som / khong khoi duoc | 8 sau khi xanh co != 1 tien trinh ten exe nay (KHONG dung ai) | 5 het gio, con con song.
-  Moi CommandLine in ra deu qua Che-DongLenh: an gia tri sau `--api-key` (giu `--api-key-file <duong>`).
+  Moi CommandLine in ra deu qua Che-DongLenh: an gia tri sau `--api-key` va DUONG sau `--api-key-file` (D1c: `<tep-khoa>`).
   Lo D1b M5: KHONG can chot "chu cong co khoa" rieng - chot 6 da tu choi MOI chu cong / MOI tien trinh cung ten exe truoc khi khoi.
     Gioi han chung voi doi-model.ps1: khong co llama nao (cong trong) thi khong co tin hieu khoa cu.
   Goi tu bash: powershell -NoProfile -File scripts/ai/khoi-llama-tay.ps1 -ArgStr "<chuoi>" -Ten <nhan> > log 2>&1
@@ -35,7 +35,7 @@ if (-not $TepTamDung) { $TepTamDung = Join-Path $env:TEMP 'llama-watchdog.pause'
 $tenTienTrinh = [System.IO.Path]::GetFileNameWithoutExtension($Exe)
 function Che-DongLenh([string]$s) {
   if (-not $s) { return $s }
-  return [regex]::Replace($s, '(--api-key)(?!-file)(\s+|=)("[^"]*"|\S+)', '$1$2<che>')
+  return [regex]::Replace([regex]::Replace($s, '(--api[-_]key)(?![-_]file)(\s+|=)("[^"]*"|\S+)', '$1$2<che>'), '(--api[-_]key[-_]file)(\s+|=)("[^"]*"|\S+)', '$1$2<tep-khoa>')
 }
 function In-TienTrinh {
   foreach ($q in @(Get-Process $tenTienTrinh -ErrorAction SilentlyContinue)) {
@@ -59,7 +59,7 @@ if (-not (Test-Path -LiteralPath $Exe -PathType Leaf)) { "KHONG co exe: $Exe"; e
 $tepKhoa = "$env:LLAMA_SERVER_API_KEY_FILE".Trim()
 if ($ArgStr -match '--api-key(?!-file)(\s|=)') { "ArgStr co --api-key <gia tri> (lo qua dong lenh) - dung --api-key-file. KHONG KHOI."; exit 2 }
 if ($tepKhoa -and ($ArgStr -notmatch '--api-key-file\s')) { "Da khai LLAMA_SERVER_API_KEY_FILE ma ArgStr thieu --api-key-file - KHONG khoi server khong khoa."; exit 2 }
-if ($tepKhoa -and -not (Test-Path -LiteralPath $tepKhoa -PathType Leaf)) { "LLAMA_SERVER_API_KEY_FILE khong ton tai: $tepKhoa"; exit 2 }
+if ($tepKhoa -and -not (Test-Path -LiteralPath $tepKhoa -PathType Leaf)) { "LLAMA_SERVER_API_KEY_FILE dat nhung tep KHONG ton tai (D1c: khong in duong)."; exit 2 }
 if ($ChiKiem) { "CHI KIEM: qua chot 6 / 7 / 2 - SE KHOI $Exe cong $Cong (KHONG khoi, KHONG tao tep tam dung)"; exit 0 }
 
 $dau = "khoi-llama-tay $PID $(Get-Date -Format o)"

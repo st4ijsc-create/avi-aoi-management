@@ -33,7 +33,7 @@ chay() { # $1 nhãn, $2 đường, $3 model, $4 ThemArgs
     logErr=$(tr -d '\r' < tmp/bn-doi-$nhan.log | sed -n 's/^LOG: //p' | tail -1)
   fi
   log "$nhan: log = $logErr"
-  log "$nhan: dòng lệnh: $(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\").CommandLine" | tr -d '\r' | sed 's/.*-c 65536//')"
+  log "$nhan: dòng lệnh: $(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\").CommandLine" | tr -d '\r' | sed 's/.*-c 65536//' | sed -E 's/(--api[-_]key[-_]file)[ =]("[^"]*"|[^ ]+)/\1 <tep-khoa>/g; s/(--api[-_]key)[ =]("[^"]*"|[^ ]+)/\1 <che>/g')"
   log "$nhan: log cache: $(grep -aE 'prompt cache is|cache-ram' "$logErr" | head -3 | tr -d '\r' | tr '\n' ' ' | cut -c1-300)"
   rm -f tmp/bn-dung
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-eval/bo-nho/lay-mau-bo-nho.ps1 -Csv "tmp/bn-$nhan.csv" -Dung "tmp/bn-dung" -Log "$logErr" -Giay 10 > /dev/null 2>&1 &

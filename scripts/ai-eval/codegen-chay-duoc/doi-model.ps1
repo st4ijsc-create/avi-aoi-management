@@ -69,7 +69,7 @@ $log = $ThuMucLog
 # Lo D1-script: khoa llama-server CHI qua DUONG DAN (llama-server tu doc tep) - khong dua gia tri khoa len dong lenh.
 # Bien co gia tri ma tep khong co => thoat 2 TRUOC khi dung ai (khong dung server KHONG khoa khi da khai khoa).
 $tepKhoa = "$env:LLAMA_SERVER_API_KEY_FILE".Trim()
-if ($tepKhoa -and -not (Test-Path -LiteralPath $tepKhoa -PathType Leaf)) { [Console]::Error.WriteLine("LLAMA_SERVER_API_KEY_FILE khong ton tai: $tepKhoa"); exit 2 }
+if ($tepKhoa -and -not (Test-Path -LiteralPath $tepKhoa -PathType Leaf)) { [Console]::Error.WriteLine("LLAMA_SERVER_API_KEY_FILE dat nhung tep KHONG ton tai (D1c: khong in duong)."); exit 2 }
 # D1b M5 dong 7: -KhongKhoa ma shell CO bien khoa => mau thuan, dung truoc khi ghi tep tam dung.
 if ($KhongKhoa -and $tepKhoa) { [Console]::Error.WriteLine("-KhongKhoa MAU THUAN voi LLAMA_SERVER_API_KEY_FILE dang dat - KHONG lam gi."); exit 2 }
 
@@ -204,8 +204,8 @@ if ($chu.Count -eq 1) {
   $coKhoaCu = [bool]$tepCu -or ($clCu -match '--api[-_]key([-_]file)?(\s|=)')
   if ($coKhoaCu -and (-not $tepKhoa) -and (-not $KhongKhoa)) { [Console]::Error.WriteLine("CHU CONG $Cong PID $id DANG CO KHOA; shell thieu LLAMA_SERVER_API_KEY_FILE - KHONG dung, KHONG khoi llama khong khoa. Dat bien, hoac -KhongKhoa neu chu y."); exit 11 }
   if ($coKhoaCu -and $tepKhoa -and ((-not $tepCu) -or ((Duong-Day $tepCu) -ine (Duong-Day $tepKhoa)) -or (-not (Duong-Day $tepCu)))) {
-    $moTaCu = if ($tepCu) { "--api-key-file $tepCu" } else { '--api-key <che>' }
-    [Console]::Error.WriteLine("TEP KHOA KHAC chu cong $Cong PID $id ($moTaCu / bien $tepKhoa) - KHONG dung, KHONG khoi."); exit 11
+    $moTaCu = if ($tepCu) { '--api-key-file <tep-khoa>' } else { '--api-key <che>' }
+    [Console]::Error.WriteLine("TEP KHOA KHAC chu cong $Cong PID $id (chu cu: $moTaCu; bien: dat; tep: KHAC) - KHONG dung, KHONG khoi."); exit 11
   }
   if ($coKhoaCu -and $KhongKhoa) { "KHONG KHOA THEO -KhongKhoa: llama moi KHONG co khoa (chu cu PID $id co khoa)." }
   "DUNG PID $id (CreationDate $($taoLuc.ToString('o')), exe + --port $Cong da kiem)"
