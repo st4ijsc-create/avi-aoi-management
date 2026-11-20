@@ -9,12 +9,13 @@ import zh from "@/i18n/locales/zh.json";
 import { KIND_NHAC_GHIM, KIND_URGENT_A2N, TIEN_TO_KIND, TOI_DA_THE_HIEN, catTheHien, duongToiRun, laUrgentA2n, phanNhomUrgent, tuoiNgan, type HangThongBao } from "./urgentBen";
 
 // Lưới chữ cấm "đã/đang/sẽ dừng" (quy tắc chữ: nhãn chỉ nói điều đã quan sát). MỘT nguồn: vòng soát nhãn và ca "bắt thật" dùng chung hằng này.
+// vi KHÔNG dùng \b: \b của JS chỉ coi [A-Za-z0-9_] là chữ nên "đ" không có biên ("máy đã dừng" lọt lưới). So chuỗi con, cờ iu, nhãn + mẫu chuẩn hoá NFC.
 const CAM_DUNG = {
-  vi: /\b(đã dừng|đang dừng|sẽ dừng)\b/i,
+  vi: /(đã dừng|đang dừng|sẽ dừng)/iu,
   en: /\b(has stopped|is stopping|will stop|was stopped)\b/i,
   zh: /(已停止|正在停止|将停止)/,
 } as const;
-const biCam = (ten: keyof typeof CAM_DUNG, chuoi: string): boolean => CAM_DUNG[ten].test(chuoi);
+const biCam = (ten: keyof typeof CAM_DUNG, chuoi: string): boolean => CAM_DUNG[ten].test(chuoi.normalize("NFC"));
 
 const H37 = `${TIEN_TO_KIND}edge_stream_stuck`;
 const hang = (id: number, x: Partial<HangThongBao> = {}): HangThongBao => ({
@@ -183,6 +184,8 @@ describe("lưới cấm 'đã/đang/sẽ dừng' phải BẮT thật (URGENTBEN-
     ["vi", "Đã dừng"],
     ["vi", "máy đang dừng"],
     ["vi", "máy sẽ dừng"],
+    ["vi", "Máy đã dừng".normalize("NFD")], // dạng tổ hợp rời (ã = a + U+0303): chỉ bắt được khi so NFC
+    ["vi", "MÁY ĐANG DỪNG"],
     ["en", "The machine has stopped"],
     ["en", "It is stopping"],
     ["en", "it will stop"],
