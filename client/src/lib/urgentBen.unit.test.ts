@@ -190,6 +190,8 @@ describe("lưới cấm 'đã/đang/sẽ dừng' phải BẮT thật (URGENTBEN-
     ["en", "It is stopping"],
     ["en", "it will stop"],
     ["en", "STOP was stopped"],
+    ["en", "THE MACHINE HAS STOPPED"], // chữ HOA hoàn toàn: chỉ bắt được nhờ cờ i của en (URGENTBEN-EN-HOA-CHUA-CA)
+    ["en", "IT IS STOPPING"],
     ["zh", "设备已停止"],
     ["zh", "设备正在停止"],
     ["zh", "设备将停止"],
@@ -201,6 +203,8 @@ describe("lưới cấm 'đã/đang/sẽ dừng' phải BẮT thật (URGENTBEN-
     ["vi", "chưa rõ lệnh nào đã đi"],
     ["vi", "đã giao cho bộ điều phối — máy chưa xác nhận"],
     ["en", "The STOP was handed to the dispatcher — the machine has not confirmed"],
+    ["en", "the line will stopover at the buffer"], // "will stop" dính chữ "over": KHÔNG phải cụm cấm, chỉ đúng nhờ \b cuối của en (URGENTBEN-EN-BIEN-CHUA-CA)
+    ["en", "his stopping point is the buffer"], // "is stopping" dính chữ "h" phía trước ("his"): chỉ đúng nhờ \b đầu của en
     ["zh", "补偿停止步骤已交给调度器——设备尚未确认"],
   ] as const)("%s: KHÔNG bắt mẫu sạch '%s'", (ten, mau) => {
     expect(biCam(ten, mau)).toBe(false);
