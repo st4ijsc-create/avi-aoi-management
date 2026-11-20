@@ -18357,6 +18357,70 @@ describe("A2(n) T7b-3 — a run that acted, never latched, and ended with no STO
       expect(h36().length, "a press adds none").toBe(1);
     });
   }
+
+  // ── X-34 (dòng 48; mục 12.2, 13.4, 14.2) — E:6786: a run latched ONLY by central's set (khoá CHOT nguon "tapKetDoan", the rows no code) still has its STOPs owed told (H36, the press) ──
+  const x34 = async (ref: string, sauGhi: (e: EdgeHarness) => void) => {
+    h.failPlan.set("y", Infinity);
+    const e = await edgeAssignedRun(def(ref, [gate(), ot("o"), ot("y"), otStop("s")]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    e.sauGhiHang = () => sauGhi(e);
+    try {
+      await edgeSegment(e, 2);
+    } finally {
+      e.sauGhiHang = undefined;
+      h.failPlan.clear();
+    }
+    await wait(100);
+    return e;
+  };
+  /** o's result lost: its row running, its authorisation with no result (the X-34 picture; RP probe 21:45) */
+  const oMat = (e: EdgeHarness) => {
+    Object.assign(stepRows(e.runId).find((x) => x.stepId === "o")!, { status: "running", finishedAt: null, resultJson: null, error: null });
+    for (const a of rows("edge_step_authorizations").filter((a) => a.runId === e.runId && a.stepId === "o")) Object.assign(a, { resultReportedAt: null, resultStatus: null });
+  };
+  it("X34-H36-TAP EDGE-FAILED (a) with o's result lost: latched by central's set, and the H36 URGENT of s is still raised", async () => {
+    const e = await x34("x34tap", oMat);
+    expect(runRow(e.runId).status).toBe("failed");
+    expect(runRow(e.runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toMatchObject({ stepId: "o", nguon: "tapKetDoan" });
+    expect(h36().map((a) => a.dedupKey)).toEqual([khoa(e.runId, "s")]);
+  });
+  it("X34-BAM-TAP the same run, a press: its words still name s owed", async () => {
+    const e = await x34("x34bam", oMat);
+    await bam(e.runId, "failed");
+  });
+  it("X34-H36-CTX the run latched by its context alone (no nguon, the rows no code): no H36 URGENT, as H2", async () => {
+    const e = await x34("x34ctx", (x) => void (runRow(x.runId).contextJson = { ...(runRow(x.runId).contextJson ?? {}), [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "o", ma: "FOE_OUTCOME_UNKNOWN", at: new Date().toISOString() } }));
+    expect(runRow(e.runId).status).toBe("failed");
+    expect(h36()).toEqual([]);
+  });
+  it("X34-H36-KHONG-DOC latched by central's set, the rows unreadable at the H36 read: one URGENT, no step named", async () => {
+    const e = await x34("x34kd", oMat);
+    h.alerts.length = 0;
+    const sel = FakeDb.prototype.select.bind(fake);
+    (fake as any).select = (p?: unknown) => {
+      const b = sel(p as never);
+      const from = b.from.bind(b);
+      b.from = (t: any) => (t?.[Symbol.for("drizzle:Name")] === "orchestration_run_steps" ? (() => { throw new Error("rows (X-34 test)"); })() : from(t));
+      return b;
+    };
+    try {
+      await baoKetThucKhongQuetSauDoanEdge(e.runId, { ok: true, status: "failed", changed: true });
+      await wait(50);
+    } finally {
+      delete (fake as any).select;
+    }
+    expect(h36().map((a) => a.dedupKey)).toEqual([khoa(e.runId, "?")]);
+  });
+  it("X34-QUET-RUNEND an aborted run latched by central's set with no DA_BAO: the obligation sweep raises its run_end", async () => {
+    expect((await deployWorkflow(def("x34q", [gate(), ot("o")]), OWNER)).ok).toBe(true);
+    const wf = rows("orchestration_workflows").find((w) => w.ref === "x34q")!;
+    const C = 955; // a central run (no edge assignment: the sweep reads no claim)
+    const cu = new Date(Date.now() - 2 * QUET_URGENT_TUOI_TOI_THIEU_MS);
+    fake.seed(orchestrationRuns, [...rows("orchestration_runs"), { id: C, workflowId: wf.id, workflowRef: "x34q", status: "aborted", paramsJson: {}, edgeNodeId: null, startedBy: OWNER.id, createdAt: cu, updatedAt: cu, finishedAt: cu, contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { stepId: "o", ma: "FOE_OUTCOME_UNKNOWN", at: cu.toISOString(), nguon: "tapKetDoan" } } }]);
+    await quetUrgentChuaBen({ walkerSong: coWalkerSongTrongProcess, bayGio: Date.now() + QUET_URGENT_TUOI_TOI_THIEU_MS + 1 });
+    expect(h.alerts.map((a) => String(a.dedupKey)).filter((k) => k.includes(`:${C}:`))).toEqual([`${CANH_BAO_KHONG_RO_KIND.runEnd}:${C}:o:-:chot`]);
+  });
 });
 
 // ══ A2(n) T7b-3 H37 (chu du an 11/11) ════════════════════════════════════════════════════════════════════════════════════════════════════════

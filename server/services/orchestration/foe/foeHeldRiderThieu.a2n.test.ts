@@ -355,3 +355,139 @@ describe("X-33 — the end gate of an edge segment, held for a STOP owed: the co
     expect(runDaChotKhongRo(ctx)).toBe(true);
   });
 });
+
+// X-34 (AGENTS-ngoai-le.md dòng 48; tam/x34-ket-terminal-pham-vi-3.md + mục 12-14) — a terminal end of an edge segment latches on central's own set (khongRoCuaDoan before the gate)
+describe("X-34 — a terminal end of an edge segment reads central's own set of the commands that may have gone", () => {
+  const CHOT = KET_CUC_KHONG_RO_CHOT_CTX_KEY;
+  const runEnd = (id: string) => `${CANH_BAO_KHONG_RO_KIND.runEnd}:${RUN}:${id}:-:chot`;
+  const khoaRunEnd = () => H.alerts.map((a) => String(a.dedupKey)).filter((k) => k.startsWith(CANH_BAO_KHONG_RO_KIND.runEnd));
+  const hang = (stepId: string, status = "running", x: Record<string, unknown> = {}) => ({ runId: RUN, stepId, stepType: "command", status, attempt: 1, error: null, resultJson: null, ...x });
+  const RONG = " [[A2N:[]]]";
+  type Hinh = { outcome?: "failed" | "aborted" | "completed"; error?: string; so?: Record<string, unknown>[]; rows?: Record<string, unknown>[]; nem?: true; ou?: string[]; status0?: string; ctx0?: Record<string, unknown>; steps?: WorkflowStep[] };
+  const ket = async (h: Hinh) => {
+    d.store.set("orchestration_runs", [{ id: RUN, status: h.status0 ?? "running", contextJson: h.ctx0 ?? null, startedBy: OWNER }]);
+    if (h.so) d.store.set("edge_step_authorizations", h.so);
+    if (h.rows) d.store.set("orchestration_run_steps", h.rows);
+    if (h.nem) {
+      const goc = d.select.bind(d);
+      (d as any).select = (p?: unknown) => {
+        const q = goc(p as never);
+        const from = q.from.bind(q);
+        q.from = (t: any) => (t?.[Symbol.for("drizzle:Name")] === "edge_step_authorizations" ? (() => { throw Object.assign(new Error("ledger (X-34 test)"), { code: "42501" }); })() : from(t));
+        return q;
+      };
+    }
+    const def = { ref: "x34", name: "x34", steps: h.steps ?? [move("x"), move("y")] } as never as WorkflowDefinition;
+    const r = await applyEdgeSegmentEnd(d as never, RUN, { outcome: h.outcome ?? "failed", error: h.error ?? `COMMAND_FAILED: step "y" failed${RONG}`, nodeCode: "EDGE-A", claimSeq: 1, def, ...(h.ou ? { outcomeUnknown: h.ou } : {}) } as never);
+    await wait();
+    const run = (d.store.get("orchestration_runs") as Array<Record<string, any>>)[0];
+    return { r, run, ctx: (run.contextJson ?? {}) as Record<string, any> };
+  };
+  const P1: Hinh = { so: [so("x")], rows: [hang("x")] };
+  const CHOT_TAP: Array<[string, Hinh, string, string[]]> = [
+    ["P1 failed, x authorised, its row running", P1, "x", ["x"]],
+    ["P2 aborted (a precondition)", { ...P1, outcome: "aborted", error: `PRECONDITION_FAILED: step "y"${RONG}` }, "x", ["x"]],
+    ["P2F aborted, the rider carrying forwardNotSent(y) only", { ...P1, outcome: "aborted", error: ganBaoCaoKhongRoEdge('Precondition failed for step "y" (abort).', [{ loai: "forwardNotSent", stepId: "y", compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }], 4_000) }, "x", ["x"]],
+    ["P3 no row of x", { so: [so("x")] }, "x", ["x"]],
+    ["P4 no rider (an old node)", { ...P1, error: 'COMMAND_FAILED: step "y" failed' }, "x", ["x"]],
+    ["P5 the ledger HAS x's result, its row running (fail-closed, intended)", { so: [so("x", { resultReportedAt: new Date(), resultStatus: "acked" })], rows: [hang("x")] }, "x", ["x"]],
+    ["two commands from the ledger: the first in the set's order (here the definition's)", { so: [so("a"), so("b")], rows: [hang("a"), hang("b")], steps: [move("a"), move("b"), move("y")] }, "a", ["a", "b"]],
+    ["the words name EDGE_OUTCOME_UNKNOWN(b,a), a and b both in the ledger: the set's order, the words first", { so: [so("a"), so("b")], rows: [hang("a"), hang("b")], steps: [move("a"), move("b"), move("y")], error: `EDGE_OUTCOME_UNKNOWN(b,a): sent, but the result could not be recorded${RONG}` }, "b", ["b", "a"]],
+    ["the ledger unreadable: fail-closed", { rows: [hang("x")], nem: true }, "x", ["x"]],
+    ["a rider short (thieu): every row not final", { rows: [hang("y")], error: 'COMMAND_FAILED: step "y" failed [[A2N:[{"loai":"held"]]' }, "y", ["y"]],
+    ["the structured list names x (its row completed)", { rows: [hang("x", "completed")], ou: ["x"] }, "x", ["x"]],
+    ["a run compensating", { ...P1, status0: "compensating" }, "x", ["x"]],
+  ];
+  for (const [ten, h, id, ds] of CHOT_TAP) {
+    it(`X34-BANG ${ten}: terminal, latched by central's set (nguon), the list, DA_BAO, one run_end`, async () => {
+      const { r, ctx } = await ket(h);
+      expect(r).toMatchObject({ ok: true, status: h.outcome ?? "failed", changed: true });
+      expect(ctx[CHOT], "the latch, with its source").toMatchObject({ stepId: id, ma: "FOE_OUTCOME_UNKNOWN", nguon: "tapKetDoan" });
+      expect(ctx.foeOutcomeUnknown).toEqual(ds);
+      expect(ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]).toMatchObject({ stepId: id });
+      expect(khoaRunEnd()).toEqual([runEnd(id)]);
+    });
+  }
+  const NHU_CU: Array<[string, Hinh]> = [
+    ["the authorisation superseded, the row running with no routedTo", { so: [so("x", { supersededAt: new Date() })], rows: [hang("x")] }],
+    ["a STOP authorised, no result, its row running (L-7: never in the set)", { so: [so("st")], rows: [hang("st")], steps: [move("y"), otStop("st")] }],
+    ["the ledger has x's result, its row completed", { so: [so("x", { resultReportedAt: new Date(), resultStatus: "acked" })], rows: [hang("x", "completed")] }],
+    ["completed, every row final, the ledger read", { outcome: "completed", so: [so("x", { resultReportedAt: new Date(), resultStatus: "acked" })], rows: [hang("x", "completed"), hang("y", "completed")] }],
+    ["completed, every row final, the ledger unreadable", { outcome: "completed", rows: [hang("x", "completed"), hang("y", "completed")], nem: true }],
+  ];
+  for (const [ten, h] of NHU_CU) {
+    it(`X34-NHU-CU ${ten}: terminal as before — no latch, no list, no URGENT`, async () => {
+      const { r, ctx } = await ket(h);
+      expect(r).toMatchObject({ ok: true, status: h.outcome ?? "failed", changed: true });
+      expect(ctx[CHOT]).toBeUndefined();
+      expect(ctx.foeOutcomeUnknown).toBeUndefined();
+      expect(H.alerts).toEqual([]);
+    });
+  }
+  it("X34-KHONG-BEN the URGENT not durable: failed AND aborted are held by the end gate, latched (no nguon), the list, no DA_BAO", async () => {
+    for (const outcome of ["failed", "aborted"] as const) {
+      H.ben = false;
+      const { r, run, ctx } = await ket({ ...P1, outcome });
+      expect(r, outcome).toMatchObject({ ok: true, status: "held", changed: true });
+      expect(run.finishedAt, outcome).toBeUndefined();
+      expect(ctx[CHOT], outcome).toMatchObject({ stepId: "x" });
+      expect(ctx[CHOT].nguon, `${outcome}: nguon only on a terminal patch`).toBeUndefined();
+      expect([ctx.foeOutcomeUnknown, ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY], ctx.interruptedBy], outcome).toEqual([["x"], undefined, "end gate"]);
+    }
+  });
+  const THU_TU_HANG: Hinh = { so: [so("a")], rows: [hang("a"), hang("b", "failed", { error: "FOE_OUTCOME_UNKNOWN: command b may have reached the device" })], steps: [move("a"), move("b")] };
+  it("X34-THU-TU-HANG the rows' code on b, central's set {a}: the latch is b's (the set comes LAST), no latch key of the set", async () => {
+    const { ctx } = await ket(THU_TU_HANG);
+    expect(ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]).toMatchObject({ stepId: "b" });
+    expect(khoaRunEnd()).toEqual([runEnd("b")]);
+    expect(ctx[CHOT], "a latch of the rows is not written as the set's").toBeUndefined();
+  });
+  it("X34-THU-TU-HANG-GIU the same, the URGENT not durable: held, the context carries no latch key (as before)", async () => {
+    H.ben = false;
+    const { r, ctx } = await ket(THU_TU_HANG);
+    expect(r).toMatchObject({ status: "held" });
+    expect(ctx[CHOT]).toBeUndefined();
+  });
+  it("X34-THU-TU-BAO a report on the rider latches b, central's set {a}: the latch is the report's, no nguon", async () => {
+    const { ctx } = await ket({ so: [so("a")], rows: [hang("a")], steps: [move("a"), move("b")], error: ganBaoCaoKhongRoEdge('COMMAND_FAILED: step "b" failed', [{ loai: "noCompensation", stepId: "b", compId: KHONG_CO_BU_TRU, ma: "FOE_OUTCOME_UNKNOWN", claimSeq: 1 }], 4_000) });
+    expect(ctx[CHOT]).toMatchObject({ stepId: "b" });
+    expect(ctx[CHOT].nguon).toBeUndefined();
+  });
+  const Z = { stepId: "z", ma: "FOE_OUTCOME_UNKNOWN", at: "2026-11-20T00:00:00.000Z" };
+  it("X34-CTX-DA-CHOT the context already latched on z: never written over; the run_end is z's", async () => {
+    const { ctx } = await ket({ ...P1, ctx0: { [CHOT]: Z } });
+    expect(ctx[CHOT]).toEqual(Z);
+    expect(khoaRunEnd()).toEqual([runEnd("z")]);
+  });
+  it("X34-DA-BAO the context latched on z and told (DA_BAO): no URGENT raised again", async () => {
+    const { ctx } = await ket({ ...P1, ctx0: { [CHOT]: Z, [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: "z", at: Z.at } } });
+    expect(H.alerts).toEqual([]);
+    expect(ctx[CHOT]).toEqual(Z);
+  });
+  it("X34-GUI-LAI the same end again (a complete replayed): changed false, no URGENT more", async () => {
+    await ket(P1);
+    const n = H.alerts.length;
+    const lai = await applyEdgeSegmentEnd(d as never, RUN, { outcome: "failed", error: `COMMAND_FAILED: step "y" failed${RONG}`, nodeCode: "EDGE-A", claimSeq: 1, def: { ref: "x34", name: "x34", steps: [move("x"), move("y")] } as never });
+    expect(lai).toMatchObject({ changed: false });
+    expect(H.alerts.length).toBe(n);
+  });
+  it("X34-TUTAP-KHONG-MOI (shape 2) a latch of central's set every unknown of which a confirmed STOP covers (xacNhanHetChot): no URGENT, yet the terminal patch still writes the latch key (nguon) and the list", async () => {
+    const { KET_CUC_KHONG_RO_XAC_NHAN_CTX_KEY: XN } = await import("./foeKetCucKhongRo");
+    const { r, ctx } = await ket({ so: [so("x")], rows: [hang("x"), hang("y", "completed")], ctx0: { [XN]: { x: { stopId: "st", at: "2026-11-20T00:00:00.000Z" } } } });
+    expect(r).toMatchObject({ ok: true, status: "failed", changed: true });
+    expect(H.alerts, "covered by a confirmed STOP: no URGENT is needed").toEqual([]);
+    expect([ctx[CHOT]?.stepId, ctx[CHOT]?.nguon, ctx.foeOutcomeUnknown, ctx[KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]]).toEqual(["x", "tapKetDoan", ["x"], undefined]);
+  });
+  it("X34-COMPLETED-CHUA-XONG completed while x's row runs: not_finished, nothing written (as before)", async () => {
+    const { r } = await ket({ ...P1, outcome: "completed" });
+    expect(r).toMatchObject({ ok: false, code: "not_finished" });
+  });
+  it("X34-HAI-TAP-SO (X34-HAI-TAP) the two readings of 'may have gone' on one picture, each by its own definition", async () => {
+    const { tapKhongRoEdge, quyetDinhKetDoanEdge } = await import("./foeRunStore");
+    const def = { ref: "x34t", name: "x34t", steps: [move("a"), move("b"), move("c")] } as never as WorkflowDefinition;
+    const rows = [hang("a", "failed"), hang("b"), hang("c")];
+    const muc = [so("a"), so("b", { resultReportedAt: new Date(), resultStatus: "acked" }), so("c")] as Array<{ stepId: string; supersededAt: unknown; resultStatus?: string | null }>;
+    expect(tapKhongRoEdge({ def, rows: rows as never, uyQuyen: new Set(["a", "b", "c"]), stops: new Set() }).ids, "a final (failed) out; b running in, whatever its ledger result").toEqual(["b", "c"]);
+    expect(quyetDinhKetDoanEdge({ runId: RUN, claimSeq: 1, def, hang: rows as never, so: { doc: "duoc", muc }, stops: new Set(), rider: "du", bao: [], ctx: {} }).khongRo, "a failed is not done; b's known result out").toEqual(["a", "c"]);
+  });
+});

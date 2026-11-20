@@ -6783,7 +6783,9 @@ async function noKetThucKhongQuet(runId: number, x: { live?: RunContext | null; 
   const store = centralRunStore;
   const src = await store.sweepSource({ live: x.live ?? null, run: x.run, hasLiveDriver: (id) => liveRuns.has(id) }).catch(() => null);
   const ctx = (x.live?.context ?? (x.run?.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
-  if (runDaChotKhongRo(ctx) || (x.live != null && daChotKhongRo(x.live)) || chotTuHang((src?.hang ?? []) as Parameters<typeof chotTuHang>[0]) !== null) return null;
+  const hangChot = chotTuHang((src?.hang ?? []) as Parameters<typeof chotTuHang>[0]);
+  const chiChotTap = hangChot === null && (ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { nguon?: unknown } | undefined)?.nguon === "tapKetDoan"; // X-34 — latched only by central's own set (an edge end): its STOPs still owed are told
+  if (!chiChotTap && (runDaChotKhongRo(ctx) || (x.live != null && daChotKhongRo(x.live)) || hangChot !== null)) return null;
   // a completion is a run that went to its end: only one with a failed step (a parallel failFast false) left work undone, and only rows read can say so
   if (x.ketThuc === "completed" && !(src?.hang ?? []).some((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX) && r.status === "failed")) return null;
   if (!src?.def || !src.rowsKnown) return { ketThuc: x.ketThuc, ghim: [], chuaXacMinh: [], khongDoc: true };

@@ -589,6 +589,8 @@ export interface AnhKetThuc {
   /** T9 lượt sửa 3c (mục 1) — an edge segment: the code of the node's report of that STOP (structured), before the row's */
   viNo?: (stopId: string) => ViChuaRa | undefined;
   chotTuBao?: { stepId: string; ma: MaKetCucKhongRo } | null;
+  /** X-34 — an edge segment's end: central's own set of the commands that may have gone (khongRoCuaDoan); its first, in the set's own order (named by the words / the structured list first, then the ledger's and the rows'), latches the run, LAST of the chain (after ctx, chotTuBao, the rows, boNho) */
+  tapKetDoan?: readonly string[];
   /** a hold or a pause: no end. Waits for what is on its way, raises nothing new */
   chiDoi?: boolean;
   /** the claim of a marked row whose result does not name one (the segment's own) */
@@ -610,6 +612,8 @@ export interface KetQuaKetThuc {
   nguoiNhan?: number;
   /** the run's error when held */
   loi?: string;
+  /** X-34 — the latch is the one tapKetDoan gave (no other source said so) */
+  tuTap?: true;
 }
 
 /** true as soon as one says durable; false once all said no, or past `hanMs`. No answer is no yes. */
@@ -668,10 +672,11 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
   const rows = x.rows ?? [];
   const tuCtx = x.ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId?: unknown; ma?: unknown } | null | undefined;
   const tuHang = chotTuHang(rows);
+  const chotTap = x.tapKetDoan?.[0] ? { stepId: x.tapKetDoan[0], ma: MA_KET_DOAN_EDGE } : null;
   const chot =
     tuCtx?.stepId != null
       ? { stepId: String(tuCtx.stepId), ma: maKetCucKhongRoCua(typeof tuCtx.ma === "string" ? tuCtx.ma : null) }
-      : (x.chotTuBao ?? (tuHang ? { stepId: tuHang.stepId, ma: tuHang.ma } : null) ?? x.boNho?.chot ?? null);
+      : (x.chotTuBao ?? (tuHang ? { stepId: tuHang.stepId, ma: tuHang.ma } : null) ?? x.boNho?.chot ?? chotTap);
   const no = [...new Set([...stopChuaRaTuHang(rows, x.ctx), ...(x.boNho?.chuaRa ?? [])])];
   if (x.rows === null && !nguoi) return { ghi: "held", vi: "chuaDoc", urgentBen: false, chot, no, khongXacNhan: [], moi: false, loi: loiGiuChuaDocHang(x.runId, chot?.ma ?? null) };
   const giuNo = no.length > 0 && !nguoi;
@@ -715,6 +720,7 @@ export async function quyetDinhKetThucAnh(x: AnhKetThuc, lyDo: LyDoKetThuc, hanM
   }
   const ben = benChot && khongXacNhan.length === 0;
   const out: KetQuaKetThuc = { ghi: nguoi || (!giuNo && ben) ? "terminal" : "held", vi: null, urgentBen: ben, chot, no, khongXacNhan, moi, ...(nguoiNhan !== undefined ? { nguoiNhan } : {}) };
+  if (chot !== null && chot === chotTap) out.tuTap = true;
   if (nguoi) return out;
   if (giuNo) {
     const id0 = no[0] as string;
@@ -2252,17 +2258,17 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
   const congCuoi = async (): Promise<{ giu: EdgeSegmentEndResult } | { patch: Partial<OrchestrationRun> }> => {
     const hang = await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId));
     const tuBao = chotTuBao[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId: string; ma: MaKetCucKhongRo } | undefined;
-    const q = await quyetDinhKetThucAnh({ runId, ctx, owner: run.startedBy ?? null, rows: hang, def: end.def, daCo, cachNo: cachNoEdge, viNo: viBao, chotTuBao: tuBao ? { stepId: tuBao.stepId, ma: tuBao.ma } : null, claimSeq: end.claimSeq }, "edgeSegment", undefined, KET_DOAN_EDGE_TONG_MS);
+    const tap = await khongRoCuaDoan(); // X-34 — read ONCE, before the gate: a terminal end too latches on central's own set (H3)
+    const q = await quyetDinhKetThucAnh({ runId, ctx, owner: run.startedBy ?? null, rows: hang, def: end.def, daCo: tuBao || tap.length === 0 ? daCo : [], cachNo: cachNoEdge, viNo: viBao, chotTuBao: tuBao ? { stepId: tuBao.stepId, ma: tuBao.ma } : null, tapKetDoan: tap, claimSeq: end.claimSeq }, "edgeSegment", undefined, KET_DOAN_EDGE_TONG_MS);
     const daBao = q.moi && q.chot ? { [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: q.chot.stepId, at: new Date().toISOString() } } : {};
-    if (q.ghi === "terminal") return { patch: Object.keys(daBao).length ? { contextJson: { ...ctx, ...chotTuBao, ...daBao } } : {} };
+    if (q.ghi === "terminal") return { patch: Object.keys(daBao).length || q.tuTap ? { contextJson: { ...ctx, ...chotTuBao, ...(q.tuTap && q.chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { ...q.chot, at: new Date().toISOString(), nguon: "tapKetDoan" }, [OUTCOME_UNKNOWN_KEY]: [...new Set([...(Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : []), ...tap])] } : {}), ...daBao } } : {} }; // X-34: `nguon` ONLY on a terminal patch
     const at = new Date().toISOString();
-    const unknown = await khongRoCuaDoan(); // T9 lượt sửa 3e — central's rows and ledger, the words only add
     const prevUnknown = Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : [];
     return {
       giu: await write("held", {
         currentStepId: null,
         error: q.loi,
-        contextJson: { ...ctx, interrupted: true, interruptedAt: at, interruptedFrom: run.status, interruptedBy: "end gate", ...(unknown.length ? { [OUTCOME_UNKNOWN_KEY]: [...new Set([...prevUnknown, ...unknown])] } : {}), ...chotTuBao, ...daBao },
+        contextJson: { ...ctx, interrupted: true, interruptedAt: at, interruptedFrom: run.status, interruptedBy: "end gate", ...(tap.length ? { [OUTCOME_UNKNOWN_KEY]: [...new Set([...prevUnknown, ...tap])] } : {}), ...chotTuBao, ...(q.tuTap && q.chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { ...q.chot, at } } : {}), ...daBao },
       }),
     };
   };
