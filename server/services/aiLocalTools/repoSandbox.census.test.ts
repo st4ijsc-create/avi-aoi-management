@@ -437,20 +437,23 @@ describe("§D — GỐC THẬT (thư mục repo): thứ duy nhất nói được
     delete process.env.AI_REPO_SANDBOX_ROOT;
   });
 
-  it("★★★ `.env` THẬT bị từ chối — và ca TỰ CHỨNG MINH rằng nó CÓ TỒN TẠI", async () => {
+  it("★★★ mọi tệp `.env*` THẬT ở gốc mặc định bị từ chối — và ca TỰ CHỨNG MINH rằng có ít nhất một", async () => {
     /**
      * ⚠⚠ Không có vế thứ hai thì ca này là **lượng từ TỰ THOẢ**: một `.env` không tồn tại cũng cho
      * "không đọc được", và lưới sẽ xanh trên một hệ không có bí mật nào để rò. Lớp lỗi ấy đã bị đo
      * đúng hôm nay ("ca âm trên bảng KHÔNG có dữ liệu nên trả [] bất kể cổng").
      */
-    expect(
-      fs.existsSync(path.join(GOC_REPO, ".env")),
-      "repo này KHÔNG có `.env` ⇒ ca dưới không chứng minh được điều gì",
-    ).toBe(true);
+    const envs = fs.readdirSync(GOC_REPO).filter((n) => /^\.env/i.test(n));
+    expect(envs.length, "gốc repo KHÔNG có tệp `.env*` nào ⇒ ca dưới không chứng minh được điều gì").toBeGreaterThan(0);
     const t = toolHopCat().find((x) => x.name === "read_file")!;
-    const r = await t.handler!({ path: ".env", __authCtx: AUTH } as never);
-    expect(r.note).toBe("DENIED_SECRET");
-    expect((r.data as { content: string | null }).content).toBeNull();
+    for (const n of envs) {
+      const r = await t.handler!({ path: n, __authCtx: AUTH } as never);
+      expect(r.note, n).toBe("DENIED_SECRET");
+      expect((r.data as { content: string | null }).content, n).toBeNull();
+    }
+  });
+  it("★★ khuôn tên: `.env`, `.env.local`, `.env.production`, `.ENV` đều bị lớp TÊN bắt (thuần, không đĩa)", () => {
+    for (const n of [".env", ".env.local", ".env.production", ".ENV"]) expect(KHUON_TEP_CAM.some((k) => k.test(n)), n).toBe(true);
   });
 
   it("★★ mọi tệp `.env*` THẬT ở gốc repo đều bị CẢ HAI lớp chặn (tên VÀ đuôi)", () => {
