@@ -3611,6 +3611,8 @@ describe("X-27 (1) a Continue of a latched run whose first STOP pass throws send
     expect(t.length).toBeLessThanOrEqual(800);
     expect(t).toContain("sent no approved compensation that is not a STOP");
     expect(t).toContain("An approved compensation that is a STOP may or may not have been sent by that pass."); // X-27c: neither way asserted
+    expect(t).toContain("its STOP pass failed, so the system cannot say the STOP steps of this run are out"); // kiem-dinh w5: why nothing that is not a STOP went, word for word
+    expect(t).toContain("sends the compensations that are not STOPs only if its STOP pass does not fail"); // kiem-dinh w4: a later Continue's promise, only those that are not STOPs
     expect(t).not.toContain("NONE");
     expect(t).toContain("That approval is spent: a later Continue needs a new approval");
     expect(t).toContain("no STOP compensation is named");
