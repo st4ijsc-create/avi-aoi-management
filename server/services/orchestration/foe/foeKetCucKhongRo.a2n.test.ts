@@ -4029,4 +4029,12 @@ describe("X-32 the URGENT of a refused edge report: the edge's word, one key per
     expect(chu("payloadStopChuaRa", "st2").dedupKey).toBe(chu("payloadStopChuaRa", "st").dedupKey);
     expect(chu("payloadHangKhongRo", "st").dedupKey).not.toBe(chu("payloadStopChuaRa", "st").dedupKey);
   });
+  it("X32-CHU-NUT-DAI (k05) an edge node code of 1 000 characters (the payload's, unchecked): the message stays ≤ 800 and carries the code cut in the middle (TRAN_TEN_NUT 16)", () => {
+    const nut = "n".repeat(1000);
+    for (const ma of MA) {
+      const n = noiDungCanhBaoKhongRo({ loai: "edgeSyncRefused", runId: 2_147_483_647, stepId: ma, compId: KHONG_CO_BU_TRU, error: "FOE_OUTCOME_UNKNOWN", lan: ma, buoc: "x", nut } as Parameters<typeof noiDungCanhBaoKhongRo>[0]);
+      expect(n.message.length, ma).toBeLessThanOrEqual(800);
+      expect(n.message, ma).toContain(`edge node code "${"n".repeat(8)}…${"n".repeat(7)}"`);
+    }
+  });
 });

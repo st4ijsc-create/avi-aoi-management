@@ -1084,6 +1084,69 @@ describe("A2(n) T7c — central: a sync never ends, nor rewrites, a latched run 
     await tuChoi(voi([X_KHONG_RO]), /\(payloadHangKhongRo\)/);
     await motBao("payloadHangKhongRo", "x");
   });
+
+  // ═══ X-32 bổ sung (đột biến @629c22197: x08c, x09a, x12a, x17, x18, x14 sống / không hợp lệ; tam/x32-bo-sung-dot-bien.md) ═══
+  it("X32-P4-TRANG-THAI-LA (x08c) a payload row of a status the write loop skips, carrying the code, beside clean rows: the picture skips it too — written as before, no URGENT", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    const res = await syncRunResult(voi([...PAYLOAD_XONG.steps, { ...X_KHONG_RO, stepId: "zz", status: "bogus" }]) as never);
+    expect(res).toEqual({ ok: true, enabled: true, data: { runId: 1, stepsApplied: 3, abortRequested: false } });
+    expect(run1().status).toBe("completed");
+    await tick();
+    expect(canhBaoMock).not.toHaveBeenCalled();
+  });
+
+  it("X32-P4-GOP-NO-CTX (x09a, x18) the run's row of st 'completed', the payload's own row of st 'failed' (no code) and its context owing st: the payload's row wins the picture: refused (payloadStopChuaRa)", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    rows("orchestration_run_steps").push({ ...hangSt(), status: "completed", error: null });
+    await tuChoi(voi([{ ...ST_CHUA_RA, error: "DRIVER_WRITE_FAILED: link reset" }], { contextJson: { foeStopChuaRa: ["st"] } }), /\(payloadStopChuaRa\)/);
+    await motBao("payloadStopChuaRa", "st");
+  });
+
+  it("X32-P4-NO-CTX (x18) the payload's context owes st (foeStopChuaRa, no latch key), no row of st anywhere: refused (payloadStopChuaRa)", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    await tuChoi(voi([PAYLOAD_XONG.steps[2]!], { contextJson: { foeStopChuaRa: ["st"] } }), /\(payloadStopChuaRa\)/);
+    await motBao("payloadStopChuaRa", "st");
+  });
+
+  it("X32-P4-HAI-STOP (x12a) two STOPs the payload's rows owe (su, st): the URGENT names the smallest id, st", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    await tuChoi(voi([{ ...ST_CHUA_RA, stepId: "su", error: loiGiuChuaRa("su", { nguon: "tuChoi", ma: "CHUA_GHIM_STOP" }) }, ST_CHUA_RA]), /\(payloadStopChuaRa\)/);
+    await motBao("payloadStopChuaRa", "st");
+  });
+
+  // the shape as it arises (RC12b, foeEngine abortRun): an Abort whose own write lost to the walk's end ('failed') sweeps all the same (ketThucKhac) and leaves abort:st — the run terminal, never
+  // centrally stopped (centralStopped: aborted / claim only); a terminal payload then reaches kiemKhoa (EC:615 lets terminal over terminal through)
+  it("X32-P4-ABORT-THAT (x17) a 'failed' run whose rows hold central's record that st went (abort:st 'completed'), a terminal payload whose row of st says not sent: owed by no one — the rows written as before, the run unchanged, no URGENT", async () => {
+    Object.assign(run1(), { status: "failed", contextJson: {} });
+    rows("orchestration_run_steps").push({ id: 803, runId: 1, stepId: "abort:st", stepType: "command", status: "completed", attempt: 1, resultJson: { stepId: "st" }, error: null });
+    const res = await syncRunResult(voi([ST_CHUA_RA]) as never);
+    expect(res).toEqual({ ok: true, enabled: true, data: { runId: 1, stepsApplied: 1, abortRequested: false, stale: true } });
+    expect(run1().status).toBe("failed");
+    await tick();
+    expect(canhBaoMock).not.toHaveBeenCalled();
+  });
+
+  it("X32-P4-NEM-KHONG-UNHANDLED (x14) the URGENT throws: its failure is caught — no unhandled rejection leaves the refusal", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    canhBaoMock.mockImplementation(async () => {
+      throw new Error("alert down (X-32 test)");
+    });
+    const bat: unknown[] = [];
+    const cu = process.listeners("unhandledRejection");
+    const nghe = (e: unknown) => void bat.push(e);
+    process.removeAllListeners("unhandledRejection");
+    process.on("unhandledRejection", nghe);
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await tuChoi(voi([X_KHONG_RO]), /\(payloadHangKhongRo\)/);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(bat, "no unhandled rejection out of the refusal's URGENT").toEqual([]);
+    } finally {
+      process.off("unhandledRejection", nghe);
+      for (const l of cu) process.on("unhandledRejection", l as never);
+      err.mockRestore();
+    }
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════════
