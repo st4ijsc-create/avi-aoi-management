@@ -12,6 +12,10 @@
       • IDEMPOTENT: nếu cổng đã có `llama-server` sống (`/health` trả ok) thì THOÁT 0, KHÔNG spawn cái
         thứ hai (spawn trùng = nạp bản thứ hai của model 30B = vỡ VRAM 32 GB).
       • Spawn tách rời (detached) + ghi log ra file + CHỜ `/health` xanh mới báo thành công.
+      • Khoá .env đọc (lô D1d, luật E-01 (4)): LLAMA_SERVER_BIN, LLAMA_SERVER_MODEL, LLAMA_SERVER_SELECTION_FILE, LLAMA_SERVER_URL,
+        LLAMA_SERVER_CTX_TOTAL, LLAMA_SERVER_SLOTS, LLAMA_SERVER_API_KEY_FILE, LLAMA_SERVER_API_KEY (chỉ để từ chối / cảnh báo, KHÔNG lên
+        dòng lệnh), LLAMA_SERVER_ALIAS, LLAMA_SERVER_REASONING_BUDGET, LLAMA_SERVER_CACHE_RAM, LLAMA_SERVER_CTX_CHECKPOINTS,
+        LLAMA_SERVER_MMPROJ; GGUF_DEFAULT_MODEL, GGUF_MODELS_DIR, GGUF_MAX_CTX. Log vào -ThuMucLog (mặc định D:\LLAMA-LOGS\server, NGOÀI repo).
 
     ⚠⚠ KHÔNG lượng tử hoá KV. ĐÃ ĐO trên build b9814 / RTX 5090 sm_120, chỉ đổi ĐÚNG kiểu cache:
         -ctk f16  -ctv f16  → prefill 6.485 tok/s · decode 176 tok/s · TTFT(4k)    656 ms   ✅
@@ -53,6 +57,8 @@ param(
     [switch]$Force,
     [string]$Model,
     [int]$WaitSeconds = 300,
+    # Lô D1d C3 (chủ dự án 20/11): log NGOÀI repo và ngoài gốc sandbox; cùng tiền tố server/services/ai/duongLogLlama.ts (K2-LOG-NGOAI-REPO).
+    [string]$ThuMucLog = 'D:\LLAMA-LOGS\server',
     # Đợt 9 (2026-10-24) — CHỈ in tham số đã dựng (một dòng JSON) rồi thoát 0: không hỏi /health, không dừng, không spawn gì.
     # Dùng cho test (KheNang đổi 35B↔27B mang đúng --mmproj) và để người vận hành xem trước.
     [switch]$InThamSo,
@@ -225,7 +231,10 @@ $apiKey = $cfg['LLAMA_SERVER_API_KEY']
 if (-not [string]::IsNullOrWhiteSpace($apiKeyFile)) {
     if (-not (Test-Path -LiteralPath $apiKeyFile -PathType Leaf)) { Write-Bad "LLAMA_SERVER_API_KEY_FILE dat nhung tep KHONG ton tai (D1c: khong in duong)."; exit 2 }
     $srvArgs += @('--api-key-file', $apiKeyFile)
-} elseif (-not [string]::IsNullOrWhiteSpace($apiKey)) { $srvArgs += @('--api-key', $apiKey) }
+    if (-not [string]::IsNullOrWhiteSpace($apiKey)) { Write-Bad "BO QUA LLAMA_SERVER_API_KEY vi da co LLAMA_SERVER_API_KEY_FILE; nen go bien gia tri khoi cau hinh." }
+} elseif (-not [string]::IsNullOrWhiteSpace($apiKey)) {  # D1d (HST 09:26): KHÔNG đưa giá trị khoá lên dòng lệnh; không khởi không khoá
+    Write-Bad "Co LLAMA_SERVER_API_KEY (khoa trong .env) ma khong co LLAMA_SERVER_API_KEY_FILE - KHONG khoi. Chuyen khoa sang tep va dat LLAMA_SERVER_API_KEY_FILE."; exit 2
+}
 # D1: bi danh cho client (GET /v1/models). Ten tep that van doc o /props.model_path.
 $biDanh = $cfg['LLAMA_SERVER_ALIAS']
 if (-not [string]::IsNullOrWhiteSpace($biDanh)) { $srvArgs += @('--alias', $biDanh) }
@@ -294,7 +303,7 @@ if ((-not $Force) -and (Test-ServerAlive)) {
     exit 0
 }
 # Lô D1b M2 (HST 20/11): thư mục logs tạo TRƯỚC khối -Force — hỏng ⇒ thoát 2 khi chủ cổng còn nguyên (bản cũ: ném sau khi đã dừng chủ).
-$logDir = Join-Path $RepoRoot 'logs'
+$logDir = $ThuMucLog
 try { if (-not (Test-Path -LiteralPath $logDir -PathType Container)) { New-Item -ItemType Directory -Path $logDir -ErrorAction Stop | Out-Null } } catch { }
 # kiem-dinh 01:05: kiểm HẬU ĐIỀU KIỆN (New-Item có thể không ném mà vẫn không tạo) — không tin riêng catch.
 if (-not (Test-Path -LiteralPath $logDir -PathType Container)) { Write-Bad "KHÔNG TẠO ĐƯỢC THƯ MỤC logs ($logDir) — KHÔNG dừng ai, KHÔNG khởi."; exit 2 }

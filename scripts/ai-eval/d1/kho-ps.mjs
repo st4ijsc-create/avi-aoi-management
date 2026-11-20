@@ -170,7 +170,7 @@ function force(c, them = {}, cheDo = "off", thamThem = [], dongEnv = []) { // D1
   const env = path.join(D, "force.env");
   fs.writeFileSync(env, [`GGUF_MODELS_DIR=${D}`, `LLAMA_SERVER_MODEL=${path.basename(MODEL)}`, `LLAMA_SERVER_URL=http://127.0.0.1:${c}`, `LLAMA_SERVER_BIN=${BIN}`,
     `LLAMA_SERVER_SELECTION_FILE=${path.join(D, "khong-co.json")}`, `LLAMA_SERVER_MMPROJ=${cheDo}`, ...dongEnv].join("\n"));
-  return chayPs(path.join(cay, "start-llama-server.ps1"), ["-EnvFile", env, "-Force", "-WaitSeconds", "6", ...thamThem], them);
+  return chayPs(path.join(cay, "start-llama-server.ps1"), ["-EnvFile", env, "-Force", "-WaitSeconds", "6", "-ThuMucLog", path.join(D, "repo", "logs"), ...thamThem], them); // D1d: log trong D, KHÔNG vào D:\LLAMA-LOGS thật
 }
 if (CA_RIENG === "doi-chung-mac-dinh") {
   CA.length = 0;

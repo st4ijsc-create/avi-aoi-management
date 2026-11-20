@@ -47,7 +47,7 @@ param(
   # Mac dinh GIU NGUYEN gia tri that cu. -TepTamDung trong => LLAMA_WATCHDOG_PAUSE_FILE => %TEMP%\llama-watchdog.pause nhu cu.
   [string]$Exe = 'D:\SOURCES\16.AI\llama-cuda\llama-server.exe',
   [int]$Cong = 8091,
-  [string]$ThuMucLog = 'D:\SOURCES\avi-aoi-management\tmp\audit-ai',
+  [string]$ThuMucLog = 'D:\LLAMA-LOGS\doi-model',  # D1d C3: ngoai repo (truoc: <repo chinh>\tmp\audit-ai)
   [string]$TepTamDung = "",
   # Lo D1b M5 (HST 20/11 00:50): chu y dung llama KHONG khoa khi chu cong hien tai CO khoa (mac dinh: tu choi, ma 11).
   [switch]$KhongKhoa

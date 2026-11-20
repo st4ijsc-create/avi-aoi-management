@@ -52,6 +52,7 @@
  * ≤ 120 s (không nạp in-process). Tiến trình anh em phủ env theo lựa chọn mới trong ≤ 15 s.
  */
 import { tieuDeLlamaServer } from "./khoaLlamaServer";
+import { LOG_LOI_LLAMA_SERVER } from "./duongLogLlama";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -453,7 +454,7 @@ function laTamDungCuaKhoa(noiDung: string, k: NoiDungKhoa): boolean {
 const MO_TA_MA_THOAT: Record<number, string> = {
   2: "cấu hình .env / không thấy tệp model",
   3: "cổng bị tiến trình KHÔNG phải llama-server chiếm",
-  4: "llama-server thoát sớm (thường là hết VRAM / tệp hỏng — xem logs/llama-server-*.err.log)",
+  4: `llama-server thoát sớm (thường là hết VRAM / tệp hỏng — xem ${LOG_LOI_LLAMA_SERVER})`,
   5: "quá giờ chờ /health",
 };
 
@@ -743,7 +744,7 @@ export class DieuPhoiDoiModel {
       } catch (e: any) {
         this.datBuoc("quay-ve", "loi", String(e?.message ?? e).slice(0, 300));
         p.ketQua = "that-bai-quay-ve-hong";
-        p.canhBao.push("Quay về KHÔNG thành công — bộ giám sát sẽ dựng lại llama-server từ lựa chọn cũ khi tạm dừng được gỡ. Xem logs/llama-server-*.err.log.");
+        p.canhBao.push(`Quay về KHÔNG thành công — bộ giám sát sẽ dựng lại llama-server từ lựa chọn cũ khi tạm dừng được gỡ. Xem ${LOG_LOI_LLAMA_SERVER}.`);
       }
     };
 

@@ -4,7 +4,7 @@
   Ly do co ban 2: 16/11 10:28 ban 1 (Stop-Process -Force vo dieu kien) da giet llama-server pid 1316 cua llama-watchdog :3000.
 
   Khac ban ngoai repo:
-  - -Exe / -Cong / -ThuMucLog / -TepTamDung la THAM SO (mac dinh = gia tri that cu) de chay kho tren exe GIA + cong GIA + tep GIA.
+  - -Exe / -Cong / -ThuMucLog / -TepTamDung la THAM SO (mac dinh = gia tri that; log mac dinh D:\LLAMA-LOGS\khoi-tay, D1d) de chay kho tren exe GIA + cong GIA + tep GIA.
     Ten tien trinh dem "da co llama" lay tu ten tep cua -Exe, khong ghi cung `llama-server`.
   - Cho /health (khong phai /props). Sau khi xanh: doc /props (gui khoa neu LLAMA_SERVER_API_KEY_FILE co) CHI de in n_ctx.
   - Khai LLAMA_SERVER_API_KEY_FILE ma -ArgStr thieu --api-key-file => thoat 2 (khong khoi server KHONG khoa khi da khai khoa).
@@ -30,7 +30,7 @@ param(
   [string]$TepTamDung = '',
   [switch]$ChiKiem
 )
-if (-not $ThuMucLog) { $ThuMucLog = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'tmp\khoi-llama-tay' }
+if (-not $ThuMucLog) { $ThuMucLog = 'D:\LLAMA-LOGS\khoi-tay' }
 if (-not $TepTamDung) { $TepTamDung = Join-Path $env:TEMP 'llama-watchdog.pause' }
 $tenTienTrinh = [System.IO.Path]::GetFileNameWithoutExtension($Exe)
 function Che-DongLenh([string]$s) {

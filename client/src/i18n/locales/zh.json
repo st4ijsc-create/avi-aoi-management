@@ -21193,7 +21193,7 @@
     "tipKhoiDongLai": "llama-server 刚刚停止；监控程序正在重启它（第 {{lan}} 次，{{phut}} 分钟内 {{trongCuaSo}}/{{toiDa}}）。此时代码生成会最多等待约 2 分钟，然后经由服务器执行——不会把模型加载到应用中。",
     "tipDangNap": "llama-server 正在加载模型（约 21 GB 的模型需 30–90 秒）。代码生成将等待后继续。",
     "tipTamDung": "监控程序已被有意暂停（正在切换模型）——不会自动重启 llama-server。",
-    "tipBoCuoc": "llama-server 在 {{phut}} 分钟内尝试 {{toiDa}} 次仍无法启动——监控程序已停止重试。需要人工查看 logs/llama-server-*.err.log，然后重新运行 scripts/ai/start-llama-server.ps1。",
+    "tipBoCuoc": "llama-server 在 {{phut}} 分钟内尝试 {{toiDa}} 次仍无法启动——监控程序已停止重试。需要人工查看 D:\\LLAMA-LOGS\\server\\llama-server-*.err.log，然后重新运行 scripts/ai/start-llama-server.ps1。",
     "tipMayHong": "推理引擎不健康。此时的所有回答反映的是机器状态，而不是模型能力——在此格重新变绿之前，不要对模型质量下任何结论。",
     "tipMayOk": "引擎通过 {{duong}} 运行。已加载模型：{{soModel}}。GPU 模式：{{gpu}}。",
     "duongNgoai": "llama-server（外部进程）",
