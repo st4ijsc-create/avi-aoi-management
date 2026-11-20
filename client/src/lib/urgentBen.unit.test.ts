@@ -8,6 +8,14 @@ import en from "@/i18n/locales/en.json";
 import zh from "@/i18n/locales/zh.json";
 import { KIND_NHAC_GHIM, KIND_URGENT_A2N, TIEN_TO_KIND, TOI_DA_THE_HIEN, catTheHien, duongToiRun, laUrgentA2n, phanNhomUrgent, tuoiNgan, type HangThongBao } from "./urgentBen";
 
+// Lưới chữ cấm "đã/đang/sẽ dừng" (quy tắc chữ: nhãn chỉ nói điều đã quan sát). MỘT nguồn: vòng soát nhãn và ca "bắt thật" dùng chung hằng này.
+const CAM_DUNG = {
+  vi: /\b(đã dừng|đang dừng|sẽ dừng)\b/i,
+  en: /\b(has stopped|is stopping|will stop|was stopped)\b/i,
+  zh: /(已停止|正在停止|将停止)/,
+} as const;
+const biCam = (ten: keyof typeof CAM_DUNG, chuoi: string): boolean => CAM_DUNG[ten].test(chuoi);
+
 const H37 = `${TIEN_TO_KIND}edge_stream_stuck`;
 const hang = (id: number, x: Partial<HangThongBao> = {}): HangThongBao => ({
   id,
@@ -124,8 +132,7 @@ describe("lưới 23 kind", () => {
   });
   it.each([["vi", vi], ["en", en], ["zh", zh]] as const)("★ nhãn %s không nói 'đã/đang/sẽ dừng' (quy tắc chữ: chỉ nói điều đã quan sát)", (ten, loc) => {
     const nhan = Object.values((loc as unknown as { urgent: { kind: Record<string, string> } }).urgent.kind).join("\n");
-    const cam = ten === "vi" ? /\b(đã dừng|đang dừng|sẽ dừng)\b/i : ten === "en" ? /\b(has stopped|is stopping|will stop|was stopped)\b/i : /(已停止|正在停止|将停止)/;
-    expect(nhan).not.toMatch(cam);
+    expect(biCam(ten, nhan), `nhãn ${ten} chứa cụm cấm`).toBe(false);
   });
   it("★ zh không dùng 引脚 (= chân linh kiện phần cứng) cho 'ghim' ở BẤT KỲ khoá urgent nào", () => {
     expect(JSON.stringify((zh as unknown as { urgent: unknown }).urgent)).not.toContain("引脚");
@@ -167,5 +174,32 @@ describe("nhãn nút tới run nói đúng sự thật", () => {
     expect(u(en)).toBe("Open the orchestration page");
     expect(u(zh)).toBe("打开编排页面");
     for (const x of [u(vi), u(en), u(zh)]) expect(x).not.toMatch(/Mở run|Open run|打开运行/);
+  });
+});
+
+describe("lưới cấm 'đã/đang/sẽ dừng' phải BẮT thật (URGENTBEN-VI-BIEN-MU)", () => {
+  it.each([
+    ["vi", "Máy đã dừng"],
+    ["vi", "Đã dừng"],
+    ["vi", "máy đang dừng"],
+    ["vi", "máy sẽ dừng"],
+    ["en", "The machine has stopped"],
+    ["en", "It is stopping"],
+    ["en", "it will stop"],
+    ["en", "STOP was stopped"],
+    ["zh", "设备已停止"],
+    ["zh", "设备正在停止"],
+    ["zh", "设备将停止"],
+  ] as const)("★ %s: bắt '%s'", (ten, mau) => {
+    expect(biCam(ten, mau)).toBe(true);
+  });
+  it.each([
+    ["vi", "Edge chưa xác nhận bước DỪNG; kiểm máy tại chỗ"],
+    ["vi", "chưa rõ lệnh nào đã đi"],
+    ["vi", "đã giao cho bộ điều phối — máy chưa xác nhận"],
+    ["en", "The STOP was handed to the dispatcher — the machine has not confirmed"],
+    ["zh", "补偿停止步骤已交给调度器——设备尚未确认"],
+  ] as const)("%s: KHÔNG bắt mẫu sạch '%s'", (ten, mau) => {
+    expect(biCam(ten, mau)).toBe(false);
   });
 });
