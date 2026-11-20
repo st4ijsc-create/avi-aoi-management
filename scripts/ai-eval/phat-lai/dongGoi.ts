@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import { dongGoi } from "../../../server/testing/phatLaiLuot";
-import { locCo } from "../tasks/run-eval.mjs";
+import { locMoiTruongFixture } from "./locMoiTruong";
 
 const TRAN_TEP = 2 * 1024 * 1024;
 const TRAN_TONG = 10 * 1024 * 1024;
@@ -48,19 +48,8 @@ async function main() {
   const env = fs.readFileSync(tepEnv, "utf8");
   const url = (env.match(/^DATABASE_URL=(.*)$/m) || [])[1]?.trim().replace(/^["']|["']$/g, "");
   if (!url) throw new Error("không đọc được DATABASE_URL");
-  const moiTruong: Record<string, string> = {};
-  for (const m of env.matchAll(/^(AI_AGENT_[A-Z0-9_]+|AI_AGENTIC_[A-Z0-9_]+|AI_CODING_[A-Z0-9_]+)=(.*)$/gm)) {
-    if (/HOUSEKEEPING/.test(m[1]!)) continue;
-    moiTruong[m[1]!] = m[2]!.replace(/\s+#.*$/, "").trim().replace(/^["']|["']$/g, "");
-  }
-  for (const kv of (arg("--moi-truong") ?? "").split(",").filter(Boolean)) {
-    const i = kv.indexOf("=");
-    if (i <= 0) throw new Error(`--moi-truong sai dạng: ${kv}`);
-    moiTruong[kv.slice(0, i)] = kv.slice(i + 1);
-  }
-  const { co } = locCo(moiTruong);
-  const boDi = Object.keys(moiTruong).filter((k) => !(k in co)); // boQua + tên ngoài tiền tố (locCo bỏ lặng lẽ) — CHỈ TÊN, không giá trị
-  if (boDi.length) console.error(`dongGoi: bỏ khỏi lenh.moiTruong (chỉ tên): ${boDi.join(", ")}`);
+  const { co, dongBao } = locMoiTruongFixture(env, arg("--moi-truong") ?? ""); // PHATLAI-2: mô-đun thuần, có ca hành vi
+  if (dongBao) console.error(dongBao);
   const tonTaiTruoc = (arg("--ton-tai-truoc") ?? "").split(",").map((x) => x.trim().replace(/\\/g, "/")).filter(Boolean);
   if (tonTaiTruoc.some((x) => x.startsWith("/") || /^[A-Za-z]:/.test(x) || x.split("/").includes(".."))) throw new Error("--ton-tai-truoc phải là đường tương đối trong dự án");
   const postgres = (await import("postgres")).default;

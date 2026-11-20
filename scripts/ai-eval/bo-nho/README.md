@@ -20,9 +20,9 @@ bash scripts/ai-eval/bo-nho/do-bo-nho-llama.sh "27b-c4096:doi:27b:@('--cache-ram
 TAI=b bash scripts/ai-eval/bo-nho/do-bo-nho-llama.sh 27b-dai:doi:27b                      # Tải B
 ```
 
-- Đường `doi` = `scripts/ai-eval/codegen-chay-duoc/doi-model.ps1` (công cụ đo; log `tmp/audit-ai/ls-<model>-<dấu giờ>.err.log` của cây chính,
+- Đường `doi` = `scripts/ai-eval/codegen-chay-duoc/doi-model.ps1` (công cụ đo; log `<-ThuMucLog>\ls-<model>-<dấu giờ>.err.log`, mặc định `D:\LLAMA-LOGS\doi-model` NGOÀI repo (lô D1d),
   đọc từ dòng `LOG:` nó in ra). Đường `sp` = `scripts/ai/start-llama-server.ps1 -Force` với `.env` cây chính (CHỈ ĐỌC) — đúng đường
-  Task Scheduler / watchdog / API đổi model dùng; log ở `logs/llama-server-<dấu giờ>.err.log` của worktree.
+  Task Scheduler / watchdog / API đổi model dùng; log ở `<-ThuMucLog>\llama-server-<dấu giờ>.err.log`, mặc định `D:\LLAMA-LOGS\server` NGOÀI repo (lô D1d).
 - Kết quả: `tmp/bn-<nhãn>.csv`, `tmp/bn-tai-<nhãn>.log`, dòng `===` ở stdout.
 - Đợt đo gốc 2026-10-23 (hai bản tmp đã gộp vào đây): Tải A trên `27b` mặc định / `--cache-ram 0` / `--no-mmap` / `35b`; Tải B trên `27b`
   mặc định / `--cache-ram 0` / `35b`. Lúc đó mặc định doi-model là `--cache-ram 4096`; từ 2026-10-24 là 0 (`-CacheRam`).
