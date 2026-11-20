@@ -30,4 +30,14 @@ describe("locMoiTruongFixture — lọc cờ agent cho lenh.moiTruong của fixt
     try { locMoiTruongFixture("", "AI_AGENT_NEN_MOC=true,khoa-gia-h3-khong-dau-bang"); } catch (e) { loi = (e as Error).message; }
     expect(loi).toBe("--moi-truong sai dạng ở cặp thứ 2");
   });
+  // PHATLAI-2 commit 4 (HST 17:05): ba ca ghim hành vi hiện có mà kiem-dinh dự đoán đột biến sống (??= thay =; i < 0; bỏ nhánh AI_AGENTIC_).
+  it("(h4a) --moi-truong GHI ĐÈ giá trị cùng khoá trong .env", () => {
+    expect(locMoiTruongFixture("AI_AGENT_NEN_MOC=true", "AI_AGENT_NEN_MOC=false").co).toEqual({ AI_AGENT_NEN_MOC: "false" });
+  });
+  it("(h4b) cặp có khoá RỖNG ⇒ sai dạng đúng vị trí", () => {
+    expect(() => locMoiTruongFixture("", "AI_AGENT_NEN_MOC=true,=giatri-gia-h4b")).toThrowError(/^--moi-truong sai dạng ở cặp thứ 2$/);
+  });
+  it("(h4c) cờ tiền tố AI_AGENTIC_ trong .env được giữ", () => {
+    expect(locMoiTruongFixture("AI_AGENTIC_ENABLED=true", "").co).toEqual({ AI_AGENTIC_ENABLED: "true" });
+  });
 });
