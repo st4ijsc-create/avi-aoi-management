@@ -24972,7 +24972,8 @@
       "foe_outcome_unknown_abort_definition_unread": "Abort: the run definition could not be read — a STOP may not be out",
       "foe_outcome_unknown_abort_sweep_unfinished": "Abort: the STOP sweep has not finished",
       "foe_outcome_unknown_stop_ended_unswept": "The run ended without a STOP sweep — the STOP was NOT sent; check the machine",
-      "foe_outcome_unknown_edge_stream_stuck": "The run's edge stream stalled abnormally — a STOP may not be out; check the machine"
+      "foe_outcome_unknown_edge_stream_stuck": "The run's edge stream stalled abnormally — a STOP may not be out; check the machine",
+      "foe_outcome_unknown_edge_sync_refused": "An edge report was refused in full — the centre does not know whether any STOP step reached the machine; check the machine on site"
     }
   }
 }

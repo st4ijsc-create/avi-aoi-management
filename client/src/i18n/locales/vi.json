@@ -24969,7 +24969,8 @@
       "foe_outcome_unknown_abort_definition_unread": "Huỷ run: không đọc được định nghĩa run — có thể còn bước DỪNG chưa ra",
       "foe_outcome_unknown_abort_sweep_unfinished": "Huỷ run: lượt quét bước DỪNG chưa xong",
       "foe_outcome_unknown_stop_ended_unswept": "Run đã kết thúc mà không có lượt quét bước DỪNG — bước DỪNG CHƯA gửi; kiểm máy",
-      "foe_outcome_unknown_edge_stream_stuck": "Luồng edge của run đứng do bất thường — run có thể còn bước DỪNG chưa ra; kiểm máy"
+      "foe_outcome_unknown_edge_stream_stuck": "Luồng edge của run đứng do bất thường — run có thể còn bước DỪNG chưa ra; kiểm máy",
+      "foe_outcome_unknown_edge_sync_refused": "Báo cáo của edge bị từ chối trọn — trung tâm không biết có bước DỪNG nào đã tới máy hay chưa; kiểm máy tại chỗ"
     }
   }
 }

@@ -120,10 +120,10 @@ describe("duongToiRun", () => {
   it("dựng từ runId", () => expect(duongToiRun(412)).toBe("/orchestration-studio?run=412"));
 });
 
-describe("lưới 23 kind", () => {
-  it("đúng 23 kind, không trùng, đều có tiền tố", () => {
-    expect(KIND_URGENT_A2N).toHaveLength(23);
-    expect(new Set(KIND_URGENT_A2N).size).toBe(23);
+describe("lưới 24 kind", () => {
+  it("đúng 24 kind, không trùng, đều có tiền tố", () => {
+    expect(KIND_URGENT_A2N).toHaveLength(24);
+    expect(new Set(KIND_URGENT_A2N).size).toBe(24);
     expect(KIND_URGENT_A2N.every((k) => k.startsWith(TIEN_TO_KIND))).toBe(true);
   });
   it.each([["vi", vi], ["en", en], ["zh", zh]] as const)("★ mỗi kind có nhãn urgent.kind.<kind> không rỗng ở %s", (_ten, loc) => {

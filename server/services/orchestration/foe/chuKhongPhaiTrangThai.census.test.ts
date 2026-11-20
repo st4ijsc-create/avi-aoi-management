@@ -539,6 +539,8 @@ const DONG_BANG: readonly DongDongBang[] = [
   { tep: "server/services/edge/edgeConfigSource.ts", ham: "openEdgeConfigCache", dang: "JSON.parse", chu: "JSON.parse(text)", ma: "MOI-2", lyDo: "đọc tệp đệm cấu hình do chính nút ghi (phong bì AES-GCM có thẻ xác thực); hỏng ⇒ ném cache_format" },
   { tep: "server/services/edge/edgeCoordinator.ts", ham: "lyDoDongBoKhoa", dang: "goi:chotTuHang", chu: "chotTuHang(hang)", ma: "B-5", lyDo: "lyDoDongBoKhoa: chốt từ chữ hàng ⇒ từ chối syncRunResult/assignRun" },
   { tep: "server/services/edge/edgeCoordinator.ts", ham: "lyDoDongBoKhoa", dang: "goi:stopChuaRaTuHang", chu: "stopChuaRaTuHang(hang,ctxasRecord<string,unknown>|null)", ma: "B-5", lyDo: "lyDoDongBoKhoa: nợ STOP từ chữ hàng ⇒ từ chối đồng bộ" },
+  { tep: "server/services/edge/edgeCoordinator.ts", ham: "kiemKhoa", dang: "goi:chotTuHang", chu: "chotTuHang(gop)", ma: "MOI-39", lyDo: "X-32: ảnh sau ghi của payload (hàng run ghép hàng payload qua bộ lọc vòng ghi) ⇒ từ chối syncRunResult + URGENT edgeSyncRefused" },
+  { tep: "server/services/edge/edgeCoordinator.ts", ham: "kiemKhoa", dang: "goi:stopChuaRaTuHang", chu: "stopChuaRaTuHang(gop,sau.ctx)", ma: "MOI-40", lyDo: "X-32: ảnh sau ghi của payload: nợ STOP ⇒ từ chối syncRunResult + URGENT edgeSyncRefused" },
   { tep: "server/services/edge/edgeGatewayRuntime.ts", ham: "releaseAlert", dang: "!==", chu: "code!==\"EDGE_DEVICE_RELEASED\"", ma: "MOI-3", lyDo: "`code` là kiểu hợp literal của chính hàm; chỉ chọn có in console.error" },
   { tep: "server/services/edge/edgeGatewayRuntime.ts", ham: "quiesceRobot", dang: ".split", chu: "d.reason??\"?\".split(\":\")", ma: "MOI-4", lyDo: "mã lý do detach (có cấu trúc) ⇒ khoá chống lặp cảnh báo attach; không quyết STOP" },
   { tep: "server/services/edge/edgeJournal.ts", ham: "parseLine", dang: "JSON.parse", chu: "JSON.parse(text)", ma: "E-8", lyDo: "dòng journal JSONL do chính nút ghi; hỏng ⇒ JournalCorrupt (ném)" },
@@ -739,10 +741,11 @@ const DONG_BANG: readonly DongDongBang[] = [
 // văn bản khoá do tách hàm thuần, bước 3); số chạy thật của kiem-dinh trên 5c335119a + 28307c87. Ghim lại phần tử đầu. Từ đây chỉ được GIẢM.
 // QUYET_DINH_MOC lần 5 (chu-du-an-HST, 2026-11-17, uỷ quyền 17/11; mã X-14/1): mốc = 182 = 181 + 1 (canhBaoStopRunQuaHan gọi chotTuHang, B-6)
 // QUYET_DINH_MOC lần 6 (chu-du-an-HST, 2026-11-18; mã SG-1, hàng X-22): mốc = 183 = 182 + 1 (luật mã bước của main gộp vào A2(n): workflowModel.ts duyet, id.includes(DAU_HIEU_RIENG_STEP_ID))
-const MOC_GOC = 183;
-const LICH_SU_MOC: readonly number[] = [183];
+// QUYET_DINH_MOC lần 7 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-20; hàng X-32c): mốc = 185 = 183 + 2 (MOI-39, MOI-40: kiemKhoa của edgeCoordinator, ảnh sau ghi của payload). Ghim lại phần tử đầu.
+const MOC_GOC = 185;
+const LICH_SU_MOC: readonly number[] = [185];
 /** Mốc số dòng đóng băng: bằng phần tử cuối của `LICH_SU_MOC`, chỉ được GIẢM. */
-const SO_DONG_MOC = 183;
+const SO_DONG_MOC = 185;
 
 /**
  * HST 14/11 T2-DK1 — "ngoài tầm" không được thành "ngoài sổ". 21 ô của bảng kiểm kê mà census KHÔNG bắt được (không có phép so chữ để bắt:

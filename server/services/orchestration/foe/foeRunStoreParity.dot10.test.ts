@@ -11714,6 +11714,102 @@ describe("A2(n) T12 (P4, red until T12) — a payload that itself carries the la
     const hua = baoSau.filter((t) => /\bst\b/.test(t) && /abort/i.test(t));
     if (hua.length > 0) expect(abortGuiSt, `R: an URGENT names st and promises the Abort, the Abort did not send st: ${hua[0]}`).toBe(true);
   });
+  // X-32 (F4, HST 15:48: a sibling, T12-P4 unchanged) — the same payload; the rows hold central's record that st went (abort:st completed), so an Abort does not send st (RA-R2, 9194b4f74: sent=[]): R can fire here
+  it("T12-P4-R the same payload, the run's rows holding central's record that st went (abort:st completed): P, exactly one of Q1 / Q2, R", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    const d = def("t12p4r", [gate(), ot("x"), otStop("st")]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const wf = rows("orchestration_workflows").find((w) => w.ref === "t12p4r")!;
+    const C = 952;
+    fake.seed(orchestrationRuns, [...rows("orchestration_runs"), { id: C, workflowId: wf.id, workflowRef: "t12p4r", status: "running", paramsJson: {}, edgeNodeId: null, startedBy: OWNER.id, createdAt: T0, contextJson: {} }]);
+    fake.seed(orchestrationRunSteps, [...rows("orchestration_run_steps"), { id: 9621, runId: C, stepId: "abort:st", stepType: "command", status: "completed", attempt: 1, resultJson: { stepId: "st" }, error: null, startedAt: T0, finishedAt: T0 }]);
+    const truoc = anhRun(C);
+    const bao0 = h.alerts.length;
+    const res = await syncRunResult({
+      edgeNodeCode: "edge-x",
+      runId: C,
+      status: "completed",
+      contextJson: { k: 1 },
+      steps: [
+        { stepId: "x", stepType: "command", status: "failed", attempt: 1, error: "FOE_OUTCOME_UNKNOWN: command x may have reached the device" },
+        { stepId: "st", stepType: "command", status: "failed", attempt: 1, error: loiGiuChuaRa("st", { nguon: "tuChoi", ma: "CHUA_GHIM_STOP" }) },
+      ],
+    } as never);
+    // dieu-phoi 08/11: tính chất P ∧ (Q1 ∨ Q2) ∧ R; URGENT một mình không đủ (dạng K1)
+    // P — the run is not ended outside quyetDinhKetThucAnh (a sync never calls it: any end here is outside it)
+    expect(KET_THUC, "P: the sync ended the run outside the end gate").not.toContain(runRow(C).status);
+    // Q1 — the sync refused: no step row, no context, no status written (byte for byte)
+    const q1 = anhRun(C) === truoc && !(res.ok === true && Number((res.data as { stepsApplied?: number } | undefined)?.stepsApplied ?? 0) > 0);
+    // Q2 — st is still in the debt the Abort reads (the rows' state C; no context key carries a STOP debt), AND an Abort after it really sends st
+    const noSt = stopChuaRaTuHang(stepRows(C) as never).has("st");
+    const baoSau = h.alerts.slice(bao0).map((a) => JSON.stringify({ ...a, baoBen: undefined }));
+    h.sent.length = 0;
+    const a = await abortRun(C, OWNER, "press");
+    await wait(40);
+    const abortGuiSt = h.sent.some((x) => x.stepId === "st" && x.name === "stop");
+    const q2 = noSt && abortGuiSt;
+    expect([q1, q2].filter(Boolean).length, `exactly one of Q1 (refused, nothing written: ${q1}) / Q2 (st owed: ${noSt}, the Abort sent st: ${abortGuiSt}); abort: ${String(a.message ?? a.status)}`).toBe(1);
+    // R — an URGENT (durable here: the mock stores it) naming st promises the Abort only when the Abort sends st
+    const hua = baoSau.filter((t) => /\bst\b/.test(t) && /abort/i.test(t));
+    if (hua.length > 0) expect(abortGuiSt, `R: an URGENT names st and promises the Abort, the Abort did not send st: ${hua[0]}`).toBe(true);
+  });
+  // X-32 (dòng 45; x32-pham-vi-2.md mục 4) — the refusal of a payload that carries a latch tells a person: ONE URGENT of its own kind, through the real canhBaoKetCucKhongRo (its durable dedup on); nothing written
+  const PAYLOAD_X32 = (C: number) =>
+    ({
+      edgeNodeCode: "edge-x",
+      runId: C,
+      status: "completed",
+      contextJson: { k: 1 },
+      steps: [
+        { stepId: "x", stepType: "command", status: "failed", attempt: 1, error: "FOE_OUTCOME_UNKNOWN: command x may have reached the device" },
+        { stepId: "st", stepType: "command", status: "failed", attempt: 1, error: loiGiuChuaRa("st", { nguon: "tuChoi", ma: "CHUA_GHIM_STOP" }) },
+      ],
+    }) as never;
+  const runX32 = async (ref: string, C: number) => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    expect((await deployWorkflow(def(ref, [gate(), ot("x"), otStop("st")]), OWNER)).ok).toBe(true);
+    const wf = rows("orchestration_workflows").find((w) => w.ref === ref)!;
+    fake.seed(orchestrationRuns, [...rows("orchestration_runs"), { id: C, workflowId: wf.id, workflowRef: ref, status: "running", paramsJson: {}, edgeNodeId: null, startedBy: OWNER.id, createdAt: T0, contextJson: {} }]);
+  };
+  const KIND_X32 = "foe_outcome_unknown_edge_sync_refused";
+  it("X32-RP-BAO the T12-P4 payload: the T7c-b answer, nothing written, ONE URGENT edgeSyncRefused through canhBaoKetCucKhongRo (durable dedup on), the edge's word, no promise", async () => {
+    await runX32("x32bao", 953);
+    const truoc = anhRun(953);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const res = await syncRunResult(PAYLOAD_X32(953));
+      expect(res).toEqual({ ok: true, enabled: true, data: { runId: 953, stepsApplied: 0, abortRequested: true, stale: true } });
+      expect(anhRun(953)).toBe(truoc); // the step rows, the context, the status: byte for byte
+      await vi.waitFor(() => expect(h.alerts.filter((a) => a.kind === KIND_X32)).toHaveLength(1), { timeout: 2_000 });
+      const [a] = h.alerts.filter((x) => x.kind === KIND_X32);
+      expect(a.dedupKey).toBe(`${KIND_X32}:953:payloadHangKhongRo:-:payloadHangKhongRo`); // one key per (run, reason): the step the edge names is not in it
+      expect(a.khuTrungBenVung).toEqual({}); // the durable dedup of criticalStopAlert (per person, the key, 24 h)
+      expect(a.recipients).toContain(OWNER.id);
+      expect(String(a.message)).toContain('said that the outcome of step "x" is unknown.');
+      expect(String(a.message)).toContain("What the report says is the edge's own word");
+      expect(`${String(a.title)} ${String(a.message)}`).not.toMatch(/abort/i);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it("X32-RP-NEM the same, the URGENT write throws: still the T7c-b answer, nothing written; the failure is logged", async () => {
+    await runX32("x32nem", 954);
+    const truoc = anhRun(954);
+    h.alertNem = true;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await syncRunResult(PAYLOAD_X32(954));
+      expect(res).toEqual({ ok: true, enabled: true, data: { runId: 954, stepsApplied: 0, abortRequested: true, stale: true } });
+      expect(anhRun(954)).toBe(truoc);
+      await vi.waitFor(() => expect(err.mock.calls.some((c) => /run 954\b/.test(String(c[0])))).toBe(true), { timeout: 2_000 });
+    } finally {
+      err.mockRestore();
+      warn.mockRestore();
+    }
+  });
 });
 
 // ═══ A2(n) T7b-1 ═══════════════════════════════════════════════════════════════════════════════════════════════════

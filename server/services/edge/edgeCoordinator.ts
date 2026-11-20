@@ -24,7 +24,7 @@ import { FOE_APPROVAL_SOURCE_EDGE, FOE_REJECT_CLAIM_CTX_KEY } from "../orchestra
 import { and, desc, eq, lt, inArray } from "drizzle-orm";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { readEdgeAssignment } from "./edgeExecutionSchema"; // doc 81 Đợt 9 S2 — runs executed under the node protocol
-import { chotTuHang, runDaChotKhongRo } from "../orchestration/foe/foeKetCucKhongRo"; // A2(n) T7c — the latch, one source
+import { KET_CUC_KHONG_RO_CHOT_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, chotTuHang, runDaChotKhongRo } from "../orchestration/foe/foeKetCucKhongRo"; // A2(n) T7c — the latch, one source; X-32 — the URGENT of a refused report
 import { stopChuaRaTuHang } from "../orchestration/foe/foeRunStore"; // A2(n) T7c — a STOP still owed, one source
 import { getDb } from "../../db/connection";
 import {
@@ -535,7 +535,7 @@ export type LyDoDongBoKhoa = "chot" | "hangKhongRo" | "stopChuaRa" | "nguCanhKho
  * A2(n) T7c (plan point 3 row 16) — is this run latched, from its context and its step rows? The one source of syncRunResult and assignRun (T7c-b). Fail-closed: a context that is not an object, or rows that cannot be read,
  * is a refusal (nothing can say no STOP is owed). null ⇔ nothing says so. The classifiers are the engine's own (one source): no rule is spelled here.
  */
-async function lyDoDongBoKhoa(d: Awaited<ReturnType<typeof db>>, run: { id: number; contextJson?: unknown }): Promise<LyDoDongBoKhoa | null> {
+async function lyDoDongBoKhoa(d: Awaited<ReturnType<typeof db>>, run: { id: number; contextJson?: unknown }, ra?: HangKhoa[]): Promise<LyDoDongBoKhoa | null> {
   const ctx = run.contextJson ?? null;
   if (ctx !== null && (typeof ctx !== "object" || Array.isArray(ctx))) return "nguCanhKhongDoc";
   if (runDaChotKhongRo(ctx as Record<string, unknown> | null)) return "chot";
@@ -549,9 +549,33 @@ async function lyDoDongBoKhoa(d: Awaited<ReturnType<typeof db>>, run: { id: numb
     return "hangKhongDoc";
   }
   if (!Array.isArray(hang)) return "hangKhongDoc";
+  ra?.push(...hang); // X-32 — the rows read here are the ones the picture after the write starts from (one read)
   if (chotTuHang(hang) !== null) return "hangKhongRo";
   if (stopChuaRaTuHang(hang, ctx as Record<string, unknown> | null).size > 0) return "stopChuaRa"; // T7b-1 fix 1 — one source: the rows ∪ the context
   return null;
+}
+
+/** X-32 — a step row as central reads it for the latch. */
+type HangKhoa = { stepId: string; stepType?: string; status: string; error: string | null; resultJson: unknown };
+/** X-32 — the payload rows the write loop takes (a known status, never central's own `abort:` record): ONE filter for the write and for the picture after it. */
+function laHangGhiDuoc(s: SyncedStep | null | undefined): s is SyncedStep {
+  return !!s && typeof s.stepId === "string" && STEP_STATUSES.has(s.status) && !s.stepId.startsWith(CENTRAL_ABORT_ROW_PREFIX);
+}
+
+/**
+ * X-32 (T12-P4, Q1) — the run's own latch first (lyDoDongBoKhoa, T7c, unchanged), then the picture AFTER the write: the run's rows with the payload's rows over them (by stepId, through the write loop's
+ * filter) and the context the sync would write, read by the same shared classifiers. `buoc` is the step the edge's report names (the latch's step, the row's, the smallest STOP owed); "?" when none. `bao`: only a payload's own reason raises the URGENT (Q1).
+ */
+async function kiemKhoa(d: Awaited<ReturnType<typeof db>>, run: { id: number; contextJson?: unknown }, sau: { ctx: Record<string, unknown> | null; hang: SyncedStep[] }): Promise<{ lyDo: LyDoDongBoKhoa | "payloadChot" | "payloadHangKhongRo" | "payloadStopChuaRa"; buoc: string; bao?: true } | null> {
+  const hangRun: HangKhoa[] = [];
+  const cu = await lyDoDongBoKhoa(d, run, hangRun);
+  if (cu) return { lyDo: cu, buoc: "?" };
+  if (runDaChotKhongRo(sau.ctx)) return { lyDo: "payloadChot", bao: true, buoc: String((sau.ctx?.[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId?: unknown } | undefined)?.stepId ?? "?") };
+  const gop: HangKhoa[] = [...hangRun.filter((r) => !sau.hang.some((s) => s.stepId === r.stepId)), ...sau.hang.map((s) => ({ stepId: s.stepId, stepType: s.stepType, status: s.status, error: s.error ?? null, resultJson: s.result ?? null }))];
+  const c = chotTuHang(gop);
+  if (c) return { lyDo: "payloadHangKhongRo", bao: true, buoc: c.stepId };
+  const no = [...stopChuaRaTuHang(gop, sau.ctx)].sort();
+  return no.length > 0 ? { lyDo: "payloadStopChuaRa", bao: true, buoc: no[0]! } : null;
 }
 
 /**
@@ -616,12 +640,22 @@ export async function syncRunResult(
       return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied: 0, abortRequested: centralStopped(run), stale: true } };
     }
 
+    // the server-only rejection claim token is never taken from (nor removed by) an edge payload. X-32 — computed BEFORE the latch check: it is the context the picture after the write is read with
+    let contextJson = run.contextJson;
+    if (payload.contextJson && typeof payload.contextJson === "object") {
+      const { [FOE_REJECT_CLAIM_CTX_KEY]: _ignored, ...rest } = payload.contextJson as Record<string, unknown>;
+      void _ignored;
+      contextJson = rest;
+    }
+
     // ── A2(n) T7c (plan point 3 row 16) — a LATCHED run is never written by a sync, BEFORE any step row: only central's end gate (foeRunStore.quyetDinhKetThucAnh) ends it.
     // A sync would overwrite the row of a STOP not sent, replace the context (the latch, DA_BAO) and write the status past the gate. Refused, coded, logged; nothing is written.
-    const khoa = await lyDoDongBoKhoa(d, run);
+    // X-32 (T12-P4, Q1) — and a payload whose OWN picture latches the run (kiemKhoa): refused whole, the same answer; a person is told (URGENT edgeSyncRefused), never waited for
+    const khoa = await kiemKhoa(d, run, { ctx: contextJson as Record<string, unknown> | null, hang: (payload.steps ?? []).filter(laHangGhiDuoc) });
     if (khoa) {
       const dung = centralStopped(run);
-      console.warn(`[EdgeCoordinator] ${EDGE_SYNC_RUN_LATCHED}: sync of run ${run.id} from "${payload.edgeNodeCode}" refused (${khoa}): nothing written; the edge is told to stop${dung ? " (central stopped the run)" : " (latched, not stopped: only central ends it)"}`);
+      console.warn(`[EdgeCoordinator] ${EDGE_SYNC_RUN_LATCHED}: sync of run ${run.id} from "${payload.edgeNodeCode}" refused (${khoa.lyDo}): nothing written; the edge is told to stop${dung ? " (central stopped the run)" : " (latched, not stopped: only central ends it)"}`);
+      if (khoa.bao) void canhBaoKetCucKhongRo({ loai: "edgeSyncRefused", runId: run.id, stepId: khoa.lyDo, compId: KHONG_CO_BU_TRU, error: "FOE_OUTCOME_UNKNOWN", lan: khoa.lyDo, buoc: khoa.buoc, nut: payload.edgeNodeCode, owner: run.startedBy ?? null }).then((ben) => ben || console.error(`[EdgeCoordinator] run ${run.id}: the URGENT of a refused report (${khoa.lyDo}) is not stored`), (err: unknown) => console.error(`[EdgeCoordinator] run ${run.id}: the URGENT of a refused report (${khoa.lyDo}) failed: ${(err as Error)?.message ?? err}`));
       // T7c-b (i) — EVERY latched run, stopped or not: the stale answer above, so an edge walker of it stops (an ok:false is "unreachable" to it and it walks on)
       return { ok: true, enabled: true, data: { runId: payload.runId, stepsApplied: 0, abortRequested: true, stale: true } };
     }
@@ -629,8 +663,7 @@ export async function syncRunResult(
     // ── Upsert each step (idempotent on runId+stepId) ──
     let stepsApplied = 0;
     for (const s of payload.steps ?? []) {
-      if (!s || typeof s.stepId !== "string" || !STEP_STATUSES.has(s.status)) continue;
-      if (s.stepId.startsWith(CENTRAL_ABORT_ROW_PREFIX)) continue; // doc 81 Đợt 7 I1 — central's own STOP-sweep record
+      if (!laHangGhiDuoc(s)) continue; // doc 81 Đợt 7 I1 — never central's own STOP-sweep record (`abort:`); X-32 — the same filter as the picture after the write
       // doc 81 Đợt 4 fix round 1 (R-4-h) — an edge-synced step result is NEVER a server-recorded gate approval:
       // approvalSource is forced to "edge" (overwriting whatever the payload claims), so it never counts for
       // four-eyes (foeGateApproval.evaluateGateApprovals). A synced row also replaces a server one ⇒ that approval
@@ -678,13 +711,6 @@ export async function syncRunResult(
 
     // ── Advance the run-level status (only to a recognised state) ──
     const runStatus = RUN_STATUSES.has(payload.status) ? payload.status : run.status;
-    // the server-only rejection claim token is never taken from (nor removed by) an edge payload
-    let contextJson = run.contextJson;
-    if (payload.contextJson && typeof payload.contextJson === "object") {
-      const { [FOE_REJECT_CLAIM_CTX_KEY]: _ignored, ...rest } = payload.contextJson as Record<string, unknown>;
-      void _ignored;
-      contextJson = rest;
-    }
     // compare-and-set on the status read above: a central abort / rejection claim landing meanwhile ⇒ 0 rows, nothing lost
     const written = await d
       .update(orchestrationRuns)

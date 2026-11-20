@@ -24969,7 +24969,8 @@
       "foe_outcome_unknown_abort_definition_unread": "中止运行：无法读取运行定义——可能仍有停止步骤未发出",
       "foe_outcome_unknown_abort_sweep_unfinished": "中止运行：停止步骤扫描尚未完成",
       "foe_outcome_unknown_stop_ended_unswept": "运行结束时未执行停止步骤扫描——停止步骤尚未发送；请检查设备",
-      "foe_outcome_unknown_edge_stream_stuck": "运行的边缘流程因异常而停滞——可能仍有停止步骤未发出；请检查设备"
+      "foe_outcome_unknown_edge_stream_stuck": "运行的边缘流程因异常而停滞——可能仍有停止步骤未发出；请检查设备",
+      "foe_outcome_unknown_edge_sync_refused": "边缘报告被整体拒绝——中心不知道是否有停止步骤到达设备；请到现场检查设备"
     }
   }
 }

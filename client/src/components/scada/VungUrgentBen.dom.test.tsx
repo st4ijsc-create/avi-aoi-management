@@ -259,12 +259,12 @@ describe("VungUrgentBen", () => {
     expect(screen.queryByTestId("urgent-chu-giai-ghim")).toBeNull();
   });
 
-  it("★ cả 23 kind dựng được thẻ với nhãn dịch (không để lộ khoá trần 'urgent.kind…')", () => {
+  it("★ cả 24 kind dựng được thẻ với nhãn dịch (không để lộ khoá trần 'urgent.kind…')", () => {
     srv.data = KIND_URGENT_A2N.map((k, i) => hang(i + 1, { metadata: { kind: k } }));
     render(<VungUrgentBen />);
     fireEvent.click(screen.getByTestId("urgent-nhieu"));
     const nhan = screen.getAllByTestId("urgent-nhan").map((x) => x.textContent ?? "");
-    expect(nhan).toHaveLength(23);
+    expect(nhan).toHaveLength(24);
     expect(nhan.every((x) => x.length > 0 && !x.startsWith("urgent."))).toBe(true);
   });
 

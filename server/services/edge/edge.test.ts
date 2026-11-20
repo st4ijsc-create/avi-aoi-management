@@ -167,6 +167,10 @@ vi.mock("../orchestration/foe/foeEngine", () => ({
   abortRun: abortRunMock,
   foeEnabled: () => true,
 }));
+// X-32 (dòng 45) — the URGENT of a refused edge report: counted here, its words and key are the real ones (foeKetCucKhongRo.noiDungCanhBaoKhongRo, kept by importOriginal); the
+// durable dedup is criticalStopAlert's own (criticalStopAlert.khuTrung.db.test.ts), not this file's
+const { canhBaoMock } = vi.hoisted(() => ({ canhBaoMock: vi.fn(async (..._a: unknown[]): Promise<boolean> => true) }));
+vi.mock("../orchestration/foe/foeKetCucKhongRo", async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), canhBaoKetCucKhongRo: canhBaoMock }));
 
 import {
   registerNode,
@@ -186,7 +190,7 @@ import {
   EDGE_CENTRAL_ABORT_USER,
 } from "./edgeRuntime";
 import { FOE_REJECT_CLAIM_CTX_KEY } from "../orchestration/foe/foeGateApproval";
-import { KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, loiGiuChuaRa } from "../orchestration/foe/foeKetCucKhongRo"; // A2(n) T7c
+import { KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KHONG_CO_BU_TRU, loiGiuChuaRa, noiDungCanhBaoKhongRo } from "../orchestration/foe/foeKetCucKhongRo"; // A2(n) T7c; X-32
 
 function reset() {
   store.clear();
@@ -194,6 +198,8 @@ function reset() {
   startRunMock.mockClear();
   getRunMock.mockClear();
   abortRunMock.mockClear();
+  canhBaoMock.mockClear(); // X-32
+  canhBaoMock.mockImplementation(async () => true);
   _clearBuffer();
   process.env.EDGE_ABORT_POLL_MS = "50";
   process.env.EDGE_RUNTIME_ENABLED = "true";
@@ -961,6 +967,122 @@ describe("A2(n) T7c — central: a sync never ends, nor rewrites, a latched run 
     expect(res.ok).toBe(false);
     expect(res.message).toMatch(/executed by an edge node under the node protocol/);
     expect(anh()).toBe(truoc);
+  });
+
+  // ═══ X-32 (T12-P4, AGENTS-ngoai-le.md dòng 45; x32-pham-vi-2.md mục 4 + bổ sung 1) — a payload that itself carries a latch, on a run NOT latched: refused before any write, and a person told ═══
+  const X_KHONG_RO = { stepId: "x", stepType: "command", status: "failed", attempt: 1, error: "FOE_OUTCOME_UNKNOWN: command x may have reached the device" };
+  const ST_CHUA_RA = { stepId: "st", stepType: "command", status: "failed", attempt: 1, error: loiGiuChuaRa("st", { nguon: "tuChoi", ma: "CHUA_GHIM_STOP" }) };
+  const voi = (steps: unknown[], extra: Record<string, unknown> = {}) => ({ ...PAYLOAD_XONG, steps, ...extra });
+  const goiBao = () => canhBaoMock.mock.calls.map((c) => c[0] as Record<string, unknown>);
+  const motBao = async (lyDo: string, buoc: string) => {
+    await vi.waitFor(() => expect(canhBaoMock).toHaveBeenCalledTimes(1), { timeout: 1_000 });
+    expect(goiBao()[0]).toMatchObject({ loai: "edgeSyncRefused", runId: 1, stepId: lyDo, compId: KHONG_CO_BU_TRU, lan: lyDo, buoc, nut: "edge-x", owner: 5 });
+  };
+  const tick = () => new Promise((r) => setTimeout(r, 20));
+
+  it("X32-P4-SACH (control, first) a clean 'completed' payload on a run not latched: written as before, no URGENT", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    const res = await syncRunResult(PAYLOAD_XONG as never);
+    expect(res).toEqual({ ok: true, enabled: true, data: { runId: 1, stepsApplied: 3, abortRequested: false } });
+    expect(run1().status).toBe("completed");
+    await tick();
+    expect(canhBaoMock).not.toHaveBeenCalled();
+  });
+
+  it("X32-P4-HANG-CHOT the payload's own row of x carries FOE_OUTCOME_UNKNOWN: refused (payloadHangKhongRo), nothing written; ONE URGENT edgeSyncRefused naming x", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    await tuChoi(voi([X_KHONG_RO]), /\(payloadHangKhongRo\)/);
+    await motBao("payloadHangKhongRo", "x");
+  });
+
+  it("X32-P4-STOP-NO the payload's own row of st: a STOP not sent (FOE_STOP_NOT_SENT): refused (payloadStopChuaRa), ONE URGENT naming st", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    await tuChoi(voi([ST_CHUA_RA]), /\(payloadStopChuaRa\)/);
+    await motBao("payloadStopChuaRa", "st");
+  });
+
+  it("X32-P4-CTX the payload's context carries the latch, its rows clean: refused (payloadChot), ONE URGENT", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    await tuChoi(voi(PAYLOAD_XONG.steps, { contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: CHOT } }), /\(payloadChot\)/);
+    await motBao("payloadChot", "x");
+  });
+
+  it("X32-P4-VET the payload's row of x 'completed' with the trace of an unknown attempt (result.khongRoTruoc): refused (payloadHangKhongRo)", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    await tuChoi(voi([{ stepId: "x", stepType: "command", status: "completed", attempt: 2, result: { khongRoTruoc: { buoc: "x", ma: "FOE_OUTCOME_UNKNOWN", xacNhan: false } } }]), /\(payloadHangKhongRo\)/);
+    await motBao("payloadHangKhongRo", "x");
+  });
+
+  it("X32-P4-GOP the run's row of x 'completed', the payload's row of x carries the code: the payload's row wins the picture after the write: refused", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    rows("orchestration_run_steps").push({ ...hangX(), status: "completed", error: null });
+    await tuChoi(voi([X_KHONG_RO]), /\(payloadHangKhongRo\)/);
+    await motBao("payloadHangKhongRo", "x");
+  });
+
+  it("X32-P4-ABORT-GIA the payload also carries an 'abort:st' row 'completed' (an edge never writes those): it does not settle st: refused (payloadStopChuaRa)", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    await tuChoi(voi([ST_CHUA_RA, { stepId: "abort:st", stepType: "command", status: "completed", attempt: 1, result: { stepId: "st" } }]), /\(payloadStopChuaRa\)/);
+    await motBao("payloadStopChuaRa", "st");
+  });
+
+  it("X32-P4-CU-KHONG-BAO a run latched by its own context (the old refusal, T7c): refused (chot) as before, and NO URGENT of the new kind (the gate's own URGENT is central's)", async () => {
+    Object.assign(run1(), { status: "running", contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: CHOT } });
+    await tuChoi(voi([X_KHONG_RO]), /\(chot\)/);
+    await tick();
+    expect(canhBaoMock).not.toHaveBeenCalled();
+  });
+
+  it("X32-P4-NEM the URGENT throws: still the T7c-b answer, nothing written; the failure is logged by run and reason", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    canhBaoMock.mockImplementation(async () => {
+      throw new Error("alert down (X-32 test)");
+    });
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await tuChoi(voi([X_KHONG_RO]), /\(payloadHangKhongRo\)/);
+      await vi.waitFor(() => expect(err.mock.calls.some((c) => /^\[EdgeCoordinator\] run 1: the URGENT of a refused report \(payloadHangKhongRo\)/.test(String(c[0])))).toBe(true), { timeout: 1_000 });
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("X32-P4-TREO the URGENT never answers: the sync answers anyway (the T7c-b answer, nothing written)", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    let tha: (() => void) | undefined;
+    canhBaoMock.mockImplementation(() => new Promise<boolean>((r) => (tha = () => r(true))));
+    try {
+      await tuChoi(voi([X_KHONG_RO]), /\(payloadHangKhongRo\)/);
+      expect(tha, "the URGENT was raised and is still pending when the sync answered").toBeTypeOf("function");
+    } finally {
+      tha?.(); // nothing left pending after the case
+    }
+  });
+
+  it("X32-P4-LAP the same refused payload three times, then another reason: one key for the three, another for the fourth (the durable dedup of criticalStopAlert keeps one row per person and key)", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    for (let i = 0; i < 3; i++) await tuChoi(voi([X_KHONG_RO]), /\(payloadHangKhongRo\)/);
+    await tuChoi(voi([ST_CHUA_RA]), /\(payloadStopChuaRa\)/);
+    await vi.waitFor(() => expect(canhBaoMock).toHaveBeenCalledTimes(4), { timeout: 1_000 });
+    const khoa = goiBao().map((a) => noiDungCanhBaoKhongRo(a as never).dedupKey);
+    expect(new Set(khoa.slice(0, 3)).size).toBe(1);
+    expect(khoa[3]).not.toBe(khoa[0]);
+  });
+
+  it("X32-P4-DOI-NOI-DUNG the same reason, another step named: the same key (the step is the edge's word, never in the key)", async () => {
+    Object.assign(run1(), { status: "running", contextJson: {} });
+    await tuChoi(voi([X_KHONG_RO]), /\(payloadHangKhongRo\)/);
+    await tuChoi(voi([{ ...X_KHONG_RO, stepId: "y" }]), /\(payloadHangKhongRo\)/);
+    await vi.waitFor(() => expect(canhBaoMock).toHaveBeenCalledTimes(2), { timeout: 1_000 });
+    expect(goiBao().map((a) => a.buoc)).toEqual(["x", "y"]);
+    const [k1, k2] = goiBao().map((a) => noiDungCanhBaoKhongRo(a as never).dedupKey);
+    expect(k2).toBe(k1);
+  });
+
+  it("X32-P4-DA-KET-THUC a run already 'completed', a terminal payload carrying the code: refused, its step rows NOT written (today they are), ONE URGENT", async () => {
+    Object.assign(run1(), { status: "completed", contextJson: {} });
+    await tuChoi(voi([X_KHONG_RO]), /\(payloadHangKhongRo\)/);
+    await motBao("payloadHangKhongRo", "x");
   });
 });
 

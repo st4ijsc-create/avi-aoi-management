@@ -5,7 +5,7 @@
 
 export const TIEN_TO_KIND = "foe_outcome_unknown_";
 
-/** 23 kind URGENT (CANH_BAO_KHONG_RO_KIND, foeKetCucKhongRo.ts:373-397). Mỗi kind một nhãn `urgent.kind.<kind>` vi/en/zh. */
+/** 24 kind URGENT (CANH_BAO_KHONG_RO_KIND, foeKetCucKhongRo.ts:373-397). Mỗi kind một nhãn `urgent.kind.<kind>` vi/en/zh. */
 export const KIND_URGENT_A2N = [
   "compensation_held",
   "stop_compensation_sent",
@@ -30,6 +30,7 @@ export const KIND_URGENT_A2N = [
   "abort_sweep_unfinished",
   "stop_ended_unswept",
   "edge_stream_stuck",
+  "edge_sync_refused",
 ].map((k) => `${TIEN_TO_KIND}${k}`);
 
 /** Kind có nhắc "ghim" (kind 16–18): vùng URGENT hiện chú giải "ghim" MỘT lần khi có ít nhất một thẻ thuộc nhóm này. */

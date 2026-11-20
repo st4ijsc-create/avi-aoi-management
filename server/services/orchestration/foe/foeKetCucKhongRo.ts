@@ -390,7 +390,7 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
  * edgeStreamStuck — A2(n) T7b-3 (H37, chu du an 11/11): central refused a batch of a run's edge report stream as a whole (409, rolled back: `stepId` is the refusal code) and the node keeps sending it: what
  *   the run did since is not recorded, a STOP may still be owed (`stopTrongLo`: the STOP steps the batch named). One key per (run, stream, refusal): the event is the stream. Nothing is sent. H37-b (chu du an 11/11): no mark of a debt on the run, the URGENT only.
  */
-export type LoaiCanhBaoKhongRo = "abortDefUnread" | "abortSweepUnfinished" | "abortStopNotSent" | "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui" | "stopEndedUnswept" | "edgeStreamStuck";
+export type LoaiCanhBaoKhongRo = "abortDefUnread" | "abortSweepUnfinished" | "abortStopNotSent" | "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui" | "stopEndedUnswept" | "edgeStreamStuck" | "edgeSyncRefused";
 export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>> = Object.freeze({
   held: "foe_outcome_unknown_compensation_held",
   stopSent: "foe_outcome_unknown_stop_compensation_sent",
@@ -415,6 +415,7 @@ export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>
   abortSweepUnfinished: "foe_outcome_unknown_abort_sweep_unfinished",
   stopEndedUnswept: "foe_outcome_unknown_stop_ended_unswept",
   edgeStreamStuck: "foe_outcome_unknown_edge_stream_stuck",
+  edgeSyncRefused: "foe_outcome_unknown_edge_sync_refused",
 });
 /** n2 — the words a person reads (critical-stop alerts carry raw text, they are not localised — as A2(m2)). */
 export const CHO_NGUOI_TIEU_DE = "waiting for a person";
@@ -471,6 +472,10 @@ export interface CanhBaoKhongRo {
   adapterNut?: true | "khongBiet";
   /** T9 lượt sửa 3c (mục 2) — abortStopNotSent: the answer is CENTRAL's dispatcher's (its own press, baoStopChuaRaAbort), not an edge node's sweep: ADAPTER_OFFLINE then means not routed */
   tuTrungTam?: true;
+  /** X-32 (T12-P4) — edgeSyncRefused: the step a refused edge report named (the edge's word, never in the key: `stepId` and `lan` carry the reason's code) */
+  buoc?: string;
+  /** X-32 (T12-P4) — edgeSyncRefused: the edge node code the report was sent under (the payload's, unchecked) */
+  nut?: string;
 }
 
 /** A2(n) T7b-3 (H36) — the terminal statuses of a run that ends with no STOP sweep */
@@ -509,6 +514,18 @@ function chuKetThucKhongQuet(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "stopK
  * A2(n) T7b-3 (H37, chu du an 11/11) — the words of a run's edge report stream wedged by a refused batch: the run, the refusal, what may be owed (the batch's STOP steps by name when it named any), the machine
  * on site. No promise: nothing central holds can send what the batch did not record.
  */
+/**
+ * X-32 (T12-P4, HST 15:51 (a), bổ sung 1 (a)) — the URGENT of an edge report refused because it carries a latch of its own (edgeCoordinator.syncRunResult): what the report SAID, as the edge's word,
+ * that nothing of it was written, and the safe act. No word on whether a STOP went out, on how the run ends, or on what a press sends. `stepId`: the reason's code. Pure.
+ */
+function chuDongBoEdgeTuChoi(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "buoc" | "nut">): [string, string] {
+  const b = idGonCua(a.buoc ?? "?");
+  const cum = a.stepId === "payloadHangKhongRo" ? `that the outcome of step "${b}" is unknown` : a.stepId === "payloadStopChuaRa" ? `that STOP step "${b}" was not sent` : `that the run is latched (step "${b}")`;
+  return [
+    `an edge report was refused in full, nothing of it is in the central record`,
+    `A report for run ${a.runId}, sent under edge node code "${rutGonGiua(a.nut ?? "?", TRAN_TEN_NUT)}", said ${cum}. The system refused the whole report: nothing of it is in the central record of run ${a.runId}. What the report says is the edge's own word: the system cannot check it, nor whether any STOP reached the machine. Check the machine on site and use its direct STOP / E-STOP if needed.`,
+  ];
+}
 function chuLuongEdgeKet(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "lan" | "stopTrongLo">): [string, string] {
   const ten = a.stopTrongLo?.length ? ` STOP steps in the refused batch: ${danhSachGon(a.stopTrongLo)}.` : "";
   return [
@@ -798,14 +815,14 @@ export function noiDungCanhBaoKhongRo(goc: CanhBaoKhongRo): { kind: string; titl
   // T9 lượt sửa 3b (mục 4) — the two kinds of the one rule (state C's words): their words name the cut ids; the dedup key below keeps the whole ones. Other kinds carry other things in `stepId`
   // (edgeStreamStuck: the refusal's code), untouched
   // T9 lượt sửa 3c (mục 3) — every kind (≤ 800 for every input); edgeStreamStuck carries the refusal's code in `stepId`: cut at the code's ceiling
-  const a = goc.loai === "edgeStreamStuck" ? { ...goc, stepId: rutGonGiua(goc.stepId, TRAN_MA) } : chuGonCua(goc);
+  const a = goc.loai === "edgeStreamStuck" || goc.loai === "edgeSyncRefused" ? { ...goc, stepId: rutGonGiua(goc.stepId, TRAN_MA) } : chuGonCua(goc); // X-32: edgeSyncRefused carries a code in `stepId` too
   const kind = CANH_BAO_KHONG_RO_KIND[a.loai];
   const ma = maKetCucKhongRoCua(a.error);
   const khongXd = goc.loai === "forwardNotSent" && goc.stepId === BUOC_KHONG_XAC_DINH; // T6 — no step to name (lượt sửa 3c: compared on the whole id)
   const nhanh = a.loai === "stopUntakenBranch" || a.loai === "abortDefUnread" || a.loai === "abortSweepUnfinished" || khongXd || (a.loai === "forwardNotSent" && a.luotStopHong === true) || (a.loai === "abortStopNotSent" && (a.chuAbort === "khongXacMinhKhongHan" || a.chuAbort === "khongXacMinh15")); // `stepId` is the listed STOP: nothing happened to it
   // T7b-1d (H26) — a run that never latched and reached another end: no command of it has an unknown outcome, so no word says one has
   // T7b-3 (H36) — the same for a run that ended with no sweep and never latched. X-11 (P3) — `choNut`: at the press the run was not latched, so no word opens with an unknown outcome
-  const khongChot = (a.loai === "abortStopNotSent" && (a.chuAbort === "daKetThucChuaKhoa" || a.chuAbort === "daKetThucKhongXacMinh" || a.chuAbort === "choNut" || a.chuAbort === "chuaKhoaKhongXacMinh" || a.chuAbort === "chuaKhoaKetNoi" || a.chuAbort === "chuaKhoaKhongBen")) || a.loai === "stopEndedUnswept" || a.loai === "edgeStreamStuck";
+  const khongChot = (a.loai === "abortStopNotSent" && (a.chuAbort === "daKetThucChuaKhoa" || a.chuAbort === "daKetThucKhongXacMinh" || a.chuAbort === "choNut" || a.chuAbort === "chuaKhoaKhongXacMinh" || a.chuAbort === "chuaKhoaKetNoi" || a.chuAbort === "chuaKhoaKhongBen")) || a.loai === "stopEndedUnswept" || a.loai === "edgeStreamStuck" || a.loai === "edgeSyncRefused"; // X-32: central never latched what a refused report says
   const dau = nhanh ? `another command's outcome is unknown — machine state unknown` : a.biet ? `step "${a.stepId}" failed; another command's outcome is unknown — machine state unknown` : `command "${a.stepId}" outcome unknown — machine state unknown`;
   const mo = nhanh
     ? `A command of run ${a.runId} has an UNKNOWN outcome (${ma}); the state of the machine is unknown.`
@@ -859,6 +876,7 @@ export function noiDungCanhBaoKhongRo(goc: CanhBaoKhongRo): { kind: string; titl
       abortSweepUnfinished: [`STOP sweep has not finished, a STOP may have gone out or may still go`, chuQuetChuaXong(a.runId)],
       stopEndedUnswept: chuKetThucKhongQuet(a),
       edgeStreamStuck: chuLuongEdgeKet(a),
+      edgeSyncRefused: chuDongBoEdgeTuChoi(a),
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];

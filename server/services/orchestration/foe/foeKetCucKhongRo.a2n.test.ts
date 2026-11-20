@@ -3974,3 +3974,36 @@ describe("C7-XN lượt 2 — the cases of the surviving mutants (kiem-dinh 28 =
     }
   });
 });
+
+// ═══ X-32 (T12-P4, AGENTS-ngoai-le.md dòng 45) — the words of an edge report refused because it carries a latch of its own (foeKetCucKhongRo edgeSyncRefused) ═══
+describe("X-32 the URGENT of a refused edge report: the edge's word, one key per (run, reason), no promise", () => {
+  const MA = ["payloadHangKhongRo", "payloadStopChuaRa", "payloadChot"] as const;
+  const chu = (ma: string, buoc: string) =>
+    noiDungCanhBaoKhongRo({ loai: "edgeSyncRefused", runId: 2_147_483_647, stepId: ma, compId: KHONG_CO_BU_TRU, error: "FOE_OUTCOME_UNKNOWN", lan: ma, buoc, nut: `edge-${"n".repeat(200)}` } as Parameters<typeof noiDungCanhBaoKhongRo>[0]);
+  it("X32-CHU every reason: ≤ 800 with run 2 147 483 647 and long ids; the edge's own word; no 'abort', no 'has not ended', no 'decides'; the key is (run, reason) only", () => {
+    const dai = `buoc_${"x".repeat(123)}`;
+    for (const ma of MA) {
+      const n = chu(ma, dai);
+      expect(n.kind, ma).toBe("foe_outcome_unknown_edge_sync_refused"); // positive anchor
+      expect(n.message, ma).toContain("What the report says is the edge's own word: the system cannot check it, nor whether any STOP reached the machine.");
+      expect(n.message, ma).toContain("The system refused the whole report: nothing of it is in the central record of run 2147483647");
+      expect(n.message, ma).toContain("Check the machine on site and use its direct STOP / E-STOP if needed.");
+      expect(n.dedupKey, ma).toBe(`foe_outcome_unknown_edge_sync_refused:2147483647:${ma}:-:${ma}`);
+      expect(n.message.length, ma).toBeLessThanOrEqual(800);
+      expect(n.title.length, ma).toBeLessThanOrEqual(800);
+      expect(`${n.title} ${n.message}`, ma).not.toMatch(/abort/i); // R of T12-P4 / T12-P4-R reads /abort/i as a promise of the Abort
+      expect(n.message, ma).not.toContain("has not ended"); // bổ sung 1 (a): the run may have ended already
+      expect(n.message, ma).not.toContain("decides");
+      expect(`${n.title} ${n.message}`, ma).not.toContain("what the edge did"); // HST 18:25: only what was observed
+      expect(n.title, ma).toBe("Run 2147483647: an edge report was refused in full, nothing of it is in the central record");
+      expect(n.title, ma).not.toContain("outcome unknown —"); // khongChot: central never latched what the report says
+      expect(n.message, ma).not.toContain(dai); // the step is cut at its ceiling (idGonCua)
+    }
+    expect(chu("payloadHangKhongRo", "x").message).toContain('said that the outcome of step "x" is unknown.');
+    expect(chu("payloadStopChuaRa", "st").message).toContain('said that STOP step "st" was not sent.');
+    expect(chu("payloadChot", "x").message).toContain('said that the run is latched (step "x").');
+    // the step the edge names is never in the key: another step, the same reason ⇒ the same key; another reason ⇒ another key
+    expect(chu("payloadStopChuaRa", "st2").dedupKey).toBe(chu("payloadStopChuaRa", "st").dedupKey);
+    expect(chu("payloadHangKhongRo", "st").dedupKey).not.toBe(chu("payloadStopChuaRa", "st").dedupKey);
+  });
+});
