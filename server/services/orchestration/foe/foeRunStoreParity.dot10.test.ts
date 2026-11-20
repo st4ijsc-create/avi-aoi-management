@@ -18394,6 +18394,18 @@ describe("A2(n) T7b-3 — a run that acted, never latched, and ended with no STO
     expect(runRow(e.runId).status).toBe("failed");
     expect(h36()).toEqual([]);
   });
+  // X-34 bổ sung (N11, kiem-dinh 21/11) — a shape BUILT BY STATE: a row carrying the code appears after the run went terminal latched by central's set (nguon); that a real path reaches it is
+  // not shown. It pins chiChotTap's "the rows no code" (E:6786): once the rows carry a latch, theirs is the latch and the run's end tells nothing (as H2)
+  it("X34-H36-HANG-CHOT-SAU latched by central's set, then a row with the code (built by state): no H36 URGENT, as H2", async () => {
+    const e = await x34("x34hcs", oMat);
+    expect(runRow(e.runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY]).toMatchObject({ stepId: "o", nguon: "tapKetDoan" });
+    Object.assign(stepRows(e.runId).find((x) => x.stepId === "o")!, { error: "FOE_OUTCOME_UNKNOWN: command o may have reached the device (X-34 test)" });
+    expect(chotTuHang(stepRows(e.runId) as never), "the rows carry the code now").toMatchObject({ stepId: "o" });
+    h.alerts.length = 0;
+    await baoKetThucKhongQuetSauDoanEdge(e.runId, { ok: true, status: "failed", changed: true });
+    await wait(50);
+    expect(h36()).toEqual([]);
+  });
   it("X34-H36-KHONG-DOC latched by central's set, the rows unreadable at the H36 read: one URGENT, no step named", async () => {
     const e = await x34("x34kd", oMat);
     h.alerts.length = 0;
