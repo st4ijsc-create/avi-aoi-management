@@ -1,6 +1,6 @@
 /**
  * PHATLAI-2 (HST 20/11 15:57, 16:27): bước lọc cờ agent cho `lenh.moiTruong` của fixture phát lại, TÁCH khỏi `main()` của dongGoi.ts để có
- * ca HÀNH VI (locMoiTruong.test.ts). THUẦN: không đọc tệp, không mạng, không CSDL. Commit tách GIỮ NGUYÊN hành vi của dongGoi.ts:50–62.
+ * ca HÀNH VI (locMoiTruong.test.ts). THUẦN: không đọc tệp, không mạng, không CSDL. Commit tách GIỮ NGUYÊN hành vi của dongGoi.ts:50–62; commit 3 chỉ đổi thông điệp sai dạng.
  *   noiDungEnv      — nội dung `.env` (dongGoi đọc tệp rồi đưa chữ vào đây).
  *   moiTruongThamSo — giá trị `--moi-truong K=V,K=V` (ghi đè / thêm).
  * Trả `co` (qua `locCo` của run-eval.mjs, hai lớp GIÁ TRỊ + TÊN), `boDi` (tên bị bỏ: boQua + tên ngoài tiền tố) và `dongBao` (dòng stderr
@@ -14,9 +14,9 @@ export function locMoiTruongFixture(noiDungEnv: string, moiTruongThamSo: string)
     if (/HOUSEKEEPING/.test(m[1]!)) continue;
     moiTruong[m[1]!] = m[2]!.replace(/\s+#.*$/, "").trim().replace(/^["']|["']$/g, "");
   }
-  for (const kv of moiTruongThamSo.split(",").filter(Boolean)) {
+  for (const [n, kv] of moiTruongThamSo.split(",").filter(Boolean).entries()) {
     const i = kv.indexOf("=");
-    if (i <= 0) throw new Error(`--moi-truong sai dạng: ${kv}`);
+    if (i <= 0) throw new Error(`--moi-truong sai dạng ở cặp thứ ${n + 1}`); // PHATLAI-2 commit 3 (HST 15:57): CHỈ vị trí — không chữ của cặp, không độ dài
     moiTruong[kv.slice(0, i)] = kv.slice(i + 1);
   }
   const { co } = locCo(moiTruong);
