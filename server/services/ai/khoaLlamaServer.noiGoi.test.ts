@@ -11,6 +11,7 @@ import { thamDoCong } from "./giamSatLlamaServer";
 import { docProps as docPropsHoSo } from "./hoSoModelStudio";
 import { _datLaiKhoaLlamaServer } from "./khoaLlamaServer";
 import { phuThuocMacDinh } from "./napServerNgoai";
+import { generateFimViaServer, serverChatCompletion, serverChatCompletionStream } from "../aiLlamaServerClient";
 
 const KHOA = "khoa-noi-goi-q9";
 const URL_GIA = "http://127.0.0.1:65530";
@@ -94,6 +95,37 @@ describe("tiêu đề khoá ở từng nơi gọi llama-server", () => {
     await kiemHaiChieu(async () => {
       expect(await phuThuocMacDinh.modelServer(URL_GIA, 2000)).toBe("tho-ca");
     }, { "/props": { status: 404, body: {} }, "/v1/models": { body: { data: [{ id: "tho-ca" }] } } }, 2);
+  });
+
+  // KHOA-NOI-GOI-3CA (HST 20/11): ba lời fetch SINH CHỮ của aiLlamaServerClient (:853 chat, :1364 stream, :1694 infill).
+  it("aiLlamaServerClient: /v1/chat/completions không stream (:853) mang Bearer", async () => {
+    await kiemHaiChieu(async () => {
+      expect((await serverChatCompletion({ messages: [{ role: "user", content: "x" }] })).text).toBe("OK");
+    }, { "/v1/chat/completions": { body: { choices: [{ message: { content: "OK" }, finish_reason: "stop" }] } } }, 1);
+  });
+
+  it("aiLlamaServerClient: /infill (:1694) mang Bearer", async () => {
+    await kiemHaiChieu(async () => {
+      expect((await generateFimViaServer("a", "b", { prefix: "a" })).text).toBe("OK");
+    }, { "/infill": { body: { content: "OK", tokens_predicted: 1 } } }, 1);
+  });
+
+  it("aiLlamaServerClient: /v1/chat/completions stream (:1364) mang Bearer (fetch giả SSE riêng: fetchGia chỉ trả JSON)", async () => {
+    const sse = `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "y" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`;
+    for (const [khoa, mong] of [[KHOA, `Bearer ${KHOA}`], ["", null]] as const) {
+      vi.stubEnv("LLAMA_SERVER_API_KEY", khoa);
+      _datLaiKhoaLlamaServer();
+      const goi: Array<string | null> = [];
+      vi.stubGlobal("fetch", vi.fn(async (_u: string | URL | Request, init?: RequestInit) => {
+        goi.push(new Headers(init?.headers ?? {}).get("authorization"));
+        return new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } });
+      }));
+      const ra: Array<{ type: string }> = [];
+      for await (const m of serverChatCompletionStream({ messages: [{ role: "user", content: "x" }] })) ra.push(m);
+      expect(ra.at(-1)?.type).toBe("done");
+      expect(goi.length).toBeGreaterThanOrEqual(1);
+      expect(goi).toEqual(goi.map(() => mong));
+    }
   });
 });
 
