@@ -68,18 +68,16 @@ describe.runIf(WIN)("start-llama-server.ps1 -InThamSo — khoá", () => {
   }, 60_000);
   afterAll(() => fs.rmSync(kho, { recursive: true, force: true }));
 
-  it("LLAMA_SERVER_API_KEY (giá trị GIẢ) ⇒ đầu ra KHÔNG chứa giá trị; phần tử sau '--api-key' là '<che>'", () => {
+  // Lô D1d (HST 20/11 09:26, bảng thêm/bớt pham-vi-lo-d1d-day-du.md): KHÔNG còn đưa giá trị lên dòng lệnh ⇒ chỉ có giá trị mà thiếu _FILE thì DỪNG.
+  it("LLAMA_SERVER_API_KEY (giá trị GIẢ) KHÔNG có _FILE ⇒ thoát 2, không JSON tham số, lời báo nêu tên hai biến, giá trị không lọt", () => {
     const khoa = TIEN_TO + crypto.randomBytes(12).toString("hex");
-    const dau = `alias-gia-${crypto.randomBytes(6).toString("hex")}`;
-    const r = chay([`LLAMA_SERVER_API_KEY=${khoa}`, `LLAMA_SERVER_ALIAS=${dau}`]);
+    const r = chay([`LLAMA_SERVER_API_KEY=${khoa}`]);
     const sach = r.out.replaceAll(khoa, `${TIEN_TO}<…>`);
-    expect(r.status, sach).toBe(0);
-    // NGUỒN: .env đọc được là .env tạm của ca ⇒ giá trị trước khi che chỉ có thể là khoá giả của ca.
-    expect(sau(r.args, "--alias") === dau, "script không đọc .env tạm của ca").toBe(true);
-    expect(r.out.includes(khoa), `giá trị ${TIEN_TO}<…> của ca lọt ra stdout/stderr`).toBe(false);
-    expect(sau(r.args, "--api-key") === "<che>", `phần tử sau --api-key không phải '<che>' (giá trị ${TIEN_TO}<…> không in)`).toBe(true);
-    // HST 13:11 (3): không có phần tử dạng '--api-key=<giá trị>' (lối che chỉ nhìn phần tử TÁCH RỜI sẽ bỏ sót dạng này).
-    expect((r.args ?? []).some((a) => a.startsWith("--api-key=")), "có phần tử '--api-key=…'").toBe(false);
+    expect(r.status, sach).toBe(2);
+    expect(r.args, sach).toBeNull();
+    // NGUỒN: lời báo này chỉ có khi script đọc đúng .env tạm của ca (có LLAMA_SERVER_API_KEY, không có _FILE).
+    expect(sach).toContain("Co LLAMA_SERVER_API_KEY (khoa trong .env) ma khong co LLAMA_SERVER_API_KEY_FILE - KHONG khoi");
+    expect(r.out.includes(khoa) || r.out.includes(JSON.stringify(khoa).slice(1, -1)), `giá trị ${TIEN_TO}<…> của ca lọt ra stdout/stderr`).toBe(false);
   }, 120_000);
 
   // Lô D1c C2 (HST 20/11 03:03, bảng thêm/bớt pham-vi-lo-d1c.md): -InThamSo KHÔNG in đường tệp khoá — SỬA kỳ vọng `toBe(tep)` ⇒ "<tep-khoa>", THÊM "đầu ra không chứa đường".

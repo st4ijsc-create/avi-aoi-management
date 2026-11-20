@@ -53,6 +53,7 @@
 import type { Request, RequestHandler } from "express";
 import type { AnhChupGiamSat } from "../services/ai/giamSatLlamaServer";
 import { tieuDeLlamaServer } from "../services/ai/khoaLlamaServer";
+import { LOG_LOI_LLAMA_SERVER } from "../services/ai/duongLogLlama";
 // Đợt 0.3 — thống kê cổng ưu tiên trước llama-server (module LÁ, chỉ đọc bộ nhớ, không I/O).
 import { thongKeHangDoiLlm as thongKeHangDoiLlmThat } from "../services/ai/hangDoiUuTienLlm";
 
@@ -402,7 +403,7 @@ export async function probeAiReadiness(deps: AiReadinessDeps = {}): Promise<AiRe
           (giamSat?.trangThai === "dang-khoi-dong-lai"
             ? `Bộ giám sát ĐANG khởi động lại nó (${giamSat.lyDo}).`
             : giamSat?.trangThai === "bo-cuoc"
-              ? `Bộ giám sát đã BỎ CUỘC (${giamSat.lyDo}) — cần người xem logs/llama-server-*.err.log.`
+              ? `Bộ giám sát đã BỎ CUỘC (${giamSat.lyDo}) — cần người xem ${LOG_LOI_LLAMA_SERVER}.`
               : giamSat?.trangThai === "tam-dung"
                 ? "Bộ giám sát đang TẠM DỪNG có chủ ý (đổi model)."
                 : "Tiến trình nhiều khả năng đã chết hoặc chưa khởi động lại sau khi máy reboot — " +

@@ -250,7 +250,7 @@ export function ThanhTrangThaiAiLocal({
               : oMay.loai === "tam-dung"
                 ? t("ttAiLocal.tipTamDung", "Bộ giám sát đang tạm dừng có chủ ý (đang đổi model) — không tự khởi động lại llama-server.")
                 : oMay.loai === "bo-cuoc"
-                  ? t("ttAiLocal.tipBoCuoc", "llama-server không khởi động được sau {{toiDa}} lần trong {{phut}} phút — bộ giám sát đã dừng thử. Cần người xem logs/llama-server-*.err.log rồi chạy lại scripts/ai/start-llama-server.ps1.", {
+                  ? t("ttAiLocal.tipBoCuoc", "llama-server không khởi động được sau {{toiDa}} lần trong {{phut}} phút — bộ giám sát đã dừng thử. Cần người xem D:\\LLAMA-LOGS\\server\\llama-server-*.err.log rồi chạy lại scripts/ai/start-llama-server.ps1.", {
                       toiDa: d.mayMoc?.giamSat?.toiDaKhoiDong ?? KHONG_BIET,
                       phut: d.mayMoc?.giamSat?.cuaSoPhut ?? KHONG_BIET,
                     })

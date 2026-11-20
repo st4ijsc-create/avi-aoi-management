@@ -162,15 +162,15 @@ const conNode = [];
 function khoiNodeNghe(c) {
   return spawn(process.execPath, ["-e", `require("net").createServer(()=>{}).listen(${Number(c)},"127.0.0.1")`], { env: envCon(), stdio: "ignore", windowsHide: true });
 }
-function force(c, them = {}, cheDo = "off", thamThem = []) { // D1c C4: cheDo = LLAMA_SERVER_MMPROJ trong force.env; thamThem = cờ thêm (vd -ChonMmproj off)
+function force(c, them = {}, cheDo = "off", thamThem = [], dongEnv = [], thuMucLog = path.join(D, "repo", "logs")) { // D1c C4: cheDo = LLAMA_SERVER_MMPROJ trong force.env; thamThem = cờ thêm (vd -ChonMmproj off); D1d: dongEnv = dòng force.env thêm
   const cay = path.join(D, "repo", "scripts", "ai");
   fs.mkdirSync(cay, { recursive: true });
   fs.copyFileSync(START, path.join(cay, "start-llama-server.ps1"));
   fs.copyFileSync(TIM_MMPROJ, path.join(cay, "tim-mmproj.ps1"));
   const env = path.join(D, "force.env");
   fs.writeFileSync(env, [`GGUF_MODELS_DIR=${D}`, `LLAMA_SERVER_MODEL=${path.basename(MODEL)}`, `LLAMA_SERVER_URL=http://127.0.0.1:${c}`, `LLAMA_SERVER_BIN=${BIN}`,
-    `LLAMA_SERVER_SELECTION_FILE=${path.join(D, "khong-co.json")}`, `LLAMA_SERVER_MMPROJ=${cheDo}`].join("\n"));
-  return chayPs(path.join(cay, "start-llama-server.ps1"), ["-EnvFile", env, "-Force", "-WaitSeconds", "6", ...thamThem], them);
+    `LLAMA_SERVER_SELECTION_FILE=${path.join(D, "khong-co.json")}`, `LLAMA_SERVER_MMPROJ=${cheDo}`, ...dongEnv].join("\n"));
+  return chayPs(path.join(cay, "start-llama-server.ps1"), ["-EnvFile", env, "-Force", "-WaitSeconds", "6", "-ThuMucLog", thuMucLog, ...thamThem], them); // D1d: log trong D, KHÔNG vào D:\LLAMA-LOGS thật
 }
 if (CA_RIENG === "doi-chung-mac-dinh") {
   CA.length = 0;
@@ -220,14 +220,27 @@ if (CA_RIENG === "doi-chung-mac-dinh") {
     { ten: "force-0-mmproj-auto-doi-chung", dung: async (c) => { fs.writeFileSync(path.join(D, "Gia-mmproj-F16.gguf"), ""); await chuCu([])(c); }, chay: (c) => force(c, DOI_SONG, "auto"), kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhCo: "--mmproj" } },
     { ten: "force-0-mmproj-auto-qua-tham-so", dung: async (c) => { fs.writeFileSync(path.join(D, "Gia-mmproj-F16.gguf"), ""); await chuCu([])(c); }, chay: (c) => force(c, DOI_SONG, "off", ["-ChonMmproj", "auto"]), kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhCo: "--mmproj" } }, // HST 04:25: env off + tham số auto ⇒ CÓ --mmproj
     { ten: "force-0-mmproj-off-qua-tham-so", dung: chuCu([]), chay: (c) => force(c, DOI_SONG, "auto", ["-ChonMmproj", "off"]), kyVong: { ma: 0, pause: "khong", giaSong: 1, chuCuBiDung: true, dongLenhKhong: "--mmproj" } },
+    // D1d (HST 09:26, 10:3x): start-llama-server KHÔNG còn đưa LLAMA_SERVER_API_KEY lên dòng lệnh. Chỉ giá trị ⇒ 2; chỉ tệp ⇒ --api-key-file; cả hai ⇒ tệp thắng + cảnh báo CHỈ TÊN.
+    { ten: "force-2-chi-api-key-gia-tri", chay: (c) => force(c, DOI_SONG, "off", [], [`LLAMA_SERVER_API_KEY=${GIA_TRI_GIA}`]), kyVong: { ma: 2, pause: "khong", giaSong: 0, outCo: "LLAMA_SERVER_API_KEY_FILE - KHONG khoi" } },
+    { ten: "force-0-chi-tep-khoa", chay: (c) => force(c, DOI_SONG, "off", [], [`LLAMA_SERVER_API_KEY_FILE=${TEP_KHOA}`]), kyVong: { ma: 0, pause: "khong", giaSong: 1, dongLenhCo: "--api-key-file" } },
+    { ten: "force-0-ca-hai-tep-thang", chay: (c) => force(c, DOI_SONG, "off", [], [`LLAMA_SERVER_API_KEY=${GIA_TRI_GIA}`, `LLAMA_SERVER_API_KEY_FILE=${TEP_KHOA}`]),
+      kyVong: { ma: 0, pause: "khong", giaSong: 1, dongLenhCo: "--api-key-file", dongLenhKhong: "--api-key ", outCo: "BO QUA LLAMA_SERVER_API_KEY vi da co LLAMA_SERVER_API_KEY_FILE" } },
+    // D1d a5 (HST 15:14): -ThuMucLog phải THẬT SỰ là nơi ghi log (canh hình: ma 0 + giả sống ⇒ đã tới bước Start-Process ghi log).
+    { ten: "force-0-log-vao-thamso", dung: async () => fs.rmSync(LOG_NGOAI, { recursive: true, force: true }), chay: (c) => force(c, DOI_SONG, "off", [], [], LOG_NGOAI),
+      kyVong: { ma: 0, pause: "khong", giaSong: 1, logVao: true } },
     { ten: "tay-0-co-khoa-cmdline-che", kyVong: { ma: 0, pause: "khong", giaSong: 1, outCo: "--api-key-file <tep-khoa>" },
       chay: (c) => chayPs(KHOI_TAY, ["-ArgStr", `--port ${c} --api-key-file ${TEP_KHOA}`, "-Ten", "gia", "-Exe", BIN, "-Cong", String(c), "-TepTamDung", TEP_DUNG, "-ThuMucLog", LOG, "-ChoGiay", "6"], { ...DOI_SONG, LLAMA_SERVER_API_KEY_FILE: TEP_KHOA }) });
 }
 
+const LOG_NGOAI = path.join(D, "log-ngoai"); // D1d a5: thư mục log KHÁC <D>\repo\logs
+const GIA_TRI_GIA = `khoa-gia-gia-tri-${Math.random().toString(16).slice(2, 10)}`; // D1d (HST 10:5x): giá trị khoá GIẢ, tự mô tả, khác mọi mẫu khoá thật (đặt sau các dòng spawn để không dời số dòng ở vramAllocationSites)
 // ── Chạy ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const ra = fs.openSync(RA, "a");
 const ghi = (o) => fs.writeSync(ra, JSON.stringify(o) + "\n");
 const that0 = chupThat();
+// D1d (HST 10:3x (a)): kho-ps KHÔNG được ghi vào thư mục log THẬT. Chỉ liệt kê TÊN (đệ quy), không mở tệp; không có thư mục ⇒ [].
+const tenLogThat = () => { try { return JSON.stringify(fs.readdirSync("D:\\LLAMA-LOGS", { recursive: true }).map(String).sort()); } catch { return "[]"; } };
+const logThat0 = tenLogThat();
 ghi({ luc: new Date().toISOString(), D, that: JSON.parse(that0) });
 let dat = 0, truot = 0;
 try {
@@ -250,10 +263,14 @@ try {
     if (kv.dongLenhKhong && sau.some((g) => String(g.cl ?? "").includes(kv.dongLenhKhong))) loi.push(`dong lenh CO ${kv.dongLenhKhong}`); // D1b
     if (kv.outCo && !out.includes(kv.outCo)) loi.push(`dau ra thieu "${kv.outCo}"`);
     if (kv.outKhong && out.includes(kv.outKhong)) loi.push(`dau ra CO "${kv.outKhong}"`);
+    const tenLog = (d) => (fs.existsSync(d) && fs.statSync(d).isDirectory() ? fs.readdirSync(d) : []).filter((t) => /^llama-server-.*\.(err|out)\.log$/.test(t)); // D1d a5
+    if (kv.logVao && !(["err", "out"].every((k) => tenLog(LOG_NGOAI).some((t) => t.endsWith(`.${k}.log`))))) loi.push("-ThuMucLog KHONG co llama-server-*.err.log + .out.log");
+    if (kv.logVao && tenLog(path.join(D, "repo", "logs")).length) loi.push("log llama-server roi vao <D>\\repo\\logs thay vi -ThuMucLog");
     // D1c C2 kiểm CHUNG (mọi ca): đầu ra không lộ ĐƯỜNG tệp khoá giả (lời báo chỉ được nói có/không, trùng/khác).
     for (const t of [TEP_KHOA, path.join(D, "khoa-gia-2.key"), path.join(D, "khong-co.key")]) if (out.includes(t)) loi.push(`dau ra LO duong tep khoa ${path.basename(t)}`);
     // kiem-dinh 03:54 (c): thêm theo TÊN TỆP, không phân biệt hoa/thường (bắt cả dạng `/`, 8.3, khác hoa/thường của thư mục cha).
     if (/khoa-gia(-2)?\.key|khong-co\.key/i.test(out)) loi.push("dau ra LO ten tep khoa gia");
+    if ([GIA_TRI_GIA, JSON.stringify(GIA_TRI_GIA).slice(1, -1)].some((g) => out.includes(g) || sau.some((x) => String(x.cl ?? "").includes(g)))) loi.push("LO gia tri khoa gia (dau ra / dong lenh)"); // D1d
     if (kv.chuCuBiDung && truoc.some((id) => sau.some((g) => g.id === id))) loi.push("chu cong cu KHONG bi dung");
     if (kv.nodeSong && !conNode.some((n) => n.exitCode === null && n.signalCode === null)) loi.push("chu cong node KHONG con song");
     if (!kv.chuCuBiDung && truoc.some((id) => !sau.some((g) => g.id === id)) && kv.ma !== 0) loi.push("tien trinh co truoc bi DUNG");
@@ -273,8 +290,9 @@ try {
   donGia();
   for (const n of conNode.splice(0)) n.kill();
   const conLai = giaCuaD().length;
-  ghi({ ket: { dat, truot, conLaiDuoiD: conLai, thatCuoi: JSON.parse(chupThat()) } });
+  const logThatLech = tenLogThat() !== logThat0;
+  ghi({ ket: { dat, truot, conLaiDuoiD: conLai, logThatLech, thatCuoi: JSON.parse(chupThat()) } });
   fs.closeSync(ra);
-  console.log(`KET: dat ${dat} · truot ${truot} · exe gia con lai ${conLai} · D=${D}`);
-  process.exitCode = truot || conLai ? 1 : 0;
+  console.log(`KET: dat ${dat} · truot ${truot} · exe gia con lai ${conLai} · D=${D}${logThatLech ? " · LECH: D:\\LLAMA-LOGS doi ten tep trong luot" : ""}`);
+  process.exitCode = truot || conLai || logThatLech ? 1 : 0;
 }

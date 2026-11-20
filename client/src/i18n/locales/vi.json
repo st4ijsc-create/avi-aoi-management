@@ -21193,7 +21193,7 @@
     "tipKhoiDongLai": "llama-server vừa chết; bộ giám sát đang khởi động lại nó (lần {{lan}}, {{trongCuaSo}}/{{toiDa}} trong {{phut}} phút). Lượt sinh mã lúc này CHỜ tối đa khoảng 2 phút rồi đi qua server — không nạp model vào ứng dụng.",
     "tipDangNap": "llama-server đang nạp model (30–90 giây với model khoảng 21 GB). Lượt sinh mã sẽ chờ rồi chạy tiếp.",
     "tipTamDung": "Bộ giám sát đang tạm dừng có chủ ý (đang đổi model) — không tự khởi động lại llama-server.",
-    "tipBoCuoc": "llama-server không khởi động được sau {{toiDa}} lần trong {{phut}} phút — bộ giám sát đã dừng thử. Cần người xem logs/llama-server-*.err.log rồi chạy lại scripts/ai/start-llama-server.ps1.",
+    "tipBoCuoc": "llama-server không khởi động được sau {{toiDa}} lần trong {{phut}} phút — bộ giám sát đã dừng thử. Cần người xem D:\\LLAMA-LOGS\\server\\llama-server-*.err.log rồi chạy lại scripts/ai/start-llama-server.ps1.",
     "tipMayHong": "Engine suy luận KHÔNG khoẻ. Mọi câu trả lời lúc này phản ánh trạng thái MÁY, không phản ánh năng lực model — đừng kết luận gì về chất lượng model cho tới khi ô này xanh lại.",
     "tipMayOk": "Engine đang chạy qua {{duong}}. Model đã nạp: {{soModel}}. Chế độ GPU: {{gpu}}.",
     "duongNgoai": "llama-server (tiến trình ngoài)",

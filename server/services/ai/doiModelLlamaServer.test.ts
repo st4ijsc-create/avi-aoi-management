@@ -753,7 +753,7 @@ describe.runIf(process.platform === "win32")("THẬT — start-llama-server.ps1 
         `LLAMA_SERVER_SELECTION_FILE=${sel}`,
       ].join("\n"),
     );
-    const r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", kb, "-WaitSeconds", "5", ...thamSoThem], {
+    const r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", kb, "-WaitSeconds", "5", "-ThuMucLog", path.join(goc, "logs"), ...thamSoThem], {
       encoding: "utf8",
       timeout: 60_000,
       windowsHide: true,
