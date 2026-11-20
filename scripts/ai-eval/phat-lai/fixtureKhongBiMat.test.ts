@@ -1,4 +1,4 @@
-// PHATLAI-ENV-KHONG-LOC (HST 20/11): fixture phát lại không mang biến dáng bí mật; dongGoi.ts lọc `moiTruong` qua `locCo`; boSungMoiTruong.cjs bị khoá.
+// PHATLAI-ENV-KHONG-LOC (HST 20/11): fixture phát lại không mang biến dáng bí mật; dongGoi.ts lọc `moiTruong` qua `locCo`; boSungMoiTruong.cjs đã XOÁ (chủ dự án 20/11).
 // (iii) là kiểm TĨNH nguồn (điểm yếu có tên PHATLAI-KIEM-TINH): không chạy dongGoi.ts thật (cần CSDL + bản thô của cửa sổ GPU).
 import fs from "node:fs";
 import path from "node:path";
@@ -38,8 +38,8 @@ describe("(iii) kiểm TĨNH nguồn — PHATLAI-KIEM-TINH", () => {
     expect(nguon).toMatch(/^\s*moiTruong: co,$/m);
     expect(nguon).not.toMatch(/^\s*moiTruong,$/m);
   });
-  it("boSungMoiTruong.cjs: dòng mã đầu tiên là throw (khoá, không đọc .env)", () => {
-    const dau = docNguon("boSungMoiTruong.cjs").split("\n").find((d) => d.trim() !== "" && !d.trim().startsWith("//"));
-    expect(dau).toMatch(/^throw new Error\(/);
+  it("boSungMoiTruong.cjs đã XOÁ (chủ dự án 20/11) và không tệp nào khác trong phat-lai/ nhắc tên nó", () => {
+    expect(fs.existsSync(path.join(DAY, "boSungMoiTruong.cjs"))).toBe(false);
+    expect(fs.readdirSync(DAY).filter((t) => t !== path.basename(fileURLToPath(import.meta.url)) && docNguon(t).includes("boSungMoiTruong"))).toEqual([]);
   });
 });
