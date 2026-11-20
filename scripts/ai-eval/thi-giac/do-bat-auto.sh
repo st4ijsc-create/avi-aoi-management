@@ -1,24 +1,22 @@
 #!/bin/bash
 # Cổng BẬT LLAMA_SERVER_MMPROJ=auto mặc định (spec 2026-10-24-ai-local-doc-anh-tro-ly-lap-trinh.md §6 — cổng viết trước).
-# ĐƯỜNG SẢN PHẨM start-llama-server.ps1 -Force với BẢN SAO TẠM .env cây chính + LLAMA_SERVER_MMPROJ=auto (xoá khi xong).
+# ĐƯỜNG SẢN PHẨM start-llama-server.ps1 -Force đọc TẠI CHỖ .env cây chính (-EnvFile) + -ChonMmproj auto (D1c C4: không chép .env).
 # 35B rồi 27B: Tải A 20 lượt chữ + 13 ảnh, mẫu Private 10 s + VRAM 2 s. e2e :3013 (/v1 + KB stream) trên 35B. Cuối: 35B qua doi-model.
 cd "$(dirname "$0")/../../.." || exit 1
 log() { echo "=== $(date +%T) $*"; }
 CHU="do-bat-auto.sh (phien do-model)"
 M35="D:/SOURCES/16.AI/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
 O=tmp/thi-giac/bat-auto; mkdir -p $O
-ENVT="$(cygpath -w "$TEMP")\\do-bat-auto-$$.env"
-cp /d/SOURCES/avi-aoi-management/.env "$(cygpath -u "$ENVT")" && printf '\nLLAMA_SERVER_MMPROJ=auto\n' >> "$(cygpath -u "$ENVT")"
-trap 'rm -f "$(cygpath -u "$ENVT")"' EXIT
+# Lô D1c C4 (HST 20/11): KHÔNG chép .env nữa — start-llama-server đọc .env cây chính TẠI CHỖ (-EnvFile), mmproj qua -ChonMmproj.
 node scripts/ai-eval/lib/khoaKhe.mjs giu "$CHU" "do bat mmproj auto" --co-dung tmp/dung-khoa-ba-$$ > $O/khoa.log 2>&1 & KHOA=$!
 sleep 2
 pid3013() { powershell.exe -NoProfile -Command "(Get-NetTCPConnection -LocalPort 3013 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess" | tr -d '\r'; }
 
 doMot() { # $1 nhãn, $2 basename model
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai/start-llama-server.ps1 -EnvFile "$ENVT" -Force -Model "$2" > $O/sp-$1.log 2>&1
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai/start-llama-server.ps1 -EnvFile 'D:\SOURCES\avi-aoi-management\.env' -ChonMmproj auto -Force -Model "$2" > $O/sp-$1.log 2>&1
   log "$1: start-llama-server rc=$? · $(tr -d '\r' < $O/sp-$1.log | grep -aE 'mmproj' | tr '\n' ' ')"
   local logErr; logErr=$(tr -d '\r' < $O/sp-$1.log | sed -n 's/.*log *: *\(.*\)\.out\.log.*/\1.err.log/p' | tail -1)
-  log "$1: /props modalities = $(curl -s -m 5 http://127.0.0.1:8091/props | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).modalities))}catch{console.log("?")}})')"
+  log "$1: /props modalities = $(node scripts/ai-eval/lib/goi-llama.mjs /props | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).modalities))}catch{console.log("?")}})')"
   log "$1: dòng lệnh mmproj: $(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\").CommandLine" | tr -d '\r' | grep -o -- '--mmproj [^ ]*') · cache-ram: $(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\").CommandLine" | tr -d '\r' | grep -o -- '--cache-ram [0-9]*')"
   rm -f $O/dung-$1
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-eval/bo-nho/lay-mau-bo-nho.ps1 -Csv "$O/bn-$1.csv" -Dung "$O/dung-$1" -Log "$logErr" -Giay 10 > /dev/null 2>&1 & local MAU=$!
@@ -49,7 +47,7 @@ e2e() {
 }
 doMot P35 Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf e2e
 doMot P27 Qwen3.6-27B-UD-Q4_K_XL.gguf
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$M35' -GiuKhoa '$CHU'" > $O/ve-nha.log 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$M35' -GiuKhoa '$CHU'; exit \$LASTEXITCODE" > $O/ve-nha.log 2>&1
 log "về 35B: rc=$? $(tr -d '\r' < $O/ve-nha.log | grep -E 'SAN SANG|HET GIO' | tr '\n' ' ')"
 node scripts/ai-eval/lib/khoaKhe.mjs dung tmp/dung-khoa-ba-$$; wait $KHOA 2>/dev/null
 echo EXIT=0

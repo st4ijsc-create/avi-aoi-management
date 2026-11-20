@@ -7,7 +7,7 @@ O=tmp/bo-nho/kiem-doi-gan; mkdir -p $O
 BASE=${BASE:-http://127.0.0.1:3000}
 PID3000=$(powershell.exe -NoProfile -Command "(Get-NetTCPConnection -LocalPort 3000 -State Listen | Select-Object -First 1).OwningProcess" | tr -d '\r')
 ded() { powershell.exe -NoProfile -Command "[math]::Round(((Get-Counter '\GPU Process Memory(pid_${PID3000}*)\Dedicated Usage').CounterSamples | Measure-Object CookedValue -Sum).Sum/1MB)" | tr -d '\r'; }
-tok() { curl -s -m 5 http://127.0.0.1:8091/metrics | grep -E "^llamacpp:prompt_tokens_total " | awk '{print $2}'; }
+tok() { node scripts/ai-eval/lib/goi-llama.mjs /metrics | grep -E "^llamacpp:prompt_tokens_total " | awk '{print $2}'; }
 cat > $O/q.mjs <<'EOF'
 import postgres from "postgres";
 const sql = postgres(process.env.DATABASE_URL, { max: 1 });

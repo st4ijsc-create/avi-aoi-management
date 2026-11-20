@@ -5,6 +5,9 @@
 // ~1,3k/3–4k (tái dùng); đổi cuộc ⇒ prompt_n = cả prompt (slot chỉ giữ một tiền tố).
 //   node scripts/ai-eval/bo-nho/tai-hoi-thoai.mjs [--vong 2] [--dai 40] [--luot 6] [--cuoc 3] [--ra tep.jsonl]
 import fs from "node:fs";
+import { tieuDeLlamaCho, urlLlama } from "../lib/tieuDeLlama.mjs";
+// Lô D1-script: URL theo LLAMA_SERVER_URL (mặc định :8091), khoá qua LLAMA_SERVER_API_KEY_FILE.
+const URL_SINH = `${urlLlama("http://127.0.0.1:8091").replace(/\/$/, "")}/v1/chat/completions`;
 
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const VONG = Number(arg("vong", 2)), LUOT = Number(arg("luot", 6)), CUOC = Number(arg("cuoc", 3)), DAI = Number(arg("dai", 40)), RA = arg("ra", "");
@@ -25,8 +28,8 @@ for (let v = 0; v < VONG; v++) {
       const ls = hoiThoai[c];
       ls.push({ role: "user", content: `Đoạn mã ${l}:\n${doan(v * 1000 + c * 100 + l, 2000)}\n\nĐoạn này làm gì? Một câu.` });
       const t0 = Date.now();
-      const r = await fetch("http://127.0.0.1:8091/v1/chat/completions", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+      const r = await fetch(URL_SINH, {
+        method: "POST", headers: { "Content-Type": "application/json", ...tieuDeLlamaCho(URL_SINH) },
         body: JSON.stringify({ messages: ls, max_tokens: 400, temperature: 0.2, chat_template_kwargs: { enable_thinking: false } }),
       });
       const j = await r.json().catch(() => ({}));

@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ck } from "./cookie.mjs";
+import { tieuDeLlamaCho } from "../lib/tieuDeLlama.mjs";
 // ★ 2026-10-17 (AI Local Đợt 5.2) — trích mã + bốn trình chạy tách sang `cham.mjs` để Training Studio "Eval mã" dùng
 //   CÙNG bộ chấm (không chép). Hành vi chấm không đổi; kiểm bằng thước fake-ok 12/12 · fake-bad 0/12.
 import { SYS, chamBai } from "./cham.mjs";
@@ -85,7 +86,7 @@ function samplingThan() {
 async function genRaw(t) {
   const t0 = Date.now();
   const res = await fetch(RAW_URL, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json", ...tieuDeLlamaCho(RAW_URL) },
     body: JSON.stringify({ ...(arg("--model", null) ? { model: arg("--model", null) } : {}), messages: [{ role: "system", content: SYS }, { role: "user", content: t.prompt }],
       /**
        * ★★★ `--khong-nghi` (2026-09-22) — TẮT KHỐI `<think>` cho model biết nghĩ.
@@ -158,7 +159,7 @@ async function kiemLlama(nhan) {
   const base = new URL(RAW_URL);
   const url = base.port === "11434" ? `${base.origin}/api/tags` : `${base.origin}/health`;
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    const r = await fetch(url, { headers: tieuDeLlamaCho(url), signal: AbortSignal.timeout(4000) });
     if (r.status !== 200) throw new Error("health " + r.status);
   } catch (e) {
     console.error(`

@@ -39,6 +39,8 @@ export interface TheViec {
   csdl?: string;
   /** HA-3 — trần lượt agent do khoá thẻ TƯỜNG MINH (TRẦN LƯỢT MODEL / TRẦN PHÚT / TRẦN TOKEN RA); vắng ⇒ không áp gì. Chữ tự do trong GIỚI HẠN không được phân tích để áp trần. */
   tran?: TranTheoThe;
+  /** `LƯỢT SỬA TSC: 1` — sau L3c, nếu tsc đỏ, cho đúng MỘT lượt sửa kiểu trong phần trần còn lại; vắng ⇒ hành vi cũ */
+  suaTsc?: boolean;
   /** HA-10 — `KIỂM PHỦ: CÓ`: trước khi nhận "xong", mọi dòng ĐÃ DUYỆT (trừ GIỮ:) phải có ca MỚI tên `[Dk] ` (xem kiemPhu.ts). Host-only; mặc định TẮT. */
   kiemPhu?: boolean;
   /** HA-6b — `BẢNG ĐẾM:` (host-only): các mục đếm hàng CSDL trước/sau lượt, dạng đóng (xem hauQua.ts). Vắng ⇒ không kiểm hậu quả. Model không thấy. */
@@ -51,7 +53,7 @@ export interface TheViec {
   gioiHan: { giay: number; vong: number };
 }
 
-const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
+const KHOA: Record<string, keyof TheViec | "tepDuocPhep" | "tranLuotModel" | "tranPhut" | "tranTokenRa"> = {
   "MA": "ma",
   "MUC TIEU": "mucTieu",
   "TEP DUOC PHEP SUA/TAO": "tepDuocPhep",
@@ -67,6 +69,7 @@ const KHOA: Record<string, keyof TheViec | "tepDuocPhep"> = {
   "TRAN LUOT MODEL": "tranLuotModel",
   "TRAN PHUT": "tranPhut",
   "TRAN TOKEN RA": "tranTokenRa",
+  "LUOT SUA TSC": "suaTsc",
   "KIEM PHU": "kiemPhu",
   "BANG DEM": "bangDem",
   "LENH KIEM THAT": "lenhKiemThat",
@@ -181,6 +184,8 @@ export function docTheViec(van: string): KetQuaThe {
     if (n === null) return { ok: false, loi: `${ten} phải là một số nguyên trong khoảng ${gioi.min}..${gioi.max}` };
     tran[truongTran] = n;
   }
+  const suaTsc = truong.get("suaTsc")?.trim();
+  if (suaTsc !== undefined && suaTsc !== "0" && suaTsc !== "1") return { ok: false, loi: "LƯỢT SỬA TSC phải là 1 hoặc 0" };
   return {
     ok: true,
     the: {
@@ -199,6 +204,7 @@ export function docTheViec(van: string): KetQuaThe {
       ...(kiemThatDoc.kiemThat ? { lenhKiemThat: kiemThatDoc.kiemThat.lenh, cayGia: kiemThatDoc.kiemThat.cay } : {}),
       ...(choPhepTrongTest.length ? { choPhepTrongTest } : {}),
       ...(Object.keys(tran).length > 0 ? { tran } : {}),
+      ...(suaTsc === "1" ? { suaTsc: true } : {}),
       gioiHan: docGioiHan(truong.get("gioiHan")),
     },
   };

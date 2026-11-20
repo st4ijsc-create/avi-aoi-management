@@ -10,6 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { tieuDeLlamaCho } from "../lib/tieuDeLlama.mjs";
 
 type Truong = { ten: string; kieu: "chuoi" | "so" | "boolean" | "danh-sach"; batBuoc?: boolean; moTa: string };
 type Bai = { id: string; vanBan: string; truong: Truong[] };
@@ -45,7 +46,7 @@ async function goi(heThong: string, nguoiDung: string, maxTokens: number): Promi
   const t0 = Date.now();
   const res = await fetch(URL_CHAT, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...tieuDeLlamaCho(URL_CHAT) },
     body: JSON.stringify({
       messages: [{ role: "system", content: heThong }, { role: "user", content: nguoiDung }],
       temperature: 0, max_tokens: maxTokens, chat_template_kwargs: { enable_thinking: false },
@@ -73,7 +74,7 @@ const { giuKhoaKhe } = await import("../lib/khoaKhe.mjs");
 const KHOA = giuKhoaKhe({ chu: `trich-xuat/do-chen.mts (PID ${process.pid})`, lyDo: "đo chen extract nền" });
 try {
   const u = new URL(URL_CHAT);
-  const m = (await (await fetch(`${u.origin}/v1/models`)).json()) as { data?: { id?: string }[] };
+  const m = (await (await fetch(`${u.origin}/v1/models`, { headers: tieuDeLlamaCho(`${u.origin}/v1/models`) })).json()) as { data?: { id?: string }[] };
   ket.model8091 = String(m.data?.[0]?.id ?? "?").split(/[\\/]/).pop();
 } catch { ket.model8091 = "?"; }
 console.log(`model :8091 = ${ket.model8091} · K = ${K} vòng extract nền · lặp ${LAP}`);

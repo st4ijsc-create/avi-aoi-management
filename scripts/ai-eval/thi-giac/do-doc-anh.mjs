@@ -5,6 +5,7 @@
 // Ra: tmp/thi-giac/<nhan>.jsonl (mỗi dòng một câu × lượt) + tóm tắt stdout. Chấm máy theo bo-anh.json (viết TRƯỚC khi chạy).
 import fs from "node:fs";
 import path from "node:path";
+import { tieuDeLlamaCho } from "../lib/tieuDeLlama.mjs";
 
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const NHAN = arg("nhan", "thu"), CHE_DO = arg("che-do", "truc-tiep"), URL_CHINH = arg("url", "http://127.0.0.1:8091");
@@ -32,7 +33,7 @@ const dataUri = (tep) => `data:image/png;base64,${fs.readFileSync(path.join(goc,
 async function goi(url, messages, nghi) {
   const t0 = Date.now();
   const r = await fetch(`${url}/v1/chat/completions`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json", ...tieuDeLlamaCho(`${url}/v1/chat/completions`) },
     body: JSON.stringify({ messages, max_tokens: MAX_RA, temperature: 0.2, ...(nghi ? {} : { chat_template_kwargs: { enable_thinking: false } }) }),
   });
   const j = await r.json().catch(() => ({}));

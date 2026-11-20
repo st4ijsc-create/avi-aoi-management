@@ -85,7 +85,7 @@ Script làm đúng 4 việc: (1) đọc `LLAMA_SERVER_BIN` / `LLAMA_SERVER_MODEL
 `GGUF_DEFAULT_MODEL`) / `GGUF_MODELS_DIR` / `LLAMA_SERVER_URL` / `LLAMA_SERVER_API_KEY`
 **từ `.env`** — đổi roster ở G5 chỉ sửa một chỗ; (2) hỏi `/health` trước, đã xanh thì
 thoát 0; (3) nếu cổng bị người khác chiếm (đúng ca Apache:8080) thì **báo tên tiến trình
-và từ chối spawn đè**; (4) spawn tách rời, ghi log vào `logs/llama-server-<stamp>.{out,err}.log`,
+và từ chối spawn đè**; (4) spawn tách rời, ghi log vào `<-ThuMucLog>\llama-server-<stamp>.{out,err}.log` (mặc định `D:\LLAMA-LOGS\server`, NGOÀI repo — lô D1d),
 chờ `/health` xanh mới báo thành công.
 
 Prompt cache trên RAM: `--cache-ram` lấy từ `LLAMA_SERVER_CACHE_RAM`, **mặc định 0 = tắt** (2026-10-24). Qwen3.6-27B/35B-A3B là

@@ -6,7 +6,7 @@
  *       [--env <tệp .env có DATABASE_URL>] [--moi-truong K=V,K=V] [--ton-tai-truoc a/__pycache__,b/bin]
  *
  * (03/11) `lenh.moiTruong` = cờ agent (AI_AGENT_* trừ *_HOUSEKEEPING_*, AI_AGENTIC_*, AI_CODING_*) đọc từ CÙNG tệp `--env` của máy chủ lúc
- * ghi, `--moi-truong` ghi đè (cờ chỉ đặt ở env tiến trình lúc ghi). `--ton-tai-truoc` = thư mục bị git bỏ qua có sẵn trong dự án lúc ghi
+ * ghi, `--moi-truong` ghi đè (cờ chỉ đặt ở env tiến trình lúc ghi); rồi LỌC qua `locCo` (20/11 PHATLAI-ENV-KHONG-LOC; bị bỏ ⇒ stderr CHỈ TÊN). `--ton-tai-truoc` = thư mục bị git bỏ qua có sẵn trong dự án lúc ghi
  * (đường tương đối gốc dự án) — ghi từ dự án đã `git clean -fdX` thì để trống.
  *
  * Đọc hàng `ai_agent_runs` của runId (CHỈ ĐỌC — câu hỏi, chế độ, sự kiện đã lưu, lý do dừng) bằng DATABASE_URL của `.env` cây chính
@@ -17,6 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import { dongGoi } from "../../../server/testing/phatLaiLuot";
+import { locCo } from "../tasks/run-eval.mjs";
 
 const TRAN_TEP = 2 * 1024 * 1024;
 const TRAN_TONG = 10 * 1024 * 1024;
@@ -57,6 +58,9 @@ async function main() {
     if (i <= 0) throw new Error(`--moi-truong sai dạng: ${kv}`);
     moiTruong[kv.slice(0, i)] = kv.slice(i + 1);
   }
+  const { co } = locCo(moiTruong);
+  const boDi = Object.keys(moiTruong).filter((k) => !(k in co)); // boQua + tên ngoài tiền tố (locCo bỏ lặng lẽ) — CHỈ TÊN, không giá trị
+  if (boDi.length) console.error(`dongGoi: bỏ khỏi lenh.moiTruong (chỉ tên): ${boDi.join(", ")}`);
   const tonTaiTruoc = (arg("--ton-tai-truoc") ?? "").split(",").map((x) => x.trim().replace(/\\/g, "/")).filter(Boolean);
   if (tonTaiTruoc.some((x) => x.startsWith("/") || /^[A-Za-z]:/.test(x) || x.split("/").includes(".."))) throw new Error("--ton-tai-truoc phải là đường tương đối trong dự án");
   const postgres = (await import("postgres")).default;
@@ -76,7 +80,7 @@ async function main() {
       bai,
       ...(arg("--dist") ? { dist: arg("--dist")! } : {}),
       ...(arg("--commit") ? { commit: arg("--commit")! } : {}),
-      moiTruong,
+      moiTruong: co,
       tonTaiTruoc,
     });
     const gz = zlib.gzipSync(Buffer.from(JSON.stringify(fx), "utf8"), { level: 9 });

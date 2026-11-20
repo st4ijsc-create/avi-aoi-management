@@ -16,7 +16,7 @@ vram() { # $1 nhãn — chạy nền tới khi có tmp/thi-giac/dung-vram
 vramDung() { touch tmp/thi-giac/dung-vram; wait $VRAM; log "$1: VRAM đỉnh $(cut -d, -f2 tmp/thi-giac/vram-$1.csv | sort -n | tail -1) MiB · mẫu $(wc -l < tmp/thi-giac/vram-$1.csv)"; }
 doi() { # $1 nhãn, $2 model, $3 ThemArgs
   local them=""; [ -n "$3" ] && them="-ThemArgs $3"
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$2' -GiuKhoa '$CHU' $them" > tmp/thi-giac/doi-$1.log 2>&1
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$2' -GiuKhoa '$CHU' $them; exit \$LASTEXITCODE" > tmp/thi-giac/doi-$1.log 2>&1
   log "$1: doi-model rc=$? · $(tr -d '\r' < tmp/thi-giac/doi-$1.log | grep -E 'LOG:|SAN SANG|HET GIO' | tr '\n' ' ')"
 }
 taiChu() { node scripts/ai-eval/bo-nho/tai-dai.mjs 5 > tmp/thi-giac/chu-$1.log 2>&1; log "$1: Tải A 5 lượt: $(grep -o '[0-9]* ms' tmp/thi-giac/chu-$1.log | tr '\n' ' ')"; }
@@ -46,5 +46,5 @@ vramDung B
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-eval/thi-giac/model-tham-chieu.ps1 -Lam tat
 doi ve-nha "$M35" ""
 node scripts/ai-eval/lib/khoaKhe.mjs dung tmp/dung-khoa-tg-$$; wait $KHOA 2>/dev/null
-log "HẾT :8091 = $(curl -s -m 5 http://127.0.0.1:8091/v1/models | head -c 90)"
+log "HẾT :8091 = $(node scripts/ai-eval/lib/goi-llama.mjs /v1/models | head -c 90)"
 echo EXIT=0

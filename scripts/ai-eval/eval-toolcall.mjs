@@ -66,6 +66,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { tieuDeLlamaCho } from "./lib/tieuDeLlama.mjs";
 
 const ROOT = process.cwd();
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -314,7 +315,7 @@ async function probeNativeReadiness() {
   try {
     const res = await fetch(`${NATIVE_URL}/v1/chat/completions`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...tieuDeLlamaCho(`${NATIVE_URL}/v1/chat/completions`) },
       body: JSON.stringify({
         model: "x",
         messages: [{ role: "user", content: "hi" }],
@@ -340,7 +341,7 @@ async function hoiNative(question, wire) {
   try {
     const res = await fetch(`${NATIVE_URL}/v1/chat/completions`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...tieuDeLlamaCho(`${NATIVE_URL}/v1/chat/completions`) },
       body: JSON.stringify({
         model: "x",
         messages: [

@@ -162,7 +162,7 @@ describe("ghep — bộ chạy KHÔNG chạm tệp nào ở worktree", () => {
   it("★★★ model sửa AGENTS.md trong lượt ghep ⇒ KHÔNG bị lọc: vào tepDoi và vi phạm TỆP ĐƯỢC PHÉP; saoLuotKhop=false", async () => {
     const r = await chay({ luat: BO_SUNG, luatCach: "ghep", driver: driverGhi({}, (w) => fs.appendFileSync(path.join(w, "AGENTS.md"), "them\n")) });
     expect(r.tepDoi).toEqual(["AGENTS.md", TEP]);
-    expect(r.viPham.length).toBeGreaterThan(0);
+    expect(r.viPham!.length).toBeGreaterThan(0);
     expect(r.b1!.saoLuotKhop).toBe(false);
   });
   it("★★ worktree có AGENTS.md đã SỬA (còn bản ghi-đè của lượt cũ) ⇒ từ chối, không tốn lượt model", async () => {

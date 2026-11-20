@@ -28,12 +28,12 @@ chay() { # $1 nhãn, $2 đường, $3 model, $4 ThemArgs
     log "$nhan: start-llama-server rc=$?"
     logErr=$(tr -d '\r' < tmp/bn-doi-$nhan.log | sed -n 's/.*log *: *\(.*\)\.out\.log.*/\1.err.log/p' | tail -1)
   else
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$m' -GiuKhoa '$CHU' $them" > tmp/bn-doi-$nhan.log 2>&1
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$m' -GiuKhoa '$CHU' $them; exit \$LASTEXITCODE" > tmp/bn-doi-$nhan.log 2>&1
     log "$nhan: doi-model rc=$? · $(tr -d '\r' < tmp/bn-doi-$nhan.log | grep -E 'SAN SANG|BAN GIAO|HET GIO|KHOA' | tr '\n' ' ')"
     logErr=$(tr -d '\r' < tmp/bn-doi-$nhan.log | sed -n 's/^LOG: //p' | tail -1)
   fi
   log "$nhan: log = $logErr"
-  log "$nhan: dòng lệnh: $(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\").CommandLine" | tr -d '\r' | sed 's/.*-c 65536//')"
+  log "$nhan: dòng lệnh: $(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\").CommandLine" | tr -d '\r' | sed 's/.*-c 65536//' | sed -E 's/(--api[-_]key[-_]file)[ =]("[^"]*"|[^ ]+)/\1 <tep-khoa>/g; s/(--api[-_]key)[ =]("[^"]*"|[^ ]+)/\1 <che>/g')"
   log "$nhan: log cache: $(grep -aE 'prompt cache is|cache-ram' "$logErr" | head -3 | tr -d '\r' | tr '\n' ' ' | cut -c1-300)"
   rm -f tmp/bn-dung
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-eval/bo-nho/lay-mau-bo-nho.ps1 -Csv "tmp/bn-$nhan.csv" -Dung "tmp/bn-dung" -Log "$logErr" -Giay 10 > /dev/null 2>&1 &
@@ -50,8 +50,8 @@ chay() { # $1 nhãn, $2 đường, $3 model, $4 ThemArgs
     console.log('mau '+L.length+' · private dau '+p[0]+' GB · max '+Math.max(...p)+' GB · cuoi '+p.at(-1)+' GB · max-dau '+(Math.max(...p)-p[0]).toFixed(2)+' GB · commit trong OS min '+Math.min(...os)+' GB · prompt_save '+L.at(-1)[5])")"
 }
 for c in "$@"; do IFS=: read -r nhan duong model them <<< "$c"; chay "$nhan" "$duong" "$model" "$them"; done
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '${MODEL[35b]}' -GiuKhoa '$CHU'" > tmp/bn-doi-ve-nha.log 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '${MODEL[35b]}' -GiuKhoa '$CHU'; exit \$LASTEXITCODE" > tmp/bn-doi-ve-nha.log 2>&1
 log "về 35B: doi-model rc=$? · $(tr -d '\r' < tmp/bn-doi-ve-nha.log | grep -E 'SAN SANG|HET GIO|LOG' | tr '\n' ' ')"
 goKhoa
-log "HẾT :8091 = $(curl -s -m 5 http://127.0.0.1:8091/v1/models | head -c 90)"
+log "HẾT :8091 = $(node scripts/ai-eval/lib/goi-llama.mjs /v1/models | head -c 90)"
 echo EXIT=0

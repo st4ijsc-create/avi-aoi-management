@@ -37,6 +37,7 @@
  *   `srv.preflightHealthy`, nên lưới engine giả được nó mà không mở kết nối thật nào tới :8091.
  */
 import { tieuDeLlamaServer } from "./khoaLlamaServer";
+import { LOG_LOI_LLAMA_SERVER } from "./duongLogLlama";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -574,7 +575,7 @@ export class GiamSatLlamaServer {
         break;
       }
       case "het-gio-khoi-dong":
-        this.log.error(`lượt khởi động không sống lại trong ${Math.round(cfg.khoiDongHetGioMs / 1000)} s (thăm dò cuối: ${td}). Xem logs/llama-server-*.err.log.`);
+        this.log.error(`lượt khởi động không sống lại trong ${Math.round(cfg.khoiDongHetGioMs / 1000)} s (thăm dò cuối: ${td}). Xem ${LOG_LOI_LLAMA_SERVER}.`);
         this.nhaKhoaNeuGiu();
         break;
       case "thu-khoi-dong":
@@ -606,7 +607,7 @@ export class GiamSatLlamaServer {
       this.boNho = { ...this.boNho, trangThai: "bo-cuoc", boCuoc: true };
       this.log.error(
         `BỎ CUỘC — đã khởi động ${cfg.toiDaKhoiDong} lần trong ${Math.round(cfg.cuaSoMs / 60_000)} phút mà llama-server vẫn chết. ` +
-          `Dừng thử để không lặp nạp 21 GB vô hạn. Xem logs/llama-server-*.err.log rồi chạy tay scripts/ai/start-llama-server.ps1.`,
+          `Dừng thử để không lặp nạp 21 GB vô hạn. Xem ${LOG_LOI_LLAMA_SERVER} rồi chạy tay scripts/ai/start-llama-server.ps1.`,
       );
       return;
     }
@@ -789,7 +790,7 @@ export class LoiLlamaServerChet extends Error {
     let cau: string;
     switch (chiTiet.lyDo) {
       case "bo-cuoc":
-        cau = `llama-server (model "${chiTiet.modelId}") không khởi động được — bộ giám sát đã thử hết số lần cho phép và DỪNG thử. ${khongNap} Xem logs/llama-server-*.err.log rồi chạy tay scripts/ai/start-llama-server.ps1.`;
+        cau = `llama-server (model "${chiTiet.modelId}") không khởi động được — bộ giám sát đã thử hết số lần cho phép và DỪNG thử. ${khongNap} Xem ${LOG_LOI_LLAMA_SERVER} rồi chạy tay scripts/ai/start-llama-server.ps1.`;
         break;
       case "giam-sat-tat":
         cau = `llama-server (model "${chiTiet.modelId}") không trả lời và bộ giám sát tự khởi động lại đang TẮT. ${khongNap} Chạy scripts/ai/start-llama-server.ps1 rồi thử lại.`;

@@ -1,15 +1,13 @@
 #!/bin/bash
 # Cổng (A) bật LLAMA_SERVER_MMPROJ=auto (spec 2026-10-24-ai-local-doc-anh-tro-ly-lap-trinh.md §6 — cổng viết trước, dieu-phoi duyệt mức).
-# ĐƯỜNG SẢN PHẨM start-llama-server.ps1 -Force trên BẢN SAO TẠM .env cây chính + LLAMA_SERVER_MMPROJ=auto|off (xoá khi xong).
+# ĐƯỜNG SẢN PHẨM start-llama-server.ps1 -Force đọc TẠI CHỖ .env cây chính (-EnvFile) + -ChonMmproj auto|off (D1c C4: không chép .env).
 # Mỗi model: auto (X chữ 20 + Y 13 ảnh [+ e2e ở 35B]) rồi off (X chữ 20 + Y' 13 câu chữ chung tiền tố). Cuối: 35B qua doi-model.
 cd "$(dirname "$0")/../../.." || exit 1
 log() { echo "=== $(date +%T) $*"; }
 CHU="do-cong-a.sh (phien do-model)"
 M35="D:/SOURCES/16.AI/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
 O=tmp/thi-giac/cong-a; rm -rf $O; mkdir -p $O
-TW="$(cygpath -w "$TEMP")"
-for c in auto off; do cp /d/SOURCES/avi-aoi-management/.env "$TEMP/do-cong-a-$c-$$.env"; printf '\nLLAMA_SERVER_MMPROJ=%s\n' $c >> "$TEMP/do-cong-a-$c-$$.env"; done
-trap 'rm -f "$TEMP"/do-cong-a-*-$$.env' EXIT
+# Lô D1c C4 (HST 20/11): KHÔNG chép .env nữa — start-llama-server đọc .env cây chính TẠI CHỖ (-EnvFile), mmproj qua -ChonMmproj.
 node scripts/ai-eval/lib/khoaKhe.mjs giu "$CHU" "do cong A mmproj" --co-dung tmp/dung-khoa-ca-$$ > $O/khoa.log 2>&1 & KHOA=$!
 sleep 2
 pid3013() { powershell.exe -NoProfile -Command "(Get-NetTCPConnection -LocalPort 3013 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess" | tr -d '\r'; }
@@ -29,10 +27,10 @@ e2e() {
 }
 
 doMot() { # $1 nhãn, $2 basename model, $3 auto|off, $4 lệnh pha Y, $5 lệnh thêm (e2e)
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai/start-llama-server.ps1 -EnvFile "$TW\\do-cong-a-$3-$$.env" -Force -Model "$2" > $O/sp-$1.log 2>&1
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai/start-llama-server.ps1 -EnvFile 'D:\SOURCES\avi-aoi-management\.env' -ChonMmproj "$3" -Force -Model "$2" > $O/sp-$1.log 2>&1
   log "$1: start-llama-server rc=$?"
   local logErr; logErr=$(tr -d '\r' < $O/sp-$1.log | sed -n 's/.*log *: *\(.*\)\.out\.log.*/\1.err.log/p' | tail -1)
-  log "$1: /props modalities = $(curl -s -m 5 http://127.0.0.1:8091/props | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).modalities))}catch{console.log("?")}})') · $(cmdl | grep -o -- '--mmproj [^ ]*' || echo 'không --mmproj') · $(cmdl | grep -o -- '--cache-ram [0-9]*')"
+  log "$1: /props modalities = $(node scripts/ai-eval/lib/goi-llama.mjs /props | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).modalities))}catch{console.log("?")}})') · $(cmdl | grep -o -- '--mmproj [^ ]*' || echo 'không --mmproj') · $(cmdl | grep -o -- '--cache-ram [0-9]*')"
   rm -f $O/dung-$1
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-eval/bo-nho/lay-mau-bo-nho.ps1 -Csv "$O/bn-$1.csv" -Dung "$O/dung-$1" -Log "$logErr" -Giay 10 > /dev/null 2>&1 & local MAU=$!
   ( while [ ! -f $O/dung-$1 ]; do echo "$(date +%T),$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | tr -d '\r ')"; sleep 2; done ) > $O/vram-$1.csv & local VR=$!
@@ -58,7 +56,7 @@ doMot A35 Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf auto "$ANH" e2e
 doMot O35 Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf off "$CHU_Y"
 doMot A27 Qwen3.6-27B-UD-Q4_K_XL.gguf auto "$ANH"
 doMot O27 Qwen3.6-27B-UD-Q4_K_XL.gguf off "$CHU_Y"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$M35' -GiuKhoa '$CHU'" > $O/ve-nha.log 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'scripts/ai-eval/codegen-chay-duoc/doi-model.ps1' -Model '$M35' -GiuKhoa '$CHU'; exit \$LASTEXITCODE" > $O/ve-nha.log 2>&1
 log "về 35B: rc=$? $(tr -d '\r' < $O/ve-nha.log | grep -E 'SAN SANG|HET GIO' | tr '\n' ' ')"
 node scripts/ai-eval/lib/khoaKhe.mjs dung tmp/dung-khoa-ca-$$; wait $KHOA 2>/dev/null
 echo EXIT=0

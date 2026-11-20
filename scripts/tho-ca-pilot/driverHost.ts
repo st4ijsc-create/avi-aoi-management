@@ -22,6 +22,7 @@ import { chuanDuong, kiemDiffTheoThe, vungCamCua, type TheViec } from "./theViec
 import { chayLenhKiem, loaiUrlCsdl, xoaGiaTriBiMat, type ChayKiem, type KetQuaKiem } from "./kiemChung";
 import type { DauVaoDriver, KetQuaDriver } from "./chayMotViec";
 import type { GioiHanLuotChoDriver } from "./tranLuot";
+import type { PhuThuocQuanLy } from "../../server/services/ai/agent/quanLyLuotChay";
 
 export const NHAN_PILOT = "pilot-tho-ca";
 /** nhãn trong loiCongCu cho từ chối KHÔNG phải lỗi công cụ: bộ chạy tự từ chối (lọc trước) · người duyệt từ chối · hết hạn chờ người */
@@ -479,13 +480,15 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
 export interface CauHinhHostThat {
   nguoi: { id: number; role: string; name?: string | null };
   chinhSachDuyet?: ChinhSachDuyet;
+  /** CHỈ ĐỂ TIÊM TRONG TEST: trộn vào bộ quản lý lượt MỚI dựng khi thẻ có trần (`taoQuanLyLuotChay({ ...phuThuocQuanLy, gioiHan })`); không áp cho bộ dùng chung, không đọc biến môi trường; vắng ⇒ hành vi thật không đổi. */
+  phuThuocQuanLy?: Partial<PhuThuocQuanLy>;
 }
 
 export async function phuThuocHostThat(c: CauHinhHostThat): Promise<PhuThuocHost> {
-  const { quanLyLuotChay } = await import("../../server/services/ai/agent/quanLyLuotChay");
+  const { quanLyLuotChay, taoQuanLyLuotChay } = await import("../../server/services/ai/agent/quanLyLuotChay");
   const tt = await import("../../server/services/ai/agent/thuTucLuotChay");
   const tk = await import("../../server/services/ai/agent/thuTucKeHoach");
-  // HA-3: trần lượt do khoá thẻ ⇒ dựng quản lý lượt với `gioiHan` đó (chỉ khi thẻ có khoá; mặc định giữ quản lý không tham số)
+  // HA-3: trần lượt do khoá thẻ ⇒ dựng quản lý lượt MỚI bằng `taoQuanLyLuotChay({ gioiHan })` (chỉ khi thẻ có khoá; mặc định giữ bộ dùng chung `quanLyLuotChay()`)
   let ql = quanLyLuotChay();
   return {
     async kiemMoiTruong(v) {
@@ -515,7 +518,8 @@ export async function phuThuocHostThat(c: CauHinhHostThat): Promise<PhuThuocHost
       return null;
     },
     async taoLuot(y) {
-      if (y.gioiHan) ql = quanLyLuotChay({ gioiHan: y.gioiHan });
+      // `quanLyLuotChay()` KHÔNG nhận tham số (bộ dùng chung); `taoQuanLyLuotChay({ gioiHan })` mới dựng bộ có trần. Các thủ tục duyệt/bác/kế hoạch không dùng bộ quản lý (bus theo actionId/runId ở mức module) nên không cần truyền `ql`.
+      if (y.gioiHan) ql = taoQuanLyLuotChay({ ...c.phuThuocQuanLy, gioiHan: y.gioiHan });
       const kq = await ql.taoLuotChay({ user: c.nguoi, cauHoi: y.cauHoi, projectId: y.projectId, cheDo: "sua", lichSu: [], ngonNgu: "vi" });
       return kq.ok ? { ok: true, runId: kq.luot.id } : { ok: false, loi: `${kq.ma}${kq.thongDiep ? `: ${kq.thongDiep}` : ""}` };
     },
@@ -563,7 +567,7 @@ export function bamKhoaKyTam(env: Record<string, string | undefined>): { ok: boo
 }
 
 /** Khoá đếm lỗi công cụ: `ma` của kết quả tool (vd CHECKPOINT_LOI); nếu tóm tắt nêu thêm một mã IN HOA (vd KHONG_CO_KHOA) thì `ma:MÃ`. Thuần. */
-export function keLoiCongCu(e: { ma?: unknown; tomTat?: unknown }): string {
+export function keLoiCongCu(e: { ma?: unknown; tomTat?: unknown; [khoa: string]: unknown }): string {
   const ma = typeof e.ma === "string" && e.ma !== "" ? e.ma : "KHONG_RO";
   const tt = typeof e.tomTat === "string" ? e.tomTat : "";
   const m = /\b([A-Z][A-Z0-9]*_[A-Z0-9_]{2,})\b/.exec(tt);

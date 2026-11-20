@@ -68,7 +68,7 @@ describe("kiemDiffTheoThe — chỉ sửa tệp được phép", () => {
   });
 });
 
-import { quetChamDb, tepTestTrongLenh } from "./theViec";
+import { quetChamDb } from "./theViec";
 
 describe("quetChamDb — quét NỘI DUNG (luật 2026-11-02), không chỉ tên .db.test", () => {
   it("★ test tên thường nhưng import getDb / postgres / drizzle / db/* / mock db / DATABASE_URL ⇒ chạm DB", () => {

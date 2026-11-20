@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { cheTokenCoTienTo } from "../../shared/mauBiMat";
 import type { KetQuaDotBien } from "./dotBien";
+import type { GioiHanLuotChoDriver, TranLuotKetQua } from "./tranLuot";
 
 /**
  * Môi trường cho tiến trình CON do bộ chạy chạy (lệnh kiểm, tsc, đột biến): chạy mã do MODEL viết ⇒ KHÔNG được thừa kế bí mật của tiến trình pilot
@@ -395,6 +396,42 @@ export function demTepTest(wt: string, tepDoi: readonly string[]): Array<{ duong
     }
   }
   return ra;
+}
+
+// ── Lượt sửa tsc (một lượt, sau L3c; thẻ phải có khoá `LƯỢT SỬA TSC: 1`). Cả bốn hàm THUẦN. ──
+
+/** Có đáng cho lượt sửa không: thẻ xin VÀ tsc đỏ thật (không phải hết giờ / không khởi chạy được) trong tệp model đổi. */
+export function canSuaTsc(xin: boolean | undefined, t: KetQuaTsc | null): boolean {
+  return xin === true && t !== null && !t.hetGio && !t.loi && t.loiTrongTep.length > 0;
+}
+
+/**
+ * Ngân sách lượt sửa = phần CÒN LẠI của trần thẻ (không cộng thêm). null ⇒ không cho lượt sửa: thẻ không có khoá TRẦN LƯỢT MODEL, có TRẦN TOKEN RA (không trừ được),
+ * không biết số lượt đã dùng, hoặc còn dưới 2 lượt model / 30 s (không đủ để sửa rồi kiểm).
+ */
+export function nganSachSuaTsc(tran: TranLuotKetQua | null, hanGiay: number, daDungLuot: number | null, giayModel: number): { gioiHan: GioiHanLuotChoDriver; hanGiay: number } | null {
+  if (!tran?.apDungTuThe || tran.khoaThe.luotModel === null || tran.tokenRaThucDung !== null || daDungLuot === null) return null;
+  const luot = tran.luotThucDung - daDungLuot;
+  const giay = Math.floor(hanGiay - giayModel);
+  return luot < 2 || giay < 30 ? null : { gioiHan: { soLuotToiDa: luot, msToiDa: giay * 1000 }, hanGiay: giay };
+}
+
+/** Lời nhắc lượt sửa: CHỈ câu dặn + đường tệp + dòng lỗi tsc NGUYÊN VĂN của tệp trong `tepOk` (tệp đổi VÀ được phép; không gợi ý cách sửa). Không còn dòng lỗi nào ⇒ null. */
+export function loiNhacSuaTsc(ma: string, tepDuocPhep: readonly string[], tepOk: readonly string[], lenhKiem: string, loiTrongTep: readonly string[]): string | null {
+  const giu = loiTrongTep.filter((d) => tepOk.some((t) => d.startsWith(`${t.replace(/\\/g, "/")}(`)));
+  return giu.length === 0 ? null : [`MÃ: ${ma}`, `TỆP ĐƯỢC PHÉP SỬA/TẠO: ${tepDuocPhep.join(", ")}`, `LỆNH KIỂM: ${lenhKiem}`, "Sửa lỗi kiểu, đừng đổi hành vi hay kỳ vọng.", ...giu].join("\n");
+}
+
+/** Chốt chống "sửa kiểu bằng cách bỏ ca": tệp test nào bị mất ca hoặc biến mất sau lượt sửa ⇒ "tệp: trước→sau". Rỗng = không giảm. */
+export function caTestGiam(truoc: ReadonlyArray<{ duong: string; soCa: number }>, sau: ReadonlyArray<{ duong: string; soCa: number }>): string[] {
+  const s = new Map(sau.map((t) => [t.duong, t.soCa]));
+  return truoc.filter((t) => (s.get(t.duong) ?? 0) < t.soCa).map((t) => `${t.duong}: ${t.soCa}→${s.get(t.duong) ?? 0}`);
+}
+
+/** Chốt thứ hai (it.each đếm 1 cho cả bảng): sau lượt sửa, số lần `.each(` và `expect(` (gộp mọi tệp test) không được GIẢM. THUẦN; trả "tên: trước→sau". */
+export function soDemGiam(truoc: string, sau: string): string[] {
+  const dem = (s: string, re: RegExp) => (s.match(re) ?? []).length;
+  return ([["số lần `.each(`", /\.each\(/g], ["số lần `expect(`", /\bexpect\(/g]] as const).flatMap(([ten, re]) => (dem(sau, re) < dem(truoc, re) ? [`${ten}: ${dem(truoc, re)}→${dem(sau, re)}`] : []));
 }
 
 export type ChayKiem = (lenh: string, wt: string, hanGiay: number) => Promise<KetQuaKiem>;

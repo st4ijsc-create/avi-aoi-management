@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * F5: tạo tệp khoá cho `--api-key-file` của llama-server. Khoá ngẫu nhiên 32 byte, chỉ in 4 ký tự cuối.
+ * F5: tạo tệp khoá cho `--api-key-file` của llama-server. Khoá ngẫu nhiên 32 byte. Không in ký tự nào của khoá: chỉ in vân tay
+ * = 16 hex đầu của sha256(khoá) (lô D1-script; bản cũ in 4 ký tự cuối).
  *
  *   node scripts/ai/tao-khoa-llama.mjs <đường tệp ngoài repo>
  *
@@ -72,6 +73,12 @@ export function taoKhoa() {
   return crypto.randomBytes(32).toString("base64url");
 }
 
+/** Dòng báo sau khi tạo: đường + vân tay sha256[0:16]. Không chứa ký tự nào của khoá. */
+export function dongDaTao(p, khoa) {
+  const vanTay = crypto.createHash("sha256").update(khoa).digest("hex").slice(0, 16);
+  return `đã tạo ${p}, vân tay sha256 ${vanTay}`;
+}
+
 export function datQuyen(p) {
   if (process.platform !== "win32") return fs.chmodSync(p, 0o600);
   const r = spawnSync("icacls", [p, "/inheritance:r", "/grant:r", `${os.userInfo().username}:F`], { encoding: "utf8", windowsHide: true });
@@ -116,5 +123,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.error(`không đặt được quyền, đã xoá tệp: ${e?.message ?? e}`);
     process.exit(2);
   }
-  console.log(`đã tạo ${p}, khoá kết thúc bằng ...${khoa.slice(-4)}`);
+  console.log(dongDaTao(p, khoa));
 }
