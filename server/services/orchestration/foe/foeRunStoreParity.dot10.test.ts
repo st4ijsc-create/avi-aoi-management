@@ -2775,6 +2775,40 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(tienTo.length + m.heldAdvice!("x".repeat(500), true, true).length).toBeLessThan(800);
   });
 
+  // ── X-37 (giấy tam/x37-pham-vi-2.md; đo mut_x37a): cổng X-27 (1) của driveRunFromResume trên NÚT — lượt STOP đầu của đoạn sau một Continue có người ném ⇒ bù trừ
+  // không phải STOP đã duyệt KHÔNG tới adapter. Ca edge duy nhất giữ cổng này ở một khẳng định an toàn (G1: cổng chỉ chạy ở trung tâm). Mốc hình chỉ gồm điều không phụ thuộc
+  // cổng. Chữ X-27 (1) bị cắt ở trung tâm: giới hạn X27-EDGE-CHU-CAT, không ghim ──
+  it("X37-X27-NUT cổng X-27 (1) trên nút: lượt STOP đầu của đoạn 3 ném sau Continue có người ⇒ undo (bù trừ không STOP đã duyệt) KHÔNG tới adapter; kết đoạn held mang câu X-27 (1) nguyên của nút; dấu claim3", async () => {
+    const box = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "sequence", steps }) as never;
+    const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    seedHalt();
+    h.ghim = PIN_OK;
+    try {
+      const e = await edgeAssignedRun(def("x37-x27", [gate(), par46("p", [otStop("xs"), box("b", [delay("w", 50), move("x", { compensation: ot("undo") })])])]));
+      await edgeSegment(e, 1);
+      await approveEdgeGate(e);
+      h.timeoutDispatch.add("x");
+      await edgeSegment(e, 2).finally(() => h.timeoutDispatch.delete("x"));
+      await cho46(30);
+      expect((await continueOutcomeUnknown(e, "checked on site")).status, "the shape: a person's Continue").toBe("queued");
+      e.sweepNem = true;
+      const s3 = await edgeSegment(e, 3).finally(() => {
+        e.sweepNem = false;
+      });
+      await cho46(30);
+      expect(e.sweepLan ?? 0, "the shape: the first STOP pass threw").toBeGreaterThan(0);
+      expect(h.sent.every((s) => s.runId === e.runId), "the shape: every hand-over is this run's").toBe(true);
+      expect(cua46(e.runId, "undo"), "no compensation that is not a STOP reached the adapter while the first STOP pass threw").toHaveLength(0);
+      expect(s3.out.outcome).toBe("held");
+      expect(String(s3.out.error ?? "")).toMatch(new RegExp(`^A Continue of run ${e.runId} sent no approved compensation that is not a STOP: its STOP pass failed[^]*That approval is spent`));
+      expect(ctx46(e.runId)[KET_CUC_KHONG_RO_CTX_KEY]).toMatchObject({ lan: "claim3", ds: [{ stepId: "x", compId: "undo" }] });
+    } finally {
+      h.timeoutDispatch.delete("x");
+      err.mockRestore();
+    }
+  });
+
   it("T4-B3-O20-F4 (N13) EDGE journalFull: cst compensated at the hold; after a plain Continue and segment 3 the row of r1 is closed (failed, EDGE_OUTCOME_UNKNOWN), never left running on a failed run", async () => {
     const { e } = await giu46(dinhNghiaStop("d46-n13"));
     expect(hang46(e.runId, "cst"), "cst went at the hold").toMatchObject({ status: "compensated" });
