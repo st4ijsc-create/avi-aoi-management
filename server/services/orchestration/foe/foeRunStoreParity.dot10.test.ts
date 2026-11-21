@@ -2449,6 +2449,8 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
   const OFF46 = { status: "failed", error: "ADAPTER_OFFLINE", detail: { edge: true, stop: true, pinnedStop: true, reason: "ADAPTER_OFFLINE" } };
   const CAU46 = " — nothing further was sent except the run's STOPs due (each STOP's row and URGENT say whether it reached the device or was only simulated); Continue to resume it, or Abort to send the run's STOPs again.";
   const CAU_CU46 = " — nothing further was sent; Continue to resume it.";
+  /** X-35 — a hold a plain Continue is refused at (a compensation waits for a person): the way out a person and a reason, the STOP words of QĐ-O20a kept */
+  const CAU46_NGUOI = " — nothing further was sent except the run's STOPs due (each STOP's row and URGENT say whether it reached the device or was only simulated); Continue needs a person and a reason; Abort sends the run's STOPs again.";
   const par46 = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
   const dTien46 = (ref: string) => def(ref, [gate(), move("r1", { maxAttempts: 2, compensation: ot("c1") }), move("r2"), otStop("s9")]);
   const dPar46 = (ref: string) => def(ref, [gate(), par46("p", [move("m0"), otStop("s")])]);
@@ -2646,7 +2648,131 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     const a = await giu46(dinhNghiaStop("d46-n12a"));
     expect(String(runRow(a.e.runId).error ?? "").endsWith(CAU46), String(runRow(a.e.runId).error)).toBe(true);
     const b = await giu46(dTien46("d46-n12b"));
-    expect(String(runRow(b.e.runId).error ?? "").endsWith(CAU46), String(runRow(b.e.runId).error)).toBe(true);
+    // X-35 — r1 (compensation c1, not a STOP) waits for a person: a plain Continue is refused there (X35-KE4 B), so the words say a person, the STOP words kept
+    expect(String(runRow(b.e.runId).error ?? "").endsWith(CAU46_NGUOI), String(runRow(b.e.runId).error)).toBe(true);
+  });
+
+  // ── X-35 (giấy tam/x35-pham-vi-4.md + tam/x35-pham-vi-4-ghi-chu-2.md; thăm dò X35-KE3 … KE7): đuôi lời held của một đoạn edge nói "cần người + lý do" KHI VÀ CHỈ KHI Continue thường ngay sau hold bị từ chối;
+  // nhãn hiển thị outcomeUnknown khi lý do mặc định của nút mà run đã chốt. Lý do (`reason`), dấu, danh sách chờ, đường Continue: KHÔNG đổi ──
+  const boQuyen35 = () => fake.store.set("permissions", rows("permissions").filter((p) => !(p.userId === OTHER.id && p.moduleName === "machine_control")));
+  const khongRoCho35 = async (runId: number) => (await getRun(runId, { bindingDigest: true }))?.khongRoCho ?? null;
+
+  it("X35-KHONG-AI-CHO hold có STOP đã đi mà không ai chờ (bù trừ là STOP, như N13): đuôi cũ, Continue THƯỜNG được nhận", async () => {
+    const { e } = await giu46(dinhNghiaStop("x35-khong-ai-cho"));
+    expect(runRow(e.runId).status, "the shape: held").toBe("held");
+    expect(await khongRoCho35(e.runId), "nobody waits").toEqual([]);
+    expect(String(runRow(e.runId).error ?? "").endsWith(CAU46), String(runRow(e.runId).error)).toBe(true);
+    boQuyen35();
+    expect((await tiepThuong46(e)).status, "a plain Continue is taken").toBe("queued");
+  });
+
+  it("X35-B-CAN-NGUOI hold kết cục không rõ đầu tiên, bù trừ c1 không STOP (dTien46): đuôi 'cần người'; Continue không quyền ⇒ FORBIDDEN, có quyền không lý do ⇒ FIELD_REQUIRED, có người + lý do ⇒ queued", async () => {
+    const { e } = await giu46(dTien46("x35-b-can-nguoi"));
+    expect(await khongRoCho35(e.runId), "the shape: r1 waits for a person").toEqual(["r1"]);
+    const loi = String(runRow(e.runId).error ?? "");
+    expect(loi.endsWith(CAU46_NGUOI), loi).toBe(true);
+    expect(loi).not.toContain("Continue to resume it");
+    boQuyen35();
+    await expect(tiepThuong46(e)).rejects.toThrow(/only a person with machine-control rights/);
+    grantMachineControl();
+    await expect(tiepThuong46(e)).rejects.toThrow(/A reason is required/);
+    expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+  });
+
+  it("X35-HANG-NOI-CHO hold lần hai sau Continue có người, kết quả của bù trừ c1 mất ở nhật ký (X35-KE7 M3): không dấu, hàng / sổ nói r1 chờ người ⇒ đuôi 'cần người', Continue thường ⇒ FORBIDDEN", async () => {
+    const { e } = await giu46(dTien46("x35-hang-noi-cho"));
+    expect((await continueOutcomeUnknown(e, "checked on site")).status, "the shape: a person's Continue").toBe("queued");
+    e.refuse = (rec) => rec.kind === "step" && rec.stepId === "c1" && typeof (rec.result as { routedTo?: unknown } | null)?.routedTo === "string";
+    try {
+      await edgeSegment(e, 3);
+    } finally {
+      e.refuse = undefined;
+    }
+    await cho46();
+    expect(runRow(e.runId).status, "the shape: held again").toBe("held");
+    expect(ctx46(e.runId)[KET_CUC_KHONG_RO_CTX_KEY] ?? null, "the shape: no marker (the approved pair went: daGui)").toBeNull();
+    expect(await khongRoCho35(e.runId), "the rows say r1 waits").toEqual(["r1"]);
+    const loi = String(runRow(e.runId).error ?? "");
+    expect(loi, "the words say a person").toContain("Continue needs a person and a reason");
+    expect(loi.length).toBeLessThan(800);
+    boQuyen35();
+    await expect(tiepThuong46(e)).rejects.toThrow(/only a person with machine-control rights/);
+  });
+
+  it("X35-NHAN-CHOT hold mất kết nối ở đoạn sau trên run ĐÃ chốt (c1 không xin được uỷ quyền, X35-KE6 M2): nhãn hiển thị outcomeUnknown ở lời / edgeHeld / interruptedBy; dấu {r1, c1} không đổi", async () => {
+    const { e } = await giu46(dTien46("x35-nhan-chot"));
+    expect((await continueOutcomeUnknown(e, "checked on site")).status, "the shape: a person's Continue").toBe("queued");
+    e.offlineSteps = new Set(["c1"]);
+    const s3 = await edgeSegment(e, 3).finally(() => {
+      e.offlineSteps = undefined;
+    });
+    await cho46();
+    expect(s3.out.heldReason, "the shape: the node's own reason").toBe("centralUnreachable");
+    expect(String(runRow(e.runId).error ?? "")).toMatch(new RegExp(`^Edge node EDGE-A held run ${e.runId} \\(outcomeUnknown\\): `));
+    expect(ctx46(e.runId)).toMatchObject({ edgeHeld: "outcomeUnknown", interruptedBy: "edge held: outcomeUnknown" });
+    expect(ctx46(e.runId)[KET_CUC_KHONG_RO_CTX_KEY]?.ds, "the marker is central's, unchanged").toEqual([{ stepId: "r1", compId: "c1" }]);
+  });
+
+  it("X35-STATE-C-TRUOC-CAN-NGUOI hold state C (s9 bị từ chối ở hold, hình N10) trong khi r1 chờ người: lời state C, không thêm câu 'cần người', không 'Continue to resume it'", async () => {
+    const { e } = await giu46(dTien46("x35-state-c"), { tuChoi: "s9" });
+    expect(await khongRoCho35(e.runId), "the shape: r1 waits for a person").toEqual(["r1"]);
+    const loi = String(runRow(e.runId).error ?? "");
+    expect(loi).toMatch(/FOE_STOP_NOT_SENT: STOP "s9"/);
+    expect(loi).not.toContain("Continue needs a person and a reason");
+    expect(loi).not.toContain("Continue to resume it");
+  });
+
+  it("X35-X27-NHAN-DUOI hold X-27 (1) của nút (lượt STOP đầu ném sau Continue có người, hình X35-KE3 S1) trên run ĐÃ chốt: nhãn outcomeUnknown, đuôi 'cần người'; Continue có quyền không lý do ⇒ FIELD_REQUIRED", async () => {
+    const box = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "sequence", steps }) as never;
+    const delay = (id: string, ms: number): WorkflowStep => ({ id, type: "delay", ms }) as never;
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    seedHalt();
+    h.ghim = PIN_OK;
+    try {
+      const e = await edgeAssignedRun(def("x35-x27", [gate(), par46("p", [otStop("xs"), box("b", [delay("w", 50), move("x", { compensation: ot("undo") })])])]));
+      await edgeSegment(e, 1);
+      await approveEdgeGate(e);
+      h.timeoutDispatch.add("x");
+      await edgeSegment(e, 2).finally(() => h.timeoutDispatch.delete("x"));
+      await cho46(30);
+      expect((await continueOutcomeUnknown(e, "checked on site")).status, "the shape: a person's Continue").toBe("queued");
+      e.sweepNem = true;
+      const s3 = await edgeSegment(e, 3).finally(() => {
+        e.sweepNem = false;
+      });
+      await cho46(30);
+      expect(s3.out.heldReason, "the shape: the node's own reason").toBe("centralUnreachable");
+      const loi = String(runRow(e.runId).error ?? "");
+      expect(loi, "the shape: X-27 (1) on the node").toContain(`A Continue of run ${e.runId} sent no approved compensation that is not a STOP`);
+      expect(loi).toMatch(new RegExp(`^Edge node EDGE-A held run ${e.runId} \\(outcomeUnknown\\): `));
+      expect(ctx46(e.runId)).toMatchObject({ edgeHeld: "outcomeUnknown", interruptedBy: "edge held: outcomeUnknown" });
+      expect(loi).toContain("Continue needs a person and a reason");
+      expect(loi.length).toBeLessThan(800);
+      grantMachineControl();
+      await expect(tiepThuong46(e)).rejects.toThrow(/A reason is required/);
+    } finally {
+      h.timeoutDispatch.delete("x");
+      err.mockRestore();
+    }
+  });
+
+  it("X35-CHUA-CHOT-MAT-KET-NOI hold mất kết nối trên run CHƯA chốt, không ai chờ: nhãn centralUnreachable, đuôi cũ", async () => {
+    const e = await edgeAssignedRun(def("x35-chua-chot", [ot("m1")]));
+    runRow(e.runId).status = "running";
+    const d = rows("orchestration_workflows").find((w) => w.id === runRow(e.runId).workflowId)!.definitionJson as WorkflowDefinition;
+    expect(await applyEdgeSegmentEnd(fake as never, e.runId, { nodeCode: "EDGE-A", claimSeq: 1, def: d, outcome: "held", heldReason: "centralUnreachable" } as never)).toMatchObject({ status: "held", changed: true });
+    expect(String(runRow(e.runId).error)).toBe(`Edge node EDGE-A held run ${e.runId} (centralUnreachable)${CAU_CU46}`);
+    expect(ctx46(e.runId)).toMatchObject({ edgeHeld: "centralUnreachable", interruptedBy: "edge held: centralUnreachable" });
+  });
+
+  it("X35-TRAN-800 lời held edge xấu nhất với đuôi 'cần người' vẫn dưới 800: tiền tố 583 (tên nút cắt 16, runId serial int4 drizzle/schema/orchestration.ts:54 = 10 chữ số, lý do cắt 32, lời 500) + đuôi 213; thêm chữ nào ở tiền tố / đuôi là phá trần, đổi kiểu id thì ca đỏ là đúng ý", async () => {
+    const m = (await import("./foeRunStore")) as unknown as { heldAdvice?: (error: string | undefined, stopDaDi?: boolean, canNguoi?: boolean) => string; chuGiuEdge: (nodeCode: string, runId: number, reason: string, loi: string | undefined) => string };
+    expect(typeof m.heldAdvice, "heldAdvice is a function of the module").toBe("function");
+    const tienTo = m.chuGiuEdge("N".repeat(40), 2147483647, "r".repeat(60), "x".repeat(500));
+    expect(tienTo.length).toBe(583);
+    expect(m.heldAdvice!("x".repeat(500), true, true).length, "the tail with the STOP words").toBe(213);
+    expect(m.heldAdvice!("x".repeat(500), false, true).length, "the tail without them").toBe(75);
+    expect(tienTo.length + m.heldAdvice!("x".repeat(500), true, true).length).toBeLessThan(800);
   });
 
   it("T4-B3-O20-F4 (N13) EDGE journalFull: cst compensated at the hold; after a plain Continue and segment 3 the row of r1 is closed (failed, EDGE_OUTCOME_UNKNOWN), never left running on a failed run", async () => {

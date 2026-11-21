@@ -549,6 +549,7 @@ const DONG_BANG: readonly DongDongBang[] = [
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "held", dang: "goi:khoaC", chu: "khoaC(hang)", ma: "MOI-44", lyDo: "X-38 (edge): kết đoạn held ghi foeStopChuaRaNut (khoaC) cho đoạn sau của nút" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "congCuoi", dang: "goi:khoaC", chu: "khoaC(hang)", ma: "MOI-45", lyDo: "X-38 (edge): kết terminal DỌN foeStopChuaRaNut (khoaC) khi khoá đã có" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "applyEdgeSegmentEnd", dang: "goi:khoaC", chu: "khoaC(awaitdb.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId,runId)))", ma: "MOI-46", lyDo: "X-38 (edge): kết đoạn paused ghi foeStopChuaRaNut (khoaC) khi khoá đổi; một SELECT trong giao dịch" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "held", dang: "goi:edgeResumeStateOf", chu: "edgeResumeStateOf(end.def,hang,daUyQuyen,ou,stops)", ma: "MOI-47", lyDo: "X-35: đuôi lời held của đoạn edge nói \"cần người + lý do\" theo CÙNG hai sự kiện resumeRun đọc (dấu ∪ trạng thái tiếp tục từ hàng + sổ, X35-HANG-NOI-CHO); chỉ chữ hiển thị, không quyết STOP" },
   { tep: "server/services/edge/edgeGatewayRuntime.ts", ham: "releaseAlert", dang: "!==", chu: "code!==\"EDGE_DEVICE_RELEASED\"", ma: "MOI-3", lyDo: "`code` là kiểu hợp literal của chính hàm; chỉ chọn có in console.error" },
   { tep: "server/services/edge/edgeGatewayRuntime.ts", ham: "quiesceRobot", dang: ".split", chu: "d.reason??\"?\".split(\":\")", ma: "MOI-4", lyDo: "mã lý do detach (có cấu trúc) ⇒ khoá chống lặp cảnh báo attach; không quyết STOP" },
   { tep: "server/services/edge/edgeJournal.ts", ham: "parseLine", dang: "JSON.parse", chu: "JSON.parse(text)", ma: "E-8", lyDo: "dòng journal JSONL do chính nút ghi; hỏng ⇒ JournalCorrupt (ném)" },
@@ -752,10 +753,11 @@ const DONG_BANG: readonly DongDongBang[] = [
 // QUYET_DINH_MOC lần 7 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-20; hàng X-32c): mốc = 185 = 183 + 2 (MOI-39, MOI-40: kiemKhoa của edgeCoordinator, ảnh sau ghi của payload). Ghim lại phần tử đầu.
 // QUYET_DINH_MOC lần 8 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-21; hàng X-38, commit 1): mốc = 187 = 185 + 2 (MOI-41 stopTrangThaiC gọi laHangMaChuaRa; MOI-42 lapKeHoachStop gọi stopTrangThaiC). Ghim lại phần tử đầu.
 // QUYET_DINH_MOC lần 9 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-21; hàng X-38, commit 2): mốc = 191 = 187 + 4 (MOI-43 khoaC gọi stopTrangThaiC; MOI-44 held, MOI-45 congCuoi, MOI-46 applyEdgeSegmentEnd gọi khoaC — khoaC vào HAM_TRUNG_GIAN). Ghim lại phần tử đầu.
-const MOC_GOC = 191;
-const LICH_SU_MOC: readonly number[] = [191];
+// QUYET_DINH_MOC lần 10 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-21; hàng X-35; HST quyết 11:42, mốc đo ở lượt xanh): mốc = 192 = 191 + 1 (MOI-47 held gọi edgeResumeStateOf cho đuôi "cần người"). Ghim lại phần tử đầu.
+const MOC_GOC = 192;
+const LICH_SU_MOC: readonly number[] = [192];
 /** Mốc số dòng đóng băng: bằng phần tử cuối của `LICH_SU_MOC`, chỉ được GIẢM. */
-const SO_DONG_MOC = 191;
+const SO_DONG_MOC = 192;
 
 /**
  * HST 14/11 T2-DK1 — "ngoài tầm" không được thành "ngoài sổ". 21 ô của bảng kiểm kê mà census KHÔNG bắt được (không có phép so chữ để bắt:

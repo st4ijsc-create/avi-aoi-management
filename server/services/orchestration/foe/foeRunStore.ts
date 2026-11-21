@@ -48,7 +48,7 @@ import { toRobotJob } from "../../equipment/robotJobMapping";
 import { readEdgeAssignment } from "../../edge/edgeExecutionSchema"; // A2(n) T8 lượt sửa 1 (CHAN-3) — a run given to an edge node: its claim's progress is its heartbeat; lượt sửa 2 (CHAN-4): through the shared read (0370 missing ⇒ no edge)
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, BUOC_KHONG_XAC_DINH, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, daDuyetBuTruKhongRo, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, STOP_CHUA_RA_CTX_KEY, tachBaoCaoKhongRoEdge, docDsKhongRoEdge, TRAN_LOI_EDGE, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, rutGonGiua, TRAN_TEN_NUT, TRAN_LY_DO, VI_KHONG_BAO, CAU_TAY_MAY, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, BUOC_KHONG_XAC_DINH, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, daDuyetBuTruKhongRo, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, buTruKhongRoCho, STOP_CHUA_RA_CTX_KEY, tachBaoCaoKhongRoEdge, docDsKhongRoEdge, TRAN_LOI_EDGE, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, rutGonGiua, TRAN_TEN_NUT, TRAN_LY_DO, VI_KHONG_BAO, CAU_TAY_MAY, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 import { edgeStepAuthorizations } from "../../edge/edgeControlSchema"; // T9 lượt sửa 3e — central's authorisation ledger (0372), read at an edge segment end (SELECT only)
 import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
@@ -2053,7 +2053,7 @@ export { EDGE_HELD_CTX_KEY };
  * a2n round C — the end of a held run's error: what a person may do with it. Every hold keeps "Continue to resume it", except two. MIX ends failed without its forward STOP: it says
  * Abort, because Abort is the way out there. B5 fails the step, the run is latched by it and the walk's STOP pass sends the verified STOPs behind it (measured): it says so.
  */
-function heldAdvice(error: string | undefined, stopDaDi = false): string {
+export function heldAdvice(error: string | undefined, stopDaDi = false, canNguoi = false): string {
   // A2(n) T5 (N9, H1) — state C carries its own way out, Abort: "Continue to resume it" would be false
   if (error?.startsWith(`${FOE_STOP_NOT_SENT}:`)) return "";
   const mark = edgeHoldMarkOf(error);
@@ -2062,6 +2062,9 @@ function heldAdvice(error: string | undefined, stopDaDi = false): string {
   // data-raw-ok: as above
   if (mark === EDGE_HOLD_UNUSED_NOT_REPORTED) return " Central counts that step as possibly sent. Continue fails that step, sends nothing forward, and sends the verified STOPs behind it. Abort sends them too.";
   // data-raw-ok: as above. QĐ-O20a — a STOP of this run went (its row says so: a held segment's pass sends the STOPs due), so "nothing further" alone would be false
+  // X-35 — a compensation waits for a person (the marker resumeRun reads, buTruKhongRoCho): the way out is a person and a reason, never "Continue to resume it"; a STOP of the run that went
+  // keeps its words (QĐ-O20a). ≤ 213 with the STOP words: the error stays under 800 with every input (chuGiuEdge; X35-TRAN-800)
+  if (canNguoi) return `${stopDaDi ? " — nothing further was sent except the run's STOPs due (each STOP's row and URGENT say whether it reached the device or was only simulated);" : " —"} Continue needs a person and a reason; Abort sends the run's STOPs again.`;
   return stopDaDi ? " — nothing further was sent except the run's STOPs due (each STOP's row and URGENT say whether it reached the device or was only simulated); Continue to resume it, or Abort to send the run's STOPs again." : " — nothing further was sent; Continue to resume it.";
 }
 
@@ -2247,24 +2250,33 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     const chotId = ((ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] ?? chotTuBao[KET_CUC_KHONG_RO_CHOT_CTX_KEY] ?? q.chot) as { stepId?: string } | null)?.stepId;
     const benChot = [...baoKhongRo.map((b, i) => [b, daCo[i] as Promise<boolean>] as const), ...phat].filter(([b]) => b.stepId === chotId && (b.loai === "held" || b.loai === "noCompensation") && !b.biet).map(([, p]) => p);
     const daBao = benChot.length > 0 && (await withDeadline(Promise.all(benChot), KET_DOAN_EDGE_TONG_MS, `FOE run ${runId} edge hold URGENT`).then((r) => r.some(Boolean), () => false)) ? { [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: chotId, at } } : {};
+    const dauMoi = dauCu || q.buTruCanNguoi.length > 0 ? { [KET_CUC_KHONG_RO_CTX_KEY]: dauKhongRoTuEdge(end, at, dauCu ? baoKhongRo : [...baoKhongRo, ...dauBu]) } : {};
+    // X-35 — the person a Continue asks for after this hold, from the SAME two facts resumeRun reads (foeEngine getRun khongRoCho, resumeRun khongRoEdge): the marker as it will be
+    // written, and what the rows and the 0372 ledger say the re-walk would write (X35-HANG-NOI-CHO: an approved compensation's result lost in the journal leaves no marker). The ledger
+    // unreadable: no authorisation is read (X35-CANNGUOI-TU-CHOI-HAN — resumeRun then refuses outright)
+    const daUyQuyen = new Set((au ?? []).filter((a) => a.supersededAt == null).map((a) => a.stepId));
+    const canNguoi = [...buTruKhongRoCho({ ...ctx, ...dauMoi }), ...buTruKhongRoCho({ foeResumeState: edgeResumeStateOf(end.def, hang, daUyQuyen, ou, stops).state })].length > 0;
+    // X-35 — the label shown (run error, edgeHeld, interruptedBy): a walker's hold on a LATCHED run carries no reason of its own on the wire (edgeRunStore's default) ⇒ outcomeUnknown.
+    // `reason` itself is unchanged (dauCu above, the marker)
+    const nhan = reason === "centralUnreachable" && runDaChotKhongRo({ ...ctx, ...chotTuBao, ...(q.chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: q.chot } : {}) }) ? "outcomeUnknown" : reason;
     return write("held", {
       currentStepId: null,
       // data-raw-ok: the run's error names the node and the reason code (shown on the run; the Studio keys on edgeHeld)
-      error: `${chuGiuEdge(end.nodeCode, runId, reason, loiHien)}${heldAdvice(loiHien, hang.some((r) => stops.has(r.stepId) && ["daGiao", "coTheDaRa"].includes(dauVetCuaHang(r, r.stepId) ?? "")))}`,
+      error: `${chuGiuEdge(end.nodeCode, runId, nhan, loiHien)}${heldAdvice(loiHien, hang.some((r) => stops.has(r.stepId) && ["daGiao", "coTheDaRa"].includes(dauVetCuaHang(r, r.stepId) ?? "")), canNguoi)}`,
       contextJson: {
         ...ctx,
-        [EDGE_HELD_CTX_KEY]: reason,
+        [EDGE_HELD_CTX_KEY]: nhan,
         [`${EDGE_HELD_CTX_KEY}At`]: at,
         [`${EDGE_HELD_CTX_KEY}Node`]: end.nodeCode,
         interrupted: true,
         interruptedAt: at,
         interruptedFrom: run.status,
-        interruptedBy: `edge held: ${reason}`,
+        interruptedBy: `edge held: ${nhan}`,
         ...(ou.length ? { [OUTCOME_UNKNOWN_KEY]: ou } : {}),
         // R1b-2b-2a A2(n) — held because a command's outcome is unknown and the compensation due is not a pinned STOP: the SAME marker as
         // central's own walk (codes / ids only), so a Continue needs a person with machine-control rights and a reason (resumeRun)
         // A2(n) T5 — state C alone holds no compensation for a person: as central's own walk, no marker. T4 bước 3 (R2 (a), #16) — a command with a compensation in U: the same marker, naming it
-        ...(dauCu || q.buTruCanNguoi.length > 0 ? { [KET_CUC_KHONG_RO_CTX_KEY]: dauKhongRoTuEdge(end, at, dauCu ? baoKhongRo : [...baoKhongRo, ...dauBu]) } : {}),
+        ...dauMoi,
         ...chotTuBao,
         ...(q.chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { ...q.chot, at } } : {}),
         ...daBao,
