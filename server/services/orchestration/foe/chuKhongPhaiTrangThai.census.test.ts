@@ -225,6 +225,7 @@ export const HAM_TRUNG_GIAN: readonly { ten: string; nguon: string; lyDo: string
   { ten: "baoCaoKhongRoTuHang", nguon: "T4 (MOI), A1-36", lyDo: "báo cáo không rõ của đoạn edge chết từ hàng + sổ (edgeResumeStateOf, chữ hàng) ⇒ dấu + URGENT" },
   { ten: "priorStepsOf", nguon: "T4 (MOI), A1-2", lyDo: "settled / attempted từ hàng (laHangChuaRa: chữ FOE_STOP_NOT_SENT) ⇒ bước đã xong hay phải gửi lại" },
   // T4 bước 3 (HST 14/11, mục 4) — hàm thuần tách từ held(): đọc chữ hàng qua stopChuaRaTuHang (nợ STOP) ⇒ U / C / N / S / dấu cần người
+  { ten: "stopTrangThaiC", nguon: "X-38 (MOI)", lyDo: "STOP ở state C, chỉ-STOP: hàng mang mã FOE_STOP_NOT_SENT (laHangMaChuaRa) ∪ khoá foeStopChuaRa ∖ hàng completed ⇒ lượt STOP đầu thử lại" },
   { ten: "quyetDinhKetDoanEdge", nguon: "T4 bước 3 (MOI), A1-3", lyDo: "quyết định cuối đoạn edge: nợ STOP đọc từ chữ hàng (stopChuaRaTuHang) ⇒ URGENT stopNotSent / chốt / dấu cần người" },
 ];
 const TEN_TRUNG_GIAN = new Set(HAM_TRUNG_GIAN.map((h) => h.ten));
@@ -541,6 +542,8 @@ const DONG_BANG: readonly DongDongBang[] = [
   { tep: "server/services/edge/edgeCoordinator.ts", ham: "lyDoDongBoKhoa", dang: "goi:stopChuaRaTuHang", chu: "stopChuaRaTuHang(hang,ctxasRecord<string,unknown>|null)", ma: "B-5", lyDo: "lyDoDongBoKhoa: nợ STOP từ chữ hàng ⇒ từ chối đồng bộ" },
   { tep: "server/services/edge/edgeCoordinator.ts", ham: "kiemKhoa", dang: "goi:chotTuHang", chu: "chotTuHang(gop)", ma: "MOI-39", lyDo: "X-32: ảnh sau ghi của payload (hàng run ghép hàng payload qua bộ lọc vòng ghi) ⇒ từ chối syncRunResult + URGENT edgeSyncRefused" },
   { tep: "server/services/edge/edgeCoordinator.ts", ham: "kiemKhoa", dang: "goi:stopChuaRaTuHang", chu: "stopChuaRaTuHang(gop,sau.ctx)", ma: "MOI-40", lyDo: "X-32: ảnh sau ghi của payload: nợ STOP ⇒ từ chối syncRunResult + URGENT edgeSyncRefused" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "stopTrangThaiC", dang: "goi:laHangMaChuaRa", chu: "laHangMaChuaRa(r,r.stepId)", ma: "MOI-41", lyDo: "X-38: STOP ở state C, chỉ-STOP (mã FOE_STOP_NOT_SENT của hàng chính nó) ⇒ lượt STOP đầu thử lại trước bù trừ không-STOP" },
+  { tep: "server/services/orchestration/foe/foeEngine.ts", ham: "lapKeHoachStop", dang: "goi:stopTrangThaiC", chu: "stopTrangThaiC(src.hang,rc.context)", ma: "MOI-42", lyDo: "X-38: chuDenHan thêm bước có cây bù trừ chứa STOP state C ⇒ thử lại ở lượt đầu, cổng C7-XN đọc kết quả" },
   { tep: "server/services/edge/edgeGatewayRuntime.ts", ham: "releaseAlert", dang: "!==", chu: "code!==\"EDGE_DEVICE_RELEASED\"", ma: "MOI-3", lyDo: "`code` là kiểu hợp literal của chính hàm; chỉ chọn có in console.error" },
   { tep: "server/services/edge/edgeGatewayRuntime.ts", ham: "quiesceRobot", dang: ".split", chu: "d.reason??\"?\".split(\":\")", ma: "MOI-4", lyDo: "mã lý do detach (có cấu trúc) ⇒ khoá chống lặp cảnh báo attach; không quyết STOP" },
   { tep: "server/services/edge/edgeJournal.ts", ham: "parseLine", dang: "JSON.parse", chu: "JSON.parse(text)", ma: "E-8", lyDo: "dòng journal JSONL do chính nút ghi; hỏng ⇒ JournalCorrupt (ném)" },
@@ -742,10 +745,11 @@ const DONG_BANG: readonly DongDongBang[] = [
 // QUYET_DINH_MOC lần 5 (chu-du-an-HST, 2026-11-17, uỷ quyền 17/11; mã X-14/1): mốc = 182 = 181 + 1 (canhBaoStopRunQuaHan gọi chotTuHang, B-6)
 // QUYET_DINH_MOC lần 6 (chu-du-an-HST, 2026-11-18; mã SG-1, hàng X-22): mốc = 183 = 182 + 1 (luật mã bước của main gộp vào A2(n): workflowModel.ts duyet, id.includes(DAU_HIEU_RIENG_STEP_ID))
 // QUYET_DINH_MOC lần 7 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-20; hàng X-32c): mốc = 185 = 183 + 2 (MOI-39, MOI-40: kiemKhoa của edgeCoordinator, ảnh sau ghi của payload). Ghim lại phần tử đầu.
-const MOC_GOC = 185;
-const LICH_SU_MOC: readonly number[] = [185];
+// QUYET_DINH_MOC lần 8 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-21; hàng X-38, commit 1): mốc = 187 = 185 + 2 (MOI-41 stopTrangThaiC gọi laHangMaChuaRa; MOI-42 lapKeHoachStop gọi stopTrangThaiC). Ghim lại phần tử đầu.
+const MOC_GOC = 187;
+const LICH_SU_MOC: readonly number[] = [187];
 /** Mốc số dòng đóng băng: bằng phần tử cuối của `LICH_SU_MOC`, chỉ được GIẢM. */
-const SO_DONG_MOC = 185;
+const SO_DONG_MOC = 187;
 
 /**
  * HST 14/11 T2-DK1 — "ngoài tầm" không được thành "ngoài sổ". 21 ô của bảng kiểm kê mà census KHÔNG bắt được (không có phép so chữ để bắt:

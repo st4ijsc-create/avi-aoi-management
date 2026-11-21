@@ -75,6 +75,7 @@ import {
   stopAbortCoGui,
   type LanBamAbort,
   stopChuaRaTuHang,
+  stopTrangThaiC,
   FOE_NOT_SENT_RUN_LATCHED,
   quyetDinhKetThucAnh,
   quenBenKhongXacNhan,
@@ -1615,13 +1616,13 @@ function bangChungSauChot(rc: RunContext, hang: AbortSweepSource["hang"]): Map<s
 
 /**
  * A2(n) — whose compensation is due on a latched run. At the latch (`nhan` null): the unknown step's and the containers' around it. At the end: also a failure, what may have gone out,
- * a refused step (F11).
+ * a refused step (F11). X-38 (P1-HANG) — at every pass: also a step whose compensation holds a STOP in state C (`no`: stopTrangThaiC, STOP-only)
  */
-function chuDenHan(rc: RunContext, nhan: ReadonlyMap<string, NhanSauChot> | null): Set<string> {
+function chuDenHan(rc: RunContext, nhan: ReadonlyMap<string, NhanSauChot> | null, no?: ReadonlySet<string>): Set<string> {
   const chot = rc.context[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId?: unknown } | undefined;
   const den = (id: string) => rc.khongRoTai?.has(id) === true || chot?.stepId === id || (nhan !== null && ["coTheDaGui", "giuNguyen", "chuaGui"].includes(nhan.get(id) ?? ""));
   const out = new Set<string>();
-  for (const s of mainTreeSteps(rc.def.steps)) if (buocTienCua(s).some((x) => den(x.id))) out.add(s.id);
+  for (const s of mainTreeSteps(rc.def.steps)) if (buocTienCua(s).some((x) => den(x.id)) || (s.compensation && allStepsOf([s.compensation]).some((x) => no?.has(x.id)))) out.add(s.id);
   return out;
 }
 
@@ -1643,7 +1644,9 @@ async function lapKeHoachStop(rc: RunContext, src: AbortSweepSource, v: StopVeri
   const coHang = new Set((src.hang ?? []).map((r) => r.stepId));
   const hongTruoc = (id: string) => (coHang.has(id) || rc.store.kind === "central" ? hong.has(id) : rc.prior.settled.has(id) && !rc.completed.has(id) && !chuBuTruCua(rc, id));
   const settled = nguoi ? (id: string) => src.settled(id) && !hongTruoc(id) && !(nguoi.daGiao(id) && !nguoi.xacNhan(id)) : (id: string) => tuLuotNay(id) || (src.settled(id) && !hongTruoc(id));
-  return planAbortSweep({ ...src, settled, sentBefore: nguoi ? new Set([...src.sentBefore].filter(nguoi.xacNhan)) : src.sentBefore }, rc.def, v, { chuDenHan: chuDenHan(rc, cuoi ? bangChungSauChot(rc, src.hang) : null) }, nguoi?.daDinh);
+  // X-38 (P1-HANG) — a STOP in state C is tried again at the FIRST pass, before any compensation that is not a STOP: the C7-XN gate then reads its answer
+  const no = stopTrangThaiC(src.hang, rc.context);
+  return planAbortSweep({ ...src, settled, sentBefore: nguoi ? new Set([...src.sentBefore].filter(nguoi.xacNhan)) : src.sentBefore }, rc.def, v, { chuDenHan: chuDenHan(rc, cuoi ? bangChungSauChot(rc, src.hang) : null, no) }, nguoi?.daDinh);
 }
 
 /** A2(n) — a forward STOP goes by the walker's own step: its rows, its retries, its key. Past the door, once per walk. */

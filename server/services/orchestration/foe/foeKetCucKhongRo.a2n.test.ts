@@ -4038,3 +4038,300 @@ describe("X-32 the URGENT of a refused edge report: the edge's word, one key per
     }
   });
 });
+
+// X-38 (P1-HANG; giấy tam/x38-p1hang-pham-vi-4.md 6a0cb5a960d1450b + bổ sung bản 5 465e315885984f5f) — a STOP compensation known not handed over (state C, the context's list) of a step OUTSIDE the latched
+// branch is tried again at the Continue's FIRST pass, before any compensation that is not a STOP: the C7-XN gate then reads its answer (measured: P1HANG-KE2, the reset went first)
+describe("X-38 (P1-HANG) a compensation-only Continue tries a STOP in state C of a step outside the latched branch FIRST: no compensation that is not a STOP goes while it is not handed over", () => {
+  const stopX = (id: string, machineId = 1): WorkflowStep => ({ id, type: "command", machineId, command: "stop" }) as WorkflowStep;
+  const par = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as WorkflowStep;
+  const qq = (id: string, comp?: WorkflowStep): WorkflowStep => ({ id, type: "command", machineId: 3, command: "start", ...(comp ? { compensation: comp } : {}) }) as WorkflowStep;
+  const doi = (f: () => void | Promise<void>, timeout = 3_000) => vi.waitFor(f, { timeout });
+  const tiep = (runId: number) => resumeRun(runId, { approved: true, note: "checked on site" }, ADMIN, {}, { scope: null });
+  const loi = (runId: number) => String(runRow(runId).error ?? "");
+  const C7_MAU = "is known not handed over";
+  const goi = (tu = 0) => otDispatchMock.mock.calls.slice(tu).map((c) => `${String((c[0] as { commandType?: unknown }).commandType)}@${String((c[0] as { adapterId?: unknown }).adapterId)}`);
+  /** start@501 (main) TIMEOUT ⇒ the latch; start@503 (qq) `qq`; stop@501 `cs`; reset ACKED */
+  const may = (x: { qq: Record<string, unknown>; cs: () => Record<string, unknown> | Promise<Record<string, unknown>> }) =>
+    otDispatchMock.mockImplementation(async (i) => {
+      if (i.commandType === "start") return (i as { adapterId?: unknown }).adapterId === 503 ? x.qq : TIMEOUT;
+      if (i.commandType === "stop") return x.cs();
+      return ACKED;
+    });
+  /** the H2 shape: qq fails ⇒ its STOP compensation cs is due, refused ⇒ state C (the context's list); the reset of main waits for a person */
+  const H2 = () => chay([par("p", [seq("a", [main(resetComp("undo"))]), qq("qq", stopX("cs"))])]);
+  const sauLuot1 = async (runId: number) => {
+    await doi(() => expect(String(runRow(runId).status)).toBe("held"));
+    expect(runRow(runId).contextJson.foeStopChuaRa, "the shape: cs in state C, the context's list").toEqual(["cs"]);
+    expect(sent("reset")).toEqual([]);
+  };
+
+  it("X38-H2 cs refused again at the Continue: no reset, held in C7-XN's words after cs's own; cs handed over ONCE, at the first pass", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      may({ qq: REJECTED, cs: () => REJECTED });
+      const r = await H2();
+      await sauLuot1(r.runId);
+      const { STOP_GHIM_SO_LAN_MAC_DINH } = await import("./foeEngine"); // the Continue's count only: walk 1 hands cs over by one of two ways (before / after the latch: 1 or 3 attempts), its count says nothing here
+      const g0 = otDispatchMock.mock.calls.length;
+      expect(String((await tiep(r.runId)).status)).toBe("held");
+      expect(sent("reset"), "no compensation that is not a STOP while cs is not handed over").toEqual([]);
+      expect(goi(g0).filter((x) => x === "stop@501").length, "one hand-over = the attempt budget; two would be twice").toBe(STOP_GHIM_SO_LAN_MAC_DINH);
+      expect(loi(r.runId).endsWith(` ${chuStopChuaGiaoBuTru(r.runId)}`)).toBe(true);
+      expect(loi(r.runId).indexOf('STOP "cs"')).toBeLessThan(loi(r.runId).indexOf(C7_MAU));
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("X38-H2-GIAO cs accepted at the Continue: the reset goes, AFTER cs", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let luot = 1;
+    try {
+      may({ qq: REJECTED, cs: () => (luot === 1 ? REJECTED : ACKED) });
+      const r = await H2();
+      await sauLuot1(r.runId);
+      luot = 2;
+      const g0 = otDispatchMock.mock.calls.length;
+      await tiep(r.runId);
+      await doi(() => expect(sent("reset")).toEqual(["reset"]));
+      const sau = goi(g0);
+      expect(sau.filter((x) => x === "stop@501"), "cs once, accepted").toEqual(["stop@501"]);
+      expect(sau.indexOf("stop@501"), "the STOP first").toBeLessThan(sau.indexOf("reset@503"));
+      expect(loi(r.runId)).not.toContain(C7_MAU);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("X38-B7 (unchanged, B7) qq finished: its STOP compensation is never due, never sent, the reset goes", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      may({ qq: ACKED, cs: () => REJECTED });
+      const r = await H2();
+      await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+      expect(runRow(r.runId).contextJson.foeStopChuaRa ?? null).toBeNull();
+      await tiep(r.runId);
+      await doi(() => expect(sent("reset")).toEqual(["reset"]));
+      expect(sent("stop"), "cs never sent (B7)").toEqual([]);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("X38-HAI-STOP two STOP compensations in state C (cs1 @501, cs2 @503): one accepted, one refused ⇒ no reset; both accepted ⇒ the reset goes after both", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const hinh = () => chay([par("p", [seq("a", [main(resetComp("undo"))]), qq("q1", stopX("cs1")), qq("q2", stopX("cs2", 3))])]);
+    try {
+      for (const haiNhan of [false, true]) {
+        let luot = 1;
+        otDispatchMock.mockReset();
+        otDispatchMock.mockImplementation(async (i) => {
+          const a = (i as { adapterId?: unknown }).adapterId;
+          if (i.commandType === "start") return a === 503 ? REJECTED : TIMEOUT;
+          if (i.commandType === "stop") return luot === 1 ? REJECTED : a === 501 || haiNhan ? ACKED : REJECTED;
+          return ACKED;
+        });
+        const r = await hinh();
+        await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+        expect([...(runRow(r.runId).contextJson.foeStopChuaRa ?? [])].sort(), "the shape: both in state C").toEqual(["cs1", "cs2"]);
+        luot = 2;
+        const g0 = otDispatchMock.mock.calls.length;
+        await tiep(r.runId);
+        if (!haiNhan) {
+          expect(sent("reset"), "cs2 not handed over").toEqual([]);
+          expect(loi(r.runId).endsWith(` ${chuStopChuaGiaoBuTru(r.runId)}`)).toBe(true);
+        } else {
+          await doi(() => expect(sent("reset")).toEqual(["reset"]));
+          const sau = goi(g0);
+          expect(sau.indexOf("reset@503")).toBeGreaterThan(Math.max(sau.indexOf("stop@501"), sau.indexOf("stop@503")));
+        }
+      }
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  // X38-CAY-HAI-STOP — the compensation of qq is a CONTAINER (seq bu [cs, cs2]): walk 1's last pass tries its whole tree (planAbortSweep E:6255-6259), both refused ⇒ both in state C.
+  // chuDenHan must look INSIDE the compensation (allStepsOf), not at its own id (the container's id is in no list)
+  it("X38-CAY-HAI-STOP the compensation of qq is a container holding TWO STOPs, both in state C: both are tried at the Continue's first pass, before the reset", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let luot = 1;
+    try {
+      otDispatchMock.mockImplementation(async (i) => {
+        const a = (i as { adapterId?: unknown }).adapterId;
+        if (i.commandType === "start") return a === 503 ? REJECTED : TIMEOUT;
+        if (i.commandType === "stop") return luot === 1 ? REJECTED : ACKED;
+        return ACKED;
+      });
+      const r = await chay([par("p", [seq("a", [main(resetComp("undo"))]), qq("qq", seq("bu", [stopX("cs"), stopX("cs2", 3)]))])]);
+      await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+      expect([...(runRow(r.runId).contextJson.foeStopChuaRa ?? [])].sort(), "the shape: both in state C after walk 1").toEqual(["cs", "cs2"]);
+      luot = 2;
+      const g0 = otDispatchMock.mock.calls.length;
+      await tiep(r.runId);
+      await doi(() => expect(sent("reset")).toEqual(["reset"]));
+      const sau = goi(g0);
+      expect(sau.indexOf("stop@501"), "cs tried").toBeGreaterThanOrEqual(0);
+      expect(sau.indexOf("stop@503"), "cs2 tried").toBeGreaterThanOrEqual(0);
+      expect(sau.indexOf("reset@503"), "the reset after BOTH").toBeGreaterThan(Math.max(sau.indexOf("stop@501"), sau.indexOf("stop@503")));
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("X38-KHONG-STOP a NOT-STOP command of a compensation tree whose row reads 'refused, routed' (laHangChuaRa's second arm) is no state C here: no STOP of that tree goes", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      may({ qq: ACKED, cs: () => ACKED });
+      const r = await chay([par("p", [seq("a", [main(resetComp("undo"))]), qq("qq", seq("bu", [resetComp("nn", 3), stopX("cs2")]))])]);
+      await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+      rows("orchestration_run_steps").push({ runId: r.runId, stepId: "nn", stepType: "command", status: "running", attempt: 1, error: null, resultJson: { routedTo: "ot-dispatcher", accepted: false, status: "rejected" } });
+      const { stopChuaRaTuHang } = await import("./foeRunStore");
+      expect(stopChuaRaTuHang(rows("orchestration_run_steps").filter((x) => x.runId === r.runId) as never, runRow(r.runId).contextJson).has("nn"), "the shape: the rows' set holds nn").toBe(true);
+      const g0 = otDispatchMock.mock.calls.length;
+      await tiep(r.runId);
+      await doi(() => expect(sent("reset")).toEqual(["reset"]));
+      expect(goi(g0).filter((x) => x.startsWith("stop@")), "no STOP of qq's tree").toEqual([]);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("X38-HANG-MA-KHONG-KHOA cs's own row carries the code (FOE_STOP_NOT_SENT) but the context's list was lost: still tried again at the first pass, no reset", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      may({ qq: REJECTED, cs: () => REJECTED });
+      const r = await H2();
+      await sauLuot1(r.runId);
+      expect(String((await step(r.runId, "cs"))?.error)).toMatch(/^FOE_STOP_NOT_SENT:/);
+      delete runRow(r.runId).contextJson.foeStopChuaRa; // the list is lost, the row stays
+      const g0 = otDispatchMock.mock.calls.length;
+      await tiep(r.runId);
+      expect(sent("reset")).toEqual([]);
+      expect(goi(g0).filter((x) => x === "stop@501").length, "tried again from the row alone").toBeGreaterThan(0);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("X38-KHOA-KHONG-HANG cs's own row was lost but the context's list names it: still tried again at the first pass, no reset", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      may({ qq: REJECTED, cs: () => REJECTED });
+      const r = await H2();
+      await sauLuot1(r.runId);
+      store.set("orchestration_run_steps", rows("orchestration_run_steps").filter((x) => !(x.runId === r.runId && x.stepId === "cs"))); // the row is lost, the list stays
+      const g0 = otDispatchMock.mock.calls.length;
+      await tiep(r.runId);
+      expect(sent("reset")).toEqual([]);
+      expect(goi(g0).filter((x) => x === "stop@501").length, "tried again from the list alone").toBeGreaterThan(0);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("X38-TU-TIEP-TUC-KHONG-DOI (HST 21/11: the measure; GREEN before X-38 too) a latched run interrupted with cs in state C (the context's list, its owner qq failed), resumed by FOE_DURABLE with no person: cs handed over ONCE (the last pass before X-38, the first pass after), no reset", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      process.env.FOE_DURABLE = "true";
+      may({ qq: REJECTED, cs: () => REJECTED });
+      const { runId } = await chay([par("p", [seq("a", [main()]), qq("qq", stopX("cs"))])]);
+      const chot = runRow(runId).contextJson[KET_CUC_KHONG_RO_CHOT_CTX_KEY];
+      expect(chot).toMatchObject({ stepId: "main" });
+      // as chetSauChot (KRt:1955): a crash after the latch, before the split; the rows of qq and cs kept as walk 1 wrote them, the context's list kept
+      Object.assign(rows("orchestration_run_steps").find((r) => r.runId === runId && r.stepId === "main")!, { status: "running", error: null, finishedAt: null });
+      Object.assign(runRow(runId), { status: "held", finishedAt: null, error: null, contextJson: { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: chot, interrupted: true, foeStopChuaRa: ["cs"] } });
+      expect(String((await step(runId, "cs"))?.status)).toBe("failed");
+      may({ qq: REJECTED, cs: () => ACKED });
+      const g0 = otDispatchMock.mock.calls.length;
+      await autoResumeInterruptedRuns([runId]);
+      await doi(() => expect(goi(g0).filter((x) => x === "stop@501")).toEqual(["stop@501"]));
+      await new Promise((x) => setTimeout(x, 50));
+      expect(goi(g0).filter((x) => x === "stop@501"), "once, not again at the last pass").toEqual(["stop@501"]);
+      expect(sent("reset"), "no compensation that is not a STOP").toEqual([]);
+    } finally {
+      delete process.env.FOE_DURABLE;
+      err.mockRestore();
+    }
+  });
+
+  for (const daDi of ["completed", "compensated"] as const) it(`X38-CTX-CU cs in the context's list but its own row ${daDi} (it went): not tried again, the reset goes; the key stays (a named limit, X38-KHOA-CU-TRUNG-TAM)`, async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      may({ qq: REJECTED, cs: () => REJECTED });
+      const r = await H2();
+      await sauLuot1(r.runId);
+      Object.assign(rows("orchestration_run_steps").find((x) => x.runId === r.runId && x.stepId === "cs")!, { status: daDi, error: null });
+      const g0 = otDispatchMock.mock.calls.length;
+      await tiep(r.runId);
+      await doi(() => expect(sent("reset")).toEqual(["reset"]));
+      expect(goi(g0).filter((x) => x === "stop@501"), "cs not tried again").toEqual([]);
+      expect(runRow(r.runId).contextJson.foeStopChuaRa).toEqual(["cs"]);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it("X38-NEM the classification of cs throws at the Continue's first pass: the pass is marked failed, no reset, held in X-27 (1)'s words", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const g = globalThis as { __x26ls?: string | null };
+    try {
+      may({ qq: REJECTED, cs: () => REJECTED });
+      const r = await H2();
+      await sauLuot1(r.runId);
+      g.__x26ls = "cs";
+      await tiep(r.runId).catch(() => undefined);
+      expect(sent("reset")).toEqual([]);
+      expect(loi(r.runId)).toContain(chuLuotStopHongBuTru(r.runId));
+    } finally {
+      g.__x26ls = null;
+      err.mockRestore();
+    }
+  });
+
+  it("X38-NEM-THU-TU (KRT-GSC-NEM-MOT-CA: the second net of the unverified loop) cs in plan.send, cs2 of the same tree unverified and its classification throws: cs handed over BEFORE the throw, no reset, X-27 (1)'s words", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const g = globalThis as { __x26ls?: string | null };
+    const m = (await import("./foeRunStore")) as unknown as { centralRunStore: Record<string, (...a: unknown[]) => Promise<unknown>> };
+    const st = m.centralRunStore;
+    const goc = st.verifyStops!;
+    let luot = 1;
+    try {
+      // as C7-A-SEND: from the Continue on the verifier accepts cs's pins ⇒ cs in plan.send (started at once, E:1676); cs2 stays unverified (the loop E:1678-1681)
+      st.verifyStops = async (...a: unknown[]) => {
+        const v = (await goc(...a)) as { ids: Set<string>; unsure: Set<string> } & Record<string, unknown>;
+        if (luot === 1) return v;
+        const ids = new Set(v.ids);
+        ids.add("cs");
+        const unsure = new Set(v.unsure);
+        unsure.delete("cs");
+        return { ...v, ids, unsure };
+      };
+      otDispatchMock.mockImplementation(async (i) => {
+        const a = (i as { adapterId?: unknown }).adapterId;
+        if (i.commandType === "start") return a === 503 ? REJECTED : TIMEOUT;
+        if (i.commandType === "stop") return luot === 1 ? REJECTED : ACKED;
+        return ACKED;
+      });
+      const r = await chay([par("p", [seq("a", [main(resetComp("undo"))]), qq("qq", seq("bu", [stopX("cs"), stopX("cs2", 3)]))])]);
+      await doi(() => expect(String(runRow(r.runId).status)).toBe("held"));
+      expect([...(runRow(r.runId).contextJson.foeStopChuaRa ?? [])].sort(), "the shape: cs and cs2 in state C (walk 1's last pass tried the whole tree)").toEqual(["cs", "cs2"]);
+      luot = 2;
+      g.__x26ls = "cs2";
+      const g0 = otDispatchMock.mock.calls.length;
+      const c: unknown = await tiep(r.runId).catch((e: unknown) => e); // a throw is never swallowed: its message stands where the status is read
+      expect.soft(c instanceof Error ? c.message : String((c as { status?: unknown }).status), "the Continue ends held").toBe("held");
+      // cs's hand-over starts (plan.send, foeEngine guiStopSauChot `viec`) and the loop throws on cs2: nobody awaits `viec`, the walk can end before cs lands (GSC-VIEC-TROI-KHI-NEM) ⇒ waited for, as X27C-DADI
+      await doi(() => expect(goi(g0).filter((x) => x === "stop@501"), "cs (plan.send) went before the loop threw").toEqual(["stop@501"]));
+      await new Promise((x) => setTimeout(x, 50));
+      expect.soft(goi(g0).filter((x) => x === "stop@501"), "cs handed over once").toEqual(["stop@501"]);
+      expect.soft(sent("reset")).toEqual([]);
+      expect.soft(loi(r.runId)).toContain(chuLuotStopHongBuTru(r.runId));
+    } finally {
+      g.__x26ls = null;
+      st.verifyStops = goc;
+      err.mockRestore();
+    }
+  });
+
+});

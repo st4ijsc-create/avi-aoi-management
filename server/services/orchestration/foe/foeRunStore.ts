@@ -468,6 +468,17 @@ export function stopChuaRaTuHang(rows: ReadonlyArray<{ stepId: string; stepType?
 }
 
 /**
+ * X-38 (P1-HANG) — THE STOPs in state C a pass tries again, STOP-only (central's walk: lapKeHoachStop; an edge segment's end: the list it hands the node): the STOP's own row with the code
+ * (laHangMaChuaRa: FOE_STOP_NOT_SENT, its own step, never a container's) ∪ the context's list (datChuaRa: STOP-typed only), minus a STOP whose own row says it went (completed; a STOP compensation: compensated). Never laHangChuaRa's second
+ * arm (a refused attempt of ANY command), never an `abort:` row (X38-KHONG-DOC-HANG-ABORT: after an Abort no walk comes). Pure.
+ */
+export function stopTrangThaiC(rows: ReadonlyArray<{ stepId: string; stepType?: string; status?: string; error?: string | null; resultJson?: unknown }> | null | undefined, ctx?: Record<string, unknown> | null): Set<string> {
+  const cuaBuoc = (rows ?? []).filter((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX));
+  const daXong = new Set(cuaBuoc.filter((r) => r.status === "completed" || r.status === "compensated").map((r) => r.stepId));
+  return new Set([...cuaBuoc.filter((r) => laHangMaChuaRa(r, r.stepId)).map((r) => r.stepId), ...stopChuaRaTuNguCanh(ctx)].filter((id) => !daXong.has(id)));
+}
+
+/**
  * A2(n) T7b-1d (H22) — THE trace of what an earlier Abort tried or meant to send and did not go, read the same on every run: an `abort:` row that failed (its result says which kind). An `abort:` row that went or was
  * settled ends it. Whoever wrote the STOP's own row or its container's has no say: this is the Abort's own record. What a press does with it: planAbortSweep (it enters the plan, the verification decides),
  * phanLoaiStopAbort (its class). The row is all there is: H27 (chu du an 09/11), a run not latched, that one write lost and the walker's rows over it: the press may send nothing; the first answer says so by name. Pure.
