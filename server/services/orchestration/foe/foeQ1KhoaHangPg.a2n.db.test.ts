@@ -15,9 +15,13 @@
  *   edgeListDocHet .db.test.ts. (2) khai báo `kq1`: `let kq1 = null as T | null` thay cho `let kq1: T | null = null` — kq1 được gán trong closure, kiểu khai cũ bị TS thu hẹp về `null`
  *   ⇒ TS2339 trên `never` ở hai khẳng định Q1-PG-X11-BAM-MOT-CHO-NUT / Q1-PG-X11-CHU-A (tsc -p tsconfig.tests.json). Bằng chứng lượt 6 vẫn áp cho HÀNH VI; lần chạy tay kế tiếp theo
  *   Y-01 mới xác nhận lại tệp sau sửa.
- * KHI CHẠY TAY (HST 17/11, phương án A): ba khẳng định ĐỎ có chủ ý — hai Q1-PG-STOP-TRONG-CUA-SO đỏ là ĐÚNG THIẾT KẾ X-11 (lần bấm một để STOP của adapter nút cho nút gửi, trung tâm
- *   không gửi); Q1-PG-X11-CHU-D-DUOI đỏ do FIXTURE (r1 `set_value` trên máy AUTOMATION, chèn thẳng bỏ qua validateWorkflow; sửa 1 dòng đã biết: `set_machine_param` trong helper ot(),
- *   để dành cho lượt sau). Ca là describe.skip có tên khi vắng Q1_PG_CHAY (cổng thường bỏ qua) và CHỈ chạy tay theo Y-01 trong lượt của phiên điều phối; mỗi lượt để lại ~7 hàng WORM.
+ * LƯỢT X-32 (21/11 01:05, `_test`, @629c22197, hashMa 687b2f44f7ad08a0, hashEdge 2d83d245b79583a3): cùng ba đỏ như lượt 6, mọi khẳng định khác xanh.
+ * X-36 (HST 21/11, phương án A, chỉ tệp này): kỳ vọng sửa theo hai kết luận của lượt 6 và lượt X-32, KHÔNG đổi fixture, câu SQL hay giá trị chèn.
+ *   (1) Q1-PG-STOP-TRONG-CUA-SO-CHO-NUT: ở lần bấm một trung tâm KHÔNG gửi s9 (thiết kế X-11: STOP của adapter thuộc nút để cho nút, `choNut`); phía nút nhận việc đó được giữ ở
+ *       Q1-PG-X11-BAM-MOT-CHO-NUT / Q1-PG-X11-URGENT-NUT, lần bấm hai giao STOP ≤ 7·D ở Q1-PG-X11-BAM-HAI-GIAO. Khẳng định thời gian của lần bấm một bị bỏ: không có hàng để đo.
+ *   (2) Q1-PG-X11-CHU-D-DUOI-KHONG-PHAN-GIAI: r1 / r2 / c1 là `set_value`, máy AUTOMATION không có lệnh đó ⇒ không phân giải được ⇒ planAbortSweep báo cả ba trong câu
+ *       'Could not be verified as a pinned STOP' (hành vi thận trọng: bước không giải được thì không coi là đã kiểm), r1 thêm vào vì chưa settled. Kỳ vọng cũ [r2, c1] sót r1.
+ *   Ca là describe.skip có tên khi vắng Q1_PG_CHAY (cổng thường bỏ qua) và CHỈ chạy tay theo Y-01 trong lượt của phiên điều phối; mỗi lượt để lại ~7 hàng WORM.
  * Số dòng `tệp.ts:N` trong tệp này: tại fe609ac7e khi có ghi "@ fe609ac7e"; các số còn lại chép từ bản 6/7 (rev 3d2b83260 / 77ec64b0b), có thể lệch vài chục dòng ở foeEngine.ts.
  *
  * HÌNH SAU X-11 (Y-01 dòng 28 @ a1eac8465: "thêm MỘT hình đo sau khi lô X-11 xong: hình Abort trong cửa sổ khoá cộng lần bấm Abort thứ hai, riêng hình này trần hàng WORM ở lại là 8
@@ -62,13 +66,13 @@
  *       ⇒ benChot (:2206) có đúng URGENT của báo cáo đó (daCo, :2143); mock chỉ treo URGENT có dedupKey `foe_outcome_unknown_compensation_held:<run>:r1:c1:claim2` (khoá dựng ở foeKetCucKhongRo.ts:831,
  *       kind :395, lan `claim<seq>` :1029); mọi URGENT khác (của Abort, của dispatcher) đi thật; ca đếm và in mọi lần gọi;
  *   (2) "A còn giữ khoá" đo bằng phép dò `thuKhoa` (đã qua hai đối chứng) TRONG lúc Abort chạy (vòng dò song song, mốc clock_timestamp()) VÀ ngay sau khi Abort trả lời;
- *   (3) đại lượng chính theo ĐỒNG HỒ DB: t(giao STOP) − t(bấm Abort), t0 = clock_timestamp() ngay trước abortRun, mốc giao = robot_motion_lock_requests."createdAt" (DEFAULT now(), 0374:390;
+ *   (3) đại lượng chính theo ĐỒNG HỒ DB: t(giao STOP) − t(bấm Abort) CHỈ cho LẦN BẤM HAI (X-36: ở lần bấm một trung tâm không giao STOP của adapter nút, 0 hàng), t0 = clock_timestamp() ngay trước abortRun, mốc giao = robot_motion_lock_requests."createdAt" (DEFAULT now(), 0374:390;
  *       hàng chèn trong giao dịch ngắn của enqueueEdgeDeviceRequest, edgeNodeCommands.ts:206-209): ≤ 7·D; trả lời ≤ 18·D (chặn trên mã tự ghi, foeEngine.ts:6022-6034 @ fe609ac7e); khoá chặn lệnh ghi quá D
- *       ⇒ trả lời `ok:false`, `reason: "abortUnconfirmed"` (FOE_ABORT_UNCONFIRMED, foeEngine.ts:6043, :7340-7352 @ fe609ac7e); STOP nợ đi ĐÚNG MỘT lần (hàng yêu cầu STOP của adapter: kỳ vọng của hình (a), xem dưới);
+ *       ⇒ trả lời `ok:false`, `reason: "abortUnconfirmed"` (FOE_ABORT_UNCONFIRMED, foeEngine.ts:6043, :7340-7352 @ fe609ac7e); s9 được xếp cho nút ĐÚNG MỘT lần ở lần bấm hai (Q1-PG-X11-BAM-HAI-XEP-MOT; hình (a) đổi ở X-36, xem dưới);
  *   (4) không deadlock (`lock_timeout = '10s'` trên các kết nối riêng của ca và trên MỘT kết nối của pool, beforeAll; các kết nối khác của pool theo mặc định máy chủ), sau ca pg_locks không còn
  *       khoá đang chờ, số hàng xoá được về 0, số hàng WORM (đếm TUYỆT ĐỐI theo id mới của ca) in ra và ≤ 8 (bản 8: hình sau X-11; bản 7: ≤ 6), từng bảng trong khung Y-01.
  * Kỳ vọng thời gian lấy theo chặn trên của mã (foeEngine.ts:6011–6014 ở rev Y-01 trích = :6028-6030 @ fe609ac7e), khác chữ Y-01 ngày 15/11 ("biên trễ ≤ D + 500 ms"), đã báo HST 16/11.
- * Hình (a) (HST 16/11): phần Q1-PG-STOP-TRONG-CUA-SO (STOP nợ giao đúng một lần, ≤ 7·D) giữ kỳ vọng của đặc tả và theo đọc mã dự kiến ĐỎ, ở fe609ac7e vẫn ĐỎ: run chưa chốt khi Abort đọc
+ * Hình (a) (HST 16/11; X-36 đổi kỳ vọng): phần Q1-PG-STOP-TRONG-CUA-SO-CHO-NUT khẳng định trung tâm KHÔNG gửi s9 ở lần bấm một (lượt 6 và lượt X-32 đo 0 hàng): run chưa chốt khi Abort đọc
  *   (khoa = false, foeEngine.ts:6852 @ fe609ac7e) ⇒ s9 `unsure`, chỉ thiếu kết nối (foeStepClass.ts:333-336 @ fe609ac7e) ⇒ không gửi từ trung tâm (planAbortSweep :6150-6151), mà để cho nút
  *   (`choNut`, :7139-7141; câu (a) :7348-7349). Viết bằng expect.soft để các khẳng định khoá / abortUnconfirmed / ≤ 18·D, hình sau X-11, dọn và đếm WORM vẫn chạy và in số.
  *
@@ -423,7 +427,7 @@ if (!CHAY) console.info(`[Q1-PG] describe.skip: ${LY_DO_SKIP}`);
     }
   });
 
-  it("★ held() waits at its end gate holding the run row lock (only its URGENT hangs); an Abort pressed meanwhile answers abortUnconfirmed within 18·D and hands the owed STOP over once within 7·D while A still holds the lock, with no deadlock and nothing left behind; after X-11, once 'aborted' lands the node's listing carries the run for s9 and a second press queues s9 for the node exactly once", async () => {
+  it("★ held() waits at its end gate holding the run row lock (only its URGENT hangs); an Abort pressed meanwhile answers abortUnconfirmed within 18·D while A still holds the lock and central hands no STOP of the node's adapter over (it is left to the node), with no deadlock and nothing left behind; after X-11, once 'aborted' lands the node's listing carries the run for s9 and a second press queues s9 for the node exactly once, handed over within 7·D", async () => {
     let tongWorm = 0;
     // bản 8 — giá trị của lần bấm một, giữ ra ngoài khối đo để khẳng định SAU khi đo xong hình sau X-11 (đo trước, khẳng định sau: một khẳng định đỏ không cắt mất phần đo còn lại)
     let kq1 = null as { ok?: boolean; reason?: string; message?: string; abortStops?: { choNut?: string[]; sent?: string[]; unverified?: string[] } } | null;
@@ -567,10 +571,10 @@ if (!CHAY) console.info(`[Q1-PG] describe.skip: ${LY_DO_SKIP}`);
         expect(msTraLoi, `lệnh ghi 'aborted' bị khoá của A chặn tới hạn D (${D} ms): trả lời sau D (đồng hồ DB)`).toBeGreaterThan(D);
         expect({ ok: kq.ok, reason: kq.reason }, "khoá chặn lệnh ghi quá D ⇒ abortUnconfirmed").toEqual({ ok: false, reason: FOE_ABORT_UNCONFIRMED });
         expect(msTraLoi, `trả lời ≤ 18·D (${TRAN_TRA_LOI_MS} ms, đồng hồ DB)`).toBeLessThanOrEqual(TRAN_TRA_LOI_MS);
-        // Q1-PG-STOP-TRONG-CUA-SO (HST 16/11, hình (a)): kỳ vọng theo ĐẶC TẢ (STOP nợ giao đúng một lần, ≤ 7·D). Đọc mã dự kiến ĐỎ: run chưa chốt khi Abort đọc (khoa = false, foeEngine.ts:6852 @ fe609ac7e) ⇒ s9 trên adapter
-        //    của nút là `unsure`, chỉ thiếu kết nối (foeStepClass.ts:333-336 @ fe609ac7e) ⇒ không gửi từ trung tâm (:6150-6151) mà để cho nút (choNut, :7139-7141; bản 8 đo phần đó ở hình sau X-11). Đó là phát hiện, KHÔNG đổi cho xanh. expect.soft: ca vẫn chạy tiếp (thả A, pg_locks, đếm, dọn, WORM) và in mọi số
-        expect.soft(stopRows.length, "Q1-PG-STOP-TRONG-CUA-SO: STOP nợ s9 đi đúng một lần (robot_motion_lock_requests kind='stop' của adapter)").toBe(1);
-        expect.soft(stopRows.length > 0 ? num(stopRows[0]!.ms) : Number.NaN, `Q1-PG-STOP-TRONG-CUA-SO: giao STOP ≤ 7·D (${TRAN_GIAO_MS} ms) kể từ lúc bấm (đồng hồ DB; NaN = không có hàng)`).toBeLessThanOrEqual(TRAN_GIAO_MS);
+        // Q1-PG-STOP-TRONG-CUA-SO-CHO-NUT (X-36; lượt 6 và lượt X-32 đo 0 hàng): run chưa chốt khi Abort đọc (khoa = false, foeEngine.ts:6852 @ fe609ac7e) ⇒ s9 trên adapter
+        //    của nút là `unsure`, chỉ thiếu kết nối (foeStepClass.ts:333-336 @ fe609ac7e) ⇒ không gửi từ trung tâm (:6150-6151) mà để cho nút (choNut, :7139-7141; bản 8 đo phần đó ở hình sau X-11). Đó là thiết kế X-11 (HST 17/11). expect.soft: ca vẫn chạy tiếp (thả A, pg_locks, đếm, dọn, WORM) và in mọi số.
+        //    Thời gian giao ≤ 7·D của lần bấm một bị bỏ (không có hàng để đo); lần bấm hai giữ nó ở Q1-PG-X11-BAM-HAI-GIAO
+        expect.soft(stopRows.length, "Q1-PG-STOP-TRONG-CUA-SO-CHO-NUT: lần bấm một trung tâm KHÔNG gửi s9, để cho nút (0 hàng robot_motion_lock_requests kind='stop' của adapter)").toBe(0);
       } finally {
         await doAnh.end({ timeout: 5 }).catch(() => undefined);
         await dongHo.end({ timeout: 5 }).catch(() => undefined);
@@ -712,6 +716,9 @@ if (!CHAY) console.info(`[Q1-PG] describe.skip: ${LY_DO_SKIP}`);
       expect(x11.vetTruocBam2, "Q1-PG-X11-VET: vết duy nhất của lần bấm một là abort:s9 failed / chuaXacMinh / adapterNut (chưa xác nhận)").toEqual([{ buoc: "abort:s9", st: "failed", dang: "chuaXacMinh", nut: "true" }]);
       expect(x11.liet, "Q1-PG-X11-LIET-KE: sau lần bấm đầu, không bấm lại, hàm liệt kê của pull liệt kê run cho nút của ca (STOP s9 của adapter nút được giao cho lượt quét của nút)").toEqual([ids.run]);
       expect(x11.lietNgoaiCua, "Q1-PG-X11-LIET-KE-DOI-CHUNG: cùng hàm, cùng hàng, now quá cửa sổ 15 phút ⇒ không liệt kê").toEqual([]);
+      // X-36 (kiem-dinh 14:54): giữa lần bấm một và lần bấm hai trung tâm KHÔNG xếp STOP nào cho adapter của nút (s9 để cho nút, chỉ lần bấm hai xếp nó).
+      //   Lượt X-32 in `stopTruocBam2: []` (dòng "Q1PG X11"). expect.soft: đỏ ở đây ⇒ dừng và báo, không sửa cho xanh
+      expect.soft(x11.stopTruocBam2, "Q1-PG-X11-KHONG-XEP-TRUOC-BAM-HAI: trước lần bấm hai không có hàng robot_motion_lock_requests nào của adapter").toEqual([]);
       // (6) lần bấm hai: resend, s9 xếp cho nút ĐÚNG MỘT lần, câu (d), chặn trên thời gian
       expect({ ok: x11.kq2.ok, status: x11.kq2.status, resend: x11.kq2.resend }, "Q1-PG-X11-BAM-HAI: lần bấm hai là resend của run đã aborted").toEqual({ ok: true, status: "aborted", resend: true });
       expect(x11.kq2.abortStops?.xepChoNut, "Q1-PG-X11-BAM-HAI-XEP-CHO-NUT: abortStops.xepChoNut = [s9] (foeEngine.ts:7073 @ fe609ac7e)").toEqual(["s9"]);
@@ -720,23 +727,24 @@ if (!CHAY) console.info(`[Q1-PG] describe.skip: ${LY_DO_SKIP}`);
       expect(x11.msTraLoi2, `Q1-PG-X11-BAM-HAI-TRA-LOI: trả lời ≤ 18·D (${TRAN_TRA_LOI_MS} ms, đồng hồ DB)`).toBeLessThanOrEqual(TRAN_TRA_LOI_MS);
       const msg2 = x11.kq2.message ?? "";
       expect(msg2.startsWith(chuD(ids.run!)), `Q1-PG-X11-CHU-D: câu trả lời lần bấm hai mở đầu bằng NGUYÊN VĂN câu (d) của x11-chu-duyet.md (dòng 60); nhận được: ${msg2.slice(0, 400)}`).toBe(true);
-      // phần sau câu (d): fixture có r2 / c1 là set_value, KHÔNG phải lệnh của máy AUTOMATION (capabilityModel.ts:365-372, :398) ⇒ commandOf null (foeStepClass.ts:156-163) ⇒ có thể thêm câu
-      // "Could not be verified as a pinned STOP: r2, c1 …" (foeEngine.ts:6407 @ fe609ac7e). Câu đó không phải về s9: chỉ khẳng định không câu nào sau (d) nhắc lại s9
+      // phần sau câu (d): fixture có r1 / r2 / c1 là set_value, KHÔNG phải lệnh của máy AUTOMATION (capabilityModel.ts:365-372, :398) ⇒ commandOf null (foeStepClass.ts:156-163) ⇒ có thể thêm câu
+      // "Could not be verified as a pinned STOP: r1, r2, c1 …" (foeEngine.ts:6407 @ fe609ac7e). Câu đó không phải về s9: chỉ khẳng định không câu nào sau (d) nhắc lại s9
       expect(msg2.slice(chuD(ids.run!).length), "Q1-PG-X11-CHU-D-SAU: phần sau câu (d) không nhắc lại s9").not.toMatch(/\bs9\b/);
-      // HST 17/11 (vòng 2): đuôi theo ĐẶC TẢ = đúng một câu, danh sách [r2, c1]. Chép tay từ chỗ mã dựng nó, foeEngine.ts:6407 @ fe609ac7e (không gọi hàm của mã):
+      // X-36: đuôi = đúng một câu, danh sách [r1, r2, c1] (lượt 6 và lượt X-32 đo đúng chuỗi này). Chép tay từ chỗ mã dựng nó, foeEngine.ts:6407 @ fe609ac7e (không gọi hàm của mã):
       //   `Could not be verified as a pinned STOP: ${chuaXacMinh.join(", ")}: not sent; a later press${chuaKhoa || chuaXacMinh.some((id) => pl[id]?.lop === "xong") ? ` within ${phut} minutes of ${MOC_CUA_SO}` : ""} sends it if its read finds a pinned STOP.`
       //   vế "within …" vắng: chuaKhoa = false (chuBamLai gọi với hai đối số, :6476) và r2/c1 không có lớp trong phanLoai (khoá chỉ từ v.ids, plan.send, noDaBen, daDinh, :6962) ⇒ không `xong`.
       //   Nối bằng một dấu cách (`cau.join(" ")`, :6422). Trước nó trong chuBamLai không còn câu nào: conBen bỏ s9 vì xep (:6398-6399), khongBen / pending / choNut rỗng ở lần bấm này.
-      // expect.soft (đọc mã thấy CÓ THỂ đỏ): ở run đã chốt, lapKeHoachStop (foeEngine.ts:1616-1631 @ fe609ac7e) coi một bước là settled chỉ khi không "hong" (hàng failed) và không "đã giao mà chưa
+      // Vì sao có r1 (đọc ở DO-64; HST 17/11 bản cũ chép [r2, c1] là sót): ở run đã chốt, lapKeHoachStop (foeEngine.ts:1616-1631 @ fe609ac7e) coi một bước là settled chỉ khi không "hong" (hàng failed) và không "đã giao mà chưa
       //   xác nhận" (:1618, :1629). r1 là bước bị chốt (set_value, commandOf null như r2/c1); nếu hàng r1 sau A là failed hoặc tính là đã giao chưa xác nhận thì r1 cũng vào unverified
-      //   (planAbortSweep :6150-6151) ⇒ danh sách có thể là [r1, r2, c1]. c1 có trong kế hoạch vì r1 là bước chốt (chuDenHan :1604-1610, bù trừ :6199-6203). Không đổi kỳ vọng cho xanh: in và báo
+      //   (planAbortSweep :6150-6151) ⇒ danh sách có thể là [r1, r2, c1]. c1 có trong kế hoạch vì r1 là bước chốt (chuDenHan :1604-1610, bù trừ :6199-6203). Lượt 6 và lượt X-32 đo đúng [r1, r2, c1]
       // LƯỢT 6 (8b8a1064e): ĐỎ, đuôi thật " Could not be verified as a pinned STOP: r1, r2, c1: not sent; a later press sends it if its read finds a pinned STOP." Nguyên nhân là FIXTURE
       //   (DO-64 vòng 3, mục 11): r1 / r2 / c1 là `set_value`, máy AUTOMATION không có lệnh đó (capabilityModel.ts:365-372, :398) ⇒ commandOf null (foeStepClass.ts:156-163) ⇒ classify đưa vào
       //   unverified (foeEngine.ts:6149-6151) mỗi khi walk tới bước đó; ở run đã chốt r1 KHÔNG settled vì đã giao mà chưa xác nhận (:1629, daGiao :6869 đọc routedTo của hàng r1 fixture). Định
-      //   nghĩa thật không thể có lệnh đó (validateWorkflow, workflowModel.ts:524-537). Sửa fixture nhỏ nhất (để dành lần chạy sau, KHÔNG làm ở bản này): `command: "set_value"` của `ot()`
-      //   ⇒ `"set_machine_param"` (capabilityModel.ts:208); khi đó đuôi theo đặc tả là RỖNG (r1 / r2 / c1 phân giải được, không phải STOP ⇒ không vào danh sách, :6154-6155).
-      const DUOI_THEO_DAC_TA = " Could not be verified as a pinned STOP: r2, c1: not sent; a later press sends it if its read finds a pinned STOP.";
-      expect.soft(msg2.slice(chuD(ids.run!).length), "Q1-PG-X11-CHU-D-DUOI: phần sau câu (d) đúng là câu 'Could not be verified …' với [r2, c1] (foeEngine.ts:6407 @ fe609ac7e)").toBe(DUOI_THEO_DAC_TA);
+      //   nghĩa thật không thể có lệnh đó (validateWorkflow, workflowModel.ts:524-537). X-36 GIỮ fixture (phương án A, HST 21/11): ca khẳng định hành vi thận trọng có thật — bước không phân giải được
+      //   thì không coi là đã kiểm là STOP ghim. Đổi `ot()` sang `"set_machine_param"` (capabilityModel.ts:208) sẽ đổi đường gửi và số hàng WORM chưa đo (phương án B, không làm).
+      // Đuôi [r1, r2, c1] là của FIXTURE `set_value` mà validateWorkflow không nhận. Đổi fixture sang một lệnh máy có thật thì đuôi theo đặc tả là RỖNG, và dòng dưới phải đổi theo
+      const DUOI_THEO_DAC_TA = " Could not be verified as a pinned STOP: r1, r2, c1: not sent; a later press sends it if its read finds a pinned STOP.";
+      expect.soft(msg2.slice(chuD(ids.run!).length), "Q1-PG-X11-CHU-D-DUOI-KHONG-PHAN-GIAI: fixture set_value không phân giải trên máy AUTOMATION ⇒ r1, r2, c1 thuộc câu 'Could not be verified …' (foeEngine.ts:6407 @ fe609ac7e)").toBe(DUOI_THEO_DAC_TA);
       expect(msg2, "Q1-PG-X11-CHU-D-KHONG-TU-CHOI: không có 'refused or not answered: s9' (s9 giao cho nút không phải bị từ chối)").not.toMatch(/refused or not answered: [^.]*\bs9\b/);
 
       // ── Đếm: hàng sinh ra lúc chạy, và hàng WORM
