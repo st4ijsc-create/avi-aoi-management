@@ -226,6 +226,7 @@ export const HAM_TRUNG_GIAN: readonly { ten: string; nguon: string; lyDo: string
   { ten: "priorStepsOf", nguon: "T4 (MOI), A1-2", lyDo: "settled / attempted từ hàng (laHangChuaRa: chữ FOE_STOP_NOT_SENT) ⇒ bước đã xong hay phải gửi lại" },
   // T4 bước 3 (HST 14/11, mục 4) — hàm thuần tách từ held(): đọc chữ hàng qua stopChuaRaTuHang (nợ STOP) ⇒ U / C / N / S / dấu cần người
   { ten: "stopTrangThaiC", nguon: "X-38 (MOI)", lyDo: "STOP ở state C, chỉ-STOP: hàng mang mã FOE_STOP_NOT_SENT (laHangMaChuaRa) ∪ khoá foeStopChuaRa ∖ hàng completed ⇒ lượt STOP đầu thử lại" },
+  { ten: "khoaC", nguon: "X-38 (MOI)", lyDo: "khoá foeStopChuaRaNut (riêng của nút) của run edge suy từ chữ hàng (stopTrangThaiC) ∪ báo cáo rider ⇒ lượt STOP đầu của đoạn sau thử lại" },
   { ten: "quyetDinhKetDoanEdge", nguon: "T4 bước 3 (MOI), A1-3", lyDo: "quyết định cuối đoạn edge: nợ STOP đọc từ chữ hàng (stopChuaRaTuHang) ⇒ URGENT stopNotSent / chốt / dấu cần người" },
 ];
 const TEN_TRUNG_GIAN = new Set(HAM_TRUNG_GIAN.map((h) => h.ten));
@@ -543,7 +544,11 @@ const DONG_BANG: readonly DongDongBang[] = [
   { tep: "server/services/edge/edgeCoordinator.ts", ham: "kiemKhoa", dang: "goi:chotTuHang", chu: "chotTuHang(gop)", ma: "MOI-39", lyDo: "X-32: ảnh sau ghi của payload (hàng run ghép hàng payload qua bộ lọc vòng ghi) ⇒ từ chối syncRunResult + URGENT edgeSyncRefused" },
   { tep: "server/services/edge/edgeCoordinator.ts", ham: "kiemKhoa", dang: "goi:stopChuaRaTuHang", chu: "stopChuaRaTuHang(gop,sau.ctx)", ma: "MOI-40", lyDo: "X-32: ảnh sau ghi của payload: nợ STOP ⇒ từ chối syncRunResult + URGENT edgeSyncRefused" },
   { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "stopTrangThaiC", dang: "goi:laHangMaChuaRa", chu: "laHangMaChuaRa(r,r.stepId)", ma: "MOI-41", lyDo: "X-38: STOP ở state C, chỉ-STOP (mã FOE_STOP_NOT_SENT của hàng chính nó) ⇒ lượt STOP đầu thử lại trước bù trừ không-STOP" },
-  { tep: "server/services/orchestration/foe/foeEngine.ts", ham: "lapKeHoachStop", dang: "goi:stopTrangThaiC", chu: "stopTrangThaiC(src.hang,rc.context)", ma: "MOI-42", lyDo: "X-38: chuDenHan thêm bước có cây bù trừ chứa STOP state C ⇒ thử lại ở lượt đầu, cổng C7-XN đọc kết quả" },
+  { tep: "server/services/orchestration/foe/foeEngine.ts", ham: "lapKeHoachStop", dang: "goi:stopTrangThaiC", chu: "stopTrangThaiC(src.hang,rc.context,rc.store.kind!==\"central\")", ma: "MOI-42", lyDo: "X-38: chuDenHan thêm bước có cây bù trừ chứa STOP state C ⇒ thử lại ở lượt đầu, cổng C7-XN đọc kết quả; commit 2: chỉ nút (store edge) đọc khoá foeStopChuaRaNut" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "khoaC", dang: "goi:stopTrangThaiC", chu: "stopTrangThaiC(hang,{...ctx,[STOP_CHUA_RA_CTX_KEY]:[...stopChuaRaTuNguCanh(ctx),...baoKhongRo.filter((b)=>b.loai===\"stopNotSent\").map((b)=>b.compId&&b.compId!==KHONG_CO_BU_TRU?b.compId:b.stepId)]},true)", ma: "MOI-43", lyDo: "X-38 (edge): kết đoạn held / paused / terminal ghi foeStopChuaRaNut (khoá RIÊNG của nút; không người đọc trung tâm nào thấy) cho đoạn sau của nút" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "held", dang: "goi:khoaC", chu: "khoaC(hang)", ma: "MOI-44", lyDo: "X-38 (edge): kết đoạn held ghi foeStopChuaRaNut (khoaC) cho đoạn sau của nút" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "congCuoi", dang: "goi:khoaC", chu: "khoaC(hang)", ma: "MOI-45", lyDo: "X-38 (edge): kết terminal DỌN foeStopChuaRaNut (khoaC) khi khoá đã có" },
+  { tep: "server/services/orchestration/foe/foeRunStore.ts", ham: "applyEdgeSegmentEnd", dang: "goi:khoaC", chu: "khoaC(awaitdb.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId,runId)))", ma: "MOI-46", lyDo: "X-38 (edge): kết đoạn paused ghi foeStopChuaRaNut (khoaC) khi khoá đổi; một SELECT trong giao dịch" },
   { tep: "server/services/edge/edgeGatewayRuntime.ts", ham: "releaseAlert", dang: "!==", chu: "code!==\"EDGE_DEVICE_RELEASED\"", ma: "MOI-3", lyDo: "`code` là kiểu hợp literal của chính hàm; chỉ chọn có in console.error" },
   { tep: "server/services/edge/edgeGatewayRuntime.ts", ham: "quiesceRobot", dang: ".split", chu: "d.reason??\"?\".split(\":\")", ma: "MOI-4", lyDo: "mã lý do detach (có cấu trúc) ⇒ khoá chống lặp cảnh báo attach; không quyết STOP" },
   { tep: "server/services/edge/edgeJournal.ts", ham: "parseLine", dang: "JSON.parse", chu: "JSON.parse(text)", ma: "E-8", lyDo: "dòng journal JSONL do chính nút ghi; hỏng ⇒ JournalCorrupt (ném)" },
@@ -746,10 +751,11 @@ const DONG_BANG: readonly DongDongBang[] = [
 // QUYET_DINH_MOC lần 6 (chu-du-an-HST, 2026-11-18; mã SG-1, hàng X-22): mốc = 183 = 182 + 1 (luật mã bước của main gộp vào A2(n): workflowModel.ts duyet, id.includes(DAU_HIEU_RIENG_STEP_ID))
 // QUYET_DINH_MOC lần 7 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-20; hàng X-32c): mốc = 185 = 183 + 2 (MOI-39, MOI-40: kiemKhoa của edgeCoordinator, ảnh sau ghi của payload). Ghim lại phần tử đầu.
 // QUYET_DINH_MOC lần 8 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-21; hàng X-38, commit 1): mốc = 187 = 185 + 2 (MOI-41 stopTrangThaiC gọi laHangMaChuaRa; MOI-42 lapKeHoachStop gọi stopTrangThaiC). Ghim lại phần tử đầu.
-const MOC_GOC = 187;
-const LICH_SU_MOC: readonly number[] = [187];
+// QUYET_DINH_MOC lần 9 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-21; hàng X-38, commit 2): mốc = 191 = 187 + 4 (MOI-43 khoaC gọi stopTrangThaiC; MOI-44 held, MOI-45 congCuoi, MOI-46 applyEdgeSegmentEnd gọi khoaC — khoaC vào HAM_TRUNG_GIAN). Ghim lại phần tử đầu.
+const MOC_GOC = 191;
+const LICH_SU_MOC: readonly number[] = [191];
 /** Mốc số dòng đóng băng: bằng phần tử cuối của `LICH_SU_MOC`, chỉ được GIẢM. */
-const SO_DONG_MOC = 187;
+const SO_DONG_MOC = 191;
 
 /**
  * HST 14/11 T2-DK1 — "ngoài tầm" không được thành "ngoài sổ". 21 ô của bảng kiểm kê mà census KHÔNG bắt được (không có phép so chữ để bắt:

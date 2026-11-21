@@ -48,7 +48,7 @@ import { toRobotJob } from "../../equipment/robotJobMapping";
 import { readEdgeAssignment } from "../../edge/edgeExecutionSchema"; // A2(n) T8 lượt sửa 1 (CHAN-3) — a run given to an edge node: its claim's progress is its heartbeat; lượt sửa 2 (CHAN-4): through the shared read (0370 missing ⇒ no edge)
 import { EDGE_HELD_CTX_KEY, EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED, INTERRUPTED_EARLIER_CTX_KEY, edgeHoldMarkOf } from "../../edge/edgeProgramReportRule"; // fix review 1 — ONE home of the hold marks
 import { allStepsOf, buildEquipmentCommand, commandOf, isRobotKind, isRobotStopStep, isStopCandidate, laStopTheoBuoc, makeStopVerifier, orchestrationActionId, orchestrationActionIdCu, stopActionIdMoi, type StopVerification } from "./foeStepClass";
-import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, BUOC_KHONG_XAC_DINH, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, daDuyetBuTruKhongRo, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, tachBaoCaoKhongRoEdge, docDsKhongRoEdge, TRAN_LOI_EDGE, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, rutGonGiua, TRAN_TEN_NUT, TRAN_LY_DO, VI_KHONG_BAO, CAU_TAY_MAY, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
+import { type DangDauVetAbort, type LopStopAbort, type PhanLoaiStopAbort, BUOC_KHONG_XAC_DINH, maTuChoiCua, nguonCuaKetQua, type ViChuaRa, FOE_STOP_NOT_SENT, KET_CUC_KHONG_RO_CHOT_CTX_KEY, KET_CUC_KHONG_RO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_CTX_KEY, KET_CUC_KHONG_RO_DA_BAO_QUET_CTX_KEY, KHONG_CO_BU_TRU, canhBaoKetCucKhongRo, canhBaoTuBaoCaoEdge, chotTuHang, daDuyetBuTruKhongRo, loiGiuChuaDocHang, loiGiuChuaRa, loiGiuKhongBen, loiLaKetCucKhongRo, maKetCucKhongRoCua, runDaChotKhongRo, stopChuaRaTuNguCanh, STOP_CHUA_RA_CTX_KEY, tachBaoCaoKhongRoEdge, docDsKhongRoEdge, TRAN_LOI_EDGE, xacNhanHetChot, xacNhanTu, ghiNenXacNhanNut, rutGonGiua, TRAN_TEN_NUT, TRAN_LY_DO, VI_KHONG_BAO, CAU_TAY_MAY, type CachEdgeTrungTam, viChuaRaCuaLoi, type BaoCaoKhongRoEdge, type DauKetCucKhongRo, type LoaiCanhBaoKhongRo, type MaKetCucKhongRo } from "./foeKetCucKhongRo"; // R1b-2b-2a A2(n)
 import { napMotLan } from "./foeNapMotLan";
 import { edgeStepAuthorizations } from "../../edge/edgeControlSchema"; // T9 lượt sửa 3e — central's authorisation ledger (0372), read at an edge segment end (SELECT only)
 import { coTheDaBayCua } from "../../equipment/lenhTruocCoTheDaBay"; // A2(n) T7b-1 — "may already have flown" is no refusal: laHangChuaRa
@@ -472,11 +472,15 @@ export function stopChuaRaTuHang(rows: ReadonlyArray<{ stepId: string; stepType?
  * (laHangMaChuaRa: FOE_STOP_NOT_SENT, its own step, never a container's) ∪ the context's list (datChuaRa: STOP-typed only), minus a STOP whose own row says it went (completed; a STOP compensation: compensated). Never laHangChuaRa's second
  * arm (a refused attempt of ANY command), never an `abort:` row (X38-KHONG-DOC-HANG-ABORT: after an Abort no walk comes). Pure.
  */
-export function stopTrangThaiC(rows: ReadonlyArray<{ stepId: string; stepType?: string; status?: string; error?: string | null; resultJson?: unknown }> | null | undefined, ctx?: Record<string, unknown> | null): Set<string> {
+export function stopTrangThaiC(rows: ReadonlyArray<{ stepId: string; stepType?: string; status?: string; error?: string | null; resultJson?: unknown }> | null | undefined, ctx?: Record<string, unknown> | null, nut = false): Set<string> {
   const cuaBuoc = (rows ?? []).filter((r) => !r.stepId.startsWith(ABORT_ROW_PREFIX));
   const daXong = new Set(cuaBuoc.filter((r) => r.status === "completed" || r.status === "compensated").map((r) => r.stepId));
-  return new Set([...cuaBuoc.filter((r) => laHangMaChuaRa(r, r.stepId)).map((r) => r.stepId), ...stopChuaRaTuNguCanh(ctx)].filter((id) => !daXong.has(id)));
+  const khoaNut = nut && Array.isArray(ctx?.[STOP_CHUA_RA_NUT_CTX_KEY]) ? (ctx?.[STOP_CHUA_RA_NUT_CTX_KEY] as unknown[]).map(String) : []; // X-38 (edge) — `nut`: the node's walk, and central's khoaC writing it
+  return new Set([...cuaBuoc.filter((r) => laHangMaChuaRa(r, r.stepId)).map((r) => r.stepId), ...stopChuaRaTuNguCanh(ctx), ...khoaNut].filter((id) => !daXong.has(id)));
 }
+
+/** X-38 (edge; HST 21/11 08:0x) — central's list of STOPs in state C for an edge node's next segment. Its OWN key: no reader of central's (stopChuaRaTuHang, stopChuaRaTuNguCanh: the end gate, an Abort, H36, X-32) sees it. */
+export const STOP_CHUA_RA_NUT_CTX_KEY = "foeStopChuaRaNut";
 
 /**
  * A2(n) T7b-1d (H22) — THE trace of what an earlier Abort tried or meant to send and did not go, read the same on every run: an `abort:` row that failed (its result says which kind). An `abort:` row that went or was
@@ -2198,6 +2202,12 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     return loiGiuChuaRa(id, viBao(id), await cachNoEdge(id));
   };
   const ctx = ((run.contextJson as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+  // X-38 (P1-HANG, edge) — the STOPs in state C central knows of (stopTrangThaiC ∪ the rider's structured stopNotSent reports, the old list kept when the rider is short), for the node's next segment:
+  // its FIRST pass tries them again before any compensation that is not a STOP (packageContext carries the key down; the node writes it back unchanged)
+  const khoaC = (hang: Parameters<typeof stopTrangThaiC>[0]): Record<string, unknown> => {
+    const ds = [...stopTrangThaiC(hang, { ...ctx, [STOP_CHUA_RA_CTX_KEY]: [...stopChuaRaTuNguCanh(ctx), ...baoKhongRo.filter((b) => b.loai === "stopNotSent").map((b) => (b.compId && b.compId !== KHONG_CO_BU_TRU ? b.compId : b.stepId))] }, true)]; // ONE filter of what went: stopTrangThaiC's
+    return { [STOP_CHUA_RA_NUT_CTX_KEY]: ds.length ? ds : undefined };
+  };
   const stopped = run.status === "aborted" || ctx[FOE_REJECT_CLAIM_CTX_KEY] != null;
   if (stopped || (run.status !== "running" && run.status !== "compensating")) return { ok: true, status: run.status, changed: false };
   const LIVE: Array<OrchestrationRun["status"]> = ["running", "compensating"];
@@ -2258,6 +2268,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
         ...chotTuBao,
         ...(q.chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { ...q.chot, at } } : {}),
         ...daBao,
+        ...khoaC(hang),
       },
     });
   };
@@ -2272,7 +2283,7 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     const tap = await khongRoCuaDoan(); // X-34 — read ONCE, before the gate: a terminal end too latches on central's own set (H3)
     const q = await quyetDinhKetThucAnh({ runId, ctx, owner: run.startedBy ?? null, rows: hang, def: end.def, daCo: tuBao || tap.length === 0 ? daCo : [], cachNo: cachNoEdge, viNo: viBao, chotTuBao: tuBao ? { stepId: tuBao.stepId, ma: tuBao.ma } : null, tapKetDoan: tap, claimSeq: end.claimSeq }, "edgeSegment", undefined, KET_DOAN_EDGE_TONG_MS);
     const daBao = q.moi && q.chot ? { [KET_CUC_KHONG_RO_DA_BAO_CTX_KEY]: { stepId: q.chot.stepId, at: new Date().toISOString() } } : {};
-    if (q.ghi === "terminal") return { patch: Object.keys(daBao).length || q.tuTap ? { contextJson: { ...ctx, ...chotTuBao, ...(q.tuTap && q.chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { ...q.chot, at: new Date().toISOString(), nguon: "tapKetDoan" }, [OUTCOME_UNKNOWN_KEY]: [...new Set([...(Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : []), ...tap])] } : {}), ...daBao } } : {} }; // X-34: `nguon` ONLY on a terminal patch
+    if (q.ghi === "terminal") return { patch: Object.keys(daBao).length || q.tuTap || STOP_CHUA_RA_NUT_CTX_KEY in ctx ? { contextJson: { ...ctx, ...chotTuBao, ...khoaC(hang), ...(q.tuTap && q.chot ? { [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { ...q.chot, at: new Date().toISOString(), nguon: "tapKetDoan" }, [OUTCOME_UNKNOWN_KEY]: [...new Set([...(Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : []), ...tap])] } : {}), ...daBao } } : {} }; // X-34: `nguon` ONLY on a terminal patch
     const at = new Date().toISOString();
     const prevUnknown = Array.isArray(ctx[OUTCOME_UNKNOWN_KEY]) ? (ctx[OUTCOME_UNKNOWN_KEY] as unknown[]).map(String) : [];
     return {
@@ -2304,7 +2315,9 @@ export async function applyEdgeSegmentEnd(db: RunDb, runId: number, endTho: Edge
     case "paused": {
       const gate = end.gateStepId ? allStepsOf(end.def.steps).find((s) => s.id === end.gateStepId) : undefined;
       if (!gate || gate.type !== "hitl_gate") return held("pausedAtNonGate", `the edge reported a pause at "${end.gateStepId ?? "?"}", which is not a gate of the assigned definition`);
-      const out = await write("awaiting_confirm", { currentStepId: gate.id, ...(Object.keys(chotTuBao).length ? { contextJson: { ...ctx, ...chotTuBao } } : {}) });
+      const kc = khoaC(await db.select().from(orchestrationRunSteps).where(eq(orchestrationRunSteps.runId, runId))); // X-38 — one SELECT, in this transaction, after the run row's lock
+      const doiKhoa = JSON.stringify(kc[STOP_CHUA_RA_NUT_CTX_KEY] ?? null) !== JSON.stringify(ctx[STOP_CHUA_RA_NUT_CTX_KEY] ?? null);
+      const out = await write("awaiting_confirm", { currentStepId: gate.id, ...(Object.keys(chotTuBao).length || doiKhoa ? { contextJson: { ...ctx, ...chotTuBao, ...kc } } : {}) });
       if (out.ok && out.changed) {
         const [prior] = await db
           .select()

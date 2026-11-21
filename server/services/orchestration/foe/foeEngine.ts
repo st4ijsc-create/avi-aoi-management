@@ -1645,7 +1645,7 @@ async function lapKeHoachStop(rc: RunContext, src: AbortSweepSource, v: StopVeri
   const hongTruoc = (id: string) => (coHang.has(id) || rc.store.kind === "central" ? hong.has(id) : rc.prior.settled.has(id) && !rc.completed.has(id) && !chuBuTruCua(rc, id));
   const settled = nguoi ? (id: string) => src.settled(id) && !hongTruoc(id) && !(nguoi.daGiao(id) && !nguoi.xacNhan(id)) : (id: string) => tuLuotNay(id) || (src.settled(id) && !hongTruoc(id));
   // X-38 (P1-HANG) — a STOP in state C is tried again at the FIRST pass, before any compensation that is not a STOP: the C7-XN gate then reads its answer
-  const no = stopTrangThaiC(src.hang, rc.context);
+  const no = stopTrangThaiC(src.hang, rc.context, rc.store.kind !== "central"); // X-38 (edge): the node also reads the list central hands it (STOP_CHUA_RA_NUT_CTX_KEY); central never does
   return planAbortSweep({ ...src, settled, sentBefore: nguoi ? new Set([...src.sentBefore].filter(nguoi.xacNhan)) : src.sentBefore }, rc.def, v, { chuDenHan: chuDenHan(rc, cuoi ? bangChungSauChot(rc, src.hang) : null, no) }, nguoi?.daDinh);
 }
 

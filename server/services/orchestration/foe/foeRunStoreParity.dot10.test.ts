@@ -20453,3 +20453,95 @@ describe("X-27 M2 an edge walker: a STOP skipped in an earlier segment is named 
     expect(bao(e).filter((x) => x === "forwardNotSent:xs")).toEqual([]);
   });
 });
+
+// X-38 (P1-HANG, edge; giấy tam/x38-p1hang-pham-vi-4.md 6a0cb5a960d1450b + bổ sung bản 5 465e315885984f5f; thăm dò X38H2E-KE h2e-dong.txt f0883bf5d4b0284f) — the node walks the same C7-XN gate, but knew nothing of a STOP in state C of an EARLIER
+// segment: central's end of each segment now hands it the list (foeStopChuaRa = stopTrangThaiC(rows, ctx) ∪ the rider's stopNotSent reports, minus what went), packageContext carries it down
+describe("X-38 (P1-HANG, edge) the node's next segment tries a STOP in state C of an earlier segment FIRST: no compensation that is not a STOP goes while it is not handed over", () => {
+  const box = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "sequence", steps }) as never;
+  const parF = (id: string, steps: WorkflowStep[]): WorkflowStep => ({ id, type: "parallel", failFast: false, steps }) as never;
+  const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const REF = { status: "rejected", error: "INTERLOCK_NOT_MET: refused (X-38)" };
+  const khoa = (e: EdgeHarness) => (runRow(e.runId).contextJson as Record<string, unknown> | null)?.foeStopChuaRaNut ?? null; // the node's own key (HST 08:0x): central's foeStopChuaRa stays untouched
+  const gui = (tu: number) => h.sent.slice(tu).map((x) => String(x.stepId));
+  const hang = (runId: number, id: string) => stepRows(runId).find((r) => r.stepId === id);
+  /** the H2E shape: segment 2 latches on x, qq fails ⇒ its STOP compensation cs is refused (state C); `thieu`: the rider reaches central short, its reports lost */
+  const hinh = async (ref: string, thieu = false) => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.tuChoi.set("cs", REF);
+    h.failPlan.set("qq", Infinity);
+    const e = await edgeAssignedRun(def(ref, [gate(), parF("p", [box("b", [move("x", { compensation: ot("undo") })]), ot("qq", { compensation: otStop("cs") })])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("x");
+    if (thieu) e.quaDay = async (o) => ({ ...o, error: String(o.error ?? "").replace(/ \[\[A2N:[\s\S]*\]\]$/, " [[A2N-THIEU:[]]]") });
+    await edgeSegment(e, 2);
+    e.quaDay = undefined;
+    await wait(30);
+    expect(runRow(e.runId).status, "the shape: held after segment 2").toBe("held");
+    expect(String(hang(e.runId, "cs")?.error), "the shape: cs in state C on its row").toMatch(/^FOE_STOP_NOT_SENT:/);
+    return e;
+  };
+
+  it("X38-H2-EDGE cs refused again in segment 3: no undo, held; the list handed down names cs", async () => {
+    const e = await hinh("x38h2e");
+    expect(khoa(e)).toEqual(["cs"]);
+    expect((runRow(e.runId).contextJson as Record<string, unknown> | null)?.foeStopChuaRa ?? null, "central's own key untouched: no reader of central sees the node's list").toBeNull();
+    expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+    const n0 = h.sent.length;
+    await edgeSegment(e, 3);
+    await wait(30);
+    expect(gui(n0), "no compensation that is not a STOP while cs is not handed over").not.toContain("undo");
+    expect(runRow(e.runId).status).toBe("held");
+    expect(String(runRow(e.runId).error)).toContain('STOP "cs"');
+  });
+
+  it("X38-H2-EDGE-GIAO cs accepted in segment 3: cs first, then undo; cs once; the list is gone once cs went", async () => {
+    const e = await hinh("x38h2eg");
+    expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+    h.tuChoi.delete("cs");
+    const n0 = h.sent.length;
+    await edgeSegment(e, 3);
+    await wait(30);
+    const g = gui(n0);
+    expect(g.filter((x) => x === "cs"), "cs once").toEqual(["cs"]);
+    expect(g.indexOf("cs"), "the STOP first").toBeLessThan(g.indexOf("undo"));
+    expect(khoa(e), "cleaned: cs's row says it went").toBeNull();
+  });
+
+  it("X38-EDGE-HANG-MAT cs's row never reaches central (the report path lost it) but the rider names cs: the list still names cs; segment 3 sends no undo", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.tuChoi.set("cs", REF);
+    h.failPlan.set("qq", Infinity);
+    const e = await edgeAssignedRun(def("x38h2em", [gate(), parF("p", [box("b", [move("x", { compensation: ot("undo") })]), ot("qq", { compensation: otStop("cs") })])]));
+    await edgeSegment(e, 1);
+    await approveEdgeGate(e);
+    h.timeoutDispatch.add("x");
+    e.sauGhiHang = () => fake.seed(orchestrationRunSteps, rows("orchestration_run_steps").filter((x) => !(x.runId === e.runId && x.stepId === "cs")));
+    await edgeSegment(e, 2);
+    e.sauGhiHang = undefined;
+    await wait(30);
+    expect(hang(e.runId, "cs"), "the shape: no row of cs at central").toBeUndefined();
+    expect(khoa(e), "from the rider's report").toEqual(["cs"]);
+    expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+    const n0 = h.sent.length;
+    await edgeSegment(e, 3);
+    await wait(30);
+    expect(gui(n0)).not.toContain("undo");
+    expect(gui(n0), "cs tried again in segment 3").toContain("cs");
+    expect(String(runRow(e.runId).error)).toContain('STOP "cs"');
+  });
+
+  it("X38-EDGE-RIDER-THIEU the rider reaches central SHORT (its reports lost): the list still names cs, from its row; segment 3 sends no undo", async () => {
+    const e = await hinh("x38h2et", true);
+    expect(khoa(e), "from the row, not the rider").toEqual(["cs"]);
+    expect((await continueOutcomeUnknown(e, "checked on site")).status).toBe("queued");
+    const n0 = h.sent.length;
+    await edgeSegment(e, 3);
+    await wait(30);
+    expect(gui(n0)).not.toContain("undo");
+    expect(gui(n0), "cs tried again in segment 3").toContain("cs");
+    expect(String(runRow(e.runId).error)).toContain('STOP "cs"');
+  });
+});
