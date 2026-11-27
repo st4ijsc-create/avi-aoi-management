@@ -387,3 +387,34 @@ describe("V10 — thêm sau lượt đỏ-trước (đã báo trước)", () => 
     }
   });
 });
+
+/*
+ * LƯỢT 2 — viết SAU KHI biết đột biến c43 sống (bộ chốt trước của kiem-dinh); đo lại c43 KHÔNG phải bộ chốt trước. Lời nhắc gửi model có ba đường đưa chữ của tsc ra:
+ * dòng lỗi, dòng giải thích, lỗi khởi chạy — cả ba phải qua bộ che token. Chuỗi giống token được GHÉP LÚC CHẠY, không nằm nguyên trong mã nguồn.
+ */
+describe("V10 lượt 2 — chữ của tsc đi qua bộ che token trước khi tới model", () => {
+  const tokenGia = () => ["gh", "p_"].join("") + "A1b2".repeat(9);
+  const chuCoToken = () => `Type '"${tokenGia()}"' is not assignable to type 'number'.`;
+
+  it("V10-L2a token trong DÒNG LỖI không tới model", async () => {
+    const r = await chayHost({ tsc: tscDo([loiO("a.test.ts", 3, chuCoToken())]) });
+    expect(r.tin[0]).toContain("a.test.ts(3,5): error TS2345");
+    expect(r.tin[0]).not.toContain(tokenGia());
+    expect(r.tin[0]).toContain("[REDACTED_SECRET]");
+  });
+
+  it("V10-L2b token trong dòng GIẢI THÍCH không tới model", async () => {
+    const dong = loiO("a.test.ts", 3);
+    const r = await chayHost({ tsc: tscDo([dong], 1, [`${dong}\n  ${chuCoToken()} DAU_GIAI_THICH`]) });
+    expect(r.tin[0]).toContain("DAU_GIAI_THICH");
+    expect(r.tin[0]).not.toContain(tokenGia());
+    expect(r.tin[0]).toContain("[REDACTED_SECRET]");
+  });
+
+  it("V10-L2c token trong lỗi KHỞI CHẠY tsc không tới model", async () => {
+    const r = await chayHost({ tsc: { exit: null, hetGio: false, giay: 0, loiTrongTep: [], tongLoi: 0, loi: `spawn that bai ${tokenGia()}` } });
+    expect(r.tin[0]).toContain("spawn that bai");
+    expect(r.tin[0]).not.toContain(tokenGia());
+    expect(r.tin[0]).toContain("[REDACTED_SECRET]");
+  });
+});
