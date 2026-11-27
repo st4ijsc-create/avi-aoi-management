@@ -210,6 +210,41 @@ describe("resolveDefectForClass — acceptanceClass đặc biệt", () => {
     expect(resolveDefectForClass(defect, "2").accept).toBe("reject");
     expect(resolveDefectForClass(defect, "3").accept).toBe("reject");
   });
+
+  it("acceptanceClass \"2a\" (số kèm đuôi chữ) ⇒ \"reject\" ở cả ba cấp", () => {
+    const defect = { code: "E5", severity: "major", acceptanceClass: "2a" };
+    expect(resolveDefectForClass(defect, "1").accept).toBe("reject");
+    expect(resolveDefectForClass(defect, "2").accept).toBe("reject");
+    expect(resolveDefectForClass(defect, "3").accept).toBe("reject");
+  });
+
+  it("acceptanceClass \"3x\" (số kèm đuôi chữ) ⇒ \"reject\" ở cả ba cấp", () => {
+    const defect = { code: "E6", severity: "major", acceptanceClass: "3x" };
+    expect(resolveDefectForClass(defect, "1").accept).toBe("reject");
+    expect(resolveDefectForClass(defect, "2").accept).toBe("reject");
+    expect(resolveDefectForClass(defect, "3").accept).toBe("reject");
+  });
+
+  it("acceptanceClass \"0\" (số ngoài 1–3) ⇒ \"reject\" ở cả ba cấp", () => {
+    const defect = { code: "E7", severity: "major", acceptanceClass: "0" };
+    expect(resolveDefectForClass(defect, "1").accept).toBe("reject");
+    expect(resolveDefectForClass(defect, "2").accept).toBe("reject");
+    expect(resolveDefectForClass(defect, "3").accept).toBe("reject");
+  });
+
+  it("acceptanceClass \"4\" (số ngoài 1–3) ⇒ \"reject\" ở cả ba cấp", () => {
+    const defect = { code: "E8", severity: "major", acceptanceClass: "4" };
+    expect(resolveDefectForClass(defect, "1").accept).toBe("reject");
+    expect(resolveDefectForClass(defect, "2").accept).toBe("reject");
+    expect(resolveDefectForClass(defect, "3").accept).toBe("reject");
+  });
+
+  it("acceptanceClass \" 2 \" (có khoảng trắng) ⇒ \"reject\" ở cả ba cấp", () => {
+    const defect = { code: "E9", severity: "major", acceptanceClass: " 2 " };
+    expect(resolveDefectForClass(defect, "1").accept).toBe("reject");
+    expect(resolveDefectForClass(defect, "2").accept).toBe("reject");
+    expect(resolveDefectForClass(defect, "3").accept).toBe("reject");
+  });
 });
 
 describe("resolveDefectForClass — classRules null hoặc {}", () => {

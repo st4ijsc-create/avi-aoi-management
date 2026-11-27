@@ -162,7 +162,9 @@ export function resolveDefectForClass(
 }
 
 function legacyFlagged(acceptanceClass: string | null, target: IpcClass): boolean {
-  if (!acceptanceClass) return true; // no policy → conservative
+  // Chỉ "1", "2", "3" là hợp lệ; mọi giá trị khác → gắn cờ reject ở mọi cấp.
+  if (!acceptanceClass) return true;
+  if (acceptanceClass !== "1" && acceptanceClass !== "2" && acceptanceClass !== "3") return true;
   const a = Number.parseInt(acceptanceClass, 10);
   const t = Number.parseInt(target, 10);
   if (!Number.isFinite(a) || !Number.isFinite(t)) return true;
