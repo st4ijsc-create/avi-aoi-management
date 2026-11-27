@@ -161,6 +161,65 @@ export const duyetQuaTep: ChinhSachDuyet = async (h, ctx) => {
   return xong({ quyet: "het-gio" });
 };
 
+/** (V0) ngân sách chữ CHI TIẾT (thông báo đầu, dòng vị trí, diff, khung mã) của một lời nhắc; tên ca nằm ngoài ngân sách này */
+export const NGAN_SACH_CHI_TIET = 6000;
+/** LỆCH CÓ TÊN «V0-TRAN-TEN» so kế hoạch §10.3 ("không cắt tên"): nhiều hơn thế thì riêng tên đã làm đầy cửa sổ ngữ cảnh */
+export const TRAN_SO_TEN = 100;
+export const TRAN_DAI_TEN = 300;
+const DUOI_CHO_MODEL = 1800;
+
+/** Chia `tong` ký tự cho các mảnh: mảnh ngắn lấy đủ, phần thừa chia đều tiếp cho mảnh dài — không mảnh nào bị bỏ đói vì đứng trước/sau. */
+function chiaDeu(can: readonly number[], tong: number): number[] {
+  const ra = new Array<number>(can.length).fill(0);
+  const thuTu = can.map((_, i) => i).sort((a, b) => can[a]! - can[b]!);
+  let con = tong;
+  thuTu.forEach((i, viTri) => {
+    const phan = Math.min(can[i]!, Math.floor(con / (thuTu.length - viTri)));
+    ra[i] = phan;
+    con -= phan;
+  });
+  return ra;
+}
+
+const catChu = (s: string, n: number) => (s.length <= n ? s : n <= 0 ? "" : `${s.slice(0, n - 1)}…`);
+const laTepHong = (ten: string) => !ten.includes(" > ") && /\[ .+ \]$/.test(ten);
+
+/**
+ * (V0) Phần "ca đỏ" của lời nhắc: TÊN mọi ca đỏ, kèm thông báo đầu + vị trí, rồi diff / khung mã chia đều trong ngân sách. Trả null khi không có gì để dựng
+ * (không mang khối, hoặc không khối nào và không ca nào hỏng) ⇒ chỗ gọi giữ định dạng đuôi đầu ra cũ.
+ */
+export function dungPhanCaDo(k: KetQuaKiem): { dong: string[]; kemDuoi: boolean; soTenGui: number; soCaDo: number; soKhoiCat: number; soKyTu: number } | null {
+  const soCaDo = k.vitest.ca?.hong ?? 0;
+  if (!k.khoiDo || (k.khoiDo.length === 0 && soCaDo === 0)) return null;
+  const demCa = (ds: ReadonlyArray<{ ten: string[] }>) => ds.reduce((n, x) => n + x.ten.filter((t) => !laTepHong(t)).length, 0);
+  const demMoiTen = (ds: ReadonlyArray<{ ten: string[] }>) => ds.reduce((n, x) => n + x.ten.length, 0);
+  let conCho = TRAN_SO_TEN;
+  const khoi = k.khoiDo.flatMap((x) => {
+    const ten = x.ten.slice(0, conCho);
+    conCho -= ten.length;
+    return ten.length > 0 ? [{ ...x, ten }] : [];
+  });
+  const dauKhoi = khoi.flatMap((x) => [x.thongBao, x.viTri]);
+  const capDau = chiaDeu(dauKhoi.map((s) => s.length), NGAN_SACH_CHI_TIET);
+  const capSau = chiaDeu(khoi.map((x) => x.conLai.length), NGAN_SACH_CHI_TIET - capDau.reduce((a, b) => a + b, 0));
+  let soKhoiCat = 0;
+  let soKyTu = 0;
+  const dong: string[] = [];
+  khoi.forEach((x, i) => {
+    const manh = [catChu(x.thongBao, capDau[2 * i]!), catChu(x.viTri, capDau[2 * i + 1]!), catChu(x.conLai, capSau[i]!)];
+    if (manh[0] !== x.thongBao || manh[1] !== x.viTri || manh[2] !== x.conLai) soKhoiCat++;
+    soKyTu += manh.reduce((n, s) => n + s.length, 0);
+    dong.push(...x.ten.map((t) => `FAIL ${catChu(t, TRAN_DAI_TEN)}`), ...manh.filter((s) => s !== ""), "");
+  });
+  const boTen = demMoiTen(k.khoiDo) - demMoiTen(khoi);
+  if (boTen > 0) dong.push(`còn ${boTen} ca đỏ không liệt kê`);
+  if (soKhoiCat > 0) dong.push(`đã cắt bớt chi tiết của ${soKhoiCat}/${khoi.length} khối${boTen > 0 ? "" : "; tên ca giữ đủ"}`);
+  const docThieu = demCa(k.khoiDo) < soCaDo;
+  if (docThieu) dong.push(`chỉ đọc được tên ${demCa(k.khoiDo)}/${soCaDo} ca đỏ; kèm đuôi đầu ra`);
+  if (k.coLoiNgoaiCa) dong.push("đầu ra có lỗi ngoài ca (Unhandled); kèm đuôi đầu ra");
+  return { dong, kemDuoi: docThieu || k.coLoiNgoaiCa === true, soTenGui: demCa(khoi), soCaDo, soKhoiCat, soKyTu };
+}
+
 /**
  * Văn bản trả cho model khi bộ chạy TỰ chạy LỆNH KIỂM thay cho thẻ duyệt. Kênh duy nhất để đưa kết quả về model là lý do từ chối của thẻ
  * (host in nó sau "User rejected this change:"), nên câu đầu nói rõ đây là KẾT QUẢ THẬT, không phải bị người từ chối.
@@ -169,12 +228,13 @@ export function tomTatKiemChoModel(k: KetQuaKiem, lan: number): string {
   const tep = k.vitest.tep ? `Test Files ${k.vitest.tep.hong > 0 ? `${k.vitest.tep.hong} failed | ` : ""}${k.vitest.tep.dat} passed (${k.vitest.tep.tong})` : "Test Files: (không có dòng tổng kết)";
   const ca = k.vitest.ca ? `Tests ${k.vitest.ca.hong > 0 ? `${k.vitest.ca.hong} failed | ` : ""}${k.vitest.ca.dat} passed (${k.vitest.ca.tong})` : "Tests: (không có dòng tổng kết)";
   const dau = k.hetGio ? `hết hạn sau ${k.giay}s` : k.loi ? `không khởi chạy được: ${k.loi}` : `thoát mã ${k.exit}`;
+  const phan = dungPhanCaDo(k);
   return [
     `[pilot] KHÔNG PHẢI bị người từ chối: bộ chạy đã TỰ CHẠY lệnh kiểm này thay bạn (lần ${lan}); đây là KẾT QUẢ THẬT. ${dau}.`,
     tep,
     ca,
-    "--- đuôi đầu ra ---",
-    k.duoi.length > 1800 ? k.duoi.slice(-1800) : k.duoi,
+    ...(phan ? ["--- ca đỏ ---", ...phan.dong] : []),
+    ...(!phan || phan.kemDuoi ? ["--- đuôi đầu ra ---", k.duoi.length > DUOI_CHO_MODEL ? k.duoi.slice(-DUOI_CHO_MODEL) : k.duoi] : []),
     "Đỏ ⇒ sửa tệp rồi gọi lại đúng lệnh này; xanh ⇒ báo kết quả cuối. Bộ chạy cũng tự chạy lại lệnh kiểm khi bạn kết thúc.",
   ].join("\n");
 }
@@ -299,6 +359,9 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
             ghiChu.push(`PHỦ lần ${soTuChay}: thiếu dòng ${ph.dongThieu.join(",") || "(không)"}`);
           }
         }
+        // (V0, chỉ số M19) bao nhiêu tên ca đỏ tới model; chế độ chi-so không gửi tên nên không ghi
+        const phan = v.cheDoKiem === "chi-so" ? null : dungPhanCaDo(k);
+        if (phan) ghiChu.push(`V0 lần ${soTuChay}: gửi model tên ${phan.soTenGui}/${phan.soCaDo} ca đỏ; cắt chi tiết ${phan.soKhoiCat} khối; ${phan.soKyTu} ký tự chi tiết`);
         await dep.bac(actionId, loiNhac);
         if (v.cheDoKiem === "chi-so") {
           // đầu ra ĐẦY ĐỦ (đã lọc URL + bí mật) chỉ cho NGƯỜI duyệt đọc — tệp kết quả, không bao giờ đi vào lời nhắc của model

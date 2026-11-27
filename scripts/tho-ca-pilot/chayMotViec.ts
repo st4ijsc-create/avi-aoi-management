@@ -1052,7 +1052,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     crlf,
     diff: diffPath,
     lenhKiem: the.lenhKiem,
-    ...(kiem ? { kiem: (({ lenh: _l, dauRaDayDu: _d, ...r }) => r)(kiem) } : {}),
+    ...(kiem ? { kiem: (({ lenh: _l, dauRaDayDu: _d, khoiDo: _k, ...r }) => r)(kiem) } : {}),
     ...(p.coAiAgent ? { coAiAgent: p.coAiAgent } : {}),
     ...(tran ? { tran } : {}),
     ...(phu ? { phu } : {}),
