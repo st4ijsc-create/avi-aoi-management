@@ -150,6 +150,38 @@ describe("main() — cờ nơi chạy", () => {
     expect(r.ma).toBe(2);
     expect(r.err).toContain("--luat-cach ghi-de|ghep");
   });
+  // Các ca từ chối dưới đây trỏ --the vào tệp KHÔNG CÓ: ở mã còn nhận / tự chọn "cli", bộ chạy ném ENOENT khi đọc thẻ, TRƯỚC khi gọi driver ⇒ ca không bao giờ khởi CLI thật. KHÔNG đổi sang thẻ có thật.
+  const theKhongCo = () => ["--the", path.join(goc, "khong-co.txt"), "--wt", wt, "--base", baseSha, "--ra", ra];
+  it("★★★ D1 vắng --driver ⇒ mã 2, THIEU-DRIVER, từ chối trước khi đọc thẻ (không JSON, không tạo nhánh pilot)", async () => {
+    const r = await chayCli(theKhongCo());
+    expect(r.ma).toBe(2);
+    expect(r.err).toContain("THIEU-DRIVER: phải ghi rõ --driver host|kho");
+    expect(r.json).toBeNull();
+    expect(git(wt, "branch", "--list", "pilot/*")).toBe("");
+  });
+  it("★★ D2 dòng cách dùng nêu --driver là BẮT BUỘC, chỉ host|kho, không còn mời cli", async () => {
+    const err = (await chayCli([])).err;
+    expect(err).toContain("--driver host|kho (BẮT BUỘC)");
+    expect(err).not.toContain("|cli");
+  });
+  it("★★ D3 --driver không kèm giá trị ⇒ mã 2 (không rơi về driver nào)", async () => {
+    const r = await chayCli([...theKhongCo(), "--driver"]);
+    expect(r.ma).toBe(2);
+    expect(r.err).toContain("driver không hợp lệ: 1");
+  });
+  it("★★★ D4 --driver cli ⇒ mã 2, DRIVER-CLI-BI-CHAN nêu giới hạn DRIVERCLI-ENV-NGUYEN, từ chối trước khi đọc thẻ", async () => {
+    const r = await chayCli([...theKhongCo(), "--driver", "cli"]);
+    expect(r.ma).toBe(2);
+    expect(r.err).toContain("DRIVER-CLI-BI-CHAN");
+    expect(r.err).toContain("DRIVERCLI-ENV-NGUYEN");
+    expect(r.json).toBeNull();
+    expect(git(wt, "branch", "--list", "pilot/*")).toBe("");
+  });
+  it("★★ D5 --driver host vẫn được nhận: đi tới kiểm --nguoi-id của host (chưa dựng gì)", async () => {
+    const r = await chayCli([...theKhongCo(), "--driver", "host"]);
+    expect(r.ma).toBe(2);
+    expect(r.err).toContain("driver host cần --nguoi-id");
+  });
   it("★★ thẻ đọc từ --the: mã thẻ trong JSON là của tệp thẻ", async () => {
     expect((await chayCli(coBan())).json!.ma).toBe("TC-93");
   });

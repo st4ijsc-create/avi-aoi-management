@@ -2,7 +2,7 @@
  * Pilot "Thợ Cả nhận việc" — BỘ CHẠY MỘT VIỆC.
  *
  *   npx tsx scripts/tho-ca-pilot/chayMotViec.ts --the <tep-the.txt> [--wt D:\SOURCES\_tho_ca_wt] [--base main]
- *        [--driver kho|cli] [--ra <thu-muc-ket-qua>] [--ghi-luot <thu-muc>]
+ *        --driver host|kho (BẮT BUỘC, không có mặc định) [--ra <thu-muc-ket-qua>] [--ghi-luot <thu-muc>]
  *
  * Việc làm (theo thứ tự): đọc thẻ → kiểm worktree (LIÊN KẾT, sạch, tên `_tho_ca*`) → `git checkout -B pilot/tho-ca-<mã> <base>` → chép luật dự án
  * (`AGENTS.md`, ẩn khỏi diff) → chạy driver có hạn giờ → thu diff (kể cả tệp mới) + dòng thêm/xoá + thời gian tường → đối chiếu "chỉ sửa tệp
@@ -14,7 +14,7 @@
  *
  * DRIVER
  *  • kho — chạy khô, KHÔNG gọi model: ghi các tệp mà `--kho-ghi` (JSON {đường: nộiDung}) nêu. Dùng để thử bộ chạy / ca kiểm.
- *  • cli — `npm run ai:cli` CÓ NGƯỜI NGỒI (stdio kế thừa). CLI cố ý đòi một phím 'y' sống cho MỖI lượt ghi (`hoiTuoi`: "KHÔNG có cờ bỏ qua bước
+ *  • cli — DÒNG LỆNH TỪ CHỐI (DRIVER-CLI-BI-CHAN, giới hạn DRIVERCLI-ENV-NGUYEN); hàm driverCli còn trong mã. Nó chạy `npm run ai:cli` CÓ NGƯỜI NGỒI (stdio kế thừa). CLI cố ý đòi một phím 'y' sống cho MỖI lượt ghi (`hoiTuoi`: "KHÔNG có cờ bỏ qua bước
  *          duyệt"); bộ chạy KHÔNG tự trả lời 'y' thay người. Danh tính: AVI_CLI_USER / AVI_CLI_PASSWORD của TIẾN TRÌNH CHA (tài khoản không admin).
  *          ⚠ CLI dùng `streamAnswer` (đường tri thức cũ), KHÔNG qua `goiModelMayChu` ⇒ không có AI_GHI_LUOT_DIR / cacheTokens; không nạp AGENTS.md
  *          (luật được ghép vào đầu `--lenh`).
@@ -1100,7 +1100,7 @@ export function dongTongKet(kq: Pick<KetQuaViec, "ma" | "ketCuc" | "ok" | "canhB
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   const a = docThamSo(argv);
   if (!a.the) {
-    process.stderr.write("dùng: chayMotViec.ts --the <tep-the> [--wt D:\\SOURCES\\_tho_ca_wt] [--base main] [--luat <tep-luat>] [--luat-cach ghi-de|ghep] [--cho-phep-db --tep-url-csdl <tep>] [--driver kho|cli] [--ra <thu-muc>] [--ghi-luot <thu-muc>] [--kho-ghi '<json>']\n");
+    process.stderr.write("dùng: chayMotViec.ts --the <tep-the> [--wt D:\\SOURCES\\_tho_ca_wt] [--base main] [--luat <tep-luat>] [--luat-cach ghi-de|ghep] [--cho-phep-db --tep-url-csdl <tep>] --driver host|kho (BẮT BUỘC) [--ra <thu-muc>] [--ghi-luot <thu-muc>] [--kho-ghi '<json>']\n");
     return 2;
   }
   const luatCach = docLuatCach(a["luat-cach"]);
@@ -1126,8 +1126,17 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return 2;
     }
   }
-  const drv = (a.driver ?? "cli") as TenDriver;
-  if (drv !== "kho" && drv !== "cli" && drv !== "host") {
+  // Dòng lệnh chỉ nhận host | kho, KHÔNG có mặc định (mặc định cũ là "cli" nên quên cờ là đi đúng đường bị chặn); không đổi ngầm sang "host".
+  if (a.driver === undefined) {
+    process.stderr.write("THIEU-DRIVER: phải ghi rõ --driver host|kho (không có mặc định) — từ chối\n");
+    return 2;
+  }
+  if (a.driver === "cli") {
+    process.stderr.write("DRIVER-CLI-BI-CHAN: --driver cli bị từ chối (DRIVERCLI-ENV-NGUYEN: tiến trình CLI giữ nguyên env của người chạy) — dùng host hoặc kho\n");
+    return 2;
+  }
+  const drv = a.driver as TenDriver;
+  if (drv !== "kho" && drv !== "host") {
     process.stderr.write(`driver không hợp lệ: ${drv}\n`);
     return 2;
   }
