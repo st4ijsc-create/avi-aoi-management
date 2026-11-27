@@ -86,6 +86,71 @@ export interface KetQuaKiem {
   tomLuoc?: string;
   /** (chỉ khi `--cho-phep-db`) TOÀN BỘ đầu ra đã lọc URL + giá trị bí mật, cho NGƯỜI duyệt đọc qua tệp kết quả — KHÔNG bao giờ đưa cho model; tối đa ~400 KB (cắt giữa) */
   dauRaDayDu?: string;
+  /** (V0) chỉ có khi lệnh vitest thoát khác 0: các khối ca đỏ tách từ RIÊNG stderr (đã che như `duoi`). Để dựng lời nhắc model; KHÔNG vào chay.json */
+  khoiDo?: KhoiDo[];
+  /** (V0) đầu ra có mục lỗi ngoài ca (Unhandled / Uncaught): lỗi đó không nằm trong khối ca đỏ nào */
+  coLoiNgoaiCa?: boolean;
+}
+
+/** (V0) Một khối của mục "Failed Tests / Failed Suites": vitest gộp các ca cùng lỗi nên một khối có thể mang nhiều tên. */
+export interface KhoiDo {
+  ten: string[];
+  /** dòng đầu của thông báo lỗi */
+  thongBao: string;
+  /** dòng `❯ tệp:dòng:cột` đầu tiên; rỗng nếu không có */
+  viTri: string;
+  /** phần còn lại: diff, khung mã */
+  conLai: string;
+}
+
+const RE_TIEU_DE_HONG = /^⎯+ Failed (?:Tests|Suites) \d+ ⎯+\s*$/;
+const RE_VACH_KHOI = /^⎯+\[\d+\/\d+\]⎯*\s*$/;
+const RE_DONG_FAIL = /^ FAIL +(\S.*)$/;
+const RE_LOI_NGOAI_CA = /^⎯+ (?:Unhandled [A-Za-z ]+|Uncaught Exception) ⎯+\s*$/m;
+
+const boTrongHaiDau = (ds: string[]): string[] => {
+  let a = 0;
+  let b = ds.length;
+  while (a < b && ds[a]!.trim() === "") a++;
+  while (b > a && ds[b - 1]!.trim() === "") b--;
+  return ds.slice(a, b);
+};
+
+/**
+ * (V0) Tách khối ca đỏ từ stderr của reporter mặc định vitest. CHỈ đọc sau dòng tiêu đề "Failed Tests/Suites" (dòng FAIL giả in trước đó không được tính),
+ * và chỉ nhận khối ĐÃ KHÉP bằng vạch `[k/N]` mà dòng đầu là `FAIL`. Không tách được thì trả ít hơn — chỗ gọi so với số ca hỏng và nói ra. Thuần.
+ */
+export function tachKhoiDo(loiSach: string): KhoiDo[] {
+  const dong = loiSach.split(/\r?\n/);
+  const dau = dong.findIndex((d) => RE_TIEU_DE_HONG.test(d));
+  if (dau < 0) return [];
+  const ra: KhoiDo[] = [];
+  let dem: string[] = [];
+  for (const d of dong.slice(dau + 1)) {
+    if (RE_TIEU_DE_HONG.test(d)) {
+      dem = [];
+      continue;
+    }
+    if (!RE_VACH_KHOI.test(d)) {
+      dem.push(d);
+      continue;
+    }
+    const khoi = boTrongHaiDau(dem);
+    dem = [];
+    const ten: string[] = [];
+    for (const x of khoi) {
+      const m = RE_DONG_FAIL.exec(x);
+      if (!m) break;
+      ten.push(m[1]!.trim());
+    }
+    if (ten.length === 0) continue;
+    const sau = boTrongHaiDau(khoi.slice(ten.length));
+    const conLai = sau.slice(1);
+    const iViTri = conLai.findIndex((x) => /^ ❯ .*:\d+:\d+\s*$/.test(x));
+    const viTri = iViTri >= 0 ? conLai.splice(iViTri, 1)[0]! : "";
+    ra.push({ ten, thongBao: sau[0] ?? "", viTri, conLai: boTrongHaiDau(conLai).join("\n") });
+  }
+  return ra;
 }
 
 const boMau = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -456,6 +521,8 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
   new Promise((xong) => {
     const t0 = Date.now();
     let dau = "";
+    /** (V0) riêng stderr: khối ca đỏ nằm ở đây; stdout chen vào luồng gộp sẽ cắt ngang khối */
+    let dauLoi = "";
     let hetGio = false;
     const env: NodeJS.ProcessEnv = { ...envSachChoTienTrinhCon(process.env, opt), CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" };
     const locLoi = (x: string) => cheTokenTrongDauRa(opt.testDbUrl !== undefined ? xoaGiaTriBiMat(loaiUrlCsdl(x), giaTriBiMatTuUrl(opt.testDbUrl)) : x);
@@ -465,7 +532,9 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
       const tho = boMau(dau);
       // CỜ TẮT ⇒ đầu ra KHÔNG đổi một byte NẾU không chứa token có tiền tố nhà cung cấp (HA-11: che các mẫu đó ở CẢ HAI nhánh);
       // chỉ khi có `--cho-phep-db` mới lọc thêm URL / giá trị bí mật và ghi tên ca đỏ, đầu ra đầy đủ
-      const sach = cheTokenTrongDauRa(coDb ? xoaGiaTriBiMat(loaiUrlCsdl(tho), giaTriBiMatTuUrl(opt.testDbUrl)) : tho);
+      const loc = (x: string) => cheTokenTrongDauRa(coDb ? xoaGiaTriBiMat(loaiUrlCsdl(x), giaTriBiMatTuUrl(opt.testDbUrl)) : x);
+      const sach = loc(tho);
+      const vitestDo = laLenhVitest(lenh) && !hetGio && exit !== null && exit !== 0;
       xong({
         lenh,
         exit,
@@ -474,6 +543,7 @@ export const taoChayLenhKiem = (opt: { testDbUrl?: string } = {}): ChayKiem => (
         duoi: sach.length > 3000 ? sach.slice(-3000) : sach,
         ...(sach.length > 3000 ? { tomLuoc: tomLuocDauRa(sach) } : {}),
         vitest: phanTichVitest(sach),
+        ...(vitestDo ? { khoiDo: tachKhoiDo(loc(boMau(dauLoi))), ...(RE_LOI_NGOAI_CA.test(sach) ? { coLoiNgoaiCa: true } : {}) } : {}),
         ...(coDb ? { tenCaDo: trichTenCaDo(sach), dauRaDayDu: sach.length > 400_000 ? `${sach.slice(0, 100_000)}
 …(cắt giữa)…
 ${sach.slice(-300_000)}` : sach } : {}),
@@ -493,7 +563,10 @@ ${sach.slice(-300_000)}` : sach } : {}),
       else con.kill();
     }, Math.max(1, hanGiay) * 1000);
     con.stdout?.on("data", (b) => (dau += String(b)));
-    con.stderr?.on("data", (b) => (dau += String(b)));
+    con.stderr?.on("data", (b) => {
+      dau += String(b);
+      dauLoi += String(b);
+    });
     con.on("error", (e) => ketThuc(null, locLoi(String(e))));
     con.on("close", (ma) => ketThuc(hetGio ? null : ma));
   });
