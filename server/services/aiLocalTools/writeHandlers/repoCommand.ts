@@ -422,9 +422,9 @@ async function xemTruoc(p: ThamSo, ctx: ToolExecContext): Promise<ActionPreview>
   warnings.push(
     w(
       ctx.lang,
-      `Biến môi trường ĐÃ LỌC: tiến trình con KHÔNG nhận DATABASE_URL / MASTER_API_KEY / ANH_KY_SECRET hay bất kỳ biến ứng dụng nào. ⚠ Hệ quả: một ca kiểm thử cần CSDL sẽ HỎNG ở đây — đó là chiều hỏng đã chọn, không phải sự cố.`,
-      `Environment is FILTERED: the child gets no application secrets. ⚠ Consequence: a DB-backed test WILL fail here — that is the chosen failure direction.`,
-      `环境变量已过滤：子进程拿不到任何应用密钥。⚠ 因此依赖数据库的测试将在此失败——这是刻意选择的失败方向。`,
+      `Biến môi trường ĐÃ LỌC: tiến trình con KHÔNG nhận MASTER_API_KEY / ANH_KY_SECRET hay bất kỳ biến ứng dụng nào của máy chủ; DATABASE_URL và TEST_DATABASE_URL là URL CSDL CHẾT (cổng 9). ⚠ Hệ quả: một ca kiểm thử cần CSDL sẽ HỎNG ở đây — đó là chiều hỏng đã chọn, không phải sự cố.`,
+      `Environment is FILTERED: the child gets no application secrets; DATABASE_URL and TEST_DATABASE_URL are DEAD database URLs (port 9). ⚠ Consequence: a DB-backed test WILL fail here — that is the chosen failure direction.`,
+      `环境变量已过滤：子进程拿不到任何应用密钥；DATABASE_URL 与 TEST_DATABASE_URL 是无法连接的数据库地址（端口 9）。⚠ 因此依赖数据库的测试将在此失败——这是刻意选择的失败方向。`,
     ),
   );
   warnings.push(
@@ -495,7 +495,7 @@ export const runCommandTool: Tool<ThamSo, DuLieuChay> = {
     "Mọi lệnh khác bị TỪ CHỐI (danh sách TRẮNG, không phải danh sách đen); git checkout/git reset/rm KHÔNG BAO GIỜ được phép. " +
     "WRITE-ACTION (HITL): chỉ ĐỀ XUẤT, người dùng phải XÁC NHẬN mới chạy; quyền ai_repo_exec/canCreate. " +
     "Không shell, không nối lệnh, có hạn giờ giết CẢ CÂY tiến trình, đầu ra bị cắt, môi trường ĐÃ LỌC nên " +
-    "tiến trình con KHÔNG có DATABASE_URL/khoá bí mật (⇒ ca kiểm thử cần CSDL sẽ hỏng ở đây).",
+    "tiến trình con KHÔNG có khoá bí mật và nhận URL CSDL chết (⇒ ca kiểm thử cần CSDL sẽ hỏng ở đây).",
   parameters: thamSo,
   /**
    * ⚠ Write tool **không** được `findToolByTriggers` chọn (`chonDuocTheoTrigger` loại

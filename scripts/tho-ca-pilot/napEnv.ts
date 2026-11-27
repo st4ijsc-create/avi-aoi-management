@@ -3,12 +3,12 @@
  *
  * Vì sao: tiến trình pilot không có `.env` (worktree) ⇒ thiếu LLAMA_SERVER_ENABLED/MODEL, GGUF_*_MODEL ⇒ model null ⇒ `TOOL_CALL_KHONG_HO_TRO`.
  * Nạp NGUYÊN `.env` thì kéo cả DATABASE_URL (trỏ DEV!), khoá bí mật, cờ điều khiển thiết bị — nên chỉ nạp DANH SÁCH TRẮNG:
- *   • khoá tiền tố  AI_AGENT_  (cờ harness Thợ Cả: THEO_VAI_TRO, NEN_MOC, NGHI, GIU_NGHI, MAX_TOKENS_MOT_LUOT, …)
- *   • LLAMA_SERVER_ (ENABLED · URL · MODEL · CTX · CTX_PER_SLOT · SLOTS · PARALLEL · TIMEOUT_MS · STREAM_IDLE_TIMEOUT_MS · STRICT · HEALTH_TIMEOUT_MS)
- *   • GGUF_ (DEFAULT_MODEL · CODE_MODEL · FAST_MODEL · MODELS_DIR · DEFAULT_CTX · MAX_CTX · SEQUENCES …)
- *   • AI_THINKING_ · AI_SAMPLING_PROFILE · AI_CODING_MODEL_TASK · LLM_PRIORITY_GATE_
+ *   • tiền tố  LLAMA_SERVER_ (ENABLED · URL · MODEL · CTX · CTX_PER_SLOT · SLOTS · PARALLEL · TIMEOUT_MS · STREAM_IDLE_TIMEOUT_MS · STRICT · HEALTH_TIMEOUT_MS)
+ *   • tiền tố  GGUF_ (DEFAULT_MODEL · CODE_MODEL · FAST_MODEL · MODELS_DIR · DEFAULT_CTX · MAX_CTX · SEQUENCES …) · AI_THINKING_ · LLM_PRIORITY_GATE_
+ *   • ĐÚNG TÊN: AI_SAMPLING_PROFILE · AI_CODING_MODEL_TASK · AI_AGENT_HOUSEKEEPING_ENABLED · AI_AGENT_HOUSEKEEPING_INTERVAL_MS · LLAMA_SERVER_API_KEY_FILE (chỉ mang ĐƯỜNG DẪN)
+ * Mọi AI_AGENT_* khác KHÔNG nạp từ tệp (khai bằng `--co`). Danh sách này HẸP HƠN trần được phép ở hàng E-01 (AGENTS-ngoai-le.md); KHÔNG mở rộng mã theo hàng.
  * LOẠI CỨNG (kể cả khi khớp tiền tố): tên có API_KEY/SECRET/PASSWORD/TOKEN/CREDENTIAL; mọi DATABASE_/REDIS_/JWT_/SESSION_; AI_REPO_SANDBOX_ROOT(S)
- * (bộ chạy tự đặt); AI_GHI_LUOT_DIR; AI_AGENT_* không bao giờ gồm khoá cấm trên. KHÔNG ghi đè khoá ĐÃ có trong môi trường (giá trị đặt tường minh thắng).
+ * (bộ chạy tự đặt); AI_GHI_LUOT_DIR. KHÔNG ghi đè khoá ĐÃ có trong môi trường (giá trị đặt tường minh thắng).
  * Chỉ in TÊN khoá đã nạp, không in giá trị.
  */
 import fs from "node:fs";

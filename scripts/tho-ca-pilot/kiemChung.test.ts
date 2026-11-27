@@ -214,7 +214,7 @@ describe("envSachChoTienTrinhCon — test do model viết KHÔNG được thừa
       SIGNING_KEY_FILE: "k",
       DATABASE_URL: "postgres://aoi:that@127.0.0.1:5434/aoi_management",
     });
-    expect(Object.keys(r).sort()).toEqual(["DATABASE_URL", "LLAMA_SERVER_URL", "PATH", "TEST_DATABASE_URL"]);
+    expect(Object.keys(r).sort()).toEqual(["CI", "DATABASE_URL", "DOTNET_CLI_TELEMETRY_OPTOUT", "DOTNET_NOLOGO", "DOTNET_SKIP_FIRST_TIME_EXPERIENCE", "FOE_DURABLE", "FOE_ENABLED", "FORCE_COLOR", "NO_COLOR", "OT_CONTROL_ENABLED", "OT_GATEWAY_ENABLED", "PATH", "ROBOT_CONTROL_ENABLED", "ROBOT_GATEWAY_ENABLED", "TEST_DATABASE_URL", "npm_config_audit", "npm_config_fund", "npm_config_offline", "npm_config_update_notifier"].sort());
     expect(r.DATABASE_URL).toContain("127.0.0.1:9/");
     expect(r.TEST_DATABASE_URL).toContain("127.0.0.1:9/");
   });
@@ -236,7 +236,7 @@ describe("envSachChoTienTrinhCon — test do model viết KHÔNG được thừa
 describe("envChoTsc", () => {
   it("★ tsc cũng KHÔNG thừa kế bí mật; có heap 12 GB và DB chết", () => {
     const r = envChoTsc({ PATH: "p", LLAMA_SERVER_API_KEY_FILE: "D:/bi-mat/k.txt", JWT_SECRET: "j", SIGNING_KEY_FILE: "k" });
-    expect(Object.keys(r).sort()).toEqual(["DATABASE_URL", "FORCE_COLOR", "NODE_OPTIONS", "NO_COLOR", "PATH", "TEST_DATABASE_URL"]);
+    expect(Object.keys(r).sort()).toEqual(["CI", "DATABASE_URL", "DOTNET_CLI_TELEMETRY_OPTOUT", "DOTNET_NOLOGO", "DOTNET_SKIP_FIRST_TIME_EXPERIENCE", "FOE_DURABLE", "FOE_ENABLED", "FORCE_COLOR", "NODE_OPTIONS", "NO_COLOR", "OT_CONTROL_ENABLED", "OT_GATEWAY_ENABLED", "PATH", "ROBOT_CONTROL_ENABLED", "ROBOT_GATEWAY_ENABLED", "TEST_DATABASE_URL", "npm_config_audit", "npm_config_fund", "npm_config_offline", "npm_config_update_notifier"].sort());
     expect(r.NODE_OPTIONS).toBe("--max-old-space-size=12288");
     expect(r.DATABASE_URL).toContain("127.0.0.1:9/");
   });

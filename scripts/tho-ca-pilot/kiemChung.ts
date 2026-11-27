@@ -13,21 +13,39 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { cheTokenCoTienTo } from "../../shared/mauBiMat";
+import { BIEN_MOI_TRUONG_CHO_PHEP, BIEN_MOI_TRUONG_DAT_THEM, URL_CSDL_CHET } from "../../shared/bienMoiTruongCon";
 import type { KetQuaDotBien } from "./dotBien";
 import type { GioiHanLuotChoDriver, TranLuotKetQua } from "./tranLuot";
 
+/** Tên env của tiến trình cha được ĐI QUA: danh sách trắng dùng chung với run_command, TRỪ proxy (URL proxy mang được tài khoản; lệnh kiểm không cần mạng). So không phân biệt hoa thường. */
+const TEN_PROXY: ReadonlySet<string> = new Set(["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY"]);
+const TEN_CON_DUOC_NHAN: ReadonlySet<string> = new Set(BIEN_MOI_TRUONG_CHO_PHEP.map((t) => t.toUpperCase()).filter((t) => !TEN_PROXY.has(t)));
+/** Cờ điều khiển thiết bị: bộ chạy tự đặt TẮT cho mọi tiến trình con (không lấy giá trị của người chạy). */
+const CO_DIEU_KHIEN_TAT: Readonly<Record<string, string>> = {
+  FOE_ENABLED: "false", FOE_DURABLE: "false", OT_GATEWAY_ENABLED: "false", OT_CONTROL_ENABLED: "false", ROBOT_GATEWAY_ENABLED: "false", ROBOT_CONTROL_ENABLED: "false",
+};
+
 /**
- * Môi trường cho tiến trình CON do bộ chạy chạy (lệnh kiểm, tsc, đột biến): chạy mã do MODEL viết ⇒ KHÔNG được thừa kế bí mật của tiến trình pilot
- * (khoá :8091, đường dẫn tệp khoá, JWT/SECRET/PASSWORD/TOKEN, DATABASE_URL thật). Gỡ mọi biến có tên bí mật hoặc `*_KEY_FILE`, rồi ép DB chết.
+ * Môi trường cho tiến trình CON do bộ chạy chạy (lệnh kiểm, tsc, đột biến): chạy mã do MODEL viết ⇒ DANH SÁCH TRẮNG theo tên (hệ điều hành + chuỗi công cụ),
+ * cộng đúng các biến bộ chạy tự đặt. Không biến ứng dụng nào của người chạy đi qua (khoá, URL, đường tệp khoá, NODE_OPTIONS, DOTENV_CONFIG_PATH).
  */
 export function envSachChoTienTrinhCon(goc: NodeJS.ProcessEnv = process.env, opt: { testDbUrl?: string } = {}): NodeJS.ProcessEnv {
   const ra: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(goc)) {
-    if (/(API_KEY|SECRET|PASSWORD|TOKEN|CREDENTIAL|_KEY_FILE|_PASSWORD_FILE)/i.test(k)) continue;
-    ra[k] = v;
+    if (TEN_CON_DUOC_NHAN.has(k.toUpperCase())) ra[k] = v;
   }
   // `--cho-phep-db`: CHỈ TEST_DATABASE_URL (URL của CSDL _test, vai ứng dụng) được thật; DATABASE_URL vẫn là cổng chết (vitest.setup ép DATABASE_URL về bản sao _test).
-  return { ...ra, ...ENV_DB_CHET, ...(opt.testDbUrl ? { TEST_DATABASE_URL: opt.testDbUrl } : {}) };
+  return { ...ra, ...BIEN_MOI_TRUONG_DAT_THEM, ...CO_DIEU_KHIEN_TAT, ...ENV_DB_CHET, ...(opt.testDbUrl ? { TEST_DATABASE_URL: opt.testDbUrl } : {}) };
+}
+
+/** Lý do TỪ CHỐI vì env của NGƯỜI CHẠY trỏ tới tệp env: DOTENV_CONFIG_PATH có giá trị, hoặc NODE_OPTIONS chứa --env-file. Không đưa giá trị vào lý do. Thuần. */
+export function lyDoEnvTroTepEnv(env: NodeJS.ProcessEnv): string | null {
+  for (const [k, v] of Object.entries(env)) {
+    const ten = k.toUpperCase();
+    if (ten === "DOTENV_CONFIG_PATH" && v) return "DOTENV_CONFIG_PATH đang đặt ở môi trường người chạy";
+    if (ten === "NODE_OPTIONS" && /--env-file/.test(v ?? "")) return "NODE_OPTIONS chứa --env-file";
+  }
+  return null;
 }
 
 /** Môi trường của `tsc` do bộ chạy chạy: sạch bí mật + heap 12 GB (cùng cổng check:tests). Tách riêng để test được. */
@@ -35,11 +53,8 @@ export function envChoTsc(goc: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
   return { ...envSachChoTienTrinhCon(goc), NODE_OPTIONS: "--max-old-space-size=12288", NO_COLOR: "1", FORCE_COLOR: "0" };
 }
 
-/** Hai URL cổng chết, tên DB khác nhau (vitest.setup từ chối khi trùng tên). */
-export const ENV_DB_CHET: Readonly<Record<string, string>> = {
-  DATABASE_URL: "postgresql://pilot_kiem:x@127.0.0.1:9/aoi_management",
-  TEST_DATABASE_URL: "postgresql://pilot_kiem:x@127.0.0.1:9/aoi_management_test",
-};
+/** Hai URL cổng chết (một nguồn: shared/bienMoiTruongCon.ts; run_command dùng cùng hằng). */
+export const ENV_DB_CHET: Readonly<Record<string, string>> = URL_CSDL_CHET;
 
 export interface DemVitest {
   dat: number;

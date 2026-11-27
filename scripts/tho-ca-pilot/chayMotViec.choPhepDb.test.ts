@@ -180,14 +180,17 @@ describe("--cho-phep-db — máy chủ, cổng, vai (danh sách trắng) và tok
 });
 
 describe("--cho-phep-db — chayKiem tới driver (vòng tự chạy trong lượt)", () => {
-  it("★★★ có cờ ⇒ driver nhận đúng hàm do nhà máy dựng với testDbUrl; không cờ và không tiêm ⇒ driver KHÔNG nhận chayKiem (giữ DB chết mặc định)", async () => {
+  it("★★★ driver luôn nhận hàm lệnh kiểm ĐÃ SOI, gọi xuống đúng hàm của nhà máy: có cờ ⇒ nhà máy được dựng với testDbUrl; không cờ ⇒ dựng KHÔNG testDbUrl (giữ DB chết mặc định)", async () => {
     const dung = async (van: string, co: boolean) => {
       const luu: { nhan: ChayKiem | undefined | "chua" } = { nhan: "chua" };
-      const tuNhaMay: ChayKiem[] = [];
+      const dungVoi: Array<{ testDbUrl?: string }> = [];
+      const daGoi: string[] = [];
       const taoChayKiem = ((opt: { testDbUrl?: string } = {}) => {
-        const f: ChayKiem = async (l, w, h) => chayKiemXanh(l, w, h);
-        tuNhaMay.push(f);
-        void opt;
+        dungVoi.push(opt);
+        const f: ChayKiem = async (l, w, h) => {
+          daGoi.push(l);
+          return chayKiemXanh(l, w, h);
+        };
         return f;
       }) as never;
       const drv: Driver = async (v) => {
@@ -195,15 +198,18 @@ describe("--cho-phep-db — chayKiem tới driver (vòng tự chạy trong lư�
         return { ghiChu: [], vong: 1, token: null, hetGio: false } as never;
       };
       await chayMotViec({ van, wt, base: "HEAD", driver: drv, ra, choPhepKhoRieng: true, luat: "# l\n", taoChayKiem, choPhepDb: co, testDbUrl: URL_TEST, khoGhi: { [TEP_DB]: TEST_MOI, "client/src/lib/a.test.ts": TEST_MOI } });
-      return { nhan: luu.nhan, tuNhaMay };
+      if (typeof luu.nhan === "function") await luu.nhan("lenh-thu-cua-ca", wt, 1);
+      return { nhan: luu.nhan, dungVoi, daGoi };
     };
     const bat = await dung(the(), true);
-    expect(bat.nhan).not.toBe("chua");
-    expect(bat.nhan).toBeDefined();
-    expect(bat.tuNhaMay).toContain(bat.nhan as ChayKiem);
+    expect(typeof bat.nhan).toBe("function");
+    expect(bat.dungVoi).toStrictEqual([{ testDbUrl: URL_TEST }]);
+    expect(bat.daGoi).toContain("lenh-thu-cua-ca");
 
     const khong = await dung(the(null).split(TEP_DB).join("client/src/lib/a.test.ts"), false);
-    expect(khong.nhan).toBeUndefined();
+    expect(typeof khong.nhan).toBe("function");
+    expect(khong.dungVoi).toStrictEqual([{}]);
+    expect(khong.daGoi).toContain("lenh-thu-cua-ca");
   });
 });
 
