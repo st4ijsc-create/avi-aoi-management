@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { cacDangBiMat, giaTriBiMatTuUrl, taoChayLenhKiem, trichTenCaDo, xoaGiaTriBiMat } from "./kiemChung";
+import { cacDangBiMat, ENV_DB_CHET, envSachChoTienTrinhCon, giaTriBiMatTuUrl, taoChayLenhKiem, trichTenCaDo, xoaGiaTriBiMat } from "./kiemChung";
 
 const MK = "Mk9xPz3Qw7Ab";
 const MK_DB = "p@ss/w0rd!XyZ9";
@@ -169,4 +169,37 @@ describe("đầu ra lệnh kiểm THẬT: mật khẩu bị xoá ở mọi dạn
       fs.rmSync(cwd, { recursive: true, force: true });
     }
   }, 90_000);
+});
+
+describe("envSachChoTienTrinhCon — danh sách trắng: biến ứng dụng của người chạy không tới mã model viết", () => {
+  const gia = (ten: string[]) => Object.fromEntries(ten.map((t) => [t, `GIA_${t}`])) as NodeJS.ProcessEnv;
+  /** đúng các tên bộ chạy TỰ ĐẶT (viết tay) — env cha rỗng thì con chỉ có chừng này */
+  const TU_DAT = [
+    "CI", "DATABASE_URL", "DOTNET_CLI_TELEMETRY_OPTOUT", "DOTNET_NOLOGO", "DOTNET_SKIP_FIRST_TIME_EXPERIENCE", "FOE_DURABLE", "FOE_ENABLED", "FORCE_COLOR", "NO_COLOR",
+    "OT_CONTROL_ENABLED", "OT_GATEWAY_ENABLED", "ROBOT_CONTROL_ENABLED", "ROBOT_GATEWAY_ENABLED", "TEST_DATABASE_URL",
+    "npm_config_audit", "npm_config_fund", "npm_config_offline", "npm_config_update_notifier",
+  ].sort();
+  it("★★★ E1 mọi biến ngoài danh sách đều VẮNG (đích CSDL, hàng đợi, thư, khoá, proxy, tuỳ chọn node)", () => {
+    const la = [
+      "DATABASE_READ_URL", "TSDB_URL", "MCP_CUC_BO_DB_MAT_KHAU", "DEMO_ADMIN_URL", "MCP_CUC_BO_DB_URL", "DB_URL", "PGPASSWORD", "PGSERVICEFILE", "PGHOST",
+      "REDIS_URL", "NATS_URL", "UNS_BROKER_URL", "SMTP_PASS", "GIA_APP_KEY", "GIA_KHOA_PEM", "LLAMA_SERVER_URL", "LLAMA_SERVER_API_KEY_FILE",
+      "NODE_OPTIONS", "DOTENV_CONFIG_PATH", "HTTP_PROXY", "https_proxy", "NO_PROXY", "ALL_PROXY",
+    ];
+    expect(Object.keys(envSachChoTienTrinhCon(gia(la))).sort()).toEqual(TU_DAT);
+  });
+  it("★★★ E2 biến hệ điều hành / chuỗi công cụ CÒN, nguyên tên và nguyên giá trị (không phân biệt hoa thường)", () => {
+    const can = ["Path", "PATHEXT", "SystemRoot", "SystemDrive", "windir", "ComSpec", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS", "ProgramFiles", "ProgramFiles(x86)"];
+    const r = envSachChoTienTrinhCon(gia(can));
+    expect(Object.fromEntries(can.map((t) => [t, r[t]]))).toEqual(gia(can));
+  });
+  it("★★ E3 có testDbUrl ⇒ TEST_DATABASE_URL được đặt LẠI đúng URL đó; DATABASE_URL là cổng chết", () => {
+    const r = envSachChoTienTrinhCon(gia(["DATABASE_URL", "TEST_DATABASE_URL"]), { testDbUrl: "GIA_URL_TEST" });
+    expect([r.DATABASE_URL, r.TEST_DATABASE_URL]).toEqual([ENV_DB_CHET.DATABASE_URL, "GIA_URL_TEST"]);
+  });
+  it("★★★ E4 người chạy không ghi đè được biến bộ chạy tự đặt: cờ điều khiển luôn \"false\", hai URL là cổng chết", () => {
+    const co = ["FOE_ENABLED", "FOE_DURABLE", "OT_GATEWAY_ENABLED", "OT_CONTROL_ENABLED", "ROBOT_GATEWAY_ENABLED", "ROBOT_CONTROL_ENABLED"];
+    const r = envSachChoTienTrinhCon({ ...Object.fromEntries(co.map((t) => [t, "true"])), DATABASE_URL: "GIA_THAT", TEST_DATABASE_URL: "GIA_THAT" } as NodeJS.ProcessEnv);
+    expect(co.map((t) => r[t])).toEqual(co.map(() => "false"));
+    expect([r.DATABASE_URL, r.TEST_DATABASE_URL]).toEqual([ENV_DB_CHET.DATABASE_URL, ENV_DB_CHET.TEST_DATABASE_URL]);
+  });
 });

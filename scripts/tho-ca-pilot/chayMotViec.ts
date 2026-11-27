@@ -33,7 +33,7 @@ import { chayKiemThat, chupWt, type KetQuaKiemThat } from "./kiemThat";
 import { CAU_LUAT_PHU, docDongDaDuyet, docVitestJson, tenMoiCa, tinhPhu, type DongDuyet, type KetQuaPhu } from "./kiemPhu";
 import { dongBaoTran, dongCanhBaoKep, gioiHanChoLuot, tinhTranLuot, type GioiHanLuotChoDriver, type TranLuotKetQua } from "./tranLuot";
 import { apDungDotBien, kiemDotBienTrenBase, quetGhimNghiNgo, quetKhangDinhCam, tepTestDoi, type KetQuaDotBien } from "./dotBien";
-import { canChayTsc, canSuaTsc, caTestGiam, chayLenhTsc, RE_TEP_TEST, loiNhacSuaTsc, nganSachSuaTsc, soDemGiam, giaTriBiMatTuUrl, taoChayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
+import { canChayTsc, canSuaTsc, caTestGiam, chayLenhTsc, lyDoEnvTroTepEnv, RE_TEP_TEST, loiNhacSuaTsc, nganSachSuaTsc, soDemGiam, giaTriBiMatTuUrl, taoChayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
 
 export type TenDriver = "kho" | "cli" | "host";
 
@@ -473,6 +473,8 @@ export const driverKho: Driver = async (v) => {
   return { vong: Object.keys(v.khoGhi).length > 0 ? 1 : 0, token: null, ghiChu, hetGio: false };
 };
 
+// Giới hạn có tên DRIVERCLI-ENV-NGUYEN: tiến trình CLI giữ NGUYÊN env (cần khoá :8091 và DATABASE_URL để đăng nhập); lệnh run_command của model nhận env
+// lọc trắng + URL CSDL chết (mới đọc mã, CHƯA ĐO); env lọc không ngăn mã trong wt đọc tệp. batDau.ts nạp .env của cwd = worktree — chayMotViec từ chối worktree có .env.
 export const driverCli: Driver = (v) =>
   new Promise((xong) => {
     const env: NodeJS.ProcessEnv = { ...process.env, AI_REPO_SANDBOX_ROOTS: v.wt };
@@ -632,6 +634,8 @@ export interface ThamSoViec {
   hanKiemGiay?: number;
   /** L3c: hàm chạy tsc (mặc định chạy thật) và hạn giờ riêng, giây (mặc định 900) */
   chayTsc?: ChayTsc;
+  /** chỉ cho ca kiểm: thay `process.env` khi xét env người chạy có trỏ tệp env không (DOTENV_CONFIG_PATH / NODE_OPTIONS --env-file) */
+  envNguoiChay?: NodeJS.ProcessEnv;
   hanTscGiay?: number;
   /** cờ AI_AGENT_* THỰC SỰ có trong env tiến trình lúc chạy (ghi vào JSON để số đo nói rõ chạy với cờ nào) */
   coAiAgent?: Record<string, string>;
@@ -660,7 +664,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   }
   if (p.quetRongCham && !dbCho) return tuChoi("--quet-rong-cham cần --cho-phep-db (không có cờ DB thì không có gì để quét)", the.ma);
   if (p.quetRong && !dbCho) return tuChoi("--quet-rong cần --cho-phep-db (không có cờ DB thì không có gì để quét)", the.ma);
-  const chayKiemDung: ChayKiem = p.chayKiem ?? (p.taoChayKiem ?? taoChayLenhKiem)(dbCho ? { testDbUrl: p.testDbUrl } : {});
+  const chayKiemGoc: ChayKiem = p.chayKiem ?? (p.taoChayKiem ?? taoChayLenhKiem)(dbCho ? { testDbUrl: p.testDbUrl } : {});
 
   const wt = path.resolve(p.wt);
   // CHỐT (sự cố 13/11 17:59: một ca CLI/đột biến rơi về worktree mặc định THẬT và "cất" giữa lượt pilot): dưới vitest chỉ được dùng worktree trong thư mục tạm — TRƯỚC mọi thao tác git
@@ -668,6 +672,25 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   if (lyDoVitest) return tuChoi(lyDoVitest, the.ma);
   if (!/^_tho_ca/i.test(path.basename(wt)) && !p.choPhepKhoRieng) return tuChoi(`worktree "${wt}" không phải thư mục _tho_ca* — từ chối để không sửa nhầm nơi khác`, the.ma);
   if (!fs.existsSync(wt)) return tuChoi(`worktree không tồn tại: ${wt}`, the.ma);
+  // CHỐT .env: mã chạy trong wt với được tệp này (CLI nạp cả tệp: batDau.ts; vitest.setup.ts đọc DATABASE_URL khi env thiếu). CHỈ hỏi tồn tại, không đọc; không có cờ bỏ qua.
+  if (fs.existsSync(path.join(wt, ".env"))) return tuChoi(`worktree có tệp .env — từ chối: ${wt}. Chuyển .env ra khỏi worktree là việc của chủ dự án; bộ chạy không đọc, không sửa tệp đó`, the.ma);
+  // Giới hạn có tên BC2B-DOC-TEP-NGOAI-WT: các chốt này không ngăn mã trong wt đọc tệp ngoài wt bằng đường tương đối.
+  const lyDoEnvChay = lyDoEnvTroTepEnv(p.envNguoiChay ?? process.env);
+  if (lyDoEnvChay) return tuChoi(`ENV-TRO-TEP-ENV: ${lyDoEnvChay} — từ chối; gỡ biến đó rồi chạy lại`, the.ma);
+  // SOI LẠI .env giữa lượt (chỉ existsSync): đã thấy một lần thì nhớ, từ đó KHÔNG chạy thêm lệnh kiểm / tsc / lượt sửa; kết cục cuối bị ghi đè.
+  const LY_ENV_GIUA_LUOT = "ENV-XUAT-HIEN-GIUA-LUOT";
+  let envGiuaLuot: string | null = null;
+  const soiEnv = (luc: string): boolean => {
+    if (envGiuaLuot === null && fs.existsSync(path.join(wt, ".env"))) envGiuaLuot = luc;
+    return envGiuaLuot !== null;
+  };
+  const chayKiemDung: ChayKiem = async (lenh, cay, han) => {
+    if (soiEnv("trước lệnh kiểm")) return { lenh, exit: null, hetGio: false, giay: 0, duoi: "", vitest: { tep: null, ca: null }, loi: LY_ENV_GIUA_LUOT };
+    const k = await chayKiemGoc(lenh, cay, han);
+    soiEnv("sau lệnh kiểm");
+    return k;
+  };
+  const chayTscDung: ChayTsc = async (cay, tep, han) => (soiEnv("trước tsc") ? { exit: null, hetGio: false, giay: 0, loiTrongTep: [], tongLoi: 0, loi: LY_ENV_GIUA_LUOT } : (p.chayTsc ?? chayLenhTsc)(cay, tep, han));
   if (dbCho) {
     const lyDoRa = raTrongGocSandbox(p.ra, wt, p.envSandbox ?? process.env);
     if (lyDoRa) return tuChoi(lyDoRa, the.ma);
@@ -788,7 +811,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     if (b.ok) for (const ten of tenMoiCa(b.out)) tenCaCuPhu.add(ten);
   }
   const hanGiay0 = tran?.phutThucDung ? tran.phutThucDung * 60 : the.gioiHan.giay;
-  const goiDriver = (lenh: string, hanGiay: number, gh: GioiHanLuotChoDriver | undefined) => driver({ the: theChoDriver, wt, lenh, hanGiay, ...(gh ? { gioiHanLuot: gh } : {}), ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {}, ...(p.chayKiem || dbCho ? { chayKiem: chayKiemDung } : {}), ...(dbCho ? { cheDoKiem: "chi-so" as const, giaTriBiMat: giaTriBiMatTuUrl(p.testDbUrl) } : {}), ...(the.kiemPhu ? { phu: { dongDuyet, tenCaCu: tenCaCuPhu, tepTest: tepTestPhu } } : {}) });
+  const goiDriver = (lenh: string, hanGiay: number, gh: GioiHanLuotChoDriver | undefined) => driver({ the: theChoDriver, wt, lenh, hanGiay, ...(gh ? { gioiHanLuot: gh } : {}), ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {}, chayKiem: chayKiemDung, ...(dbCho ? { cheDoKiem: "chi-so" as const, giaTriBiMat: giaTriBiMatTuUrl(p.testDbUrl) } : {}), ...(the.kiemPhu ? { phu: { dongDuyet, tenCaCu: tenCaCuPhu, tepTest: tepTestPhu } } : {}) });
   const kq = await goiDriver(ghepLenh(the, luat, tran), hanGiay0, gioiHanLuot);
   const giayTuong = Math.round(((Date.now() - t0) / 1000) * 10) / 10;
   for (const g of kq.ghiChu) nhatKy(g);
@@ -875,10 +898,10 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     // L3c: lệnh kiểm xanh vẫn chưa đủ — tsc trên tệp model đổi (vitest không kiểm kiểu; TC-05 tự định nghĩa lại kiểu đã export)
     if (qd.ketCuc === "xong" && canChayTsc(wt, tepDoi)) {
       nhatKy("chạy tsc --noEmit -p tsconfig.tests.json (L3c)");
-      tsc = await (p.chayTsc ?? chayLenhTsc)(wt, tepDoi, p.hanTscGiay ?? 900);
+      tsc = await chayTscDung(wt, tepDoi, p.hanTscGiay ?? 900);
       qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc });
       truocSua = sauSua = { ketCuc: qd.ketCuc, lyDo: qd.lyDo };
-      const xin = canSuaTsc(the.suaTsc, tsc);
+      const xin = !soiEnv("trước lượt sửa") && canSuaTsc(the.suaTsc, tsc);
       const ns = xin ? nganSachSuaTsc(tran, hanGiay0, kq.token?.soLuotModel ?? null, giayTuong - (kq.duyet?.giayChoDuyet ?? 0)) : null;
       const tepOk = tepDoi.filter((t) => kiemDiffTheoThe([t], the.tepDuocPhep).length === 0);
       const nhac = ns ? loiNhacSuaTsc(the.ma, the.tepDuocPhep, tepOk, the.lenhKiem, tsc.loiTrongTep) : null;
@@ -910,7 +933,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
         else if (hong) qd = { ketCuc: "kiem-do", lyDo: hong };
         else {
           kiem = await chayKiemDung(the.lenhKiem, wt, p.hanKiemGiay ?? 300);
-          tsc = await (p.chayTsc ?? chayLenhTsc)(wt, tepDoi, p.hanTscGiay ?? 900);
+          tsc = await chayTscDung(wt, tepDoi, p.hanTscGiay ?? 900);
           qd = quyetKetCuc({ truoc: "xong", dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc });
         }
         if (kiem === kiemTruoc) luuY.push("LƯỢT SỬA TSC bị chặn trước khi chạy lại: `kiem` và `tsc` trong JSON là kết quả TRƯỚC lượt sửa (tepDoi, dong, diff, viPham là của SAU lượt sửa)");
@@ -951,7 +974,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     // HA-3: tsc cũng LUÔN chạy trên cây cuối khi có tệp test (trước đây bị bỏ qua khi lượt không xong ⇒ mất số đo kiểu)
     if (canChayTsc(wt, tepDoi)) {
       nhatKy(`lượt ${ketCuc} — vẫn chạy tsc --noEmit -p tsconfig.tests.json để ghi số đo`);
-      tsc = await (p.chayTsc ?? chayLenhTsc)(wt, tepDoi, p.hanTscGiay ?? 900);
+      tsc = await chayTscDung(wt, tepDoi, p.hanTscGiay ?? 900);
     }
     lyDoKiem = `ketCuc ${ketCuc} giữ nguyên; lệnh kiểm chạy bổ sung: exit ${kiem.exit}${kiem.vitest.ca ? `, Tests ${kiem.vitest.ca.dat} passed / ${kiem.vitest.ca.tong}` : ""}${tsc ? `; tsc exit ${tsc.exit}, ${tsc.tongLoi} lỗi` : ""}`;
   }
@@ -991,6 +1014,10 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
         lyDoKiem = phan.join(" | ");
       }
     }
+  }
+  if (soiEnv("cuối lượt")) {
+    lyDoKiem = `${LY_ENV_GIUA_LUOT} (phát hiện: ${envGiuaLuot}) — tệp .env xuất hiện trong worktree giữa lượt; kết cục trước đó: ${ketCuc}${lyDoKiem ? ` — ${lyDoKiem}` : ""}`;
+    ketCuc = "vi-pham";
   }
   // `--cho-phep-db`: đầu ra ĐẦY ĐỦ của lần chạy lệnh kiểm cuối (đã lọc URL + bí mật) ra TỆP cho người duyệt; không vào JSON, không vào lời nhắc model
   if (dbCho && kiem?.dauRaDayDu !== undefined) {
