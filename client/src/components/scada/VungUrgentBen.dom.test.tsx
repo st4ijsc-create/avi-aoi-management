@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Vùng URGENT bền (H37 + 22 kind A2(n)): thẻ KHÔNG tự rời; "Tôi đã đọc" chỉ thu gọn (vẫn trong vùng); không nút xoá / "đánh dấu tất cả";
+// Vùng URGENT bền (H37 và các kind khác của A2(n)): thẻ KHÔNG tự rời; "Tôi đã đọc" chỉ thu gọn (vẫn trong vùng); không nút xoá / "đánh dấu tất cả";
 // nhãn theo kind (kind lạ ⇒ title); message server nguyên văn; tối đa 3 thẻ + "+N"; role="alert" chỉ cho thẻ chưa đọc; "cũ" khi làm mới lỗi.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -259,13 +259,27 @@ describe("VungUrgentBen", () => {
     expect(screen.queryByTestId("urgent-chu-giai-ghim")).toBeNull();
   });
 
-  it("★ cả 24 kind dựng được thẻ với nhãn dịch (không để lộ khoá trần 'urgent.kind…')", () => {
+  it("★ cả 26 kind dựng được thẻ với nhãn dịch (không để lộ khoá trần 'urgent.kind…')", () => {
     srv.data = KIND_URGENT_A2N.map((k, i) => hang(i + 1, { metadata: { kind: k } }));
     render(<VungUrgentBen />);
     fireEvent.click(screen.getByTestId("urgent-nhieu"));
     const nhan = screen.getAllByTestId("urgent-nhan").map((x) => x.textContent ?? "");
-    expect(nhan).toHaveLength(24);
+    expect(nhan).toHaveLength(26);
     expect(nhan.every((x) => x.length > 0 && !x.startsWith("urgent."))).toBe(true);
+  });
+
+  it("★ T10: hai kind lúc khởi động lại dựng được thẻ với đúng nhãn vi của từng kind, không chú giải ghim", () => {
+    const HAI_KIND_T10 = [
+      "foe_outcome_unknown_boot_stop_not_sent_held",
+      "foe_outcome_unknown_boot_run_unconfirmed",
+    ];
+    const mongDoi = HAI_KIND_T10.map((k) => VI.urgent.kind[k] as string | undefined);
+    expect(mongDoi.every((x) => typeof x === "string"), "nhãn vi của hai kind T10").toBe(true);
+    srv.data = HAI_KIND_T10.map((k, i) => hang(i + 1, { metadata: { kind: k } }));
+    render(<VungUrgentBen />);
+    const nhan = screen.getAllByTestId("urgent-nhan").map((x) => x.textContent ?? "");
+    expect(nhan.sort()).toEqual([...mongDoi].sort());
+    expect(screen.queryByTestId("urgent-chu-giai-ghim")).toBeNull();
   });
 
   it("★ P2: bốn kind bù trừ bị ngắt lúc boot dựng được thẻ với đúng nhãn vi của từng kind", () => {

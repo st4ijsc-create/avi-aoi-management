@@ -50,8 +50,8 @@ const B = "nt_dung_khan_B_bang_tai_01";
 const suKien = (loai: string, o: "stepId" | "compId", id: string) =>
   ({ loai, runId: 77, [o]: id, [o === "stepId" ? "compId" : "stepId"]: o === "stepId" ? KHONG_CO_BU_TRU : "buoc_chinh", error: "FOE_OUTCOME_UNKNOWN", lan: "claim1", owner: 10, vi: { nguon: "tuChoi", ma: "ADAPTER_OFFLINE" } }) as never;
 /** the 10 cells where the words of two different STOPs are the same by design (ac78abafa, before 3b): the run-level kinds, and the kinds whose compId is always KHONG_CO_BU_TRU */
-const TRUNG_CO_Y = ["abortDefUnread/stepId", "abortDefUnread/compId", "abortSweepUnfinished/stepId", "abortSweepUnfinished/compId", "noCompensation/compId", "forwardNotSent/compId", "runEnd/compId", "stopUntakenBranch/compId", "stopEndedUnswept/compId", "edgeStreamStuck/compId", "edgeSyncRefused/stepId", "edgeSyncRefused/compId"];
-const KIND_KHONG_CO_BU_TRU = ["noCompensation", "forwardNotSent", "runEnd", "stopUntakenBranch", "stopEndedUnswept", "edgeStreamStuck", "edgeSyncRefused"];
+const TRUNG_CO_Y = ["abortDefUnread/stepId", "abortDefUnread/compId", "abortSweepUnfinished/stepId", "abortSweepUnfinished/compId", "noCompensation/compId", "forwardNotSent/compId", "runEnd/compId", "stopUntakenBranch/compId", "stopEndedUnswept/compId", "edgeStreamStuck/compId", "edgeSyncRefused/stepId", "edgeSyncRefused/compId", "bootQuaHan/compId", "bootKhongXuLy/stepId", "bootKhongXuLy/compId"]; // T10: kind 25 names its step only; kind 26 names neither (a run-level kind)
+const KIND_KHONG_CO_BU_TRU = ["noCompensation", "forwardNotSent", "runEnd", "stopUntakenBranch", "stopEndedUnswept", "edgeStreamStuck", "edgeSyncRefused", "bootQuaHan", "bootKhongXuLy"];
 
 beforeEach(() => {
   kho.length = 0;
@@ -87,7 +87,7 @@ describe("T9 lượt sửa 3e (A1-31) — two different STOPs never print alike,
         if (!trung.includes(`${loai}/${o}`)) expect(kho, `${loai}/${o}: two STOPs, two rows`).toHaveLength(2);
       }
     }
-    expect(Object.keys(CANH_BAO_KHONG_RO_KIND).length * 2, "the cells").toBe(48); // X-32: edgeSyncRefused
+    expect(Object.keys(CANH_BAO_KHONG_RO_KIND).length * 2, "the cells").toBe(52); // X-32: edgeSyncRefused; T10: bootQuaHan, bootKhongXuLy
     expect(trung.sort()).toEqual([...TRUNG_CO_Y].sort());
   });
   it("T9F3E-A131-CUNG-STOP the same STOP told twice: still ONE URGENT row (its key), both told stored", async () => {

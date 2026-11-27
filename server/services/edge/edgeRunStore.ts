@@ -240,6 +240,10 @@ abstract class EdgeStoreBase implements RunStore {
   abstract persistContext(rc: RunStoreContext): Promise<void>;
   /** X-39 — the state-C list is central's key (EDGE_CONTEXT_ALLOWED_KEY never takes it from an edge): nothing is stored here */
   async xoaStopChuaRaDaLuu(): Promise<void> {}
+  /** T10 — the boot gate is central's (autoResumeInterruptedRuns skips edge runs): an edge store never answers an age ⇒ null (unreadable ⇒ past the bound, the side that does NOT send) */
+  async docTuoiMocChot(): Promise<number | null> {
+    return null;
+  }
   abstract authorizeCommand(rc: RunStoreContext, step: Extract<WorkflowStep, { type: "command" }>, attempt: number, x: AuthorizeInput): Promise<AuthorizeVerdict>;
   abstract authorizeAbortStop(runId: number, user: RunStoreUser, step: Extract<WorkflowStep, { type: "command" }>, idempotencyKey: string, args: Record<string, unknown>, cmd: EquipmentCommand): Promise<void>;
   abstract sweepSource(x: { live?: RunStoreContext | null; run?: OrchestrationRun; hasLiveDriver?: (runId: number) => boolean }): Promise<AbortSweepSource | null>;

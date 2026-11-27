@@ -1975,8 +1975,10 @@ describe("A2(n) extension (owner's ruling) — central: a forward write never le
   // m-M reversed (extension (2)): "resumed" counts an ok end, so a run walked to 'failed' is not counted; what it did is the oracle
   it("★ the trap, m-M reversed: a latch and a crash before the split, STOP compensation: IS auto-resumed, 0 non-STOP writes, the STOP once + URGENT, main stays unknown", async () => {
     const runId = await chetSauChot([main(stopComp())]);
+    (globalThis as { __t10hoiKrt?: Array<[number, string[]]> }).__t10hoiKrt = [];
     await autoResumeInterruptedRuns([runId]);
     expect(sent()).toEqual(["stop"]);
+    expect((globalThis as { __t10hoiKrt?: Array<[number, string[]]> }).__t10hoiKrt, "T10: the boot gate asked this latched run's age once, for its latched step (the default answered inside the bound)").toEqual([[runId, ["main"]]]);
     await kiemKhongRo(runId);
     await vi.waitFor(() => expect(alertsOf("stopSent")).toHaveLength(1));
     expect(runRow(runId).status).toBe("failed");
@@ -2686,6 +2688,13 @@ vi.mock("./foeRunStore", async (importOriginal) => {
           return { ...r, ids: new Set([...r.ids].filter((x) => x !== "xs")), unsure: new Set([...r.unsure, "xs"]), failed: true };
         }
         return s.verifyStops(...a);
+      },
+      // T10 (HST 27/11) — this stand-in runs no SQL: the latch's age is "inside the bound" (0 ms) for every case of this file, so a boot continues a latched run as before T10
+      // (the cases relying on it: tam/t10-dotruoc-1-ghi-chu-1.md §2(a)). Every ask is counted (__t10hoiKrt), so the default never hides a gate that stopped asking. The bound: foeBootQuaHan.a2n*
+      docTuoiMocChot: async (runId: number, stepIds: readonly string[]) => {
+        const g = globalThis as { __t10hoiKrt?: Array<[number, string[]]> };
+        (g.__t10hoiKrt ??= []).push([runId, [...stepIds].sort()]);
+        return 0;
       },
     },
   };

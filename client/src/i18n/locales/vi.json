@@ -24971,6 +24971,8 @@
       "foe_outcome_unknown_stop_ended_unswept": "Run đã kết thúc mà không có lượt quét bước DỪNG — bước DỪNG CHƯA gửi; kiểm máy",
       "foe_outcome_unknown_edge_stream_stuck": "Luồng edge của run đứng do bất thường — run có thể còn bước DỪNG chưa ra; kiểm máy",
       "foe_outcome_unknown_edge_sync_refused": "Báo cáo của edge bị từ chối trọn — trung tâm không biết có bước DỪNG nào đã tới máy hay chưa; kiểm máy tại chỗ",
+      "foe_outcome_unknown_boot_stop_not_sent_held": "Khi khởi động lại, máy chủ không tự gửi lệnh DỪNG nào của run và không tự chạy tiếp run; máy chủ đã giữ run chờ người quyết — mở run xem trạng thái; kiểm máy tại chỗ",
+      "foe_outcome_unknown_boot_run_unconfirmed": "Khi khởi động lại, máy chủ không xác nhận được việc xử lý run này — trạng thái run có thể đã đổi, cũng có thể chưa; lần khởi động này không gửi gì cho run và không tự chạy tiếp run; mở run xem; kiểm máy tại chỗ",
       "foe_compensation_interrupted_held": "Máy chủ khởi động lại lúc run đang bù trừ — cần người xử lý; không rõ lệnh bù trừ đã tới máy hay chưa; mở run xem trạng thái; kiểm máy tại chỗ",
       "foe_compensation_interrupted_failed": "Máy chủ khởi động lại lúc run đang bù trừ — run thất bại; lần khởi động này không gửi lại gì; kiểm máy tại chỗ",
       "foe_stop_compensation_resent_at_boot": "Lúc khởi động, bước DỪNG bù trừ được gửi lại một lần — kiểm trạng thái máy tại chỗ",

@@ -1,4 +1,4 @@
-// URGENT bền (A2(n)) — logic thuần: nhận diện, tách nhóm (KHÔNG bỏ thẻ đã đọc), cắt 3 thẻ + "+N", tuổi, lưới 23 kind × 3 ngôn ngữ,
+// URGENT bền (A2(n)) — logic thuần: nhận diện, tách nhóm (KHÔNG bỏ thẻ đã đọc), cắt 3 thẻ + "+N", tuổi, lưới kind × 3 ngôn ngữ,
 // và lưới lệch với máy chủ (CANH_BAO_KHONG_RO_KIND) — tự chạy khi nhánh A2(n) đã vào cây, vắng thì bỏ qua (ghi rõ trong tên ca).
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -24,6 +24,11 @@ const BON_KIND_P2 = [
   "foe_compensation_interrupted_failed",
   "foe_stop_compensation_resent_at_boot",
   "foe_stop_compensation_pending_at_boot",
+] as const;
+// Hai tên T10 chép TAY từ hợp đồng (hàng 25, 26) — nguồn kỳ vọng độc lập với KIND_URGENT_A2N của mã.
+const HAI_KIND_T10 = [
+  "foe_outcome_unknown_boot_stop_not_sent_held",
+  "foe_outcome_unknown_boot_run_unconfirmed",
 ] as const;
 const hang = (id: number, x: Partial<HangThongBao> = {}): HangThongBao => ({
   id,
@@ -155,11 +160,16 @@ describe("duongToiRun", () => {
   it("dựng từ runId", () => expect(duongToiRun(412)).toBe("/orchestration-studio?run=412"));
 });
 
-describe("lưới 24 kind", () => {
-  it("đúng 24 kind, không trùng, đều có tiền tố", () => {
-    expect(KIND_URGENT_A2N).toHaveLength(24);
-    expect(new Set(KIND_URGENT_A2N).size).toBe(24);
+describe("lưới 26 kind", () => {
+  it("đúng 26 kind, không trùng, đều có tiền tố", () => {
+    expect(KIND_URGENT_A2N).toHaveLength(26);
+    expect(new Set(KIND_URGENT_A2N).size).toBe(26);
     expect(KIND_URGENT_A2N.every((k) => k.startsWith(TIEN_TO_KIND))).toBe(true);
+  });
+  it.each(HAI_KIND_T10)("★ T10: %s thuộc KIND_URGENT_A2N, có khoá nhãn, không nhắc ghim", (kind) => {
+    expect(KIND_URGENT_A2N).toContain(kind);
+    const the = phanNhomUrgent([hang(1, { metadata: { kind } })]).chuaDoc;
+    expect(the.map((x) => [x.runId, x.khoaNhan, x.nhacGhim])).toEqual([[401, `urgent.kind.${kind}`, false]]);
   });
   it.each([["vi", vi], ["en", en], ["zh", zh]] as const)("★ mỗi kind có nhãn urgent.kind.<kind> không rỗng ở %s", (_ten, loc) => {
     const nhan = (loc as unknown as { urgent: { kind: Record<string, string> } }).urgent.kind;

@@ -266,6 +266,24 @@ vi.mock("./foeStepClass", async (importOriginal) => {
     },
   };
 });
+// T10 (HST 27/11) — this stand-in runs no SQL: the latch's age is "inside the bound" (0 ms) unless a case names one (__t10tuoiRp, per run), so a boot continues a latched run as
+// before T10 (the cases relying on it: tam/t10-dotruoc-1-ghi-chu-1.md §2(a)); every ask is counted (__t10hoiRp). The bound itself: foeBootQuaHan.a2n*
+vi.mock("./foeRunStore", async (importOriginal) => {
+  const o = await importOriginal<typeof import("./foeRunStore")>();
+  return {
+    ...o,
+    centralRunStore: {
+      ...o.centralRunStore,
+      docTuoiMocChot: async (runId: number, stepIds: readonly string[]) => {
+        const g = globalThis as { __t10hoiRp?: Array<[number, string[]]>; __t10tuoiRp?: Record<number, number> };
+        (g.__t10hoiRp ??= []).push([runId, [...stepIds].sort()]);
+        const v = g.__t10tuoiRp?.[runId];
+        if (v !== undefined) delete g.__t10tuoiRp![runId]; // used once: a later case's run with the same id never inherits it
+        return v ?? 0;
+      },
+    },
+  };
+});
 vi.mock("./foeScope", async (importOriginal) => {
   const orig = await importOriginal<typeof import("./foeScope")>();
   return { ...orig, resolveUserFoeScope: () => null };
@@ -6831,7 +6849,9 @@ describe("A2(n) T3+T4 — the door, the planner, the STOP passes", () => {
       const c = await denThanGiu(ref);
       process.env.FOE_DURABLE = "true";
       const ctx = runRow(c).contextJson as Record<string, unknown>;
-      Object.assign(runRow(c), { status: "held", error: null, contextJson: { ...ctx, interrupted: true, [KET_CUC_KHONG_RO_CHOT_CTX_KEY]: { ...(ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as object), at: luc } } });
+      Object.assign(runRow(c), { status: "held", error: null, contextJson: { ...ctx, interrupted: true } });
+      // T10 — the bound is read on the DATABASE clock (the latched row's age), never from the process clock's `at`: the age is given through the store hook
+      (globalThis as { __t10tuoiRp?: Record<number, number> }).__t10tuoiRp = { [c]: Math.max(0, Date.now() - Date.parse(luc)) };
       h.ghim = PIN_OK;
       h.timeoutDispatch.clear();
       h.sent.length = 0;

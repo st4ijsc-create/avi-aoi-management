@@ -1,11 +1,11 @@
-// URGENT bền của A2(n) (H37 và 22 kind khác) — logic thuần cho thẻ ở vùng URGENT (hợp đồng scada-master 13/11, hop-dong-scada-ui-urgent.md).
+// URGENT bền của A2(n) (H37 và các kind khác) — logic thuần cho thẻ ở vùng URGENT (hợp đồng scada-master 13/11, hop-dong-scada-ui-urgent.md).
 // Nguồn bền DUY NHẤT: bảng `notifications`, MỘT hàng mỗi người nhận (`notification.list`, chỉ hàng của chính người đăng nhập).
 // Nhận diện: priority "URGENT" + entityType "orchestration_run" + metadata.kind bắt đầu bằng `foe_outcome_unknown_` HOẶC thuộc KIND_URGENT_P2.
 // Luật: thẻ KHÔNG tự rời; "đã đọc" chỉ là markAsRead của chính người xem (không phải "đã xử lý"); không có nút xoá / "đánh dấu tất cả".
 
 export const TIEN_TO_KIND = "foe_outcome_unknown_";
 
-/** 24 kind URGENT (CANH_BAO_KHONG_RO_KIND, foeKetCucKhongRo.ts:373-397). Mỗi kind một nhãn `urgent.kind.<kind>` vi/en/zh. */
+/** Kind URGENT, soi gương CANH_BAO_KHONG_RO_KIND (foeKetCucKhongRo.ts, tìm theo tên). Mỗi kind một nhãn `urgent.kind.<kind>` vi/en/zh. */
 export const KIND_URGENT_A2N = [
   "compensation_held",
   "stop_compensation_sent",
@@ -31,6 +31,8 @@ export const KIND_URGENT_A2N = [
   "stop_ended_unswept",
   "edge_stream_stuck",
   "edge_sync_refused",
+  "boot_stop_not_sent_held",
+  "boot_run_unconfirmed",
 ].map((k) => `${TIEN_TO_KIND}${k}`);
 
 /** Bốn kind URGENT của P2 (bù trừ bị ngắt lúc boot; nguồn canhBaoBuTruBiNgat, foeEngine.ts) — danh sách ĐÓNG, so NGUYÊN TÊN, không so tiền tố

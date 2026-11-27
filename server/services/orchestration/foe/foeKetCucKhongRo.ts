@@ -390,7 +390,7 @@ export function loiGiuBuTruKhongRo(stepId: string, compId: string, stepError: st
  * edgeStreamStuck — A2(n) T7b-3 (H37, chu du an 11/11): central refused a batch of a run's edge report stream as a whole (409, rolled back: `stepId` is the refusal code) and the node keeps sending it: what
  *   the run did since is not recorded, a STOP may still be owed (`stopTrongLo`: the STOP steps the batch named). One key per (run, stream, refusal): the event is the stream. Nothing is sent. H37-b (chu du an 11/11): no mark of a debt on the run, the URGENT only.
  */
-export type LoaiCanhBaoKhongRo = "abortDefUnread" | "abortSweepUnfinished" | "abortStopNotSent" | "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui" | "stopEndedUnswept" | "edgeStreamStuck" | "edgeSyncRefused";
+export type LoaiCanhBaoKhongRo = "abortDefUnread" | "abortSweepUnfinished" | "abortStopNotSent" | "stopKhongXacNhanDoc" | "stopGhimLech" | "held" | "stopSent" | "stopSimulated" | "stopNotConfirmed" | "stopNotHanded" | "noCompensation" | "approvedNotConfirmed" | "approvedNotSent" | "failedNotSent" | "compensationUnknown" | "inFlight" | "forwardNotSent" | "runEnd" | "stopUntakenBranch" | "stopNotSent" | "stopGhimLechChuaGui" | "stopEndedUnswept" | "edgeStreamStuck" | "edgeSyncRefused" | "bootQuaHan" | "bootKhongXuLy";
 export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>> = Object.freeze({
   held: "foe_outcome_unknown_compensation_held",
   stopSent: "foe_outcome_unknown_stop_compensation_sent",
@@ -416,6 +416,10 @@ export const CANH_BAO_KHONG_RO_KIND: Readonly<Record<LoaiCanhBaoKhongRo, string>
   stopEndedUnswept: "foe_outcome_unknown_stop_ended_unswept",
   edgeStreamStuck: "foe_outcome_unknown_edge_stream_stuck",
   edgeSyncRefused: "foe_outcome_unknown_edge_sync_refused",
+  // T10 (chủ dự án 27/11: "khi boot đã quá hạn: KHÔNG tự gửi STOP — giữ run + URGENT") — kind 25: a latched run the boot held and whose STOPs the boot did NOT send by itself
+  bootQuaHan: "foe_outcome_unknown_boot_stop_not_sent_held",
+  // BOOT-QUET-DUNG-KHI-GHI-LOI (HST 27/11, gộp vào T10) — kind 26: the boot could not confirm its handling of a run (a write or read of it failed): nothing sent, not continued
+  bootKhongXuLy: "foe_outcome_unknown_boot_run_unconfirmed",
 });
 /** n2 — the words a person reads (critical-stop alerts carry raw text, they are not localised — as A2(m2)). */
 export const CHO_NGUOI_TIEU_DE = "waiting for a person";
@@ -468,6 +472,10 @@ export interface CanhBaoKhongRo {
   stopBuTru?: readonly string[];
   /** A2(n) T9 (THAN-GIU-CONTINUE) — held: the compensation held is a STOP of a body (stopTrongBuTru): a Continue sends only that STOP and asks no reason */
   heldStop?: true;
+  /** T10 — bootQuaHan: why the boot did not send / continue: past the bound on the DB clock (`quaHan`), the latch's age unreadable (`khongDocMoc`), automatic continuation off (`tatTuTiep`) */
+  lyDoBoot?: "quaHan" | "khongDocMoc" | "tatTuTiep";
+  /** T10 — bootQuaHan `quaHan`: the bound applied (hanGuiLaiMs, the boot re-send's own bound), ms */
+  hanMs?: number;
   /** A2(n) T9 lượt sửa 2 (R-4, dieu-phoi 13/11) — the run is an edge node's: its adapters are the node's, a press of Abort at central only queues a STOP for the node and nothing confirms it there. Central's own word */
   adapterNut?: true | "khongBiet";
   /** T9 lượt sửa 3c (mục 2) — abortStopNotSent: the answer is CENTRAL's dispatcher's (its own press, baoStopChuaRaAbort), not an edge node's sweep: ADAPTER_OFFLINE then means not routed */
@@ -822,7 +830,7 @@ export function noiDungCanhBaoKhongRo(goc: CanhBaoKhongRo): { kind: string; titl
   const nhanh = a.loai === "stopUntakenBranch" || a.loai === "abortDefUnread" || a.loai === "abortSweepUnfinished" || khongXd || (a.loai === "forwardNotSent" && a.luotStopHong === true) || (a.loai === "abortStopNotSent" && (a.chuAbort === "khongXacMinhKhongHan" || a.chuAbort === "khongXacMinh15")); // `stepId` is the listed STOP: nothing happened to it
   // T7b-1d (H26) — a run that never latched and reached another end: no command of it has an unknown outcome, so no word says one has
   // T7b-3 (H36) — the same for a run that ended with no sweep and never latched. X-11 (P3) — `choNut`: at the press the run was not latched, so no word opens with an unknown outcome
-  const khongChot = (a.loai === "abortStopNotSent" && (a.chuAbort === "daKetThucChuaKhoa" || a.chuAbort === "daKetThucKhongXacMinh" || a.chuAbort === "choNut" || a.chuAbort === "chuaKhoaKhongXacMinh" || a.chuAbort === "chuaKhoaKetNoi" || a.chuAbort === "chuaKhoaKhongBen")) || a.loai === "stopEndedUnswept" || a.loai === "edgeStreamStuck" || a.loai === "edgeSyncRefused"; // X-32: central never latched what a refused report says
+  const khongChot = (a.loai === "abortStopNotSent" && (a.chuAbort === "daKetThucChuaKhoa" || a.chuAbort === "daKetThucKhongXacMinh" || a.chuAbort === "choNut" || a.chuAbort === "chuaKhoaKhongXacMinh" || a.chuAbort === "chuaKhoaKetNoi" || a.chuAbort === "chuaKhoaKhongBen")) || a.loai === "stopEndedUnswept" || a.loai === "edgeStreamStuck" || a.loai === "edgeSyncRefused" || a.loai === "bootKhongXuLy"; // T10 (BQ): kind 26 is told of any run, latched or not; X-32: central never latched what a refused report says
   const dau = nhanh ? `another command's outcome is unknown — machine state unknown` : a.biet ? `step "${a.stepId}" failed; another command's outcome is unknown — machine state unknown` : `command "${a.stepId}" outcome unknown — machine state unknown`;
   const mo = nhanh
     ? `A command of run ${a.runId} has an UNKNOWN outcome (${ma}); the state of the machine is unknown.`
@@ -877,10 +885,28 @@ export function noiDungCanhBaoKhongRo(goc: CanhBaoKhongRo): { kind: string; titl
       stopEndedUnswept: chuKetThucKhongQuet(a),
       edgeStreamStuck: chuLuongEdgeKet(a),
       edgeSyncRefused: chuDongBoEdgeTuChoi(a),
+      bootQuaHan: chuBootQuaHan(a),
+      bootKhongXuLy: [
+        `the boot could not confirm its handling of this run`,
+        `At the restart an error stopped the boot from confirming its handling of this run: its status may or may not have changed, so open the run to see it. The boot sent nothing for it and did not continue it at this boot. Check the machine on site and use its direct STOP / E-STOP if needed.`,
+      ],
       failedNotSent: [`compensation ${c} NOT sent — run failed`, `The edge node stopped while run ${a.runId} was compensating. The run is FAILED and its compensation ${c} was NOT sent. Check the device on site and use the machine's direct STOP / E-STOP if needed.`],
     } satisfies Record<LoaiCanhBaoKhongRo, [string, string]>
   )[a.loai];
   return { kind, title: khongChot ? `Run ${a.runId}: ${duoi}` : `Run ${a.runId}: ${dau} — ${duoi}`, message: khongChot ? `${than} [event ${a.lan}]` : `${mo} ${than} [event ${a.lan}]`, dedupKey: `${kind}:${goc.runId}:${goc.stepId}:${goc.compId}:${goc.lan}` };
+}
+
+/**
+ * T10 — kind 25's words. Each says what the boot did (it sent nothing of this run by itself, it did not continue it: the run is held) and why; never that the machine stopped, never what
+ * a Continue will send (that is the walk's, read when a person continues).
+ */
+function chuBootQuaHan(a: Pick<CanhBaoKhongRo, "lyDoBoot" | "hanMs">): [string, string] {
+  const duoi = `the boot did NOT send its STOP by itself: the run is held for a person`;
+  const sau = `The boot did NOT send any STOP of this run by itself and did not continue it: the run is held. Check the machine on site, then a person decides (Continue or Abort). Use the machine's direct STOP / E-STOP if needed.`;
+  if (a.lyDoBoot === "tatTuTiep") return [duoi, `The server restarted while this run was in progress, and automatic continuation at boot is off (FOE_DURABLE / FOE_ENABLED). ${sau}`];
+  if (a.lyDoBoot === "khongDocMoc") return [duoi, `The server restarted while this run was in progress, and the boot could not read when its latched command's step was first recorded, so the boot is treated as too late. ${sau}`];
+  const phut = typeof a.hanMs === "number" && Number.isFinite(a.hanMs) && a.hanMs > 0 ? `${Math.round(a.hanMs / 60_000)} min` : "the bound";
+  return [duoi, `The server restarted while this run was in progress, and the boot came too late: ${phut} or more on the database clock since its latched command's step was first recorded. ${sau}`];
 }
 
 /** The audit action of a URGENT that had nobody to go to (I-5 / condition 3): the durable trace, with the log line and the alert stream. */

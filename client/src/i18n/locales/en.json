@@ -24974,6 +24974,8 @@
       "foe_outcome_unknown_stop_ended_unswept": "The run ended without a STOP sweep — the STOP was NOT sent; check the machine",
       "foe_outcome_unknown_edge_stream_stuck": "The run's edge stream stalled abnormally — a STOP may not be out; check the machine",
       "foe_outcome_unknown_edge_sync_refused": "An edge report was refused in full — the centre does not know whether any STOP step reached the machine; check the machine on site",
+      "foe_outcome_unknown_boot_stop_not_sent_held": "At the restart the server did not send any STOP of this run by itself and did not continue it; it held the run for a person to decide — open the run to see its status; check the machine on site",
+      "foe_outcome_unknown_boot_run_unconfirmed": "At the restart the server could not confirm its handling of this run — the run status may or may not have changed; this boot sent nothing for it and did not continue it; open the run to see it; check the machine on site",
       "foe_compensation_interrupted_held": "The server restarted while the run was compensating — a person needs to act; it is not known whether the compensation reached the machine; open the run to see its status; check the machine on site",
       "foe_compensation_interrupted_failed": "The server restarted while the run was compensating — the run failed; this boot re-sent nothing; check the machine on site",
       "foe_stop_compensation_resent_at_boot": "At boot the compensation STOP was re-sent once — check the machine state on site",

@@ -247,6 +247,8 @@ export interface RunStore {
   persistContext(rc: RunStoreContext): Promise<void>;
   /** X-39 — the STOP `id` this walk just sent went (its own send answered ok): drop it from the STORED state-C list (STOP_CHUA_RA_CTX_KEY) now, before its row. Central only */
   xoaStopChuaRaDaLuu(runId: number, id: string): Promise<void>;
+  /** T10 — the age (ms, DATABASE clock) of the oldest row of the latched steps `stepIds` of run `runId`; null ⇔ no such row / not readable. Central only (an edge store answers null) */
+  docTuoiMocChot(runId: number, stepIds: readonly string[]): Promise<number | null>;
   resolveAdapter(kind: string, machineId: number, args: Record<string, unknown>, stepId: string): Promise<Record<string, unknown>>;
   authorizeCommand(rc: RunStoreContext, step: Extract<WorkflowStep, { type: "command" }>, attempt: number, x: AuthorizeInput): Promise<AuthorizeVerdict>;
   /**
@@ -1258,6 +1260,33 @@ export async function xoaStopChuaRaDaLuu(runId: number, id: string): Promise<voi
   await xoaStopChuaRaDaLuuTrong(d, runId, id);
 }
 
+/**
+ * T10 (chủ dự án 27/11; HST quyết 1, 2, M8) — the age of a latch on the DATABASE clock: now() − the OLDEST "createdAt" among the rows of the latched steps `stepIds`. "createdAt" is
+ * `DEFAULT now()`, written once (upsertStepOn's ON CONFLICT set has no "createdAt"), so it is the first hand-over of that command — earlier than the latch by at most the command's own
+ * wait, and a re-run keeps it (both towards NOT sending: T10-MOC-SOM, T10-MOC-CU-NHAT). Compared in SQL as an instant (`::timestamptz`, the session zone it was written in: as
+ * foeBuTruBiNgat docCuaSoGuiLai). null ⇔ no id, a latched step with NO row (R1, kiem-dinh 17:54: its age is unknown, and the MIN of the others could be younger ⇒ the side that
+ * SENDS), or no number. Its DB form is measured by foeBootQuaHan.a2n.db.test.ts
+ */
+export async function docTuoiMocChotTrong(d: Pick<RunDb, "execute">, runId: number, stepIds: readonly string[]): Promise<number | null> {
+  const ids = [...new Set(stepIds.filter((x) => typeof x === "string" && x !== ""))];
+  if (ids.length === 0) return null;
+  const kq = await d.execute(sql`
+    SELECT CASE WHEN COUNT(DISTINCT s."stepId") = ${ids.length}::int
+                THEN FLOOR(EXTRACT(EPOCH FROM (now() - MIN(s."createdAt"::timestamptz))) * 1000)::bigint END AS "tuoiMs"
+      FROM public."orchestration_run_steps" s
+     WHERE s."runId" = ${runId} AND s."stepId" IN (${sql.join(ids.map((x) => sql`${x}`), sql`, `)})`);
+  const hang = Array.isArray(kq) ? kq : (kq as { rows?: unknown } | null)?.rows;
+  const v = Array.isArray(hang) ? (hang[0] as Record<string, unknown> | undefined)?.tuoiMs : undefined;
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+export async function docTuoiMocChot(runId: number, stepIds: readonly string[]): Promise<number | null> {
+  const d = await getDb();
+  if (!d) return null;
+  return docTuoiMocChotTrong(d, runId, stepIds);
+}
+
 export async function persistContext(rc: RunStoreContext): Promise<void> {
   const d = await getDb();
   if (!d) return;
@@ -1827,6 +1856,7 @@ export const centralRunStore: RunStore = Object.freeze({
   setStatusUnlessAborted: setRunStatusUnlessAborted,
   persistContext,
   xoaStopChuaRaDaLuu,
+  docTuoiMocChot,
   resolveAdapter(kind: string, machineId: number, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     return withResolvedAdapter(kind, machineId, args);
   },

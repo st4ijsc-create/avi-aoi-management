@@ -98,6 +98,7 @@ import {
   dauDoBuTruCho,
   docCuaSoGuiLai,
   docLenhSau,
+  hanGuiLaiMs,
   phanLoaiBuTruBiNgat,
   xetGuiLaiBuTruBiNgat,
   type DauBuTruBiNgat,
@@ -5237,6 +5238,29 @@ export async function autoResumeInterruptedRuns(runIds: number[]): Promise<{ ena
       // doc 81 Đợt 9 task S2 — an edge run interrupted on its node waits for a person's Continue (undecidable ⇒ skipped)
       const onEdge = await readEdgeAssignment(d, runId).catch(() => "unknown" as const);
       if (onEdge !== null) continue;
+      // T10 (chủ dự án 27/11: "khi boot đã quá hạn: KHÔNG tự gửi STOP — giữ run + URGENT"; HST quyết 1-5) — a LATCHED run is continued by the boot itself only inside the bound:
+      // the age of its latched command on the DATABASE clock (the oldest latched step row, M8) below D = hanGuiLaiMs() (the boot re-send's own bound, one constant). Unreadable ⇒ past it.
+      // Past it: not continued, nothing sent, the run stays held, kind 25. A person's Continue is not gated (M9: resumeRun / driveRunFromResume untouched). Nothing here throws (M10)
+      const lucBoot = await chotLucBoot(runId, ctx);
+      if (lucBoot === null) {
+        await baoBootKhongXuLy(run, "its step rows could not be read");
+        continue;
+      }
+      if (lucBoot.chot) {
+        let tuoi: number | null = null;
+        try {
+          tuoi = await withDeadline(centralRunStore.docTuoiMocChot(runId, lucBoot.stepIds), STOP_DB_STEP_DEADLINE_MS, `FOE boot run ${runId} latch age`);
+        } catch (err) {
+          console.error(`[FOE] boot: run ${runId}: the age of its latch could not be read (${(err as Error)?.message ?? err}) — treated as past the bound`);
+          tuoi = null;
+        }
+        const han = hanGuiLaiMs();
+        if (tuoi === null || tuoi >= han) {
+          console.error(`[FOE] boot: run ${runId} is latched and ${tuoi === null ? "the age of its latch is unknown" : `its latch is ${tuoi} ms old (bound ${han} ms)`}: the boot does NOT send its STOP nor continue it — it waits for a person`);
+          await baoBootQuaHan(run, lucBoot, tuoi === null ? "khongDocMoc" : "quaHan", han);
+          continue;
+        }
+      }
       // doc 80 ORC-02 — resumeRun may now THROW (CONFLICT when a human resumed it first); one
       // refusal must not stop the sweep over the remaining interrupted runs.
       const res = await resumeRun(runId, { approved: true, note: "auto-resume (FOE_DURABLE)" }, SYSTEM_FOE_USER).catch(
@@ -5251,6 +5275,53 @@ export async function autoResumeInterruptedRuns(runIds: number[]): Promise<{ ena
     console.error("[FOE] autoResumeInterruptedRuns failed:", err instanceof Error ? err.message : String(err));
   }
   return { enabled: true, resumed: resumed.length, runIds: resumed };
+}
+
+/**
+ * T10 — is this interrupted run LATCHED, and EVERY step its latch names (HST 17:5x, A2 / M8: the age is the MIN over all of them, in SQL; never "the first row": the rows are read
+ * with no order): the stored latch mark (KET_CUC_KHONG_RO_CHOT_CTX_KEY), the outcome-unknown mark (KET_CUC_KHONG_RO_CTX_KEY: its step and every compensation it holds), the list
+ * OUTCOME_UNKNOWN_CTX_KEY, EVERY latched row (chotTuHang of that row alone: its code, or the trace of an unknown attempt), EVERY resume entry of an unknown outcome. null ⇔ its rows could not be read AND its context says nothing (the caller does not guess: BQ, D3). Never throws (readRunStepRows is bounded and never
+ * throws; chotTuHang is pure).
+ */
+async function chotLucBoot(runId: number, ctx: Record<string, unknown>): Promise<{ chot: boolean; stepIds: string[]; ma: string } | null> {
+  const dau = ctx[KET_CUC_KHONG_RO_CHOT_CTX_KEY] as { stepId?: unknown; ma?: unknown } | undefined;
+  const trongNguCanh = runDaChotKhongRo(ctx);
+  const hang = await readRunStepRows(runId);
+  if (hang === null && !trongNguCanh) return null;
+  const ids = new Set<string>();
+  if (typeof dau?.stepId === "string" && dau.stepId !== "") ids.add(dau.stepId);
+  let maHang: string | null = null;
+  for (const r of hang ?? []) {
+    const c = chotTuHang([r] as Parameters<typeof chotTuHang>[0]);
+    if (!c) continue;
+    ids.add(c.stepId);
+    maHang ??= c.ma;
+  }
+  // R2 (kiem-dinh 17:54, HST): the context's two other latch sources, as runDaChotKhongRo reads them — the outcome-unknown mark (its step, every compensation it holds) and the
+  // list of steps of an unknown outcome (OUTCOME_UNKNOWN_CTX_KEY). Structured data only, no text
+  const dauKr = dauKetCucKhongRoCua(ctx);
+  if (dauKr) {
+    ids.add(dauKr.stepId);
+    for (const x of dauKr.ds ?? []) ids.add(x.stepId);
+  }
+  const ou = ctx[OUTCOME_UNKNOWN_CTX_KEY];
+  if (Array.isArray(ou)) for (const x of ou) if (typeof x === "string" && x !== "") ids.add(x);
+  const resume = ctx.foeResumeState;
+  if (resume && typeof resume === "object" && !Array.isArray(resume)) {
+    for (const [id, v] of Object.entries(resume as Record<string, { state?: unknown; khongRo?: unknown }>)) if (v?.state === "outcomeUnknown" || v?.khongRo === true) ids.add(id);
+  }
+  return { chot: trongNguCanh || maHang !== null, stepIds: [...ids], ma: typeof dau?.ma === "string" ? dau.ma : (maHang ?? "FOE_OUTCOME_UNKNOWN") };
+}
+
+/** T10 — kind 25 for a latched run the boot held and did not continue. Never throws (canhBaoKetCucKhongRo catches; BQ-URGENT-CUNG-HONG: a dead DB writes no URGENT either) */
+async function baoBootQuaHan(run: OrchestrationRun, c: { stepIds: string[]; ma: string }, lyDoBoot: "quaHan" | "khongDocMoc" | "tatTuTiep", hanMs: number): Promise<void> {
+  await canhBaoKetCucKhongRo({ loai: "bootQuaHan", lyDoBoot, hanMs, runId: run.id, stepId: c.stepIds[0] ?? BUOC_KHONG_XAC_DINH, compId: KHONG_CO_BU_TRU, error: c.ma, lan: dauLanNgat(run), owner: run.startedBy ?? null }).catch(() => false);
+}
+
+/** BQ — kind 26: the boot could not confirm its handling of this run. The log names the run; never "unchanged" (a write that threw may have landed). Never throws */
+async function baoBootKhongXuLy(run: OrchestrationRun, lyDo: string): Promise<void> {
+  console.error(`[FOE] boot: run ${run.id} not handled (${lyDo}) — its status may or may not have changed; nothing is sent for it and it is not continued at this boot`);
+  await canhBaoKetCucKhongRo({ loai: "bootKhongXuLy", runId: run.id, stepId: BUOC_KHONG_XAC_DINH, compId: KHONG_CO_BU_TRU, error: "", lan: dauLanNgat(run), owner: run.startedBy ?? null }).catch(() => false);
 }
 
 /**
@@ -5308,66 +5379,79 @@ export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
     result.scanned = stuck.length;
     const now = new Date();
     for (const run of stuck) {
-      const ctx = (run.contextJson as Record<string, unknown>) ?? {};
-      const markedCtx = {
-        ...ctx,
-        interrupted: true,
-        interruptedAt: now.toISOString(),
-        interruptedFrom: run.status,
-      };
-      if (run.status === "compensating") {
-        // R1b-2b-2a A2(m2) — WHICH compensation was in flight (step rows + deployed definition; unreadable ⇒ undecidable, never a guess)
-        const pl = await phanLoaiBuTruCuaRun(d, run, ctx);
-        // fix round 3 (I-1, controller rule) — a 'compensating' run that carries a boot re-send CLAIM nonce (any boot) never takes the plain
-        // path: its compensation row may already say 'compensated' / 'failed' (the attempt's last row write landed, the process died before
-        // the outcome write), which classifies as "nothing in flight" ⇒ it would be failed SILENTLY. It goes to giuHoacGuiLaiBuTru: the
-        // decision stops at the spent try, and the stale branch holds it + URGENT + audit with the text of that row (no second send).
-        const dauLuot = dauBuTruCua(ctx);
-        const daNhan = typeof dauLuot?.dangGuiLai === "string" && dauLuot.dangGuiLai !== "";
-        // (polish m-3) a claim marker that does not name its step + compensation cannot be held safely: a Continue would find no resume state
-        // for the real failed step and walk it FORWARD again ⇒ failed + URGENT + audit (never a guess, never silent)
-        const dauThieu = pl.k.kind !== "mot" && daNhan && !(typeof dauLuot?.stepId === "string" && dauLuot.stepId !== "" && typeof dauLuot?.compId === "string" && dauLuot.compId !== "");
-        if (dauThieu) {
-          const lyDo = "a previous boot claimed a STOP re-send but its record does not name the step / compensation — which STOP was being sent cannot be told";
-          await setRunStatus(run.id, "failed", {
-            finishedAt: now,
-            error: `Interrupted by server restart while compensating (run ${run.id}): ${lyDo} — not resumed, nothing re-sent; check the machine on site now.`,
-            contextJson: markedCtx,
-          });
-          result.failed += 1;
-          compensations.push({ runId: run.id, compId: null, outcome: "failed", reason: "markerIncomplete" });
-          await ghiAuditBuTru(run.id, false, { outcome: "failed", reason: "markerIncomplete", reasonText: lyDo, staleAttempt: dauLuot?.dangGuiLai ?? null, marker: dauLuot });
-          await canhBaoBuTruBiNgat(d, run, { loai: "failed", compId: null, stepId: null, lyDo, dauLan: dauLanNgat(run) });
-        } else if (pl.k.kind === "mot" || daNhan) {
-          const k: Extract<PhanLoaiBuTru, { kind: "mot" }> =
-            pl.k.kind === "mot" ? pl.k : { kind: "mot", stepId: String(dauLuot!.stepId), compId: String(dauLuot!.compId), error: "" };
-          // held (and maybe re-sent once) by giuHoacGuiLaiBuTru after this scan; until then it stays 'compensating' (a crash meanwhile ⇒
-          // the next boot sees it again)
-          buTru.push({ run, markedCtx, k, def: pl.def ?? { ref: run.workflowRef ?? "", name: "", steps: [] }, wfVersion: pl.wfVersion });
-          result.interrupted += 1;
+      // BOOT-QUET-DUNG-KHI-GHI-LOI (HST 27/11, gộp vào T10) — ONE try per run: a write / read of this run that throws (it may have landed: SUY, a deadline cancels nothing) ends THIS
+      // run's handling only — it is never in result.runIds (autoResume never continues it), nothing is sent for it, a person is told (kind 26), the scan goes on. Order: BQ-THU-TU-KHONG-CHAC
+      try {
+        const ctx = (run.contextJson as Record<string, unknown>) ?? {};
+        const markedCtx = {
+          ...ctx,
+          interrupted: true,
+          interruptedAt: now.toISOString(),
+          interruptedFrom: run.status,
+        };
+        if (run.status === "compensating") {
+          // R1b-2b-2a A2(m2) — WHICH compensation was in flight (step rows + deployed definition; unreadable ⇒ undecidable, never a guess)
+          const pl = await phanLoaiBuTruCuaRun(d, run, ctx);
+          // fix round 3 (I-1, controller rule) — a 'compensating' run that carries a boot re-send CLAIM nonce (any boot) never takes the plain
+          // path: its compensation row may already say 'compensated' / 'failed' (the attempt's last row write landed, the process died before
+          // the outcome write), which classifies as "nothing in flight" ⇒ it would be failed SILENTLY. It goes to giuHoacGuiLaiBuTru: the
+          // decision stops at the spent try, and the stale branch holds it + URGENT + audit with the text of that row (no second send).
+          const dauLuot = dauBuTruCua(ctx);
+          const daNhan = typeof dauLuot?.dangGuiLai === "string" && dauLuot.dangGuiLai !== "";
+          // (polish m-3) a claim marker that does not name its step + compensation cannot be held safely: a Continue would find no resume state
+          // for the real failed step and walk it FORWARD again ⇒ failed + URGENT + audit (never a guess, never silent)
+          const dauThieu = pl.k.kind !== "mot" && daNhan && !(typeof dauLuot?.stepId === "string" && dauLuot.stepId !== "" && typeof dauLuot?.compId === "string" && dauLuot.compId !== "");
+          if (dauThieu) {
+            const lyDo = "a previous boot claimed a STOP re-send but its record does not name the step / compensation — which STOP was being sent cannot be told";
+            await setRunStatus(run.id, "failed", {
+              finishedAt: now,
+              error: `Interrupted by server restart while compensating (run ${run.id}): ${lyDo} — not resumed, nothing re-sent; check the machine on site now.`,
+              contextJson: markedCtx,
+            });
+            result.failed += 1;
+            compensations.push({ runId: run.id, compId: null, outcome: "failed", reason: "markerIncomplete" });
+            await ghiAuditBuTru(run.id, false, { outcome: "failed", reason: "markerIncomplete", reasonText: lyDo, staleAttempt: dauLuot?.dangGuiLai ?? null, marker: dauLuot });
+            await canhBaoBuTruBiNgat(d, run, { loai: "failed", compId: null, stepId: null, lyDo, dauLan: dauLanNgat(run) });
+          } else if (pl.k.kind === "mot" || daNhan) {
+            const k: Extract<PhanLoaiBuTru, { kind: "mot" }> =
+              pl.k.kind === "mot" ? pl.k : { kind: "mot", stepId: String(dauLuot!.stepId), compId: String(dauLuot!.compId), error: "" };
+            // held (and maybe re-sent once) by giuHoacGuiLaiBuTru after this scan; until then it stays 'compensating' (a crash meanwhile ⇒
+            // the next boot sees it again)
+            buTru.push({ run, markedCtx, k, def: pl.def ?? { ref: run.workflowRef ?? "", name: "", steps: [] }, wfVersion: pl.wfVersion });
+            result.interrupted += 1;
+          } else {
+            const k = pl.k;
+            await setRunStatus(run.id, "failed", {
+              finishedAt: now,
+              error:
+                k.kind === "khong"
+                  ? `Interrupted by server restart while compensating (run ${run.id}); not auto-resumed.`
+                  : `Interrupted by server restart while compensating (run ${run.id}): ${moTaBuTruKhongDoan(k)} — not resumed, nothing re-sent; check the equipment now.`,
+              contextJson: markedCtx,
+            });
+            result.failed += 1;
+            compensations.push({ runId: run.id, compId: k.kind === "khong" ? null : k.compIds.join(",") || null, outcome: k.kind === "khong" ? "none" : "failed", ...(k.kind === "khong" ? {} : { reason: k.kind === "nhieu" ? "several" : k.lyDo }) });
+            if (k.kind !== "khong") await canhBaoBuTruBiNgat(d, run, { loai: "failed", compId: k.compIds.join(",") || null, stepId: null, lyDo: moTaBuTruKhongDoan(k), dauLan: dauLanNgat(run) });
+          }
         } else {
-          const k = pl.k;
-          await setRunStatus(run.id, "failed", {
-            finishedAt: now,
-            error:
-              k.kind === "khong"
-                ? `Interrupted by server restart while compensating (run ${run.id}); not auto-resumed.`
-                : `Interrupted by server restart while compensating (run ${run.id}): ${moTaBuTruKhongDoan(k)} — not resumed, nothing re-sent; check the equipment now.`,
+          // queued/running → resumable 'held'.
+          await setRunStatus(run.id, "held", {
+            error: `Interrupted by server restart (was ${run.status}); awaiting manual resume.`,
             contextJson: markedCtx,
           });
-          result.failed += 1;
-          compensations.push({ runId: run.id, compId: k.kind === "khong" ? null : k.compIds.join(",") || null, outcome: k.kind === "khong" ? "none" : "failed", ...(k.kind === "khong" ? {} : { reason: k.kind === "nhieu" ? "several" : k.lyDo }) });
-          if (k.kind !== "khong") await canhBaoBuTruBiNgat(d, run, { loai: "failed", compId: k.compIds.join(",") || null, stepId: null, lyDo: moTaBuTruKhongDoan(k), dauLan: dauLanNgat(run) });
+          result.interrupted += 1;
+          // T10 (V-T0, HST 27/11) — automatic continuation off (FOE_DURABLE, or FOE_ENABLED): nothing continues this run, so a LATCHED one owes STOPs nobody sends by itself ⇒ a person is told (kind 25). With it on,
+          // autoResumeInterruptedRuns decides (inside the bound it continues; past it, kind 25 there)
+          // A1 (kiem-dinh 17:48): the EXACT negation of autoResumeInterruptedRuns' own gate (FOE_DURABLE && FOE_ENABLED): with either off nothing continues it
+        if (!(foeDurableEnabled() && foeEnabled())) {
+            const lucBoot = await chotLucBoot(run.id, markedCtx);
+            if (lucBoot?.chot) await baoBootQuaHan(run, lucBoot, "tatTuTiep", hanGuiLaiMs());
+          }
         }
-      } else {
-        // queued/running → resumable 'held'.
-        await setRunStatus(run.id, "held", {
-          error: `Interrupted by server restart (was ${run.status}); awaiting manual resume.`,
-          contextJson: markedCtx,
-        });
-        result.interrupted += 1;
+        result.runIds.push(run.id);
+      } catch (err) {
+        await baoBootKhongXuLy(run, String((err as Error)?.message ?? err).slice(0, 300));
       }
-      result.runIds.push(run.id);
     }
   } catch (err) {
     // nuốt — một lỗi rehydrate KHÔNG được chặn khởi động server.
