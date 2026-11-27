@@ -373,4 +373,37 @@ describe("PILOT-CONG-CUOI — khối KIỂU trong vòng nêu lỗi MỚI ở t�
     // trạng thái RIÊNG: không được lẫn với lượt kiểu sạch thật
     expect(trangThaiGhi).toEqual(["nen"]);
   });
+
+  /*
+   * VÒNG 2 — viết SAU KHI biết đột biến vòng 1 sống (bộ chốt trước của kiem-dinh: d01, d04); đo lại KHÔNG phải bộ chốt trước. Chỉ THÊM.
+   */
+  it("CC-L2a có lỗi gắn tệp LẪN lỗi không gắn tệp ⇒ trong vòng nói CHƯA kiểm được, không nói «không có lỗi mới»", async () => {
+    const p = await khoi({ nen: [NEN], tsc: doCo([NEN], [], { loiKhongViTri: ["error TS5023: Unknown compiler option 'x'."] }) });
+    expect(p).toContain("KIỂU: CHƯA kiểm được — tsc báo lỗi không gắn tệp");
+    expect(p).not.toContain("không có lỗi mới");
+    expect(trangThaiGhi).toEqual(["chua"]);
+  });
+
+  it("CC-L2b có nền, còn lỗi trong tệp ĐƯỢC PHÉP và 0 lỗi mới ở tệp khác ⇒ vẫn ĐỎ và nêu lỗi đó", async () => {
+    const dong = loi("a.test.ts", 3);
+    const p = await khoi({ nen: [NEN], tsc: doCo([NEN, dong], ["a.test.ts"]) });
+    expect(p).toContain("KIỂU: ĐỎ — 1 lỗi trong tệp được phép, 1 lỗi ở tệp khác.");
+    expect(p).toContain("0 lỗi MỚI ở tệp khác so với cây gốc");
+    expect(p).toContain(dong);
+    expect(p).not.toContain("không có lỗi mới");
+    expect(trangThaiGhi).toEqual(["do"]);
+  });
+});
+
+describe("PILOT-CONG-CUOI vòng 2 — lượt tsc không đáng tin thì không so với nền (viết SAU KHI biết k15, k16, k18 sống)", () => {
+  it.each([
+    ["L2c hết giờ giữa chừng, đã in một phần lỗi", { exit: null, hetGio: true, giay: 900, loiTrongTep: [], tongLoi: 1, dongLoi: [loi("a.ts", 3)] } as TscGia],
+    ["L2d tiến trình lỗi sau khi đã in một phần lỗi", { exit: null, hetGio: false, giay: 1, loiTrongTep: [], tongLoi: 1, dongLoi: [loi("a.ts", 3)], loi: "doc dau ra hong" } as TscGia],
+    ["L2e thoát khác 0 mà không có dòng lỗi", { exit: 1, hetGio: false, giay: 1, loiTrongTep: [], tongLoi: 0 } as TscGia],
+  ])("CC-%s ⇒ không có danh sách để so", (_ten, t) => {
+    const tinDuoc = moi<(x: TscGia) => string[] | null>("danhSachTinDuoc");
+    const gan = moi<(x: TscGia, nen: readonly string[] | null) => TscGia>("ganSoVoiNen");
+    expect(tinDuoc!(t)).toBeNull();
+    expect(gan!(t, []).soVoiNen).toBeUndefined();
+  });
 });
