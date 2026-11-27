@@ -5405,13 +5405,14 @@ export async function rehydrateInterruptedRuns(): Promise<RehydrateResult> {
             const lyDo = "a previous boot claimed a STOP re-send but its record does not name the step / compensation — which STOP was being sent cannot be told";
             await setRunStatus(run.id, "failed", {
               finishedAt: now,
-              error: `Interrupted by server restart while compensating (run ${run.id}): ${lyDo} — not resumed, nothing re-sent; check the machine on site now.`,
+              // CSH-LOI-RUN-MARKER (HST) — a PREVIOUS boot claimed the re-send: what THIS boot did, never "nothing re-sent"
+              error: `Interrupted by server restart while compensating (run ${run.id}): ${lyDo} — not resumed, this boot re-sent nothing; check the machine on site now.`,
               contextJson: markedCtx,
             });
             result.failed += 1;
             compensations.push({ runId: run.id, compId: null, outcome: "failed", reason: "markerIncomplete" });
             await ghiAuditBuTru(run.id, false, { outcome: "failed", reason: "markerIncomplete", reasonText: lyDo, staleAttempt: dauLuot?.dangGuiLai ?? null, marker: dauLuot });
-            await canhBaoBuTruBiNgat(d, run, { loai: "failed", compId: null, stepId: null, lyDo, dauLan: dauLanNgat(run) });
+            await canhBaoBuTruBiNgat(d, run, { loai: "failed", compId: null, stepId: null, lyDo, dauLan: dauLanNgat(run), luotTruoc: true });
           } else if (pl.k.kind === "mot" || daNhan) {
             const k: Extract<PhanLoaiBuTru, { kind: "mot" }> =
               pl.k.kind === "mot" ? pl.k : { kind: "mot", stepId: String(dauLuot!.stepId), compId: String(dauLuot!.compId), error: "" };
@@ -5619,7 +5620,7 @@ async function giuHoacGuiLaiBuTru(b: BuTruChoXuLy): Promise<NonNullable<Rehydrat
     }
     console.error(`[FOE] run ${run.id}: compensation "${k.compId}" was interrupted — held (${written === true ? "written" : "NOT written"}), not re-sent at boot: ${lyDoThuc}`);
     await ghiAuditBuTru(run.id, false, { stepId: k.stepId, compId: k.compId, outcome: "held", reason: lyDoThuc, reasonText: lyDoText(lyDoThuc), decisionReason: lyDo, evidence: bangChung, ...(luotCu ? { staleAttempt: luotCu } : {}), ...(written === true ? {} : { heldWritten: false }), ...them });
-    await canhBaoBuTruBiNgat(d, run, { loai: luotCu ? "heldStale" : "held", compId: k.compId, stepId: k.stepId, lyDo: lyDoText(lyDoThuc), dauLan, ...(luotCu ? { lyDoMa: lyDoThuc } : {}) });
+    await canhBaoBuTruBiNgat(d, run, { loai: luotCu ? "heldStale" : "held", compId: k.compId, stepId: k.stepId, lyDo: lyDoText(lyDoThuc), dauLan, ...(luotCu ? { lyDoMa: lyDoThuc } : {}), daGhi: written === true });
     return { runId: run.id, compId: k.compId, outcome: "held" as const, reason: lyDoThuc };
   };
 
@@ -5766,8 +5767,8 @@ async function giuHoacGuiLaiBuTru(b: BuTruChoXuLy): Promise<NonNullable<Rehydrat
       error: `Not confirmed at boot (${biTuChoi ? "refused by the dispatcher — not sent" : coTheDaRa ? "may have gone out" : "not sent"}): ${lyDoText(gui.lyDo)}`,
     });
     console.error(`[FOE] run ${run.id}: boot re-send of compensation "${k.compId}" ${ketLuan} (${gui.lyDo}) — held (${written ? "written" : "NOT written"})`);
-    await ghiAuditBuTru(run.id, false, { ...evidence, outcome: "held" });
-    await canhBaoBuTruBiNgat(d, run, { loai: coTheDaRa ? "heldMayHaveGone" : "held", compId: k.compId, stepId: k.stepId, lyDo: biTuChoi ? `refused by the dispatcher — not sent (${lyDoText(gui.lyDo)})` : lyDoText(gui.lyDo), dauLan, ...(biTuChoi ? { tuChoi: true } : {}) });
+    await ghiAuditBuTru(run.id, false, { ...evidence, outcome: "held", ...(written ? {} : { heldWritten: false }) });
+    await canhBaoBuTruBiNgat(d, run, { loai: coTheDaRa ? "heldMayHaveGone" : "held", compId: k.compId, stepId: k.stepId, lyDo: biTuChoi ? `refused by the dispatcher — not sent (${lyDoText(gui.lyDo)})` : lyDoText(gui.lyDo), dauLan, ...(biTuChoi ? { tuChoi: true } : {}), daGhi: written });
     return { runId: run.id, compId: k.compId, outcome: "held", reason: gui.lyDo };
   } finally {
     luotDangChay.delete(nonce);
@@ -5818,11 +5819,11 @@ async function lyDoLuotCu(d: NonNullable<Awaited<ReturnType<typeof getDb>>>, run
   }
 }
 
-/** The held title of a stale attempt — the same statement as its message (fix round 3, m-1). */
-function tieuDeLuotCu(runId: number, comp: string, lyDoMa: string | undefined): string {
+/** The held title of a stale attempt — the same statement as its message (fix round 3, m-1). CSH — `giu`: the run's state as far as the boot knows it (held, or its hold not confirmed). */
+function tieuDeLuotCu(runId: number, comp: string, lyDoMa: string | undefined, giu = `run ${runId} held`): string {
   if (lyDoMa === "luotTruocDaGui") return `STOP re-sent at a previous boot (outcome not recorded) — run ${runId}, compensation ${comp} — check the machine on site`;
-  if (lyDoMa === "luotTruocKhongXong") return `A previous boot's STOP re-send did not complete — run ${runId} held, ${comp} may not have reached the device — check on site`;
-  return `A previous boot's STOP re-send stopped — run ${runId} held, ${comp} MAY OR MAY NOT have reached the device — check on site`;
+  if (lyDoMa === "luotTruocKhongXong") return `A previous boot's STOP re-send did not complete — ${giu}, ${comp} may not have reached the device — check on site`;
+  return `A previous boot's STOP re-send stopped — ${giu}, ${comp} MAY OR MAY NOT have reached the device — check on site`;
 }
 
 /** The run's status + its current boot re-send attempt marker (nonce, boot). Bounded; throws on a DB error / timeout. */
@@ -6059,7 +6060,22 @@ async function canhBaoBuTruBiNgat(
    * `loai` (fix round 2): `pending` — the boot WAITS for the device connection (early, own key); `heldMayHaveGone` — held, but the STOP was
    * handed to the dispatcher and not confirmed (m-3: it may have gone out); `held` — held, nothing handed over.
    */
-  a: { loai: "held" | "heldMayHaveGone" | "heldStale" | "sent" | "failed" | "pending"; compId: string | null; stepId: string | null; lyDo: string; dauLan: string; lyDoMa?: string; tuChoi?: boolean },
+  a: {
+    loai: "held" | "heldMayHaveGone" | "heldStale" | "sent" | "failed" | "pending";
+    compId: string | null;
+    stepId: string | null;
+    lyDo: string;
+    dauLan: string;
+    lyDoMa?: string;
+    tuChoi?: boolean;
+    /**
+     * CSH (B1) — the held write was CONFIRMED (giuRunBuTru / capNhatTheoLuotGui answered true). false ⇒ the words never say the run IS held, nor what a Continue sends
+     * (B2): that write threw, lost its compare-and-set, or timed out (a timed-out write may still commit later) — the run may still be compensating, or have moved (aborted …)
+     */
+    daGhi?: boolean;
+    /** CSH — a PREVIOUS boot claimed the STOP re-send (markerIncomplete): "this boot re-sent nothing", never "nothing was re-sent" */
+    luotTruoc?: boolean;
+  },
 ): Promise<void> {
   try {
     let nguoi: number[] = [];
@@ -6083,30 +6099,40 @@ async function canhBaoBuTruBiNgat(
             ? "foe_compensation_interrupted_failed"
             : "foe_compensation_interrupted_held";
     const comp = a.compId ? `"${a.compId}"` : "(unknown)";
+    // CSH (B1, B2, CSH-DEDUP-LAN-SAU) — the hold not confirmed: what stays true after any later boot (the run's row says what it is)
+    const khongXacNhan = a.daGhi === false && (a.loai === "held" || a.loai === "heldMayHaveGone" || a.loai === "heldStale");
+    const giu = khongXacNhan ? `run ${run.id}: hold NOT confirmed` : `run ${run.id} held`;
+    const giuKhong = "The boot tried to hold the run, but that write could not be confirmed: open the run to see its status.";
     const title =
       a.loai === "sent"
         ? `${FOE_STOP_GUI_LAI_TIEU_DE} (run ${run.id}, compensation ${comp})`
         : a.loai === "pending"
           ? `${FOE_STOP_CHO_KET_NOI_TIEU_DE} (run ${run.id}, compensation ${comp})`
           : a.loai === "heldStale"
-            ? tieuDeLuotCu(run.id, comp, a.lyDoMa)
+            ? tieuDeLuotCu(run.id, comp, a.lyDoMa, giu)
             : a.loai === "heldMayHaveGone"
-              ? `Compensation interrupted — run ${run.id} held, ${comp} MAY HAVE GONE OUT (not confirmed) — check on site`
+              ? `Compensation interrupted — ${giu}, ${comp} MAY HAVE GONE OUT (not confirmed) — check on site`
               : a.loai === "held"
-                ? `Compensation interrupted — run ${run.id} held, ${comp} NOT re-sent${a.tuChoi ? " (refused by the dispatcher — not sent)" : ""}`
-              : `Compensation interrupted — run ${run.id} failed, nothing re-sent`;
+                ? `Compensation interrupted — ${giu}, ${comp} NOT re-sent${a.tuChoi ? " (refused by the dispatcher — not sent)" : ""}`
+              : `Compensation interrupted — run ${run.id} failed, ${a.luotTruoc ? "this boot re-sent nothing" : "nothing re-sent"}`;
     const message =
       a.loai === "sent"
         ? `The server restarted while run ${run.id} was sending the STOP compensation ${comp} of step "${a.stepId}". The boot RE-SENT that STOP once (pinned STOP, inside its window on the database clock, central-owned, same owner, no later command to the device). ${FOE_STOP_GUI_LAI_TIEU_DE}: it may have been started locally (HMI / panel) after the restart.`
         : a.loai === "pending"
           ? `${FOE_STOP_CHO_KET_NOI_TIEU_DE} (${a.lyDo}): the server restarted while run ${run.id} was sending the STOP compensation ${comp} of step "${a.stepId}". It is re-sent once the device is connected, if its window has not closed; otherwise the run is held. Check the equipment on site and use the machine's direct STOP / E-STOP if needed.`
           : a.loai === "heldStale"
-            ? `The server restarted while run ${run.id} was sending the compensation ${comp} of step "${a.stepId}": ${a.lyDo}. The run is HELD and it is NOT re-sent again (the single boot re-send is spent): a Continue sends ONLY that compensation. Check the machine on site before you continue.`
+            ? khongXacNhan
+              ? `The server restarted while run ${run.id} was sending the compensation ${comp} of step "${a.stepId}": ${a.lyDo}. It is NOT re-sent again (the single boot re-send is spent). ${giuKhong} Check the machine on site.`
+              : `The server restarted while run ${run.id} was sending the compensation ${comp} of step "${a.stepId}": ${a.lyDo}. The run is HELD and it is NOT re-sent again (the single boot re-send is spent): a Continue sends ONLY that compensation. Check the machine on site before you continue.`
             : a.loai === "heldMayHaveGone"
-              ? `The server restarted while run ${run.id} was sending the compensation ${comp} of step "${a.stepId}". The boot re-send was handed to the dispatcher / device path but NOT confirmed — it MAY HAVE GONE OUT: ${a.lyDo}. The run is HELD: a Continue sends ONLY that compensation. Check the machine on site before you continue.`
+              ? khongXacNhan
+                ? `The server restarted while run ${run.id} was sending the compensation ${comp} of step "${a.stepId}". The boot re-send was handed to the dispatcher / device path but NOT confirmed — it MAY HAVE GONE OUT: ${a.lyDo}. ${giuKhong} Check the machine on site.`
+                : `The server restarted while run ${run.id} was sending the compensation ${comp} of step "${a.stepId}". The boot re-send was handed to the dispatcher / device path but NOT confirmed — it MAY HAVE GONE OUT: ${a.lyDo}. The run is HELD: a Continue sends ONLY that compensation. Check the machine on site before you continue.`
             : a.loai === "held"
-              ? `The server restarted while run ${run.id} was sending the compensation ${comp} of step "${a.stepId}" — it was NOT re-sent at boot: ${a.lyDo}. The run is HELD: a Continue sends ONLY that compensation. Check the equipment now and use the machine's direct STOP / E-STOP if needed.`
-              : `The server restarted while run ${run.id} was compensating: ${a.lyDo}. The run is FAILED and nothing was re-sent. Check the equipment now and use the machine's direct STOP / E-STOP if needed.`;
+              ? khongXacNhan
+                ? `The server restarted while run ${run.id} was sending the compensation ${comp} of step "${a.stepId}" — it was NOT re-sent at boot: ${a.lyDo}. ${giuKhong} Check the equipment now and use the machine's direct STOP / E-STOP if needed.`
+                : `The server restarted while run ${run.id} was sending the compensation ${comp} of step "${a.stepId}" — it was NOT re-sent at boot: ${a.lyDo}. The run is HELD: a Continue sends ONLY that compensation. Check the equipment now and use the machine's direct STOP / E-STOP if needed.`
+              : `The server restarted while run ${run.id} was compensating: ${a.lyDo}. The run is FAILED and ${a.luotTruoc ? "THIS boot re-sent nothing" : "nothing was re-sent"}. Check the equipment now and use the machine's direct STOP / E-STOP if needed.`;
     // I-4 — the interruption is named in the TEXT too: the durable dedup also matches a pre-patch row by (kind + identical message), which would
     // swallow a second interruption of the same run with the same reason. (fix round 2, m-1: an ISO time, not raw ms)
     const lan = /^\d+$/.test(a.dauLan) ? new Date(Number(a.dauLan)).toISOString() : a.dauLan;

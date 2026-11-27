@@ -38,6 +38,8 @@ const H = vi.hoisted(() => ({
   thatAlert: false,
   /** called (once, then cleared) on the first driver lookup — the boot's connection wait is the first caller after the decision */
   khiLayDriver: null as null | ((adapterId: number) => void),
+  /** CSH — an UPDATE of orchestration_runs the case intercepts (bocTx), picked by its patch: null ⇒ as is; "nem" ⇒ it throws and never runs; an action ⇒ it runs on the SAME handle first, then the statement as written */
+  chanGhiRun: null as null | ((patch: Record<string, unknown>) => null | "nem" | ((db: unknown) => Promise<void>)),
 }));
 
 vi.mock("../../../db/connection", async (importOriginal) => {
@@ -203,6 +205,45 @@ async function trongGiaoDich(fn: (tx: Tx) => Promise<void>): Promise<void> {
   }
 }
 
+/**
+ * CSH — the case's transaction handle as getDb answers it, with ONE seam: an UPDATE of orchestration_runs whose patch H.chanGhiRun picks. "nem": the statement
+ * throws and never runs (a DB error before it). An action: it runs on the SAME handle first (a write that lands in between: a person's Abort, another boot's
+ * claim), then the statement runs as written ⇒ a compare-and-set really loses. Nested transactions (savepoints) are wrapped too; every other call is untouched.
+ */
+function bocTx(goc: unknown): unknown {
+  return new Proxy(goc as object, {
+    get(target, p, recv) {
+      const v = Reflect.get(target, p, recv) as unknown;
+      if (p === "transaction") return (fn: (t: unknown) => Promise<unknown>, ...r: unknown[]) => (v as (...a: unknown[]) => Promise<unknown>).call(target, (t: unknown) => fn(bocTx(t)), ...r);
+      if (p === "update") {
+        return (bang: unknown) => {
+          const b = (v as (x: unknown) => { set: (x: Record<string, unknown>) => unknown }).call(target, bang);
+          if (bang !== orchestrationRuns) return b;
+          return {
+            set(patch: Record<string, unknown>) {
+              let q = b.set(patch) as { where: (...x: unknown[]) => unknown; returning: (...x: unknown[]) => unknown };
+              const act = H.chanGhiRun?.(patch) ?? null;
+              if (act === null) return q;
+              const chuoi: { where: (...x: unknown[]) => unknown; returning: (...x: unknown[]) => unknown; then: (res: (x: unknown) => unknown, rej: (e: unknown) => unknown) => Promise<unknown> } = {
+                where: (...x: unknown[]) => ((q = q.where(...x) as typeof q), chuoi),
+                returning: (...x: unknown[]) => ((q = q.returning(...x) as typeof q), chuoi),
+                then: (res: (x: unknown) => unknown, rej: (e: unknown) => unknown) =>
+                  (async () => {
+                    if (act === "nem") throw new Error("run write down (test)");
+                    await act(target);
+                    return await (q as unknown as Promise<unknown>);
+                  })().then(res, rej),
+              };
+              return chuoi;
+            },
+          };
+        };
+      }
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+    },
+  });
+}
+
 const motId = async (tx: Tx, q: ReturnType<typeof sql>) => Number(((await tx.execute(q)) as unknown as Array<{ id: number | string }>)[0]!.id);
 
 /**
@@ -316,6 +357,27 @@ async function kiemGiuKhongGui(tx: Tx, runId: number, pdu0: number, lyDo: string
   expect(au.map((x) => [x.status, x.action, x.det.metadata?.outcome, x.det.metadata?.reason]), lyDo).toEqual([["failure", "foe_stop_compensation_boot", "held", lyDo]]);
 }
 
+/** CSH (B1, B2) — a held URGENT whose hold was NOT confirmed: its words never say the run is held, nor what a Continue sends; they say the write could not be confirmed */
+function kiemChuKhongXacNhan(a: Record<string, unknown>, runId: number) {
+  const t = String(a.title);
+  const m = String(a.message);
+  expect(t, "title: the hold not confirmed").toContain(`run ${runId}: hold NOT confirmed`);
+  expect(t, "title: never 'held'").not.toContain(`run ${runId} held`);
+  expect(m, "message: the hold not confirmed").toContain("The boot tried to hold the run, but that write could not be confirmed: open the run to see its status.");
+  expect(m, "message: never 'HELD'").not.toContain("The run is HELD");
+  expect(m, "message: never what a Continue sends (B2)").not.toContain("a Continue sends ONLY that compensation");
+}
+/** CSH (M3) — a held URGENT whose hold WAS written: the words as before */
+function kiemChuDaGiu(a: Record<string, unknown>, runId: number) {
+  const t = String(a.title);
+  const m = String(a.message);
+  expect(t, "title: held").toContain(`run ${runId} held`);
+  expect(t, "title").not.toContain("hold NOT confirmed");
+  expect(m, "message: HELD").toContain("The run is HELD");
+  expect(m, "message: what a Continue sends").toContain("a Continue sends ONLY that compensation");
+  expect(m, "message").not.toContain("could not be confirmed");
+}
+
 /** Move the DB time of the intent: the compensation row was written `truocMs` before the DB's now() (within the transaction now() is fixed). */
 async function yDinhTruoc(tx: Tx, runId: number, truocMs: number) {
   await tx.execute(sql`UPDATE orchestration_run_steps SET "createdAt" = now() - (${truocMs}::float8 * interval '1 millisecond') WHERE "runId" = ${runId} AND "stepId" = 'undo'`);
@@ -398,6 +460,7 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
     S7.treMs = 0;
     H.thatAlert = false;
     H.khiLayDriver = null;
+    H.chanGhiRun = null;
     sim.setFault(null);
     _setPinReadProbeForTests(null);
     _setBuTruBiNgatProbeForTests(null);
@@ -1171,6 +1234,222 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       expect(run.error).toContain("may or may not have reached the device");
       expect(run.error).not.toContain("NOT re-sent at boot");
       expect((await auditCua(tx, runId)).map((x) => [x.det.metadata?.reason, x.det.metadata?.decisionReason])).toEqual([["luotTruocDungGiua", "loiTraCuu"]]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  // ═══════════════════════════════════════ CSH (URGENT-P2-CHU-SERVER-HELD) — the words of a P2 URGENT follow what the write answered ═════════════
+
+  it("★ CSH-HELD-GHI-NEM — the held write of the no-attempt path THROWS: the URGENT goes out and never says the run is held (B1, B2); the run is still compensating; audit heldWritten false; 0 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopNoiDung(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      H.tx = bocTx(tx);
+      H.chanGhiRun = (patch) => (patch.status === "held" ? "nem" : null);
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "khongPhaiStopGhim" }]);
+      expect((await trangThaiRun(tx, runId)).status, "the hold never landed").toBe("compensating");
+      const a = canhBaoCua(runId);
+      expect(a.map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      kiemChuKhongXacNhan(a[0]!, runId);
+      expect(String(a[0]!.title)).toContain('"undo" NOT re-sent');
+      expect(String(a[0]!.message)).toContain("it was NOT re-sent at boot");
+      expect((await auditCua(tx, runId)).map((x) => [x.det.metadata?.outcome, x.det.metadata?.heldWritten])).toEqual([["held", false]]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ CSH-HELD-THUA-CAS-5538 — the held write of the no-attempt path LOSES its compare-and-set twice (another boot's claim lands under it each time): the stale URGENT never says held (B1, M6, M7); audit heldWritten false", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopNoiDung(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      let lan = 0;
+      H.tx = bocTx(tx);
+      H.chanGhiRun = (patch) =>
+        patch.status === "held"
+          ? async (db) => {
+              lan++;
+              const d = db as Tx;
+              const [r] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId));
+              const ctx = (r!.contextJson ?? {}) as Record<string, any>;
+              await d
+                .update(orchestrationRuns)
+                .set({ contextJson: { ...ctx, foeBuTruBiNgat: { ...(ctx.foeBuTruBiNgat ?? {}), stepId: "main", compId: "undo", dangGuiLai: `boot-khac-${lan}`, bootLuot: "boot-khac" } } })
+                .where(eq(orchestrationRuns.id, runId));
+            }
+          : null;
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(lan, "the held write was tried twice and lost twice").toBe(2);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "luotTruocDungGiua" }]);
+      expect((await trangThaiRun(tx, runId)).status).toBe("compensating");
+      const a = canhBaoCua(runId);
+      expect(a.map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      kiemChuKhongXacNhan(a[0]!, runId);
+      expect(String(a[0]!.title)).toContain("A previous boot's STOP re-send stopped");
+      expect(String(a[0]!.message)).toContain("It is NOT re-sent again (the single boot re-send is spent).");
+      expect((await auditCua(tx, runId)).map((x) => [x.det.metadata?.outcome, x.det.metadata?.reason, x.det.metadata?.staleAttempt, x.det.metadata?.heldWritten])).toEqual([["held", "luotTruocDungGiua", "boot-khac-1", false]]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ CSH-HELDSTALE-KHONG-XAC-NHAN — a previous boot's claim (Q13 shape) and the held write THROWS: the stale title never says held (M7)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      const [n] = (await tx.execute(sql`SELECT FLOOR(EXTRACT(EPOCH FROM now()) * 1000)::bigint AS ms`)) as unknown as Array<{ ms: string | number }>;
+      const dauCu = { stepId: "main", compId: "undo", at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot", hanLuotGuiMs: Number(n!.ms) + 60_000 };
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]], { foeBuTruBiNgat: dauCu });
+      H.tx = bocTx(tx);
+      H.chanGhiRun = (patch) => (patch.status === "held" ? "nem" : null);
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "luotTruocDungGiua" }]);
+      expect((await trangThaiRun(tx, runId)).status).toBe("compensating");
+      const a = canhBaoCua(runId);
+      expect(a.map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      kiemChuKhongXacNhan(a[0]!, runId);
+      expect(String(a[0]!.title)).toContain("A previous boot's STOP re-send stopped");
+      expect(String(a[0]!.message)).toContain("a previous boot claimed the STOP re-send and then stopped");
+      expect((await auditCua(tx, runId)).map((x) => [x.det.metadata?.outcome, x.det.metadata?.staleAttempt, x.det.metadata?.heldWritten])).toEqual([["held", "boot1-attempt", false]]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ CSH-HELDSTALE-KHONGXONG — a previous boot claimed and its attempt wrote the compensation row 'failed' (Q18a shape) and the held write THROWS: the 'did not complete' title never says held (M7b)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "failed"]], { foeBuTruBiNgat: { stepId: "main", compId: "undo", at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot", hanLuotGuiMs: 1 } });
+      H.tx = bocTx(tx);
+      H.chanGhiRun = (patch) => (patch.status === "held" ? "nem" : null);
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(soPduGhi() - pdu0).toBe(0);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "luotTruocKhongXong" }]);
+      expect((await trangThaiRun(tx, runId)).status).toBe("compensating");
+      const a = canhBaoCua(runId);
+      expect(a.map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      kiemChuKhongXacNhan(a[0]!, runId);
+      expect(String(a[0]!.title)).toContain("A previous boot's STOP re-send did not complete");
+      expect((await auditCua(tx, runId)).map((x) => [x.det.metadata?.reason, x.det.metadata?.staleAttempt, x.det.metadata?.heldWritten])).toEqual([["luotTruocKhongXong", "boot1-attempt", false]]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ CSH-HELD-THUA-CAS — after the boot re-send (Q5c shape: handed over, the device answered an error) a person's Abort lands under the outcome write: its compare-and-set loses; the URGENT never says held (M2); audit heldWritten false", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "running"]]);
+      S7.loiMotLan = true;
+      let huy = 0;
+      H.tx = bocTx(tx);
+      H.chanGhiRun = (patch) =>
+        patch.status === "held" && String(patch.error).includes("; the boot re-send ")
+          ? async (db) => {
+              huy++;
+              await (db as Tx).update(orchestrationRuns).set({ status: "aborted" }).where(eq(orchestrationRuns.id, runId));
+            }
+          : null;
+      const pdu0 = soPduGhi();
+      const { mine } = await khoiDongLai(runId);
+      expect(huy, "the Abort landed under the outcome write, once").toBe(1);
+      expect(soPduGhi() - pdu0).toBe(1);
+      expect(mine).toEqual([{ runId, compId: "undo", outcome: "held", reason: "guiLoi" }]);
+      expect((await trangThaiRun(tx, runId)).status, "the run is the Abort's").toBe("aborted");
+      const a = canhBaoCua(runId);
+      expect(a.map((x) => x.kind)).toEqual(["foe_compensation_interrupted_held"]);
+      kiemChuKhongXacNhan(a[0]!, runId);
+      expect(String(a[0]!.title)).toContain('"undo" MAY HAVE GONE OUT (not confirmed)');
+      expect(String(a[0]!.message)).toContain("it MAY HAVE GONE OUT");
+      expect((await auditCua(tx, runId)).map((x) => [x.det.metadata?.outcome, x.det.metadata?.reason, x.det.metadata?.heldWritten])).toEqual([["held", "guiLoi", false]]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ CSH-HELD-GHI-THANH — the held write lands: every held variant (may have gone out, nothing handed over, a previous boot's claim that stopped, one that did not complete) keeps its words, title and message (M3, M3b)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId: r2 } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, r2, [["main", "failed"], ["undo", "running"]]);
+      S7.loiMotLan = true;
+      await khoiDongLai(r2);
+      const { runId: r1 } = await dungRun([buocChinh(m2, buStopNoiDung(m1))]);
+      await ngatGiaLap(tx, r1, [["main", "failed"], ["undo", "running"]]);
+      await khoiDongLai(r1);
+      const { runId: r3 } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      const [n] = (await tx.execute(sql`SELECT FLOOR(EXTRACT(EPOCH FROM now()) * 1000)::bigint AS ms`)) as unknown as Array<{ ms: string | number }>;
+      const dauCu = { stepId: "main", compId: "undo", at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot", hanLuotGuiMs: Number(n!.ms) + 60_000 };
+      await ngatGiaLap(tx, r3, [["main", "failed"], ["undo", "running"]], { foeBuTruBiNgat: dauCu });
+      await khoiDongLai(r3);
+      const { runId: r4 } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, r4, [["main", "failed"], ["undo", "failed"]], { foeBuTruBiNgat: { stepId: "main", compId: "undo", at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot", hanLuotGuiMs: 1 } });
+      await khoiDongLai(r4);
+      for (const [r, mau] of [[r2, '"undo" MAY HAVE GONE OUT (not confirmed)'], [r1, '"undo" NOT re-sent'], [r3, "A previous boot's STOP re-send stopped"], [r4, "A previous boot's STOP re-send did not complete"]] as const) {
+        expect((await trangThaiRun(tx, r)).status, `run ${r}`).toBe("held");
+        const a = canhBaoCua(r);
+        expect(a.map((x) => x.kind), `run ${r}`).toEqual(["foe_compensation_interrupted_held"]);
+        kiemChuDaGiu(a[0]!, r);
+        expect(String(a[0]!.title), `run ${r}`).toContain(mau);
+      }
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ CSH-FAILED-SAU-GHI — the boot scan's 'failed' write THROWS (marker-incomplete run A, two-compensations run B): no 'FAILED' URGENT for them, one kind 26 each; the scan goes on: run C failed + its URGENT (M4)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId: rA } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, rA, [["main", "failed"], ["undo", "compensated"]], { foeBuTruBiNgat: { at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot" } });
+      const hai = () => [buocChinh(m2, buStopGhim(m1, "undo1"), "main1"), buocChinh(m2, buStopGhim(m1, "undo2"), "main2")];
+      const hang: Array<[string, string]> = [["main1", "failed"], ["undo1", "running"], ["main2", "failed"], ["undo2", "running"]];
+      const { runId: rB } = await dungRun(hai());
+      await ngatGiaLap(tx, rB, hang);
+      const { runId: rC } = await dungRun(hai());
+      await ngatGiaLap(tx, rC, hang);
+      H.tx = bocTx(tx);
+      H.chanGhiRun = (patch) => (patch.status === "failed" && [rA, rB].some((r) => String(patch.error).includes(`(run ${r})`)) ? "nem" : null);
+      const pdu0 = soPduGhi();
+      const { r, mine } = await khoiDongLai(rC);
+      expect(soPduGhi() - pdu0).toBe(0);
+      for (const x of [rA, rB]) {
+        expect((await trangThaiRun(tx, x)).status, `run ${x}: its 'failed' write never ran`).toBe("compensating");
+        expect(canhBaoCua(x).map((y) => y.kind), `run ${x}: kind 26, never 'FAILED'`).toEqual(["foe_outcome_unknown_boot_run_unconfirmed"]);
+        expect((r.compensations ?? []).filter((c) => c.runId === x), `run ${x}`).toEqual([]);
+      }
+      expect((await trangThaiRun(tx, rC)).status).toBe("failed");
+      expect(mine).toEqual([{ runId: rC, compId: "undo1,undo2", outcome: "failed", reason: "several" }]);
+      const c = canhBaoCua(rC);
+      expect(c.map((y) => y.kind)).toEqual(["foe_compensation_interrupted_failed"]);
+      expect(String(c[0]!.title)).toContain(`run ${rC} failed, nothing re-sent`);
+      expect(String(c[0]!.message)).toContain("The run is FAILED and nothing was re-sent.");
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ CSH-FAILED-MARKER — a previous boot claimed the re-send and its marker names no step (Q20 shape): the URGENT says THIS boot re-sent nothing, never 'nothing was re-sent' (M5)", async () => {
+    await trongGiaoDich(async (tx) => {
+      const { m1, m2 } = await dungThietBi(tx);
+      const { runId } = await dungRun([buocChinh(m2, buStopGhim(m1))]);
+      await ngatGiaLap(tx, runId, [["main", "failed"], ["undo", "compensated"]], { foeBuTruBiNgat: { at: new Date().toISOString(), daThuGuiLai: true, dangGuiLai: "boot1-attempt", bootLuot: "previous-boot" } });
+      const { mine } = await khoiDongLai(runId);
+      expect(mine).toEqual([{ runId, compId: null, outcome: "failed", reason: "markerIncomplete" }]);
+      expect((await trangThaiRun(tx, runId)).status).toBe("failed");
+      const a = canhBaoCua(runId);
+      expect(a.map((x) => x.kind)).toEqual(["foe_compensation_interrupted_failed"]);
+      expect(String(a[0]!.title)).toContain(`run ${runId} failed, this boot re-sent nothing`);
+      expect(String(a[0]!.message)).toContain("The run is FAILED and THIS boot re-sent nothing.");
+      expect(String(a[0]!.message)).not.toContain("nothing was re-sent");
+      const loi = String((await trangThaiRun(tx, runId)).error);
+      expect(loi, "the run's error: what THIS boot did (CSH-LOI-RUN-MARKER)").toContain("not resumed, this boot re-sent nothing");
+      expect(loi).not.toContain("nothing re-sent");
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
