@@ -283,3 +283,135 @@ describe("V0 — che bí mật, lỗi ngoài ca, số đo, JSON kết quả", ()
     }
   }, 90_000);
 });
+
+/**
+ * LƯỢT 2 — năm ca viết SAU khi biết năm đột biến sống của lượt đo đầu (bộ chốt trước: 21 chết / 6 sống). Chúng xanh trên mã đã commit; giá trị của chúng là đỏ khi cài lại đúng đột biến.
+ * GIỚI HẠN CÓ TÊN «V0-THOAT0» (không dựng ca): lượt lệnh kiểm THOÁT 0 mà stderr có mục "Failed Tests" giả đã khép chỉ được chặn bởi điều kiện "thoát khác 0"; gần như không xảy ra trên vitest thật.
+ */
+describe("V0 lượt 2 — giữ các hành vi mà lượt đo đầu chưa giữ", () => {
+  beforeAll(() => {
+    fs.writeFileSync(
+      path.join(kho, "phat-doan-vitest.cjs"),
+      [
+        'const fs = require("node:fs");',
+        'const ds = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));',
+        "let i = 0;",
+        "const buoc = () => {",
+        "  if (i >= ds.length) { process.exitCode = 1; return; }",
+        "  const [luong, chu] = ds[i++];",
+        '  (luong === "err" ? process.stderr : process.stdout).write(chu);',
+        "  setTimeout(buoc, 150);",
+        "};",
+        "buoc();",
+      ].join("\n"),
+    );
+  });
+  /** Ghi các đoạn theo đúng thứ tự, cách nhau một khoảng chờ, để chúng tới bộ chạy xen kẽ giữa hai luồng. */
+  async function phatDoan(ds: Array<["out" | "err", string]>): Promise<KetQuaKiem> {
+    const tep = path.join(kho, `doan-${++soTep}.json`);
+    fs.writeFileSync(tep, JSON.stringify(ds));
+    return taoChayLenhKiem()(`node phat-doan-vitest.cjs "${tep}"`, kho, 60);
+  }
+  const catTongKet = (out: string) => {
+    const i = out.lastIndexOf("\n Test Files");
+    return [out.slice(0, i), out.slice(i)] as const;
+  };
+
+  it("V0-T15 vượt ngân sách ⇒ phần còn lại chia ĐỀU: cả 30 khối, kể cả khối cuối, còn một phần diff", async () => {
+    const s = await loiNhan(FX["nhieu-do"]!);
+    expect(s.split("- Expected").length - 1).toBe(30);
+    expect(s.slice(s.indexOf("ca nhieu 30\n"))).toContain("- Expected");
+  }, 90_000);
+
+  it("V0-T16 stdout chen vào GIỮA một khối stderr ⇒ dòng chen không thành tên ca, sáu tên thật còn đủ", async () => {
+    const f = FX["sau-do"]!;
+    const [dauOut, cuoiOut] = catTongKet(f.out);
+    const sauDongFail = f.err.indexOf("\n", f.err.indexOf(" FAIL ")) + 1;
+    const k = await phatDoan([
+      ["out", dauOut],
+      ["err", f.err.slice(0, sauDongFail)],
+      ["out", " FAIL  chen.test.ts > ca chen giua khoi\n"],
+      ["err", f.err.slice(sauDongFail)],
+      ["out", cuoiOut],
+    ]);
+    expect(k.duoi.length).toBeGreaterThan(0);
+    const s = tomTatKiemChoModel(k, 1);
+    expect(s).not.toContain("ca chen giua khoi");
+    expect(TEN_SAU.filter((t) => !s.includes(t))).toEqual([]);
+    expect(s).not.toContain("chỉ đọc được tên");
+  }, 90_000);
+
+  it("V0-T17 một khối tệp hỏng + chỉ tách được 5 trên 6 ca đỏ ⇒ tên tệp hỏng KHÔNG tính là tên ca, vẫn báo đọc thiếu", async () => {
+    const tepHong = FX["nap-hong"]!.err.split(VACH)[0]!;
+    const khoiHong = tepHong.slice(tepHong.indexOf(" FAIL ")).trim();
+    const { dau, khoi } = tachFixture(FX["sau-do"]!.err);
+    const s = await loiNhan({ out: FX["sau-do"]!.out, err: ghepErr(dau, [khoiHong, ...khoi.slice(0, 5)]) });
+    expect(s).toContain("FAIL nap-hong.test.ts [ nap-hong.test.ts ]");
+    expect(s).toContain("chỉ đọc được tên 5/6 ca đỏ");
+  }, 90_000);
+
+  it("V0-T19 khối giả ĐÃ KHÉP in ra stderr TRƯỚC tiêu đề thật ⇒ không được tính", async () => {
+    const f = FX["sau-do"]!;
+    const gia = " FAIL  gia.test.ts > nhom gia > ca gia da khep\nAssertionError: khoi gia\n\n⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\n\n";
+    const s = await loiNhan({ out: f.out, err: gia + f.err });
+    expect(s).not.toContain("ca gia da khep");
+    expect(TEN_SAU.filter((t) => !s.includes(t))).toEqual([]);
+  }, 90_000);
+
+  describe("trong driverHost, chế độ chỉ số", () => {
+    let wt: string;
+    let ra: string;
+    beforeEach(() => {
+      wt = fs.mkdtempSync(path.join(os.tmpdir(), "v0-wt2-"));
+      ra = fs.mkdtempSync(path.join(os.tmpdir(), "v0-ra2-"));
+    });
+    afterEach(() => {
+      fs.rmSync(wt, { recursive: true, force: true });
+      fs.rmSync(ra, { recursive: true, force: true });
+    });
+
+    it("V0-T18 lượt đỏ ở chế độ chỉ số ⇒ model không nhận tên nào và nhật ký KHÔNG ghi là đã gửi tên", async () => {
+      const k = await phatLai(FX["sau-do"]!);
+      const THE: TheViec = { ma: "TC-V0", mucTieu: "x", tepDuocPhep: ["a.test.ts"], nguCanhDoc: [], lenhKiem: "npx vitest run a.test.ts", gioiHan: { giay: 5, vong: 3 } };
+      type Su = { loai: string; [x: string]: unknown };
+      let f: ((m: { seq: number; suKien: Su }) => void) | null = null;
+      const bac: string[] = [];
+      const dep: PhuThuocHost = {
+        kiemMoiTruong: async () => null,
+        taoLuot: async () => {
+          setTimeout(
+            () =>
+              void (async () => {
+                f?.({ seq: 0, suKien: { loai: "can-duyet", id: "tc-1", deXuat: { ten: "run_command", thamSo: { command: THE.lenhKiem }, moTa: "m", pendingActionId: "rc1", xemTruoc: "diff" } } });
+                await new Promise((r) => setTimeout(r, 80));
+                f?.({ seq: 1, suKien: { loai: "xong", lyDo: "hoan-thanh" } });
+              })(),
+            30,
+          );
+          return { ok: true, runId: "r1" };
+        },
+        nghe: (_r, fn) => {
+          f = fn as never;
+          return () => {
+            f = null;
+          };
+        },
+        huy: () => undefined,
+        duyet: async () => ({ ok: true, daGhi: true, status: "executed" }),
+        bac: async (_id, ly) => {
+          bac.push(ly);
+        },
+        duAnId: () => "_tho_ca_wt_ao",
+        chinhSachDuyet: (async () => ({ quyet: "tu-choi" })) as ChinhSachDuyet,
+        bay: () => Date.now(),
+        datKhoaKy: () => ({ ok: true, tam: false }),
+        chayKiem: async () => k,
+      };
+      const kq = await driverHost(dep)({ the: THE, wt, lenh: "L", hanGiay: 5, ra, ghiLuotDir: null, khoGhi: {}, cheDoKiem: "chi-so", giaTriBiMat: [] });
+      expect(bac).toHaveLength(1);
+      expect(bac[0]).not.toContain("ca 1 mang lech");
+      expect(kq.ghiChu.join("\n")).toContain("tự chạy lệnh kiểm lần 1");
+      expect(kq.ghiChu.join("\n")).not.toContain("gửi model tên");
+    }, 90_000);
+  });
+});
