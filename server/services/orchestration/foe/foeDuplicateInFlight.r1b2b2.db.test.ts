@@ -75,7 +75,7 @@ import { startS7commSim, type S7commSim } from "../../ot/drivers/__s7commSim";
 import { S7Driver } from "../../ot/drivers/s7Driver";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 import { __catSauGhiThietBiChoTest, bamLenhOt, perWriteKey, type DispatchInput } from "../../ot/commandDispatcher";
-import { makeFoeGateRun } from "./__foeGateRunFixture";
+import { chanRunSot, makeFoeGateRun } from "./__foeGateRunFixture";
 import { autoResumeInterruptedRuns, FOE_OUTCOME_UNKNOWN, rehydrateInterruptedRuns } from "./foeEngine";
 import type { WorkflowStep } from "./workflowModel";
 
@@ -85,6 +85,17 @@ const OWNER = 990_913_101;
 const APPROVER = 990_913_102;
 const ROLLBACK = Symbol("rollback");
 const realGetDb = (conn as unknown as { __realGetDb: typeof conn.getDb }).__realGetDb;
+
+/** TEST-DB-RUN-SOT — the self-tests' reader for chanRunSot (the case's transaction); null ⇒ the pool. Reset in beforeEach. */
+let docSot: Tx | null = null;
+/**
+ * TEST-DB-RUN-SOT — the ONE door of this file to the FOE boot scan (chanRunSot.census.test.ts): the scan takes EVERY interrupted run the case's
+ * transaction sees, committed leftovers of `_test` too, so it first refuses when `_test` holds one (chanRunSot, read on the pool).
+ */
+async function quetBoot() {
+  await chanRunSot(docSot ?? (await realGetDb())!, "r1b2b2.db");
+  return rehydrateInterruptedRuns();
+}
 type Tx = NonNullable<Awaited<ReturnType<typeof conn.getDb>>>;
 
 let sim: S7commSim;
@@ -151,9 +162,9 @@ async function dungRun(main: WorkflowStep) {
   return fx.runId;
 }
 
-/** "Tiến trình khởi động": hook khởi động FOE + tiếp tục bền CHỈ run của test (đúng hàm sản phẩm). */
+/** "Tiến trình khởi động": hook khởi động FOE (quetBoot — nó quét MỌI run bị ngắt, không riêng run của test) + tiếp tục bền run của test (đúng hàm sản phẩm). */
 async function khoiDong(runId: number) {
-  await rehydrateInterruptedRuns();
+  await quetBoot();
   return autoResumeInterruptedRuns([runId]);
 }
 
@@ -210,6 +221,7 @@ describe.skipIf(!DB_URL)("T3F — sập giữa ghi thiết bị và ghi sổ ⇒
 
   beforeEach(() => {
     process.env.FOE_ENABLED = "true";
+    docSot = null;
     process.env.FOE_DURABLE = "true";
     process.env.OT_CONTROL_ENABLED = "true";
     process.env.OT_COMMISSIONING_REQUIRED = "false";
@@ -394,6 +406,23 @@ describe.skipIf(!DB_URL)("T3F — sập giữa ghi thiết bị và ghi sổ ⇒
       expect(await tx.select().from(aiPendingActions).where(like(aiPendingActions.id, `foe-run${runId}-main-a%`)).then((x) => x.map((a) => a.id))).toEqual([`foe-run${runId}-main-a1`]);
       expect(await ketQuaCuaKhoa(tx, `run${runId}-main-a2`)).toHaveLength(0);
       expect(await ketQuaCuaKhoa(tx, `intent:run${runId}-main-a2`)).toHaveLength(0);
+    });
+    expect(H.bay).toBe(0);
+  });
+
+  it("★ RUN-SOT-R1B2B2 — `_test` holds a run the boot scan would take: quetBoot refuses BEFORE the scan, naming it with its status, and that run is untouched (TEST-DB-RUN-SOT)", async () => {
+    await trongGiaoDich(async (tx) => {
+      // the leftover's stand-in: 'running', only a human gate NOT approved (no command step); read through the transaction (RUN-SOT-DOC-QUA-TX)
+      const { runId: sot } = await makeFoeGateRun({ tag: `${DAU}-sot-${Math.random().toString(36).slice(2, 8)}`, owner: OWNER, approvedBy: null });
+      process.env.FOE_DURABLE = "false"; // a mutant that lets the scan run marks that run held and continues nothing (the scan takes it either way)
+      docSot = tx;
+      const loi = await quetBoot().then(() => null, (x: unknown) => String((x as Error)?.message ?? x));
+      expect(loi, "RUN-SOT: quetBoot did not refuse").not.toBeNull(); // D1: toMatch on null throws a TypeError before its message
+      expect(loi, "RUN-SOT: quetBoot refused with other words").toMatch(/^TEST-DB-RUN-SOT \(r1b2b2\.db\): /);
+      expect([...String(loi).matchAll(/#(\d+) (\w+);/g)].filter((m) => Number(m[1]) === sot).map((m) => m[2])).toEqual(["running"]);
+      const [run] = await tx.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, sot));
+      expect(run!.status).toBe("running");
+      expect((run!.contextJson ?? {}) as Record<string, unknown>).not.toHaveProperty("interrupted");
     });
     expect(H.bay).toBe(0);
   });

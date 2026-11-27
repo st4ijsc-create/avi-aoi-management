@@ -23,7 +23,7 @@
  * null ⇒ nothing is ever committed). WORM tables (command_log, device_owner_changes via the owner trigger, audit_logs): rows inserted inside the
  * rolled-back transaction, never an explicit id. Never the owner role, no DELETE / TRUNCATE.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { and, eq, like, sql } from "drizzle-orm";
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 90_000 });
@@ -107,7 +107,7 @@ import { startS7commSim, type S7commSim } from "../../ot/drivers/__s7commSim";
 import { S7Driver } from "../../ot/drivers/s7Driver";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 import { _setPinReadProbeForTests } from "../../ot/stopPin";
-import { makeFoeGateRun } from "./__foeGateRunFixture";
+import { chanRunSot, makeFoeGateRun } from "./__foeGateRunFixture";
 import { autoResumeInterruptedRuns, rehydrateInterruptedRuns, resumeRun } from "./foeEngine";
 import { _setBuTruBiNgatProbeForTests, STOP_BU_TRU_KHOI_DONG_HAN_MS } from "./foeBuTruBiNgat";
 import { __quenBoNhoKhuTrungChoTest } from "../../robot/criticalStopAlert";
@@ -122,6 +122,17 @@ const KHAC = 990_915_203; // a person who continues the held run (Q6)
 const AUDIT_OP = "foe_compensation_interrupted_boot";
 const ROLLBACK = Symbol("rollback");
 const realGetDb = (conn as unknown as { __realGetDb: typeof conn.getDb }).__realGetDb;
+
+/** TEST-DB-RUN-SOT — the self-tests' reader for chanRunSot (the case's transaction); null ⇒ the pool. Reset in beforeEach. */
+let docSot: Tx | null = null;
+/**
+ * TEST-DB-RUN-SOT — the ONE door of this file to the FOE boot scan (chanRunSot.census.test.ts): the scan takes EVERY interrupted run the case's
+ * transaction sees, committed leftovers of `_test` too, so it first refuses when `_test` holds one (chanRunSot, read on the pool).
+ */
+async function quetBoot() {
+  await chanRunSot(docSot ?? (await realGetDb())!, "a2m2.db");
+  return rehydrateInterruptedRuns();
+}
 type Tx = NonNullable<Awaited<ReturnType<typeof conn.getDb>>>;
 
 let sim: S7commSim;
@@ -299,9 +310,11 @@ async function sapKhiDangBuTru(runId: number) {
   BT.hong = 1;
   const daToi = new Promise<void>((r) => (S7.daTreo = r));
   S7.treo = true;
+  // TEST-DB-RUN-SOT — refuse BEFORE the background walk: a throw inside it surfaces only as the 60 s timeout below (quetBoot inside still refuses: RUN-SOT-KHOI-NEN)
+  await chanRunSot(docSot ?? (await realGetDb())!, "a2m2.db");
   void (async () => {
     process.env.FOE_DURABLE = "false";
-    await rehydrateInterruptedRuns(); // the fixture's 'running' run ⇒ held (interrupted)
+    await quetBoot(); // the fixture's 'running' run ⇒ held (interrupted)
     process.env.FOE_DURABLE = "true";
     await autoResumeInterruptedRuns([runId]);
   })();
@@ -310,12 +323,13 @@ async function sapKhiDangBuTru(runId: number) {
 }
 
 /**
- * "Process boot": the FOE boot hook (FOE_DURABLE off for the scan, so the leftover runs of `_test` are not walked) and then the durable
+ * "Process boot": the FOE boot hook (quetBoot; FOE_DURABLE off for the scan, so the scan itself continues nothing — it still TAKES every interrupted
+ * run it sees, leftovers of `_test` too: TEST-DB-RUN-SOT) and then the durable
  * auto-resume of the test's run (FOE_DURABLE on) — which must NEVER continue a run held for an interrupted compensation.
  */
 async function khoiDongLai(runId: number) {
   process.env.FOE_DURABLE = "false";
-  const r = await rehydrateInterruptedRuns();
+  const r = await quetBoot();
   process.env.FOE_DURABLE = "true";
   await autoResumeInterruptedRuns([runId]);
   return { r, mine: (r.compensations ?? []).filter((c) => c.runId === runId) };
@@ -436,6 +450,7 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
 
   beforeEach(() => {
     process.env.FOE_ENABLED = "true";
+    docSot = null;
     process.env.FOE_DURABLE = "true";
     process.env.OT_CONTROL_ENABLED = "true";
     process.env.OT_COMMISSIONING_REQUIRED = "false";
@@ -1107,7 +1122,7 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
         dang = x?.n ?? null;
       }
       expect(dang).not.toBeNull(); // the first attempt claimed
-      const r2 = await rehydrateInterruptedRuns(); // a second scan in the same process
+      const r2 = await quetBoot(); // a second scan in the same process
       expect((r2.compensations ?? []).filter((c) => c.runId === runId)).toEqual([{ runId, compId: "undo", outcome: "held", reason: "notOurs" }]);
       const { mine } = await p1;
       expect(mine).toEqual([{ runId, compId: "undo", outcome: "sent" }]);
@@ -1696,5 +1711,108 @@ describe.skipIf(!DB_URL)("A2(m2) — a run interrupted while compensating: held 
       expect(ov[0]!.n).toBe(1);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ RUN-SOT-A2M2 — `_test` holds a run the boot scan would take: quetBoot refuses BEFORE the scan, naming it with its status, and that run is untouched (TEST-DB-RUN-SOT)", async () => {
+    await trongGiaoDich(async (tx) => {
+      // the leftover's stand-in: 'running', only a human gate NOT approved (no command step); read through the transaction (RUN-SOT-DOC-QUA-TX)
+      const { runId: sot } = await makeFoeGateRun({ tag: `${DAU}-sot-${Math.random().toString(36).slice(2, 8)}`, owner: OWNER, approvedBy: null });
+      process.env.FOE_DURABLE = "false"; // a mutant that lets the scan run marks that run held and continues nothing (the scan takes it either way)
+      docSot = tx;
+      const loi = await quetBoot().then(() => null, (x: unknown) => String((x as Error)?.message ?? x));
+      expect(loi, "RUN-SOT: quetBoot did not refuse").not.toBeNull(); // D1: toMatch on null throws a TypeError before its message
+      expect(loi, "RUN-SOT: quetBoot refused with other words").toMatch(/^TEST-DB-RUN-SOT \(a2m2\.db\): /);
+      expect([...String(loi).matchAll(/#(\d+) (\w+);/g)].filter((m) => Number(m[1]) === sot).map((m) => m[2])).toEqual(["running"]);
+      const [run] = await tx.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, sot));
+      expect(run!.status).toBe("running");
+      expect((run!.contextJson ?? {}) as Record<string, unknown>).not.toHaveProperty("interrupted");
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ RUN-SOT-THAN — chanRunSot names exactly the runs the boot scan takes, each with its status: queued / running / compensating; never a held run, never one an edge node executes (TEST-DB-RUN-SOT)", async () => {
+    await trongGiaoDich(async (tx) => {
+      // five stand-ins, each only a human gate NOT approved (no command step); chanRunSot is called directly (no scan)
+      const tao = async (status?: "queued" | "compensating" | "held") => {
+        const fx = await makeFoeGateRun({ tag: `${DAU}-sot-${Math.random().toString(36).slice(2, 8)}`, owner: OWNER, approvedBy: null });
+        if (status) await tx.update(orchestrationRuns).set({ status }).where(eq(orchestrationRuns.id, fx.runId));
+        return fx;
+      };
+      const q = (await tao("queued")).runId;
+      const r = (await tao()).runId;
+      const c = (await tao("compensating")).runId;
+      const h = (await tao("held")).runId;
+      const e = await tao("queued"); // queued: trigger 0370 (edge_run_assignment_insert_guard) accepts a new assignment of a queued run only
+      const node = await motId(tx, sql`INSERT INTO edge_nodes (code, name) VALUES (${`E-${DAU}-sot-${Math.random().toString(36).slice(2, 8)}`}, 'A2M2 sot') RETURNING id`);
+      await tx.execute(sql`INSERT INTO orchestration_run_edge_assignments ("runId", "edgeNodeId", "workflowId", "workflowVersion", "defHash", "assignedBy") VALUES (${e.runId}, ${node}, ${e.workflowId}, 1, ${"a".repeat(64)}, ${OWNER})`);
+      const loi = await chanRunSot(tx, "than").then(() => null, (x: unknown) => String((x as Error)?.message ?? x));
+      expect(loi, "RUN-SOT-THAN: chanRunSot did not refuse").not.toBeNull();
+      expect(loi, "RUN-SOT-THAN: refused with other words").toMatch(/^TEST-DB-RUN-SOT \(than\): /);
+      const vai = new Map<number, string>([[q, "queued"], [r, "running"], [c, "compensating"], [h, "held"], [e.runId, "edge"]]);
+      // bounded "#<id> <status>;" — each named run of this case as <its role>=<status named>; the held and the edge run must be ABSENT
+      const neu = [...String(loi).matchAll(/#(\d+) (\w+);/g)].filter((m) => vai.has(Number(m[1]))).map((m) => `${vai.get(Number(m[1]))}=${m[2]}`);
+      expect(neu, JSON.stringify(neu)).toEqual(["queued=queued", "running=running", "compensating=compensating"]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  describe("RUN-SOT-HAN (fake timers, restored in afterEach)", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+    // no database: readers whose query never settles. advanceTimersByTimeAsync yields a REAL macrotask after each fired timer (fake-timers tickAsync:
+    // originalSetTimeout(nextPromiseTick)), so a refusal chain has settled when it returns
+    const treo = () => new Promise<never>(() => {});
+    const cho = (viec: Promise<void>) => {
+      const o = { kq: "STILL WAITING" };
+      void viec.then(
+        () => {
+          o.kq = "ANSWERED";
+        },
+        (x: unknown) => {
+          o.kq = String((x as Error)?.message ?? x);
+        },
+      );
+      return o;
+    };
+
+    it("★ RUN-SOT-HAN — a read of chanRunSot that never answers (no free pool connection) ends in a named throw AT its bound, never a wait until the case's timeout (RUN-SOT-POOL)", async () => {
+      vi.useFakeTimers();
+      const o = cho(chanRunSot({ select: () => ({ from: () => ({ where: treo }) }) }, "han", 50));
+      await vi.advanceTimersByTimeAsync(49);
+      expect(o.kq, "RUN-SOT-HAN: settled before its bound").toBe("STILL WAITING");
+      await vi.advanceTimersByTimeAsync(1);
+      expect(o.kq, "RUN-SOT-HAN: chanRunSot outcome at its bound").toMatch(/^RUN-SOT-POOL \(han\): the read of the runs did not answer in 50 ms/);
+    });
+
+    it("★ RUN-SOT-HAN-MAC-DINH — called without a bound, chanRunSot waits HAN_DOC_RUN_SOT_MS = 10 000 ms, not more, not less (RUN-SOT-POOL)", async () => {
+      vi.useFakeTimers();
+      const o = cho(chanRunSot({ select: () => ({ from: () => ({ where: treo }) }) }, "han-mac-dinh"));
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(o.kq, "RUN-SOT-HAN-MAC-DINH: settled before 10 000 ms").toBe("STILL WAITING");
+      await vi.advanceTimersByTimeAsync(1);
+      expect(o.kq, "RUN-SOT-HAN-MAC-DINH: chanRunSot outcome at 10 000 ms").toMatch(/^RUN-SOT-POOL \(han-mac-dinh\): the read of the runs did not answer in 10000 ms/);
+    });
+
+    it("★ RUN-SOT-HAN-EDGE — the second read (the edge assignments of the runs found) is bounded too (RUN-SOT-POOL)", async () => {
+      vi.useFakeTimers();
+      let lan = 0;
+      const doc = {
+        select: () => ({
+          from: () => ({
+            where: () => {
+              lan++;
+              return lan === 1 ? Promise.resolve([{ id: 1, status: "running" }]) : treo();
+            },
+          }),
+        }),
+      };
+      const o = cho(chanRunSot(doc, "han-edge", 50));
+      await vi.advanceTimersByTimeAsync(49);
+      expect(o.kq, "RUN-SOT-HAN-EDGE: settled before its bound").toBe("STILL WAITING");
+      await vi.advanceTimersByTimeAsync(1);
+      expect(lan, "RUN-SOT-HAN-EDGE: reads made").toBe(2);
+      expect(o.kq, "RUN-SOT-HAN-EDGE: chanRunSot outcome at its bound").toMatch(/^RUN-SOT-POOL \(han-edge\): the read of the edge assignments did not answer in 50 ms/);
+    });
   });
 });

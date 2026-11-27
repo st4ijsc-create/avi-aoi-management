@@ -85,7 +85,7 @@ import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 import { _setPinReadProbeForTests } from "../../ot/stopPin";
 import { HANG_MOI_STOP_GHIM_TU_CHOI } from "../../ot/commandDispatcher";
 import { getCapabilitiesForMachine } from "../../equipment/capabilityModel";
-import { makeFoeGateRun } from "./__foeGateRunFixture";
+import { chanRunSot, makeFoeGateRun } from "./__foeGateRunFixture";
 import { autoResumeInterruptedRuns, rehydrateInterruptedRuns, resumeRun } from "./foeEngine";
 import { ensureOrchestrationAction, findSeparateGateApproval } from "./foeRunStore";
 import { buildEquipmentCommand, orchestrationActionId, orchestrationActionIdCu } from "./foeStepClass";
@@ -98,6 +98,17 @@ const APPROVER = 990_915_102;
 const KHAC = 990_915_103; // another user who continues the run (M2)
 const ROLLBACK = Symbol("rollback");
 const realGetDb = (conn as unknown as { __realGetDb: typeof conn.getDb }).__realGetDb;
+
+/** TEST-DB-RUN-SOT — the self-tests' reader for chanRunSot (the case's transaction); null ⇒ the pool. Reset in beforeEach. */
+let docSot: Tx | null = null;
+/**
+ * TEST-DB-RUN-SOT — the ONE door of this file to the FOE boot scan (chanRunSot.census.test.ts): the scan takes EVERY interrupted run the case's
+ * transaction sees, committed leftovers of `_test` too, so it first refuses when `_test` holds one (chanRunSot, read on the pool).
+ */
+async function quetBoot() {
+  await chanRunSot(docSot ?? (await realGetDb())!, "a2m.db");
+  return rehydrateInterruptedRuns();
+}
 type Tx = NonNullable<Awaited<ReturnType<typeof conn.getDb>>>;
 
 let sim: S7commSim;
@@ -206,9 +217,9 @@ async function dungRun(steps: WorkflowStep[], approvedBy: number = APPROVER) {
   return makeFoeGateRun({ tag: `${DAU}-${Math.random().toString(36).slice(2, 8)}`, owner: OWNER, approvedBy, steps });
 }
 
-/** "Process boot": the FOE boot hook + durable continue of ONLY the test's run (the product functions). */
+/** "Process boot": the FOE boot hook (quetBoot — it scans every interrupted run, not only the test's) + the durable continue of the test's run (the product functions). */
 async function khoiDong(runId: number) {
-  await rehydrateInterruptedRuns();
+  await quetBoot();
   return autoResumeInterruptedRuns([runId]);
 }
 
@@ -262,6 +273,7 @@ describe.skipIf(!DB_URL)("A2(m) — an FOE pinned STOP gets a FRESH authorisatio
 
   beforeEach(() => {
     process.env.FOE_ENABLED = "true";
+    docSot = null;
     process.env.FOE_DURABLE = "true";
     process.env.OT_CONTROL_ENABLED = "true";
     process.env.OT_COMMISSIONING_REQUIRED = "false";
@@ -333,7 +345,7 @@ describe.skipIf(!DB_URL)("A2(m) — an FOE pinned STOP gets a FRESH authorisatio
       const lan1 = await hangUyQuyen(tx, `foe-run${runId}-main-a`);
 
       process.env.FOE_DURABLE = "false"; // the restart leaves the run held; a PERSON continues it
-      await rehydrateInterruptedRuns();
+      await quetBoot();
       expect((await trangThaiRun(tx, runId)).status).toBe("held");
       const pdu1 = soPduGhi();
       const res = await resumeRun(runId, { approved: true, note: "A2(m) M2" }, { id: KHAC, role: "admin", name: "other" }, {}, { scope: null });
@@ -565,6 +577,23 @@ describe.skipIf(!DB_URL)("A2(m) — an FOE pinned STOP gets a FRESH authorisatio
       expect(String(a.message)).toMatch(new RegExp(`^STOP pin could not be verified — the STOP may not be re-sendable \\(run ${runId}, step "main", adapter ${a1}\\): pin read down \\(test\\)`));
       expect(a.dedupKey).toBe(`foe_stop_pin_unverified:${runId}:main:${a1}`);
       expect(a.recipients).toEqual([OWNER]);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ RUN-SOT-A2M — `_test` holds a run the boot scan would take: quetBoot refuses BEFORE the scan, naming it with its status, and that run is untouched (TEST-DB-RUN-SOT)", async () => {
+    await trongGiaoDich(async (tx) => {
+      // the leftover's stand-in: 'running', only a human gate NOT approved (no command step); read through the transaction (RUN-SOT-DOC-QUA-TX)
+      const { runId: sot } = await makeFoeGateRun({ tag: `${DAU}-sot-${Math.random().toString(36).slice(2, 8)}`, owner: OWNER, approvedBy: null });
+      process.env.FOE_DURABLE = "false"; // a mutant that lets the scan run marks that run held and continues nothing (the scan takes it either way)
+      docSot = tx;
+      const loi = await quetBoot().then(() => null, (x: unknown) => String((x as Error)?.message ?? x));
+      expect(loi, "RUN-SOT: quetBoot did not refuse").not.toBeNull(); // D1: toMatch on null throws a TypeError before its message
+      expect(loi, "RUN-SOT: quetBoot refused with other words").toMatch(/^TEST-DB-RUN-SOT \(a2m\.db\): /);
+      expect([...String(loi).matchAll(/#(\d+) (\w+);/g)].filter((m) => Number(m[1]) === sot).map((m) => m[2])).toEqual(["running"]);
+      const [run] = await tx.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, sot));
+      expect(run!.status).toBe("running");
+      expect((run!.contextJson ?? {}) as Record<string, unknown>).not.toHaveProperty("interrupted");
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
