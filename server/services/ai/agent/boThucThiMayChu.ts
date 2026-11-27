@@ -104,7 +104,7 @@ import {
 import { daBiTuChoiGhi, docKetQuaTest, maTuChoiGhi } from "@shared/aiCodingLoop";
 import { executeDecision as executeDecisionGoc, type PendingActionDTO, type ToolExecContext, type ToolResult } from "../../aiLocalTools";
 import { confineTargetUnder, readConfined } from "../../aiLocalTools/readToolsProgramming";
-import { TRAN_BYTE_MOI_TEP, TRAN_MUC_LIET_KE } from "../../aiLocalTools/repoSandbox";
+import { CAU_HINH_DUYET, TRAN_BYTE_MOI_TEP } from "../../aiLocalTools/repoSandbox";
 import { TRAN_TEP, phanQuyetChinhSachDuong } from "../../aiLocalTools/writeHandlers/applyDiff";
 import {
   cancelAction as cancelActionGoc,
@@ -275,12 +275,15 @@ const chamTranHoacGio = (d: PhanChuaTim): boolean => d.conLyDoKhac ?? Boolean(d.
 function ghiChuBiCat(d: PhanChuaTim): string[] {
   const dong: string[] = [];
   if (d.tepBiCat) dong.push(`[partial: ${d.tepBiCat.so} file(s) were searched only in their first ${TRAN_BYTE_MOI_TEP} bytes (e.g. ${d.tepBiCat.viDu.join(", ")}); the rest was NOT searched, and the read tools cannot show it either]`);
-  if (d.thuMucBiCat) dong.push(`[partial: ${d.thuMucBiCat.so} directory(ies) listed only their first ${TRAN_MUC_LIET_KE} entries (e.g. ${d.thuMucBiCat.viDu.join(", ")}); the rest was NOT searched]`);
+  if (d.thuMucBiCat) dong.push(`[partial: ${d.thuMucBiCat.so} directory(ies) listed only their first ${CAU_HINH_DUYET.mucMoiThuMuc} entries (e.g. ${d.thuMucBiCat.viDu.join(", ")}); the rest was NOT searched]`);
   return dong;
 }
 /** Mệnh đề gắn sau câu "không thấy gì"; rỗng khi phép tìm trọn vẹn. */
 const duoiKhongThay = (d: PhanChuaTim): string => (chamTranHoacGio(d) ? " (search was partial: limit or time reached)" : ghiChuBiCat(d).length ? " (search was partial)" : "");
 const noiDong = (dong: string[]): string => dong.map((x) => `\n${x}`).join("");
+const CAU_CHAM_TRAN = "[partial: result limit or time limit reached — narrow the path or pattern]";
+/** Dòng "chạm trần" cho nhánh CÓ KẾT QUẢ (grep và find_files); rỗng khi không chạm. */
+const dongChamTran = (d: PhanChuaTim): string => (chamTranHoacGio(d) ? `\n${CAU_CHAM_TRAN}` : "");
 
 /**
  * Làm sạch MỌI chữ tool trả về trước khi model đọc (khuôn `toolLoop.ts`): trung hoà dấu rào, che bí
@@ -699,7 +702,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     if (result.note === "NO_MATCH") return lamSachChoModel(`No files match "${String(t.pattern)}"${duoiKhongThay(d)}.${noiDong(ghiChuBiCat(d))}`, { ok: true, hienThi: { tool: "find_files", soTep: 0 } });
     if (result.note) return ketQuaTuChoiDoc(result);
     const ds = d.files ?? [];
-    return lamSachChoModel(`${ds.length} file(s)${d.truncated ? " (truncated)" : ""}:\n${ds.join("\n")}${noiDong(ghiChuBiCat(d))}`, {
+    return lamSachChoModel(`${ds.length} file(s)${d.truncated ? " (truncated)" : ""}:\n${ds.join("\n")}${dongChamTran(d)}${noiDong(ghiChuBiCat(d))}`, {
       ok: true,
       hienThi: { tool: "find_files", soTep: ds.length },
     });
@@ -725,7 +728,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
       });
     }
     const than = ds.map((m) => `${m.path}:${m.line}: ${m.text}`).join("\n");
-    const canh = (chamTranHoacGio(d) ? "\n[partial: result limit or time limit reached — narrow the path or pattern]" : "") + noiDong(ghiChuBiCat(d));
+    const canh = dongChamTran(d) + noiDong(ghiChuBiCat(d));
     return lamSachChoModel(`${ds.length} match(es):\n${than}${canh}`, { ok: true, hienThi: { tool: "grep", soKetQua: ds.length } });
   }
 

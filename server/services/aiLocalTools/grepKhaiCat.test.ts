@@ -372,7 +372,7 @@ describe("V13 §6 — ranh giới loaiTru và trần KẾT QUẢ của find_file
     expect(r.data).not.toHaveProperty("thuMucBiCat");
     const a = await tacNhanTim("tran-kq/*.ts");
     expect(a.choModel).toContain(`${TRAN_TIM} file(s) (truncated):`);
-    expect(a.choModel).not.toContain("[partial:");
+    expect(a.choModel).toContain("[partial: result limit or time limit reached"); // V14 (6b), đổi CÓ CHỦ ĐÍCH: nêu lý do trần kết quả như grep
   });
 
   it("V13-H25 find_files vừa chạm trần kết quả vừa có thư mục bị cắt ⇒ giữ CẢ HAI lý do", async () => {
@@ -387,4 +387,14 @@ describe("V13 §6 — ranh giới loaiTru và trần KẾT QUẢ của find_file
     expect(a.choModel).toContain(`${TRAN_TIM} file(s) (truncated):`);
     expect(a.choModel).toContain(`${enThuMuc(1)} (e.g. tran-ca)`);
   });
+});
+
+/* V14 — trần mục của VÒNG DUYỆT nay mặc định 5.000. Các ca trên dựng thư mục 301–305 mục, nên cả tệp đặt trần = 300 qua chỗ tiêm dành cho ca kiểm, rồi trả lại. */
+import { CAU_HINH_DUYET } from "./repoSandbox";
+const MUC_MAC_DINH = CAU_HINH_DUYET.mucMoiThuMuc;
+beforeAll(() => {
+  CAU_HINH_DUYET.mucMoiThuMuc = TRAN_MUC_LIET_KE;
+});
+afterAll(() => {
+  CAU_HINH_DUYET.mucMoiThuMuc = MUC_MAC_DINH;
 });
