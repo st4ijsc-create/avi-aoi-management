@@ -83,7 +83,7 @@ import { adapterTargetFingerprint } from "./adapterTarget";
 import { dispatch, MA_HANG_FOE_DA_TIEU, perWriteKey, type DispatchInput } from "./commandDispatcher";
 import { otPayloadHash, withHangMoiStopGhim, withOtPayloadHash } from "./otActionBinding";
 import type { OtWrite } from "./otDriver";
-import { chanRunSot, makeFoeGateRun } from "../orchestration/foe/__foeGateRunFixture";
+import { chanRunSot, gaiTayCam, makeFoeGateRun, tayCamCuaTep } from "../orchestration/foe/__foeGateRunFixture";
 import { buildEquipmentCommand, orchestrationActionId } from "../orchestration/foe/foeStepClass";
 import { ensureOrchestrationAction } from "../orchestration/foe/foeRunStore";
 import { autoResumeInterruptedRuns, FOE_OUTCOME_UNKNOWN, rehydrateInterruptedRuns, resumeRun } from "../orchestration/foe/foeEngine";
@@ -115,19 +115,24 @@ type Tx = NonNullable<Awaited<ReturnType<typeof conn.getDb>>>;
 async function trongGiaoDich(fn: (tx: Tx) => Promise<void>): Promise<void> {
   const db = await realGetDb();
   if (!db) throw new Error("no db");
+  const moc: { h: ReturnType<typeof gaiTayCam> | null } = { h: null };
   try {
     await db.transaction(async (tx) => {
       H.tx = tx;
+      moc.h = gaiTayCam(tx, "a2k.db"); // TEST-DB-TAY-CAM-CU: from the case's end on, a statement on this handle is refused (afterAll below)
       try {
         await fn(tx as unknown as Tx);
         await new Promise((r) => setTimeout(r, 300)); // ghi nền muộn của lượt đi (sự kiện run …) còn rơi vào giao dịch
       } finally {
         H.tx = null;
+        moc.h?.ketThuc();
       }
       throw ROLLBACK;
     });
   } catch (e) {
     if (e !== ROLLBACK) throw e;
+  } finally {
+    moc.h?.daRollback();
   }
 }
 
@@ -536,4 +541,13 @@ describe.skipIf(!DB_URL)("A2(k) — engine FOE thật: bước gặp FOE_ROW_SPE
     });
     expect(H.bay).toBe(0);
   });
+});
+
+// TEST-DB-TAY-CAM-CU (taycam-ket-luan-1.md §4 A) — no statement went through the handle of a FINISHED case transaction (the fixture refuses them;
+// here: the list must be empty). Every refused one is listed with its owner case, its moment and the frame that made it.
+afterAll(() => {
+  if (!DB_URL) return;
+  const t = tayCamCuaTep("a2k.db");
+  expect(t.giaoDich, "TAY-CAM-CU (a2k.db): trongGiaoDich armed no guard").toBeGreaterThan(0);
+  expect(t.lenhMuon, "TAY-CAM-CU (a2k.db): statements on the handle of a finished case transaction (refused)").toEqual([]);
 });

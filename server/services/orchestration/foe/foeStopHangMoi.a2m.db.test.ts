@@ -85,7 +85,7 @@ import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 import { _setPinReadProbeForTests } from "../../ot/stopPin";
 import { HANG_MOI_STOP_GHIM_TU_CHOI } from "../../ot/commandDispatcher";
 import { getCapabilitiesForMachine } from "../../equipment/capabilityModel";
-import { chanRunSot, makeFoeGateRun } from "./__foeGateRunFixture";
+import { chanRunSot, gaiTayCam, makeFoeGateRun, taoDongHoCat, tayCamCuaTep } from "./__foeGateRunFixture";
 import { autoResumeInterruptedRuns, rehydrateInterruptedRuns, resumeRun } from "./foeEngine";
 import { ensureOrchestrationAction, findSeparateGateApproval } from "./foeRunStore";
 import { buildEquipmentCommand, orchestrationActionId, orchestrationActionIdCu } from "./foeStepClass";
@@ -121,6 +121,9 @@ const soPduGhi = () => sim.pdus.filter((p) => p.bytes[1] === 0x01 && p.bytes[10]
  * right after (the following write succeeds).
  */
 const S7 = { treo: false, daTreo: null as null | (() => void), loiMotLan: false };
+/** TEST-DB-TAY-CAM-CU A′ — this file's bound of a hung device write (OT_CONTROL_TIMEOUT_MS) and the hourglass from the FIRST hung write */
+const HAN_LENH_TREO_MS = 120_000;
+const dongHoCat = taoDongHoCat();
 let s7Boc: unknown;
 function bocS7(): unknown {
   return new Proxy(s7, {
@@ -129,6 +132,7 @@ function bocS7(): unknown {
         return async (ws: never) => {
           if (S7.treo) {
             S7.treo = false;
+            dongHoCat.danhDau(); // TEST-DB-TAY-CAM-CU A′: otDeviceWrite's timer of this write (HAN_LENH_TREO_MS) starts now
             S7.daTreo?.();
             return new Promise<never>(() => undefined); // the process "dies" here: this walk never continues
           }
@@ -170,19 +174,24 @@ const driverBuTru = {
 async function trongGiaoDich(fn: (tx: Tx) => Promise<void>): Promise<void> {
   const db = await realGetDb();
   if (!db) throw new Error("no db");
+  const moc: { h: ReturnType<typeof gaiTayCam> | null } = { h: null };
   try {
     await db.transaction(async (tx) => {
       H.tx = tx;
+      moc.h = gaiTayCam(tx, "a2m.db"); // TEST-DB-TAY-CAM-CU: from the case's end on, a statement on this handle is refused (afterAll below)
       try {
         await fn(tx as unknown as Tx);
         await new Promise((r) => setTimeout(r, 300)); // late background writes of the walk (run events …) still land in the transaction
       } finally {
         H.tx = null;
+        moc.h?.ketThuc();
       }
       throw ROLLBACK;
     });
   } catch (e) {
     if (e !== ROLLBACK) throw e;
+  } finally {
+    moc.h?.daRollback();
   }
 }
 
@@ -288,7 +297,7 @@ describe.skipIf(!DB_URL)("A2(m) — an FOE pinned STOP gets a FRESH authorisatio
     // the crashed walk (sapTruocGoi) must STAY dead: with the default 5 s write timeout the dispatcher would answer it "timeout" and that walk
     // would resume inside a LATER case (late writes outside its transaction, even a retried STOP). 120 s outlives this file; every case here is
     // answered by the device (or refused) long before.
-    process.env.OT_CONTROL_TIMEOUT_MS = "120000";
+    process.env.OT_CONTROL_TIMEOUT_MS = String(HAN_LENH_TREO_MS);
     H.bay = 0;
     H.bayStack.length = 0;
     H.alerts.length = 0;
@@ -597,4 +606,16 @@ describe.skipIf(!DB_URL)("A2(m) — an FOE pinned STOP gets a FRESH authorisatio
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
+});
+
+// TEST-DB-TAY-CAM-CU (taycam-ket-luan-1.md §4 A) — no statement went through the handle of a FINISHED case transaction (the fixture refuses them;
+// here: the list must be empty). Every refused one is listed with its owner case, its moment and the frame that made it.
+afterAll(() => {
+  if (!DB_URL) return;
+  const t = tayCamCuaTep("a2m.db");
+  expect(t.giaoDich, "TAY-CAM-CU (a2m.db): trongGiaoDich armed no guard").toBeGreaterThan(0);
+  expect(t.lenhMuon, "TAY-CAM-CU (a2m.db): statements on the handle of a finished case transaction (refused)").toEqual([]);
+  // A′ — the hourglass: past half the bound, that timer may fire INSIDE this fork and continue a dead walk (TAYCAM-AN-TOAN-NHO-FORK-DONG)
+  const ms = dongHoCat.msTuMocDau();
+  if (ms !== null) expect(ms, `TAY-CAM-DONG-HO-CAT (a2m.db): ms from the first hung device write to the end of the file (its timer: ${HAN_LENH_TREO_MS} ms)`).toBeLessThan(HAN_LENH_TREO_MS / 2);
 });

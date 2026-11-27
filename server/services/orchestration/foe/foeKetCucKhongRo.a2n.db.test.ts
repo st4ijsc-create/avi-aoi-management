@@ -131,7 +131,7 @@ import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 import { _setPinReadProbeForTests } from "../../ot/stopPin";
 import { bamLenhOt, perWriteKey } from "../../ot/commandDispatcher";
 import { fetchOrchestrationHeld } from "../../../routers/oversightRouter";
-import { chanRunSot, makeFoeGateRun } from "./__foeGateRunFixture";
+import { chanRunSot, gaiTayCam, makeFoeGateRun, tayCamCuaTep } from "./__foeGateRunFixture";
 import { abortRun, autoResumeInterruptedRuns, FOE_NOT_SENT_RUN_LATCHED, FOE_OUTCOME_UNKNOWN, rehydrateInterruptedRuns, resumeRun } from "./foeEngine";
 import { ensureOrchestrationAction } from "./foeRunStore";
 import { buildEquipmentCommand, orchestrationActionId } from "./foeStepClass";
@@ -179,19 +179,24 @@ const driverChinh = {
 async function trongGiaoDich(fn: (tx: Tx) => Promise<void>): Promise<void> {
   const db = await realGetDb();
   if (!db) throw new Error("no db");
+  const moc: { h: ReturnType<typeof gaiTayCam> | null } = { h: null };
   try {
     await db.transaction(async (tx) => {
       H.tx = tx;
+      moc.h = gaiTayCam(tx, "a2n.db"); // TEST-DB-TAY-CAM-CU: from the case's end on, a statement on this handle is refused (afterAll below)
       try {
         await fn(tx as unknown as Tx);
         await new Promise((r) => setTimeout(r, 300)); // late background writes of the walk (run events, alerts, audits) still land in the transaction
       } finally {
         H.tx = null;
+        moc.h?.ketThuc();
       }
       throw ROLLBACK;
     });
   } catch (e) {
     if (e !== ROLLBACK) throw e;
+  } finally {
+    moc.h?.daRollback();
   }
 }
 
@@ -1192,4 +1197,13 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
+});
+
+// TEST-DB-TAY-CAM-CU (taycam-ket-luan-1.md §4 A) — no statement went through the handle of a FINISHED case transaction (the fixture refuses them;
+// here: the list must be empty). Every refused one is listed with its owner case, its moment and the frame that made it.
+afterAll(() => {
+  if (!DB_URL) return;
+  const t = tayCamCuaTep("a2n.db");
+  expect(t.giaoDich, "TAY-CAM-CU (a2n.db): trongGiaoDich armed no guard").toBeGreaterThan(0);
+  expect(t.lenhMuon, "TAY-CAM-CU (a2n.db): statements on the handle of a finished case transaction (refused)").toEqual([]);
 });

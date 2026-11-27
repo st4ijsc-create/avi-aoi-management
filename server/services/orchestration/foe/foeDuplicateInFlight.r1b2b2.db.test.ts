@@ -75,7 +75,7 @@ import { startS7commSim, type S7commSim } from "../../ot/drivers/__s7commSim";
 import { S7Driver } from "../../ot/drivers/s7Driver";
 import { adapterTargetFingerprint } from "../../ot/adapterTarget";
 import { __catSauGhiThietBiChoTest, bamLenhOt, perWriteKey, type DispatchInput } from "../../ot/commandDispatcher";
-import { chanRunSot, makeFoeGateRun } from "./__foeGateRunFixture";
+import { chanRunSot, gaiTayCam, makeFoeGateRun, tayCamCuaTep } from "./__foeGateRunFixture";
 import { autoResumeInterruptedRuns, FOE_OUTCOME_UNKNOWN, rehydrateInterruptedRuns } from "./foeEngine";
 import type { WorkflowStep } from "./workflowModel";
 
@@ -118,19 +118,24 @@ const driverBuTru = {
 async function trongGiaoDich(fn: (tx: Tx) => Promise<void>): Promise<void> {
   const db = await realGetDb();
   if (!db) throw new Error("no db");
+  const moc: { h: ReturnType<typeof gaiTayCam> | null } = { h: null };
   try {
     await db.transaction(async (tx) => {
       H.tx = tx;
+      moc.h = gaiTayCam(tx, "r1b2b2.db"); // TEST-DB-TAY-CAM-CU: from the case's end on, a statement on this handle is refused (afterAll below)
       try {
         await fn(tx as unknown as Tx);
         await new Promise((r) => setTimeout(r, 300)); // ghi nền muộn của lượt đi (sự kiện run …) còn rơi vào giao dịch
       } finally {
         H.tx = null;
+        moc.h?.ketThuc();
       }
       throw ROLLBACK;
     });
   } catch (e) {
     if (e !== ROLLBACK) throw e;
+  } finally {
+    moc.h?.daRollback();
   }
 }
 
@@ -426,4 +431,13 @@ describe.skipIf(!DB_URL)("T3F — sập giữa ghi thiết bị và ghi sổ ⇒
     });
     expect(H.bay).toBe(0);
   });
+});
+
+// TEST-DB-TAY-CAM-CU (taycam-ket-luan-1.md §4 A) — no statement went through the handle of a FINISHED case transaction (the fixture refuses them;
+// here: the list must be empty). Every refused one is listed with its owner case, its moment and the frame that made it.
+afterAll(() => {
+  if (!DB_URL) return;
+  const t = tayCamCuaTep("r1b2b2.db");
+  expect(t.giaoDich, "TAY-CAM-CU (r1b2b2.db): trongGiaoDich armed no guard").toBeGreaterThan(0);
+  expect(t.lenhMuon, "TAY-CAM-CU (r1b2b2.db): statements on the handle of a finished case transaction (refused)").toEqual([]);
 });
