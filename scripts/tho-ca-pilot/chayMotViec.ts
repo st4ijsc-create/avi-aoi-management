@@ -33,7 +33,7 @@ import { chayKiemThat, chupWt, type KetQuaKiemThat } from "./kiemThat";
 import { CAU_LUAT_PHU, docDongDaDuyet, docVitestJson, tenMoiCa, tinhPhu, type DongDuyet, type KetQuaPhu } from "./kiemPhu";
 import { dongBaoTran, dongCanhBaoKep, gioiHanChoLuot, tinhTranLuot, type GioiHanLuotChoDriver, type TranLuotKetQua } from "./tranLuot";
 import { apDungDotBien, kiemDotBienTrenBase, quetGhimNghiNgo, quetKhangDinhCam, tepTestDoi, type KetQuaDotBien } from "./dotBien";
-import { canChayTsc, canSuaTsc, caTestGiam, chayLenhTsc, lyDoEnvTroTepEnv, RE_TEP_TEST, loiNhacSuaTsc, nganSachSuaTsc, soDemGiam, giaTriBiMatTuUrl, taoChayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
+import { canChayTsc, canSuaTsc, caTestGiam, chayLenhTsc, danhSachTinDuoc, ganSoVoiNen, lyDoEnvTroTepEnv, RE_TEP_TEST, loiNhacSuaTsc, nganSachSuaTsc, soDemGiam, giaTriBiMatTuUrl, taoChayLenhKiem, demTepTest, laLenhVitest, quyetKetCuc, type ChayKiem, type ChayTsc, type KetCucKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
 
 export type TenDriver = "kho" | "cli" | "host";
 
@@ -41,11 +41,14 @@ export type TenDriver = "kho" | "cli" | "host";
 export interface KieuMotLan {
   lan: number;
   giay: number | null;
-  trangThai: "sach" | "do" | "chua" | "kiem-do" | "khong-ap";
+  /** "nen" = tsc còn lỗi nhưng KHÔNG lỗi nào mới so với cây gốc (không được đếm lẫn với "sach") */
+  trangThai: "sach" | "nen" | "do" | "chua" | "kiem-do" | "khong-ap";
 }
 /** V10 — thứ driver cần để kiểm kiểu trong vòng. `chayTsc` đã bọc phép soi .env và dùng sổ riêng của lượt. */
 export interface KieuTrongVong {
   tepDoi: () => string[];
+  /** PILOT-CONG-CUOI: dòng lỗi kiểu của cây gốc (lượt hâm); null/vắng = không có nền để so */
+  nen?: readonly string[] | null;
   chayTsc: (tepDoi: readonly string[], hanGiay: number) => Promise<KetQuaTsc>;
   /** lý do hâm sổ kiểu hỏng; null = hâm được */
   hamLoi: string | null;
@@ -801,6 +804,8 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   soTsc = path.join(p.ra, "tsc-so", `${the.ma}.tsbuildinfo`);
   const coKiemKieu = typeof p.driver === "function" && p.driver.kiemKieuTrongVong === true && fs.existsSync(path.join(wt, "tsconfig.tests.json"));
   let hamTsc: { dat: boolean; lyDo: string | null; giay: number } | null = null;
+  // PILOT-CONG-CUOI: lỗi kiểu của cây gốc. null = không có nền ⇒ cổng cuối coi MỌI lỗi kiểu là chặn
+  let nenTsc: string[] | null = null;
   if (coKiemKieu) {
     fs.mkdirSync(path.dirname(soTsc), { recursive: true });
     const hanHam = p.hanTscGiay ?? 900;
@@ -809,6 +814,8 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     const lyDo = h.hetGio ? `hâm quá hạn ${hanHam} s` : h.loi ? `không khởi chạy được: ${h.loi}` : h.exit !== 0 && h.tongLoi === 0 ? `tsc thoát mã ${h.exit} mà không có dòng lỗi đọc được` : null;
     hamTsc = { dat: lyDo === null, lyDo, giay: h.giay };
     nhatKy(`hâm sổ kiểu: ${lyDo === null ? "được" : `HỎNG — ${lyDo}`} (${h.giay} s)`);
+    nenTsc = lyDo === null ? danhSachTinDuoc(h) : null;
+    nhatKy(nenTsc === null ? "nền lỗi kiểu: KHÔNG CÓ — cổng cuối coi mọi lỗi kiểu là chặn" : `nền lỗi kiểu: ${nenTsc.length} lỗi trên cây gốc`);
   }
   const t0 = Date.now();
   nhatKy(`bắt đầu ${the.ma} trên ${nhanh} @ ${baseSha.slice(0, 9)} (driver ${tenDriver}, hạn ${the.gioiHan.giay}s)`);
@@ -856,7 +863,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     if (b.ok) for (const ten of tenMoiCa(b.out)) tenCaCuPhu.add(ten);
   }
   const hanGiay0 = tran?.phutThucDung ? tran.phutThucDung * 60 : the.gioiHan.giay;
-  const goiDriver = (lenh: string, hanGiay: number, gh: GioiHanLuotChoDriver | undefined) => driver({ the: theChoDriver, wt, lenh, hanGiay, ...(gh ? { gioiHanLuot: gh } : {}), ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {}, chayKiem: chayKiemDung, ...(dbCho ? { cheDoKiem: "chi-so" as const, giaTriBiMat: giaTriBiMatTuUrl(p.testDbUrl) } : {}), ...(the.kiemPhu ? { phu: { dongDuyet, tenCaCu: tenCaCuPhu, tepTest: tepTestPhu } } : {}), ...(hamTsc ? { kieu: { tepDoi: () => thuTepDoi(wt, cach === "ghi-de"), chayTsc: (tep: readonly string[], han: number) => chayTscDung(wt, tep, han), hamLoi: hamTsc.lyDo } } : {}) });
+  const goiDriver = (lenh: string, hanGiay: number, gh: GioiHanLuotChoDriver | undefined) => driver({ the: theChoDriver, wt, lenh, hanGiay, ...(gh ? { gioiHanLuot: gh } : {}), ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {}, chayKiem: chayKiemDung, ...(dbCho ? { cheDoKiem: "chi-so" as const, giaTriBiMat: giaTriBiMatTuUrl(p.testDbUrl) } : {}), ...(the.kiemPhu ? { phu: { dongDuyet, tenCaCu: tenCaCuPhu, tepTest: tepTestPhu } } : {}), ...(hamTsc ? { kieu: { tepDoi: () => thuTepDoi(wt, cach === "ghi-de"), chayTsc: (tep: readonly string[], han: number) => chayTscDung(wt, tep, han), hamLoi: hamTsc.lyDo, nen: nenTsc } } : {}) });
   const kq = await goiDriver(ghepLenh(the, luat, tran), hanGiay0, gioiHanLuot);
   const kieuMoiLuot: KieuMotLan[] = [...(kq.kieuTrongVong ?? [])];
   const giayTuong = Math.round(((Date.now() - t0) / 1000) * 10) / 10;
@@ -944,7 +951,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     // L3c: lệnh kiểm xanh vẫn chưa đủ — tsc trên tệp model đổi (vitest không kiểm kiểu; TC-05 tự định nghĩa lại kiểu đã export)
     if (qd.ketCuc === "xong" && canChayTsc(wt, tepDoi)) {
       nhatKy("chạy tsc --noEmit -p tsconfig.tests.json (L3c)");
-      tsc = await chayTscDung(wt, tepDoi, p.hanTscGiay ?? 900);
+      tsc = ganSoVoiNen(await chayTscDung(wt, tepDoi, p.hanTscGiay ?? 900), nenTsc);
       qd = quyetKetCuc({ truoc: ketCuc, dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc });
       truocSua = sauSua = { ketCuc: qd.ketCuc, lyDo: qd.lyDo };
       const xin = !soiEnv("trước lượt sửa") && canSuaTsc(the.suaTsc, tsc);
@@ -980,7 +987,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
         else if (hong) qd = { ketCuc: "kiem-do", lyDo: hong };
         else {
           kiem = await chayKiemDung(the.lenhKiem, wt, p.hanKiemGiay ?? 300);
-          tsc = await chayTscDung(wt, tepDoi, p.hanTscGiay ?? 900);
+          tsc = ganSoVoiNen(await chayTscDung(wt, tepDoi, p.hanTscGiay ?? 900), nenTsc);
           qd = quyetKetCuc({ truoc: "xong", dungVitest: laLenhVitest(the.lenhKiem), tepTest, kiem, tsc });
         }
         if (kiem === kiemTruoc) luuY.push("LƯỢT SỬA TSC bị chặn trước khi chạy lại: `kiem` và `tsc` trong JSON là kết quả TRƯỚC lượt sửa (tepDoi, dong, diff, viPham là của SAU lượt sửa)");
@@ -1021,7 +1028,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     // HA-3: tsc cũng LUÔN chạy trên cây cuối khi có tệp test (trước đây bị bỏ qua khi lượt không xong ⇒ mất số đo kiểu)
     if (canChayTsc(wt, tepDoi)) {
       nhatKy(`lượt ${ketCuc} — vẫn chạy tsc --noEmit -p tsconfig.tests.json để ghi số đo`);
-      tsc = await chayTscDung(wt, tepDoi, p.hanTscGiay ?? 900);
+      tsc = ganSoVoiNen(await chayTscDung(wt, tepDoi, p.hanTscGiay ?? 900), nenTsc);
     }
     lyDoKiem = `ketCuc ${ketCuc} giữ nguyên; lệnh kiểm chạy bổ sung: exit ${kiem.exit}${kiem.vitest.ca ? `, Tests ${kiem.vitest.ca.dat} passed / ${kiem.vitest.ca.tong}` : ""}${tsc ? `; tsc exit ${tsc.exit}, ${tsc.tongLoi} lỗi` : ""}`;
   }

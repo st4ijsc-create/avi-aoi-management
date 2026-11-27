@@ -19,7 +19,7 @@ import path from "node:path";
 import { loiNhacPhu, tinhPhu } from "./kiemPhu";
 import { quetHoSo, thuMucTamMacDinh, tomTatCanhBao, type CanhBao } from "./quetTinh";
 import { chuanDuong, kiemDiffTheoThe, vungCamCua, type TheViec } from "./theViec";
-import { canChayTsc, chayLenhKiem, cheTokenTrongDauRa, loaiUrlCsdl, xoaGiaTriBiMat, type ChayKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
+import { canChayTsc, chayLenhKiem, cheTokenTrongDauRa, danhSachTinDuoc, soLoiMoi, loaiUrlCsdl, xoaGiaTriBiMat, type ChayKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
 import type { DauVaoDriver, KetQuaDriver, KieuMotLan } from "./chayMotViec";
 import type { GioiHanLuotChoDriver } from "./tranLuot";
 import type { PhuThuocQuanLy } from "../../server/services/ai/agent/quanLyLuotChay";
@@ -230,11 +230,16 @@ export const TOI_THIEU_TSC_GIAY = 20;
 export const NGAN_SACH_KIEU = 2400;
 const TRAN_DAI_DONG_LOI = 300;
 const CHO_CHO_CAU_CUOI = 120;
+/** Số dòng lỗi MỚI ở tệp ngoài phép được nêu cho model (không kèm giải thích). */
+const TOI_DA_LOI_MOI_NEU = 5;
+const NHAN_LOI_MOI = "Lỗi MỚI ở tệp khác:";
 
 /** Khối kiểu khi tsc ĐỎ. `trong` = lỗi ở tệp được phép; luôn giữ vị trí + mã trước, cắt giải thích trước, bớt lỗi sau cùng — cắt gì cũng NÓI. THUẦN. */
-export function dungKhoiKieuDo(trong: readonly string[], khoiTheoDau: ReadonlyMap<string, string>, soKhac: number, chiSo: boolean): string {
-  const dau = `KIỂU: ĐỎ — ${trong.length} lỗi trong tệp được phép, ${soKhac} lỗi ở tệp khác. Lệnh kiểm xanh CHƯA đủ: sửa lỗi kiểu rồi gọi lại đúng lệnh kiểm.`;
-  if (chiSo || trong.length === 0) return dau;
+export function dungKhoiKieuDo(trong: readonly string[], khoiTheoDau: ReadonlyMap<string, string>, soKhac: number, chiSo: boolean, loiMoi: { tong: number; duocNeu: readonly string[] } | null = null): string {
+  const cauMoi = loiMoi ? ` Trong đó ${loiMoi.tong} lỗi MỚI ở tệp khác so với cây gốc.` : "";
+  const dau = `KIỂU: ĐỎ — ${trong.length} lỗi trong tệp được phép, ${soKhac} lỗi ở tệp khác.${cauMoi} Lệnh kiểm xanh CHƯA đủ: sửa lỗi kiểu rồi gọi lại đúng lệnh kiểm.`;
+  const soMoi = loiMoi?.tong ?? 0;
+  if (chiSo || (trong.length === 0 && soMoi === 0)) return dau;
   const giu: Array<{ dong: string; them: string }> = [];
   let daDung = dau.length;
   for (const d of trong) {
@@ -243,6 +248,14 @@ export function dungKhoiKieuDo(trong: readonly string[], khoiTheoDau: ReadonlyMa
     daDung += dong.length + 1;
     const khoi = khoiTheoDau.get(d);
     giu.push({ dong, them: khoi ? cheTokenTrongDauRa(khoi.split("\n").slice(1).join("\n")) : "" });
+  }
+  const moiGiu: string[] = [];
+  if ((loiMoi?.duocNeu.length ?? 0) > 0) daDung += NHAN_LOI_MOI.length + 1;
+  for (const d of (loiMoi?.duocNeu ?? []).slice(0, TOI_DA_LOI_MOI_NEU)) {
+    const dong = catChu(cheTokenTrongDauRa(d), TRAN_DAI_DONG_LOI);
+    if (daDung + dong.length + 1 > NGAN_SACH_KIEU - CHO_CHO_CAU_CUOI) break;
+    daDung += dong.length + 1;
+    moiGiu.push(dong);
   }
   const phan = chiaDeu(giu.map((x) => (x.them ? x.them.length + 1 : 0)), Math.max(0, NGAN_SACH_KIEU - CHO_CHO_CAU_CUOI - daDung));
   let daCat = false;
@@ -257,7 +270,23 @@ export function dungKhoiKieuDo(trong: readonly string[], khoiTheoDau: ReadonlyMa
   const conLai = trong.length - giu.length;
   if (conLai > 0) ra.push(`còn ${conLai} lỗi không liệt kê`);
   if (daCat) ra.push("đã cắt bớt giải thích của một số lỗi");
+  if (moiGiu.length > 0) ra.push(NHAN_LOI_MOI, ...moiGiu);
+  if (soMoi > moiGiu.length) ra.push(`còn ${soMoi - moiGiu.length} lỗi mới ở tệp khác không liệt kê`);
   return ra.join("\n");
+}
+
+/** Chỉ nêu cho model dòng lỗi có đường mà hộp cát cho model thấy; không nạp được chính sách thì không nêu dòng nào (chỉ đếm). */
+async function locTheoHopCat(dong: readonly string[]): Promise<string[]> {
+  if (dong.length === 0) return [];
+  try {
+    const { phanQuyetDuongDan } = await import("../../server/services/aiLocalTools/repoSandbox");
+    return dong.filter((d) => {
+      const m = /^(.+?)\(\d+,\d+\): /.exec(d);
+      return m !== null && phanQuyetDuongDan(m[1]) === null;
+    });
+  } catch {
+    return [];
+  }
 }
 
 /** Quyết có chạy tsc cho lần tự chạy này không và dựng khối "KIỂU:". Không nhánh nào im lặng. */
@@ -280,6 +309,8 @@ export async function kiemKieuTrongVong(v: DauVaoDriver, k: KetQuaKiem): Promise
   const chua = (lyDo: string) => ({ van: `KIỂU: CHƯA kiểm được — ${lyDo}. Đừng coi là kiểu sạch.`, trangThai: "chua" as const, giay: t.giay });
   if (t.hetGio) return chua(`tsc quá ${han} s`);
   if (t.loi) return chua(v.cheDoKiem === "chi-so" ? "tsc không khởi chạy được" : `tsc không khởi chạy được: ${catChu(cheTokenTrongDauRa(t.loi), TRAN_DAI_DONG_LOI)}`);
+  // lỗi không gắn tệp (cấu hình…): kiểu có thể chưa được kiểm — cổng cuối sẽ chặn, ở đây không được nói "sạch" hay "không có lỗi mới"
+  if (t.tongLoi > 0 && (t.loiKhongViTri?.length ?? 0) > 0) return chua("tsc báo lỗi không gắn tệp (cấu hình)");
   if (t.tongLoi === 0) {
     // thoát khác 0 mà không đọc được dòng lỗi nào (lỗi cấu hình, sập) KHÔNG phải là sạch
     if (t.exit !== 0) return chua(`tsc thoát mã ${t.exit} mà không có dòng lỗi đọc được`);
@@ -288,7 +319,17 @@ export async function kiemKieuTrongVong(v: DauVaoDriver, k: KetQuaKiem): Promise
   const duocPhep = tepDoi.filter((x) => kiemDiffTheoThe([x], v.the.tepDuocPhep).length === 0).map((x) => x.replace(/\\/g, "/"));
   const trong = t.loiTrongTep.filter((d) => duocPhep.some((x) => d.startsWith(`${x}(`)));
   const khoiTheoDau = new Map((t.khoiTrongTep ?? []).map((b) => [b.split("\n")[0]!.trim(), b]));
-  return { van: dungKhoiKieuDo(trong, khoiTheoDau, t.tongLoi - trong.length, v.cheDoKiem === "chi-so"), trangThai: "do", giay: t.giay };
+  const soKhac = t.tongLoi - trong.length;
+  const chiSo = v.cheDoKiem === "chi-so";
+  const ds = danhSachTinDuoc(t);
+  let loiMoi: { tong: number; duocNeu: string[] } | null = null;
+  if (kieu.nen != null && ds !== null) {
+    const moiKhac = soLoiMoi(kieu.nen, ds).filter((d) => !duocPhep.some((x) => d.startsWith(`${x}(`)));
+    // chỉ còn lỗi sẵn có ở tệp model không được sửa: cổng cuối cho qua ⇒ không bảo model đi sửa; trạng thái RIÊNG, không lẫn với "sach"
+    if (trong.length === 0 && moiKhac.length === 0) return { van: `KIỂU: không có lỗi mới — ${soKhac} lỗi sẵn có ở tệp khác (cổng cuối không tính chúng).`, trangThai: "nen", giay: t.giay };
+    loiMoi = { tong: moiKhac.length, duocNeu: chiSo ? [] : await locTheoHopCat(moiKhac) };
+  }
+  return { van: dungKhoiKieuDo(trong, khoiTheoDau, soKhac, chiSo, loiMoi), trangThai: "do", giay: t.giay };
 }
 
 /**
