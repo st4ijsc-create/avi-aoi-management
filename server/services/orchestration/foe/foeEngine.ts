@@ -3545,8 +3545,14 @@ async function runCompensation(
     await stopBoundedWrite(compStop, rc.runId, comp.id, "running row", () =>
       rc.store.upsertStep(rc.runId, comp.id, comp.type, { status: "running", startedAt: new Date() }),
     );
+    const noTruoc = comp.type === "command" && stopChuaRaTuNguCanh(rc.context).includes(comp.id); // X-39 — a STOP the stored list names before THIS send
     const out = await runStepBody(rc, comp, opts.attempt ?? 1, compStop);
     if (comp.type === "command") datChuaRa(rc, comp.id, out.kind === "failed" ? out.chuaRaStop : undefined); // A2(n) T5 — the last word decides
+    // X-39 (X39-KE4) — this send went: the stored list loses it BEFORE the `compensated` row below (no window on the disk: the row is the second write); lost or late ⇒ as before (owed)
+    // bounded even when compStop is false: its failure never takes the `compensated` row below with it
+    if (noTruoc && out.kind === "ok") await stopBoundedWrite(true, rc.runId, comp.id, "state C cleared", async () => {
+        await rc.store.xoaStopChuaRaDaLuu(rc.runId, comp.id);
+      });
     // A2(n) (S-1) — a compensation whose own outcome is unknown latches the run too: the containers above it must not write by themselves
     const khongRoThan = out.kind === "failed" && (out.outcomeUnknown === true || out.khongRo === true);
     if (khongRoThan) {

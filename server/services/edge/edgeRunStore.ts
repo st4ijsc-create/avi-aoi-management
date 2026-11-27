@@ -238,6 +238,8 @@ abstract class EdgeStoreBase implements RunStore {
   abstract upsertStep(runId: number, stepId: string, stepType: string, patch: RunStepPatch): Promise<void>;
   abstract setStatusUnlessAborted(runId: number, status: OrchestrationRun["status"], patch?: Partial<OrchestrationRun>, onlyFrom?: Array<OrchestrationRun["status"]>): Promise<boolean>;
   abstract persistContext(rc: RunStoreContext): Promise<void>;
+  /** X-39 — the state-C list is central's key (EDGE_CONTEXT_ALLOWED_KEY never takes it from an edge): nothing is stored here */
+  async xoaStopChuaRaDaLuu(): Promise<void> {}
   abstract authorizeCommand(rc: RunStoreContext, step: Extract<WorkflowStep, { type: "command" }>, attempt: number, x: AuthorizeInput): Promise<AuthorizeVerdict>;
   abstract authorizeAbortStop(runId: number, user: RunStoreUser, step: Extract<WorkflowStep, { type: "command" }>, idempotencyKey: string, args: Record<string, unknown>, cmd: EquipmentCommand): Promise<void>;
   abstract sweepSource(x: { live?: RunStoreContext | null; run?: OrchestrationRun; hasLiveDriver?: (runId: number) => boolean }): Promise<AbortSweepSource | null>;

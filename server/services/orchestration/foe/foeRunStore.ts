@@ -16,7 +16,7 @@
 import { randomUUID } from "node:crypto";
 import cluster from "node:cluster"; // A2(n) T8 lượt sửa 1 (CHAN-3) — cheDoProcessEngine
 import { isStopCommandType } from "../../ot/loaiLenhStop";
-import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
+import { and, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { getDb } from "../../../db/connection";
 import { appendRunEvent } from "../runEventStore"; // doc 33 W4 (F8): durable RunEvent log (FOE_DURABLE)
 import {
@@ -245,6 +245,8 @@ export interface RunStore {
     onlyFrom?: Array<OrchestrationRun["status"]>,
   ): Promise<boolean>;
   persistContext(rc: RunStoreContext): Promise<void>;
+  /** X-39 — the STOP `id` this walk just sent went (its own send answered ok): drop it from the STORED state-C list (STOP_CHUA_RA_CTX_KEY) now, before its row. Central only */
+  xoaStopChuaRaDaLuu(runId: number, id: string): Promise<void>;
   resolveAdapter(kind: string, machineId: number, args: Record<string, unknown>, stepId: string): Promise<Record<string, unknown>>;
   authorizeCommand(rc: RunStoreContext, step: Extract<WorkflowStep, { type: "command" }>, attempt: number, x: AuthorizeInput): Promise<AuthorizeVerdict>;
   /**
@@ -1234,6 +1236,28 @@ export async function upsertStepOn(d: RunDb, runId: number, stepId: string, step
   if (stepEvt) void appendRunEvent(runId, stepEvt, { taskId: stepId, ts: Date.now() });
 }
 
+/**
+ * X-39 (STOPCHUARA-LOC-THIEU-COMPENSATED, X39-KE4) — ONE UPDATE of the stored context's state-C list only: `id` leaves the array, the key goes with its last element, every other key
+ * stays as stored (no read-then-write of the context: a write of another key in between is never lost). A run whose list does not name `id` is not touched. The walk calls it BEFORE the
+ * STOP's own `compensated` row (foeEngine runCompensation): a process that dies between the two leaves the row `running` (handed over, sent again by a press), never a stored list naming a
+ * STOP its row says went. Its DB form is measured by foeStopChuaRaGhi.a2n.db.test.ts
+ */
+export async function xoaStopChuaRaDaLuuTrong(d: Pick<RunDb, "execute">, runId: number, id: string): Promise<void> {
+  await d.execute(sql`
+    UPDATE public."orchestration_runs"
+       SET "contextJson" = CASE WHEN jsonb_array_length(("contextJson" -> ${STOP_CHUA_RA_CTX_KEY}::text) - ${id}::text) = 0
+                                THEN "contextJson" - ${STOP_CHUA_RA_CTX_KEY}::text
+                                ELSE jsonb_set("contextJson", ARRAY[${STOP_CHUA_RA_CTX_KEY}::text], ("contextJson" -> ${STOP_CHUA_RA_CTX_KEY}::text) - ${id}::text) END
+     WHERE "id" = ${runId}
+       AND jsonb_typeof("contextJson" -> ${STOP_CHUA_RA_CTX_KEY}::text) = 'array'
+       AND jsonb_exists("contextJson" -> ${STOP_CHUA_RA_CTX_KEY}::text, ${id}::text)`);
+}
+export async function xoaStopChuaRaDaLuu(runId: number, id: string): Promise<void> {
+  const d = await getDb();
+  if (!d) return;
+  await xoaStopChuaRaDaLuuTrong(d, runId, id);
+}
+
 export async function persistContext(rc: RunStoreContext): Promise<void> {
   const d = await getDb();
   if (!d) return;
@@ -1802,6 +1826,7 @@ export const centralRunStore: RunStore = Object.freeze({
   upsertStep,
   setStatusUnlessAborted: setRunStatusUnlessAborted,
   persistContext,
+  xoaStopChuaRaDaLuu,
   resolveAdapter(kind: string, machineId: number, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     return withResolvedAdapter(kind, machineId, args);
   },
