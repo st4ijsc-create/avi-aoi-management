@@ -16,12 +16,28 @@ export interface NotificationPrefs {
 const DEFAULTS: NotificationPrefs = { highPriorityOnly: false, snoozeUntil: 0 };
 const KEY = (userKey: string) => `notifPrefs:${userKey}`;
 
+/** Parse a single stored value: accept only the expected type, else return `fallback`. */
+function parseBool(val: unknown, fallback: boolean): boolean {
+  return typeof val === "boolean" ? val : fallback;
+}
+
+/** Parse snoozeUntil: accept only finite number ≥ 0, else return `fallback`. */
+function parseSnooze(val: unknown, fallback: number): number {
+  return typeof val === "number" && Number.isFinite(val) && val >= 0 ? val : fallback;
+}
+
 export function loadNotifPrefs(userKey: string): NotificationPrefs {
   if (typeof window === "undefined") return { ...DEFAULTS };
   try {
     const raw = window.localStorage.getItem(KEY(userKey));
     if (!raw) return { ...DEFAULTS };
-    return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<NotificationPrefs>) };
+    const parsed = JSON.parse(raw);
+    // Chỉ chấp nhận plain object (không phải mảng, null, số, chuỗi…)
+    if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) return { ...DEFAULTS };
+    return {
+      highPriorityOnly: parseBool(parsed.highPriorityOnly, DEFAULTS.highPriorityOnly),
+      snoozeUntil: parseSnooze(parsed.snoozeUntil, DEFAULTS.snoozeUntil),
+    };
   } catch {
     return { ...DEFAULTS };
   }

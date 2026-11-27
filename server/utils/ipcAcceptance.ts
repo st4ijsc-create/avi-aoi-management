@@ -45,6 +45,40 @@ export const IPC_CLASSES: Record<IpcClass, { name: string; description: string }
 export type Verdict = "accept" | "process" | "reject";
 export type Severity = "critical" | "major" | "minor" | "cosmetic";
 
+const VALID_SEVERITIES: ReadonlySet<Severity> = new Set([
+  "critical",
+  "major",
+  "minor",
+  "cosmetic",
+]);
+
+/**
+ * Chuẩn hoá giá trị severity: chỉ chấp nhận chuỗi, bỏ khoảng trắng hai đầu,
+ * đổi chữ thường, so với 4 giá trị hợp lệ.
+ *
+ * - `null` / `undefined` → `null` (vắng)
+ * - Không phải chuỗi hoặc chuỗi rỗng / chỉ khoảng trắng → `undefined` (lạ)
+ * - Khớp một trong 4 giá trị → trả về giá trị đã chuẩn hoá (hợp lệ)
+ */
+function normalizeSeverity(value: unknown): Severity | null | undefined {
+  if (value == null) return null; // null hoặc undefined
+  if (typeof value !== "string") return undefined; // lạ (số, boolean, object…)
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === "") return undefined; // chuỗi rỗng / chỉ khoảng trắng
+  if (VALID_SEVERITIES.has(trimmed as Severity)) return trimmed as Severity;
+  return undefined; // chuỗi lạ
+}
+
+/**
+ * Tính severity cuối cùng cho hàng: hợp lệ → dùng; vắng → "minor"; lạ → "major".
+ */
+function resolveRowSeverity(rowSeverity: DefectRow["severity"]): Severity {
+  const normalized = normalizeSeverity(rowSeverity);
+  if (normalized === null) return "minor"; // vắng
+  if (normalized !== undefined) return normalized; // hợp lệ
+  return "major"; // lạ
+}
+
 export interface ClassRule {
   accept: Verdict;
   severity?: Severity;
@@ -99,12 +133,17 @@ export function resolveDefectForClass(
         : undefined
     : undefined;
 
-  const fallbackSeverity = (defect.severity as Severity) ?? "minor";
+  // Tính fallbackSeverity từ severity hàng (chuẩn hoá + quy tắc vắng/lạ)
+  const fallbackSeverity = resolveRowSeverity(defect.severity);
 
   if (explicit) {
+    // Nhánh tường minh: severity luật chuẩn hoá; hợp lệ → dùng; vắng/lạ → fallbackSeverity
+    const ruleSeverity = normalizeSeverity(explicit.severity);
+    const severity: Severity =
+      ruleSeverity != null ? ruleSeverity : fallbackSeverity;
     return {
       accept: explicit.accept,
-      severity: explicit.severity ?? fallbackSeverity,
+      severity,
       limit: explicit.limit,
       notes: explicit.notes,
       explicit: true,
@@ -123,7 +162,9 @@ export function resolveDefectForClass(
 }
 
 function legacyFlagged(acceptanceClass: string | null, target: IpcClass): boolean {
-  if (!acceptanceClass) return true; // no policy → conservative
+  // Chỉ "1", "2", "3" là hợp lệ; mọi giá trị khác → gắn cờ reject ở mọi cấp.
+  if (!acceptanceClass) return true;
+  if (acceptanceClass !== "1" && acceptanceClass !== "2" && acceptanceClass !== "3") return true;
   const a = Number.parseInt(acceptanceClass, 10);
   const t = Number.parseInt(target, 10);
   if (!Number.isFinite(a) || !Number.isFinite(t)) return true;

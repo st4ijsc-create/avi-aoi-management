@@ -305,6 +305,33 @@ describe("soHaiBanChup", () => {
     expect(ketQua.tepTang).toHaveLength(1);
     expect(ketQua.tepTang[0].tenGoc).toBe("app.js");
   });
+
+  it("ngưỡng mặc định: chênh lệch 51200 B (50 × 1024) → vuotNguong false", () => {
+    const truoc = lapBanChup([{ ten: "a.js", tenGoc: "a.js", byteRo: 10, byteGzip: 100 }]);
+    const sau = lapBanChup([{ ten: "a.js", tenGoc: "a.js", byteRo: 10, byteGzip: 100 + 51200 }]);
+    const ketQua = soHaiBanChup(truoc, sau);
+    expect(ketQua.tepTang).toHaveLength(1);
+    expect(ketQua.tepTang[0].chenhLechGzip).toBe(51200);
+    expect(ketQua.tepTang[0].vuotNguong).toBe(false);
+  });
+
+  it("ngưỡng mặc định: chênh lệch 51201 B → vuotNguong true", () => {
+    const truoc = lapBanChup([{ ten: "a.js", tenGoc: "a.js", byteRo: 10, byteGzip: 100 }]);
+    const sau = lapBanChup([{ ten: "a.js", tenGoc: "a.js", byteRo: 10, byteGzip: 100 + 51201 }]);
+    const ketQua = soHaiBanChup(truoc, sau);
+    expect(ketQua.tepTang).toHaveLength(1);
+    expect(ketQua.tepTang[0].chenhLechGzip).toBe(51201);
+    expect(ketQua.tepTang[0].vuotNguong).toBe(true);
+  });
+
+  it("ngưỡng mặc định: chênh lệch 256000 B → vuotNguong true", () => {
+    const truoc = lapBanChup([{ ten: "a.js", tenGoc: "a.js", byteRo: 10, byteGzip: 100 }]);
+    const sau = lapBanChup([{ ten: "a.js", tenGoc: "a.js", byteRo: 10, byteGzip: 100 + 256000 }]);
+    const ketQua = soHaiBanChup(truoc, sau);
+    expect(ketQua.tepTang).toHaveLength(1);
+    expect(ketQua.tepTang[0].chenhLechGzip).toBe(256000);
+    expect(ketQua.tepTang[0].vuotNguong).toBe(true);
+  });
 });
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -453,6 +480,42 @@ describe("chayCLI", () => {
 
     const ketQua = await chayCLI(["so", tepTruoc, tepSau, "--nguong-kb", "abc"], writer);
     expect(ketQua).toBe(1);
+  });
+
+  it("so: không có --nguong-kb, chênh lệch 51200 B → mã thoát 0, không chứa VƯỢT NGƯỠNG", async () => {
+    const truoc = lapBanChup([{ ten: "a.js", tenGoc: "a.js", byteRo: 10, byteGzip: 100 }]);
+    const sau = lapBanChup([{ ten: "a.js", tenGoc: "a.js", byteRo: 10, byteGzip: 100 + 51200 }]);
+
+    const tepTruoc = join(thuMucTam, "truoc.json");
+    const tepSau = join(thuMucTam, "sau.json");
+    await writeFile(tepTruoc, JSON.stringify(truoc));
+    await writeFile(tepSau, JSON.stringify(sau));
+
+    const logs: string[] = [];
+    const writer = (msg: string) => logs.push(msg);
+
+    const ketQua = await chayCLI(["so", tepTruoc, tepSau], writer);
+    expect(ketQua).toBe(0);
+    const output = logs.join("\n");
+    expect(output).not.toContain("VƯỢT NGƯỠNG");
+  });
+
+  it("so: không có --nguong-kb, chênh lệch 256000 B → mã thoát 2, chứa VƯỢT NGƯỠNG", async () => {
+    const truoc = lapBanChup([{ ten: "a.js", tenGoc: "a.js", byteRo: 10, byteGzip: 100 }]);
+    const sau = lapBanChup([{ ten: "a.js", tenGoc: "a.js", byteRo: 10, byteGzip: 100 + 256000 }]);
+
+    const tepTruoc = join(thuMucTam, "truoc.json");
+    const tepSau = join(thuMucTam, "sau.json");
+    await writeFile(tepTruoc, JSON.stringify(truoc));
+    await writeFile(tepSau, JSON.stringify(sau));
+
+    const logs: string[] = [];
+    const writer = (msg: string) => logs.push(msg);
+
+    const ketQua = await chayCLI(["so", tepTruoc, tepSau], writer);
+    expect(ketQua).toBe(2);
+    const output = logs.join("\n");
+    expect(output).toContain("VƯỢT NGƯỠNG");
   });
 });
 
