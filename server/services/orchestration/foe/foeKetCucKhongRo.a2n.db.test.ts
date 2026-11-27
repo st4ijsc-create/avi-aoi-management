@@ -281,6 +281,12 @@ async function chacKhongRo(tx: Tx, runId: number, stepId = "main") {
   expect(b?.status, `${stepId}: ${b?.status} attempt ${b?.attempt}: ${b?.error}`).toBe("failed");
   expect(String(b?.error)).toMatch(/\b(FOE|EDGE)_OUTCOME_UNKNOWN\b/);
 }
+/**
+ * X-T10-DB-CA — a row for `main` before the boot: `pending`, attempt 0, no start, no result, createdAt = the transaction's now(). The walk does not see it (priorStepsOf: not settled,
+ * not attempted, not started), T10 reads its age: 0 < hanGuiLaiMs ⇒ INSIDE the bound ⇒ the boot walks as before T10. Without it a latch that names `main` names a step with NO row ⇒
+ * past the bound (T10-BUOC-KHONG-HANG): held + kind 25, nothing walked (case I-3b)
+ */
+const hangMainTrongHan = (tx: Tx, runId: number) => tx.insert(orchestrationRunSteps).values({ runId, stepId: "main", stepType: "command", status: "pending", attempt: 0 } as never);
 
 const ENV_KEYS = ["FOE_ENABLED", "FOE_DURABLE", "OT_CONTROL_ENABLED", "OT_COMMISSIONING_REQUIRED", "OT_SAFETY_PREFLIGHT_ENABLED", "OT_READBACK_ENABLED", "OT_CMD_SERIALIZE_ENABLED", "SEC_PLATFORM", "UNS_CMD_ACK_ENABLED", "AI_OT_CONTROL_ENABLED", "PARAM_GUARDRAIL_ENABLED", "INTERLOCK_AUTO_BLOCK_ENABLED", "RBAC_SCOPED_ADMIN"] as const;
 const savedEnv: Record<string, string | undefined> = {};
@@ -457,11 +463,13 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       const d = await dungThietBi(tx);
       const runId = await dungRun([{ id: "p", type: "parallel", failFast: true, steps: [buocChinh(d.m2, buTruReset(d.m1)), { id: "g2", type: "hitl_gate", prompt: "other" } as WorkflowStep] } as WorkflowStep]);
       await tx.update(orchestrationRuns).set({ contextJson: { foeOutcomeUnknown: ["main"] } }).where(eq(orchestrationRuns.id, runId));
+      await hangMainTrongHan(tx, runId); // X-T10-DB-CA: inside the bound
       const pdu0 = soPduGhi();
       await khoiDong(runId);
       await chacKhongRo(tx, runId);
       expect((await runCua(tx, runId)).status).toBe("held");
       expect(soPduGhi() - pdu0).toBe(0);
+      expect(canhBao("bootQuaHan", runId), "inside the bound: the boot walked, no kind 25").toHaveLength(0);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
@@ -588,10 +596,34 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       const d = await dungThietBi(tx);
       const runId = await dungRun([buocChinh(d.m2, buTruStop(d.m1))]);
       await tx.update(orchestrationRuns).set({ contextJson: { foeOutcomeUnknown: ["main"] } }).where(eq(orchestrationRuns.id, runId)); // no dispatcher involved in the unknown
+      await hangMainTrongHan(tx, runId); // X-T10-DB-CA: inside the bound
       await khoiDong(runId);
       expect(soPduGhi() - pdu0).toBe(0);
       await choCanhBao("stopSimulated", runId, 1);
       expect(canhBao("stopSent", runId)).toHaveLength(0);
+      expect(canhBao("bootQuaHan", runId), "inside the bound: the boot walked, no kind 25").toHaveLength(0);
+    });
+    expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
+  });
+
+  it("★ I-3b OT control OFF, the latch names a step with NO row (T10-BUOC-KHONG-HANG): the boot neither simulates nor sends the STOP, the run stays held, ONE kind 25 URGENT; 0 PDU", async () => {
+    await trongGiaoDich(async (tx) => {
+      process.env.OT_CONTROL_ENABLED = "false";
+      const pdu0 = soPduGhi();
+      const d = await dungThietBi(tx);
+      const runId = await dungRun([buocChinh(d.m2, buTruStop(d.m1))]);
+      await tx.update(orchestrationRuns).set({ contextJson: { foeOutcomeUnknown: ["main"] } }).where(eq(orchestrationRuns.id, runId)); // no row for `main`
+      // the boot itself, once (FOE_DURABLE: it continues its interrupted runs); not khoiDong: its second pass is not a boot, and the mocked alert keeps every call (no dedup)
+      await rehydrateInterruptedRuns();
+      expect(soPduGhi() - pdu0).toBe(0);
+      await choCanhBao("bootQuaHan", runId, 1);
+      const a = canhBao("bootQuaHan", runId)[0]!;
+      expect(String(a.dedupKey)).toMatch(new RegExp(`^foe_outcome_unknown_boot_stop_not_sent_held:${runId}:main:-:`));
+      expect(String(a.message), "the reason: the latch's age could not be read").toMatch(/could not read when its latched command's step was first recorded/);
+      expect(canhBao("stopSimulated", runId), "nothing walked: not even simulated").toHaveLength(0);
+      expect(canhBao("stopSent", runId)).toHaveLength(0);
+      expect((await runCua(tx, runId)).status).toBe("held");
+      expect(await buoc(tx, runId, "main"), "nothing walked: no row for main").toBeUndefined();
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
@@ -637,6 +669,7 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       // EDGE_OUTCOME_UNKNOWN — the run context names `main` as sent with no recorded result: never sent, split
       const r2 = await dungRun([buocChinh(d.m2, buTruReset(d.m1))]);
       await tx.update(orchestrationRuns).set({ contextJson: { foeOutcomeUnknown: ["main"] } }).where(eq(orchestrationRuns.id, r2));
+      await hangMainTrongHan(tx, r2); // X-T10-DB-CA: inside the bound
       pdu0 = soPduGhi();
       await khoiDong(r2);
       expect(soPduGhi() - pdu0).toBe(0);
@@ -645,6 +678,7 @@ describe.skipIf(!DB_URL)("A2(n) — an unknown outcome: a pinned STOP compensati
       expect(run2.status).toBe("held");
       expect(String(run2.error)).toMatch(/^EDGE_OUTCOME_UNKNOWN: command "main" outcome unknown/);
       expect((await ctxCua(tx, r2))[KET_CUC_KHONG_RO_CTX_KEY]).toMatchObject({ ma: "EDGE_OUTCOME_UNKNOWN" });
+      expect(canhBao("bootQuaHan", r2), "inside the bound: the boot walked, no kind 25").toHaveLength(0);
     });
     expect(H.bay, H.bayStack.join("\n---\n")).toBe(0);
   });
