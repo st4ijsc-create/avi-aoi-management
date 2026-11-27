@@ -157,7 +157,7 @@ beforeAll(async () => {
   // Mốc id `audit_logs` đã COMMIT trước giao dịch này (kết nối riêng) — để (b) đếm hàng audit của chính lượt này sau ROLLBACK.
   const ngoai = postgres(DB_URL, { max: 1, onnotice: () => undefined });
   try {
-    ghiNho("auditBoundary", Number((await ngoai.unsafe(`SELECT coalesce(max(id), 0)::int AS n FROM audit_logs`))[0].n));
+    ghiNho("auditBoundary", Number((await ngoai.unsafe(`SELECT coalesce(max(id) FILTER (WHERE id <= coalesce(pg_sequence_last_value(pg_get_serial_sequence('audit_logs', 'id')::regclass), 0)), 0)::int AS n FROM audit_logs`))[0].n));
   } finally {
     await ngoai.end({ timeout: 5 });
   }
