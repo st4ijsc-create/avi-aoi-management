@@ -208,3 +208,54 @@ describe("V9 — qua bộ thực thi của tác nhân (số đo của V9)", () =
     expect(r.choModel).toContain("1 match(es):\nma/a.ts:1: goi(MOC_X);");
   });
 });
+
+/**
+ * LƯỢT 2 — năm ca viết SAU khi biết sáu đột biến sống của lượt đo đầu (bộ chốt trước: 11 chết / 6 sống); con thứ sáu là giới hạn có tên dưới đây. Xanh trên mã đã commit; giá trị của chúng là đỏ khi cài lại đúng đột biến.
+ * GIỚI HẠN CÓ TÊN «V9-W14-DEN-V13» (không dựng ca ở đây): "khai cắt cả khi quét thư mục" chưa có ca giữ. Hôm nay quét thư mục cắt tệp lớn mà KHÔNG khai — đó là LỖI có sẵn, không ghim thành kỳ vọng;
+ * lô V13 dựng ca theo chiều đúng: thư mục có tệp bị cắt PHẢI khai. G18 chỉ ghim câu NO_MATCH trên thư mục KHÔNG có tệp nào bị cắt.
+ */
+describe("V9 lượt 2 — giữ các hành vi mà lượt đo đầu chưa giữ", () => {
+  let GOC_DU_AN = "";
+  beforeAll(() => {
+    // gốc DỰ ÁN khác gốc mặc định, cùng đường tương đối, nội dung khác
+    GOC_DU_AN = realpathSync(mkdtempSync(path.join(tmpdir(), "grepmt-duan-")));
+    mkdirSync(path.join(GOC_DU_AN, "ma"), { recursive: true });
+    writeFileSync(path.join(GOC_DU_AN, "ma/a.ts"), "goi(MOC_DU_AN);\n");
+  });
+  afterAll(() => {
+    try { rmSync(GOC_DU_AN, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+
+  it("V9-G15 đường một-tệp mở theo GỐC DỰ ÁN đang chọn, không theo gốc mặc định", async () => {
+    const r = await grep({ pattern: "MOC_", path: "ma/a.ts", __projectRoot: GOC_DU_AN });
+    expect(r.note).toBeUndefined();
+    expect(r.data.matches).toEqual([{ path: "ma/a.ts", line: 1, text: "goi(MOC_DU_AN);" }]);
+    expect(r.textSummary).not.toContain("MOC_X");
+  });
+
+  it("V9-G16 đường KHÔNG tồn tại và không có đuôi ⇒ vẫn NOT_FOUND như trước, không thành DENIED_EXT", async () => {
+    const r = await grep({ pattern: "MOC_X", path: "ma/khong-co" });
+    expect(r.note).toBe("NOT_FOUND");
+  });
+
+  it("V9-G18 câu NO_MATCH của quét thư mục giữ nguyên chữ", async () => {
+    const r = await grep({ pattern: "KHONG_CO_DAU", path: "ma" });
+    expect(r.textSummary).toContain("Phạm vi quét đã đi hết cây thư mục được phép.");
+    expect(r.textSummary).toBe('Đã quét 2 tệp trong "ma" và KHÔNG dòng nào khớp /KHONG_CO_DAU/. Phạm vi quét đã đi hết cây thư mục được phép.');
+  });
+
+  it("V9-G19 câu NO_MATCH của một tệp nói phạm vi là đúng tệp được nêu", async () => {
+    const r = await grep({ pattern: "KHONG_CO_DAU", path: "ma/a.ts" });
+    expect(r.textSummary).toContain("Phạm vi quét là đúng tệp được nêu.");
+    expect(r.textSummary).toBe('Đã quét 1 tệp trong "ma/a.ts" và KHÔNG dòng nào khớp /KHONG_CO_DAU/. Phạm vi quét là đúng tệp được nêu.');
+  });
+
+  it("V9-G20 đường một-tệp viết bằng './' hay dấu chéo ngược vẫn bị loaiTru phủ", async () => {
+    const BS = String.fromCharCode(92); // một dấu chéo ngược — viết bằng mã để không lệ thuộc lớp escape
+    for (const p of ["./ma/a.ts", `ma${BS}a.ts`]) {
+      const r = await grep({ pattern: "MOC_X", path: p, loaiTru: ["ma"] });
+      expect(r.note, p).toBe("NO_MATCH");
+      expect(r.data.scanned, p).toBe(0);
+    }
+  });
+});
