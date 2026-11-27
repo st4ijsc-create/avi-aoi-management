@@ -513,8 +513,10 @@ export function duyetTepDocDuoc(
   tranTep: number,
   hanChot: number,
   tranDoSau = TRAN_DO_SAU,
-): { tep: string[]; hetGio: boolean; hetTran: boolean } {
+): { tep: string[]; hetGio: boolean; hetTran: boolean; thuMucBiCat: string[] } {
   const tep: string[] = [];
+  /** V13: thư mục có nhiều hơn `TRAN_MUC_LIET_KE` mục — phần sau mốc KHÔNG được duyệt, nơi gọi PHẢI khai. Đường tương đối; "" là gốc. */
+  const thuMucBiCat: string[] = [];
   const hangDoi: Array<{ rel: string; sau: number }> = [{ rel: batDau, sau: 0 }];
   let hetGio = false;
   while (hangDoi.length > 0) {
@@ -526,6 +528,7 @@ export function duyetTepDocDuoc(
     const { rel, sau } = hangDoi.shift()!;
     const lk = lietKeTrongHopCat(rel, goc, TRAN_MUC_LIET_KE);
     if (!lk.ok) continue;
+    if (lk.catBot) thuMucBiCat.push(lk.relPath);
     for (const e of lk.muc) {
       if (e.kind === "dir") {
         if (sau + 1 <= tranDoSau) hangDoi.push({ rel: e.relPath, sau: sau + 1 });
@@ -541,5 +544,5 @@ export function duyetTepDocDuoc(
       tep.push(e.relPath);
     }
   }
-  return { tep, hetGio, hetTran: tep.length >= tranTep };
+  return { tep, hetGio, hetTran: tep.length >= tranTep, thuMucBiCat };
 }

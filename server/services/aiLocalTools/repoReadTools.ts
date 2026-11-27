@@ -342,6 +342,20 @@ const listFilesTool: Tool<z.infer<typeof thamSoLietKe>, DuLieuLietKe> = {
 // 3. grep_repo
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
+/** V13 — số ví dụ tối đa nêu cho mỗi kiểu cắt. */
+const TRAN_VI_DU_BI_CAT = 3;
+interface KhaiCat {
+  so: number;
+  viDu: string[];
+}
+/** Danh sách đường bị cắt → số lượng + vài ví dụ; rỗng ⇒ `undefined` (không thêm gì vào kết quả). Đường "" là gốc dự án, ghi ".". */
+function tomTatCat(ds: readonly string[]): KhaiCat | undefined {
+  return ds.length ? { so: ds.length, viDu: ds.slice(0, TRAN_VI_DU_BI_CAT).map((d) => d || ".") } : undefined;
+}
+// ⚠ Không khuyên đọc tiếp bằng start_line: read_file bị kẹp cùng trần byte.
+const cauTepBiCat = (k: KhaiCat): string => `${k.so} tệp chỉ được tìm trong ${TRAN_BYTE_MOI_TEP} byte đầu (vd: ${k.viDu.join(", ")}), phần sau CHƯA được tìm`;
+const cauThuMucBiCat = (k: KhaiCat): string => `${k.so} thư mục chỉ được duyệt ${TRAN_MUC_LIET_KE} mục đầu (vd: ${k.viDu.join(", ")}), phần còn lại CHƯA được tìm`;
+
 interface KetQuaGrep {
   path: string;
   line: number;
@@ -354,6 +368,11 @@ interface DuLieuGrep {
   truncated: boolean;
   timedOut: boolean;
   matches: KetQuaGrep[];
+  /** V13 — ba trường dưới CHỈ có mặt khi có phần bị cắt (tệp quá trần byte / thư mục quá trần số mục). */
+  tepBiCat?: KhaiCat;
+  thuMucBiCat?: KhaiCat;
+  /** Ngoài hai kiểu cắt trên còn chạm trần kết quả, trần số tệp hoặc hạn giờ. */
+  conLyDoKhac?: boolean;
 }
 
 const RONG_GREP: DuLieuGrep = { pattern: null, scanned: 0, count: 0, truncated: false, timedOut: false, matches: [] };
@@ -498,7 +517,7 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
 
     // V9: đường một-tệp được chuẩn hoá dấu để `loaiTru` so đúng như với đường do vòng duyệt cây trả ra.
     const duyet = motTep
-      ? { tep: [batDau.trim().split("\\").join("/").split("/").filter((x) => x !== "" && x !== ".").join("/")], hetGio: false, hetTran: false }
+      ? { tep: [batDau.trim().split("\\").join("/").split("/").filter((x) => x !== "" && x !== ".").join("/")], hetGio: false, hetTran: false, thuMucBiCat: [] as string[] }
       : duyetTepDocDuoc(goc, batDau, TRAN_TEP_QUET, hanChot);
     // ★ 2026-09-04 — LOẠI TRỪ (chỉ thu hẹp; xem docblock `loaiTru`). Chuẩn hoá dấu + bỏ `/` thừa,
     //   rồi so theo RANH GIỚI ĐOẠN để `client/src` không nuốt `client/srcX`.
@@ -511,8 +530,8 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
     const matches: KetQuaGrep[] = [];
     let quet = 0;
     let hetGio = duyet.hetGio;
-    /** V9: tệp được nêu đích danh bị cắt ở trần byte ⇒ phải KHAI (quét cả thư mục chưa khai — việc của lô sau). */
-    let tepBiCat = false;
+    /** Tệp ĐÃ QUÉT mà chỉ đọc được phần đầu (trần byte) ⇒ phải KHAI, cả khi quét một tệp lẫn cả thư mục (V9, V13). */
+    const dsTepBiCat: string[] = [];
 
     for (const rel of dsQuet) {
       if (matches.length >= tranKetQua) break;
@@ -529,7 +548,7 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
         continue;
       }
       quet++;
-      if (motTep && kq.catBot) tepBiCat = true;
+      if (kq.catBot) dsTepBiCat.push(kq.relPath);
       const dong = kq.noiDung.split(/\r?\n/);
       for (let i = 0; i < dong.length; i++) {
         if ((i & (NHIP_HOI_DONG_HO - 1)) === 0 && Date.now() >= hanChot) {
@@ -546,8 +565,16 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
       if (hetGio) break;
     }
 
-    const catBot = matches.length >= tranKetQua || duyet.hetTran || hetGio || tepBiCat;
-    const cauTepBiCat = `tệp bị cắt: chỉ quét ${TRAN_BYTE_MOI_TEP} byte đầu, phần sau CHƯA được tìm`;
+    // V13: thư mục người gọi đã bỏ bằng `loaiTru` thì không khai (cùng lối với tệp bị bỏ).
+    const tepCat = tomTatCat(dsTepBiCat);
+    const thuMucCat = tomTatCat(duyet.thuMucBiCat.filter((d) => !tienToLoai.some((t) => d === t || d.startsWith(`${t}/`))));
+    const conLyDoKhac = matches.length >= tranKetQua || duyet.hetTran || hetGio;
+    const catBot = conLyDoKhac || tepCat !== undefined || thuMucCat !== undefined;
+    // Đường MỘT TỆP giữ nguyên câu của V9; quét thư mục nêu số lượng và ví dụ.
+    const cauCat = [
+      tepCat ? (motTep ? `tệp bị cắt: chỉ quét ${TRAN_BYTE_MOI_TEP} byte đầu, phần sau CHƯA được tìm` : cauTepBiCat(tepCat)) : "",
+      thuMucCat ? cauThuMucBiCat(thuMucCat) : "",
+    ].filter(Boolean);
     const data: DuLieuGrep = {
       pattern: mau,
       scanned: quet,
@@ -555,19 +582,21 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
       truncated: catBot,
       timedOut: hetGio,
       matches,
+      ...(tepCat ? { tepBiCat: tepCat } : {}),
+      ...(thuMucCat ? { thuMucBiCat: thuMucCat } : {}),
+      ...(tepCat || thuMucCat ? { conLyDoKhac } : {}),
     };
 
     if (hetGio && matches.length === 0) {
       return { type: KIEU, title, data, note: "GREP_DEADLINE", textSummary: `Quá hạn ${HAN_GIO_GREP_MS} ms sau khi quét ${quet} tệp mà chưa có kết quả nào. Đây là một BẢN CẮT vì hết giờ, KHÔNG phải kết luận "mẫu này không có trong repo" — hãy thu hẹp bằng tham số path.` };
     }
     if (matches.length === 0) {
-      const phamVi = tepBiCat
-        ? `⚠ ${cauTepBiCat}.`
-        : duyet.hetTran
-          ? `⚠ Đã chạm trần ${TRAN_TEP_QUET} tệp nên phạm vi quét là MỘT PHẦN, không phải cả repo.`
-          : motTep
-            ? "Phạm vi quét là đúng tệp được nêu."
-            : "Phạm vi quét đã đi hết cây thư mục được phép.";
+      const thieu = [duyet.hetTran ? `Đã chạm trần ${TRAN_TEP_QUET} tệp nên phạm vi quét là MỘT PHẦN, không phải cả repo` : "", ...cauCat].filter(Boolean);
+      const phamVi = thieu.length
+        ? `⚠ ${thieu.join("; ")}.`
+        : motTep
+          ? "Phạm vi quét là đúng tệp được nêu."
+          : "Phạm vi quét đã đi hết cây thư mục được phép.";
       return { type: KIEU, title, data, note: "NO_MATCH", textSummary: `Đã quét ${quet} tệp trong "${batDau || "."}" và KHÔNG dòng nào khớp /${mau}/. ${phamVi}` };
     }
 
@@ -575,7 +604,7 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
       hetGio ? `quá hạn ${HAN_GIO_GREP_MS} ms` : "",
       duyet.hetTran ? `chạm trần ${TRAN_TEP_QUET} tệp` : "",
       matches.length >= tranKetQua ? `chạm trần ${tranKetQua} kết quả` : "",
-      tepBiCat ? cauTepBiCat : "",
+      ...cauCat,
     ].filter(Boolean);
     const dongRa = matches.map((m) => `${m.path}:${m.line}: ${m.text}`);
     // ★ (C4) — chỉ-thấy-định-nghĩa: nói hộ điều người dùng phải tự suy; CHẮC mới nói (xem docblock).
@@ -654,6 +683,9 @@ interface DuLieuTimTep {
   truncated: boolean;
   timedOut: boolean;
   files: string[];
+  /** V13 — chỉ có mặt khi có thư mục quá trần số mục. */
+  thuMucBiCat?: KhaiCat;
+  conLyDoKhac?: boolean;
 }
 
 const RONG_TIM: DuLieuTimTep = { pattern: null, count: 0, truncated: false, timedOut: false, files: [] };
@@ -730,18 +762,28 @@ const findFilesTool: Tool<z.infer<typeof thamSoTimTep>, DuLieuTimTep> = {
       }
       files.push(rel);
     }
-    const catBot = catKetQua || duyet.hetTran || duyet.hetGio;
-    const data: DuLieuTimTep = { pattern: mau, count: files.length, truncated: catBot, timedOut: duyet.hetGio, files };
+    const conLyDoKhac = catKetQua || duyet.hetTran || duyet.hetGio;
+    const thuMucCat = tomTatCat(duyet.thuMucBiCat);
+    const catBot = conLyDoKhac || thuMucCat !== undefined;
+    const data: DuLieuTimTep = {
+      pattern: mau,
+      count: files.length,
+      truncated: catBot,
+      timedOut: duyet.hetGio,
+      files,
+      ...(thuMucCat ? { thuMucBiCat: thuMucCat, conLyDoKhac } : {}),
+    };
     if (files.length === 0) {
       if (duyet.hetGio) {
         return { type: KIEU, title, data, note: "FIND_DEADLINE", textSummary: `Quá hạn ${HAN_GIO_GREP_MS} ms khi duyệt cây mà chưa thấy tệp nào khớp "${mau}". Đây là BẢN CẮT vì hết giờ, KHÔNG phải kết luận "không có tệp ấy" — hãy thêm thư mục đầu mẫu (vd \`src/**/${doan[doan.length - 1]}\`).` };
       }
-      return { type: KIEU, title, data, note: "NO_MATCH", textSummary: `Không tệp đọc được nào khớp "${mau}" trong "${batDau || "."}".${duyet.hetTran ? ` ⚠ Đã chạm trần duyệt ${TRAN_TEP_PHANG} tệp nên phạm vi là MỘT PHẦN.` : ""}` };
+      return { type: KIEU, title, data, note: "NO_MATCH", textSummary: `Không tệp đọc được nào khớp "${mau}" trong "${batDau || "."}".${duyet.hetTran ? ` ⚠ Đã chạm trần duyệt ${TRAN_TEP_PHANG} tệp nên phạm vi là MỘT PHẦN.` : ""}${thuMucCat ? ` ⚠ ${cauThuMucBiCat(thuMucCat)}.` : ""}` };
     }
     const canhBao = [
       duyet.hetGio ? `quá hạn ${HAN_GIO_GREP_MS} ms` : "",
       duyet.hetTran ? `chạm trần duyệt ${TRAN_TEP_PHANG} tệp` : "",
       catKetQua ? `chạm trần ${TRAN_KET_QUA_TIM_TEP} kết quả` : "",
+      thuMucCat ? cauThuMucBiCat(thuMucCat) : "",
     ].filter(Boolean);
     const than = `"${mau}" — ${files.length} tệp${canhBao.length ? ` (BẢN CẮT: ${canhBao.join(", ")})` : ""}:\n${files.join("\n")}`;
     if (khoa !== undefined) tieuNganSach(khoa, than.length);

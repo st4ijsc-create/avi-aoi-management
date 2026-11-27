@@ -104,6 +104,7 @@ import {
 import { daBiTuChoiGhi, docKetQuaTest, maTuChoiGhi } from "@shared/aiCodingLoop";
 import { executeDecision as executeDecisionGoc, type PendingActionDTO, type ToolExecContext, type ToolResult } from "../../aiLocalTools";
 import { confineTargetUnder, readConfined } from "../../aiLocalTools/readToolsProgramming";
+import { TRAN_BYTE_MOI_TEP, TRAN_MUC_LIET_KE } from "../../aiLocalTools/repoSandbox";
 import { TRAN_TEP, phanQuyetChinhSachDuong } from "../../aiLocalTools/writeHandlers/applyDiff";
 import {
   cancelAction as cancelActionGoc,
@@ -259,6 +260,27 @@ function demChuoi(s: string, con: string): number {
   for (let i = s.indexOf(con); i !== -1; i = s.indexOf(con, i + con.length)) n++;
   return n;
 }
+
+/** V13 — phần mà `grep_repo` / `find_files` KHAI là chưa tìm. `conLyDoKhac` chỉ có khi có một trong hai kiểu cắt. */
+interface PhanChuaTim {
+  truncated?: boolean;
+  timedOut?: boolean;
+  conLyDoKhac?: boolean;
+  tepBiCat?: { so: number; viDu: string[] };
+  thuMucBiCat?: { so: number; viDu: string[] };
+}
+/** Chạm trần kết quả / số tệp / hạn giờ (không tính hai kiểu cắt của V13). */
+const chamTranHoacGio = (d: PhanChuaTim): boolean => d.conLyDoKhac ?? Boolean(d.truncated || d.timedOut);
+/** Dòng cho model nêu ĐÚNG lý do cắt. Không khuyên `start_line`: `read_file` bị kẹp cùng trần byte. */
+function ghiChuBiCat(d: PhanChuaTim): string[] {
+  const dong: string[] = [];
+  if (d.tepBiCat) dong.push(`[partial: ${d.tepBiCat.so} file(s) were searched only in their first ${TRAN_BYTE_MOI_TEP} bytes (e.g. ${d.tepBiCat.viDu.join(", ")}); the rest was NOT searched, and the read tools cannot show it either]`);
+  if (d.thuMucBiCat) dong.push(`[partial: ${d.thuMucBiCat.so} directory(ies) listed only their first ${TRAN_MUC_LIET_KE} entries (e.g. ${d.thuMucBiCat.viDu.join(", ")}); the rest was NOT searched]`);
+  return dong;
+}
+/** Mệnh đề gắn sau câu "không thấy gì"; rỗng khi phép tìm trọn vẹn. */
+const duoiKhongThay = (d: PhanChuaTim): string => (chamTranHoacGio(d) ? " (search was partial: limit or time reached)" : ghiChuBiCat(d).length ? " (search was partial)" : "");
+const noiDong = (dong: string[]): string => dong.map((x) => `\n${x}`).join("");
 
 /**
  * Làm sạch MỌI chữ tool trả về trước khi model đọc (khuôn `toolLoop.ts`): trung hoà dấu rào, che bí
@@ -673,11 +695,11 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
   async function timTep(t: Record<string, unknown>): Promise<KetQuaTool> {
     const { result, loi } = await chayDoc("find_files", { pattern: String(t.pattern) });
     if (!result) return { ok: false, ma: "LOI_TOOL", choModel: loi ?? "find_files failed" };
-    const d = (result.data ?? {}) as { files?: string[]; truncated?: boolean };
-    if (result.note === "NO_MATCH") return lamSachChoModel(`No files match "${String(t.pattern)}".`, { ok: true, hienThi: { tool: "find_files", soTep: 0 } });
+    const d = (result.data ?? {}) as PhanChuaTim & { files?: string[] };
+    if (result.note === "NO_MATCH") return lamSachChoModel(`No files match "${String(t.pattern)}"${duoiKhongThay(d)}.${noiDong(ghiChuBiCat(d))}`, { ok: true, hienThi: { tool: "find_files", soTep: 0 } });
     if (result.note) return ketQuaTuChoiDoc(result);
     const ds = d.files ?? [];
-    return lamSachChoModel(`${ds.length} file(s)${d.truncated ? " (truncated)" : ""}:\n${ds.join("\n")}`, {
+    return lamSachChoModel(`${ds.length} file(s)${d.truncated ? " (truncated)" : ""}:\n${ds.join("\n")}${noiDong(ghiChuBiCat(d))}`, {
       ok: true,
       hienThi: { tool: "find_files", soTep: ds.length },
     });
@@ -688,7 +710,7 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
     if (typeof t.path === "string" && t.path.trim() !== "" && t.path.trim() !== ".") args.path = t.path.trim();
     const { result, loi } = await chayDoc("grep_repo", args);
     if (!result) return { ok: false, ma: "LOI_TOOL", choModel: loi ?? "grep failed" };
-    const d = (result.data ?? {}) as { matches?: Array<{ path: string; line: number; text: string }>; truncated?: boolean; timedOut?: boolean };
+    const d = (result.data ?? {}) as PhanChuaTim & { matches?: Array<{ path: string; line: number; text: string }> };
     if (result.note && result.note !== "NO_MATCH") return ketQuaTuChoiDoc(result);
     let ds = d.matches ?? [];
     // `grep_repo` không có `include` — lọc SAU theo glob TÊN tệp (chỉ thu hẹp; không mở thêm tệp nào).
@@ -697,13 +719,13 @@ export function taoBoThucThiMayChu(cauHinh: CauHinhBoThucThi): BoThucThi {
       ds = ds.filter((m) => re.test(m.path.split("/").pop() ?? m.path));
     }
     if (ds.length === 0) {
-      return lamSachChoModel(`No matches for /${String(t.pattern)}/${d.truncated || d.timedOut ? " (search was partial: limit or time reached)" : ""}.`, {
+      return lamSachChoModel(`No matches for /${String(t.pattern)}/${duoiKhongThay(d)}.${noiDong(ghiChuBiCat(d))}`, {
         ok: true,
         hienThi: { tool: "grep", soKetQua: 0 },
       });
     }
     const than = ds.map((m) => `${m.path}:${m.line}: ${m.text}`).join("\n");
-    const canh = d.truncated || d.timedOut ? "\n[partial: result limit or time limit reached — narrow the path or pattern]" : "";
+    const canh = (chamTranHoacGio(d) ? "\n[partial: result limit or time limit reached — narrow the path or pattern]" : "") + noiDong(ghiChuBiCat(d));
     return lamSachChoModel(`${ds.length} match(es):\n${than}${canh}`, { ok: true, hienThi: { tool: "grep", soKetQua: ds.length } });
   }
 
