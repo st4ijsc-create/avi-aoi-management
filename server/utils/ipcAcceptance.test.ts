@@ -3,6 +3,7 @@ import {
   listIpcClasses,
   resolveDefectForClass,
   IPC_CLASSES,
+  Severity,
 } from "./ipcAcceptance";
 
 describe("listIpcClasses", () => {
@@ -228,6 +229,133 @@ describe("resolveDefectForClass — classRules null hoặc {}", () => {
 });
 
 // Bổ sung của người rà (dieu-phoi, 18/11) theo kiem-dinh: hai khoảng trống e2, x1 — commit riêng, không sửa commit của Thợ Cả.
+describe("resolveDefectForClass — chuẩn hoá severity (trim + lowercase)", () => {
+  it("nhánh tường minh: severity hàng \" Critical \" → \"critical\" khi luật thiếu severity", () => {
+    const defect = {
+      code: "N01",
+      severity: " Critical ",
+      classRules: { class2: { accept: "reject" as const } },
+    };
+    expect(resolveDefectForClass(defect, "2").severity).toBe("critical");
+  });
+
+  it("nhánh tường minh: severity hàng \"  MAJOR  \" → \"major\" khi luật thiếu severity", () => {
+    const defect = {
+      code: "N02",
+      severity: "  MAJOR  ",
+      classRules: { class3: { accept: "accept" as const } },
+    };
+    expect(resolveDefectForClass(defect, "3").severity).toBe("major");
+  });
+
+  it("nhánh rơi về: severity hàng \" minor \" → \"minor\"", () => {
+    const defect = { code: "N03", severity: " minor ", acceptanceClass: "1" };
+    expect(resolveDefectForClass(defect, "2").severity).toBe("minor");
+  });
+
+  it("nhánh rơi về: severity hàng \"  COSMETIC  \" → \"cosmetic\"", () => {
+    const defect = { code: "N04", severity: "  COSMETIC  ", acceptanceClass: "1" };
+    expect(resolveDefectForClass(defect, "2").severity).toBe("cosmetic");
+  });
+});
+
+describe("resolveDefectForClass — severity hàng lạ → \"major\"", () => {
+  it("nhánh tường minh: severity hàng \"nghiêm trọng\" → \"major\" khi luật thiếu severity", () => {
+    const defect = {
+      code: "X01",
+      severity: "nghiêm trọng",
+      classRules: { class2: { accept: "reject" as const } },
+    };
+    expect(resolveDefectForClass(defect, "2").severity).toBe("major");
+  });
+
+  it("nhánh tường minh: severity hàng số 3 → \"major\" khi luật thiếu severity", () => {
+    const defect = {
+      code: "X02",
+      severity: 3 as unknown as string,
+      classRules: { class3: { accept: "accept" as const } },
+    };
+    expect(resolveDefectForClass(defect, "3").severity).toBe("major");
+  });
+
+  it("nhánh rơi về: severity hàng \"nghiêm trọng\" → \"major\"", () => {
+    const defect = { code: "X03", severity: "nghiêm trọng", acceptanceClass: "1" };
+    expect(resolveDefectForClass(defect, "2").severity).toBe("major");
+  });
+
+  it("nhánh rơi về: severity hàng số 3 → \"major\"", () => {
+    const defect = { code: "X04", severity: 3 as unknown as string, acceptanceClass: "1" };
+    expect(resolveDefectForClass(defect, "2").severity).toBe("major");
+  });
+});
+
+describe("resolveDefectForClass — severity luật lạ → fallbackSeverity ở nhánh tường minh", () => {
+  it("severity luật \"nghiêm trọng\" → fallbackSeverity (severity hàng \"minor\")", () => {
+    const defect = {
+      code: "L01",
+      severity: "minor",
+      classRules: { class2: { accept: "reject" as const, severity: "nghiêm trọng" as unknown as Severity } },
+    };
+    expect(resolveDefectForClass(defect, "2").severity).toBe("minor");
+  });
+
+  it("severity luật chuỗi rỗng → fallbackSeverity (severity hàng \"cosmetic\")", () => {
+    const defect = {
+      code: "L02",
+      severity: "cosmetic",
+      classRules: { class3: { accept: "accept" as const, severity: "" as unknown as Severity } },
+    };
+    expect(resolveDefectForClass(defect, "3").severity).toBe("cosmetic");
+  });
+
+  it("severity luật chỉ khoảng trắng → fallbackSeverity (severity hàng \"critical\")", () => {
+    const defect = {
+      code: "L03",
+      severity: "critical",
+      classRules: { class2: { accept: "reject" as const, severity: "   " as unknown as Severity } },
+    };
+    expect(resolveDefectForClass(defect, "2").severity).toBe("critical");
+  });
+
+  it("severity luật số 1 → fallbackSeverity (severity hàng \"major\")", () => {
+    const defect = {
+      code: "L04",
+      severity: "major",
+      classRules: { class3: { accept: "accept" as const, severity: 1 as unknown as Severity } },
+    };
+    expect(resolveDefectForClass(defect, "3").severity).toBe("major");
+  });
+});
+
+describe("resolveDefectForClass — severity luật vắng → fallbackSeverity ở nhánh tường minh", () => {
+  it("luật thiếu trường severity → fallbackSeverity (severity hàng \"minor\")", () => {
+    const defect = {
+      code: "V01",
+      severity: "minor",
+      classRules: { class2: { accept: "reject" as const } },
+    };
+    expect(resolveDefectForClass(defect, "2").severity).toBe("minor");
+  });
+
+  it("luật thiếu trường severity → fallbackSeverity (severity hàng \"cosmetic\")", () => {
+    const defect = {
+      code: "V02",
+      severity: "cosmetic",
+      classRules: { class3: { accept: "accept" as const } },
+    };
+    expect(resolveDefectForClass(defect, "3").severity).toBe("cosmetic");
+  });
+
+  it("luật thiếu trường severity, hàng null → fallbackSeverity = \"minor\"", () => {
+    const defect = {
+      code: "V03",
+      severity: null,
+      classRules: { class2: { accept: "reject" as const } },
+    };
+    expect(resolveDefectForClass(defect, "2").severity).toBe("minor");
+  });
+});
+
 describe("resolveDefectForClass — bổ sung: verdict \"process\" và severity hàng vắng ở nhánh tường minh", () => {
   it("luật tường minh mang accept \"process\" ⇒ kết quả \"process\", explicit = true (cấp 2 và cấp 3)", () => {
     const defect = {
