@@ -323,3 +323,68 @@ describe("V13 §5 — find_files chỉ chạm trần SỐ TỆP / giờ (kết q
     expect(tron.choModel).not.toContain("partial");
   });
 });
+
+/**
+ * LƯỢT 2 — ba ca dưới viết SAU KHI biết đột biến sống x24, x26 (bộ chốt trước của kiem-dinh); đo lại chúng KHÔNG phải bộ chốt trước.
+ * GIỚI HẠN CÓ TÊN «V13-VI-DU-THU-TU»: giấy phạm vi chỉ hứa TỐI ĐA 3 ví dụ, không hứa là 3 đường ĐẦU ⇒ không ca nào ghim ví dụ nào được chọn (đột biến x25).
+ */
+describe("V13 §6 — ranh giới loaiTru và trần KẾT QUẢ của find_files", () => {
+  const TRAN_TIM = 200; // trần kết quả của find_files, như mô tả tool
+  const nguoi = { id: 7, role: "engineer", name: "Ky su grep" };
+  async function tacNhanTim(pattern: string) {
+    const bo = taoBoThucThiMayChu({
+      execCtx: { user: nguoi, lang: "vi" },
+      gocDuAn: GOC,
+      user: nguoi,
+      coQuyenThucThi: false,
+      checkpoint: null,
+      phuThuoc: {
+        executeDecision: (async (q: { tool: string; args: Record<string, unknown> }) => ({ result: await tool(q.tool).handler!({ ...q.args, __authCtx: AUTH } as never) })) as never,
+        kiemKillSwitch: async () => false,
+      },
+    });
+    const ctx = { cheDo: "hoi" as const, runId: "11111111-1111-4111-8111-111111111111", luot: 1, signal: new AbortController().signal, phat: () => undefined };
+    return bo.chay({ id: "c1", ten: "find_files", thamSo: { pattern } }, ctx);
+  }
+
+  beforeAll(() => {
+    // "ranh/x" bị loại; "ranh/x-khac" chỉ CHUNG TIỀN TỐ CHỮ với nó, không nằm trong nó
+    ghi("ranh/k.ts", "goi(MOC_R);\n");
+    for (let i = 0; i < 301; i++) ghi(`ranh/x/f${String(i).padStart(3, "0")}.ts`, "x();\n");
+    for (let i = 0; i < 301; i++) ghi(`ranh/x-khac/f${String(i).padStart(3, "0")}.ts`, "x();\n");
+    // 201 tệp: quá trần kết quả nhưng KHÔNG quá trần số mục
+    for (let i = 0; i <= TRAN_TIM; i++) ghi(`tran-kq/f${String(i).padStart(3, "0")}.ts`, "x();\n");
+    // 301 tệp: quá CẢ HAI trần
+    for (let i = 0; i < 301; i++) ghi(`tran-ca/f${String(i).padStart(3, "0")}.ts`, "x();\n");
+  }, 120_000);
+
+  it("V13-H23 loaiTru theo RANH GIỚI đoạn: loại 'ranh/x' vẫn phải khai thư mục anh em 'ranh/x-khac'", async () => {
+    const r = await grep({ pattern: "MOC_R", path: "ranh", loaiTru: ["ranh/x"] });
+    expect(r.data.count).toBe(1);
+    expect(r.data.truncated).toBe(true);
+    expect(r.textSummary).toContain(`${khaiThuMuc(1)} (vd: ranh/x-khac)`);
+  });
+
+  it("V13-H24 find_files chỉ chạm trần kết quả (không thư mục nào bị cắt) ⇒ vẫn là bản cắt", async () => {
+    const r = await timTep("tran-kq/*.ts");
+    expect(r.data.files).toHaveLength(TRAN_TIM);
+    expect(r.data.truncated).toBe(true);
+    expect(r.data).not.toHaveProperty("thuMucBiCat");
+    const a = await tacNhanTim("tran-kq/*.ts");
+    expect(a.choModel).toContain(`${TRAN_TIM} file(s) (truncated):`);
+    expect(a.choModel).not.toContain("[partial:");
+  });
+
+  it("V13-H25 find_files vừa chạm trần kết quả vừa có thư mục bị cắt ⇒ giữ CẢ HAI lý do", async () => {
+    const r = await timTep("tran-ca/*.ts");
+    expect(r.data.files).toHaveLength(TRAN_TIM);
+    expect(r.data.truncated).toBe(true);
+    expect(r.data.conLyDoKhac).toBe(true);
+    expect(r.data.thuMucBiCat).toEqual({ so: 1, viDu: ["tran-ca"] });
+    expect(r.textSummary).toContain(`chạm trần ${TRAN_TIM} kết quả`);
+    expect(r.textSummary).toContain(khaiThuMuc(1));
+    const a = await tacNhanTim("tran-ca/*.ts");
+    expect(a.choModel).toContain(`${TRAN_TIM} file(s) (truncated):`);
+    expect(a.choModel).toContain(`${enThuMuc(1)} (e.g. tran-ca)`);
+  });
+});
