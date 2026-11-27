@@ -431,7 +431,7 @@ describe("X-39 — a STOP compensation that went leaves the STORED state-C list 
   // LAST in the file: it reloads the engine module (a process after a crash)
   it("X39-GHI-CUA-SO-DONG (X39-KE4 V1) the block's compensation is a reset, cs (a STOP) went at the Continue: when its compensated row is written the stored list no longer names cs; a crash in the window, a restart, a person's Continue: the run is not held by cs, no URGENT says cs did not go", async () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    let tha: (() => void) | null = null;
+    let tha = null as (() => void) | null; // X-39b: the declared type, not `null` — the callback's assignment is invisible to tsc's narrowing (TS2349 at both calls below)
     const giu = new Promise<void>((ok) => (tha = ok));
     try {
       const sang2 = may({ lan1: () => REJECTED, lan2: () => ACKED, giu });
