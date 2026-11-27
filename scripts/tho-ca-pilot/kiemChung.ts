@@ -406,20 +406,34 @@ export interface KetQuaTsc {
   /** tổng số dòng lỗi tsc (mọi tệp) — để thấy ngay nếu nền đã đỏ sẵn */
   tongLoi: number;
   loi?: string;
+  /** V10: mỗi lỗi của tệp model đổi KÈM các dòng giải thích thụt lề theo sau; chỉ có khi ít nhất một lỗi có giải thích */
+  khoiTrongTep?: string[];
 }
 
 /** THUẦN. Lọc dòng lỗi tsc theo danh sách tệp đổi (đường tương đối POSIX trong worktree). */
-export function loiTscTrongTep(dau: string, tepDoi: readonly string[]): { trongTep: string[]; tong: number } {
+export function loiTscTrongTep(dau: string, tepDoi: readonly string[]): { trongTep: string[]; tong: number; khoiTrongTep?: string[] } {
   const tap = new Set(tepDoi.map((t) => t.replace(/\\/g, "/")));
   const trongTep: string[] = [];
+  const khoi: string[][] = [];
+  let dangGom: string[] | null = null;
   let tong = 0;
   for (const d of boMau(dau).split(/\r?\n/)) {
     const m = /^(.+?)\((\d+),(\d+)\): error (TS\d+):/.exec(d);
-    if (!m) continue;
+    if (!m) {
+      // dòng thụt lề ngay sau một lỗi là phần giải thích của lỗi đó; dòng không thụt lề kết thúc khối
+      if (dangGom && /^\s+\S/.test(d)) dangGom.push(d.trimEnd());
+      else dangGom = null;
+      continue;
+    }
     tong++;
-    if (tap.has(m[1].replace(/\\/g, "/"))) trongTep.push(d.trim());
+    dangGom = null;
+    if (tap.has(m[1].replace(/\\/g, "/"))) {
+      trongTep.push(d.trim());
+      dangGom = [d.trim()];
+      khoi.push(dangGom);
+    }
   }
-  return { trongTep, tong };
+  return { trongTep, tong, ...(khoi.some((k) => k.length > 1) ? { khoiTrongTep: khoi.map((k) => k.join("\n")) } : {}) };
 }
 
 /** Có đáng chạy tsc không: có tệp .ts/.tsx/.mts/.cts đổi VÀ worktree có tsconfig.tests.json (cổng check:tests của dự án). */
@@ -427,10 +441,13 @@ export function canChayTsc(wt: string, tepDoi: readonly string[]): boolean {
   return tepDoi.some((t) => /\.(?:ts|tsx|mts|cts)$/.test(t)) && fs.existsSync(path.join(wt, "tsconfig.tests.json"));
 }
 
-export type ChayTsc =(wt: string, tepDoi: readonly string[], hanGiay: number) => Promise<KetQuaTsc>;
+export type ChayTsc =(wt: string, tepDoi: readonly string[], hanGiay: number, soTsc?: string) => Promise<KetQuaTsc>;
+
+/** V10 — lệnh tsc của bộ chạy. Có đường sổ riêng ⇒ chạy tăng dần trên sổ đó (không ghi vào sổ dùng chung trong node_modules). THUẦN. */
+export const lenhTsc = (soTsc?: string): string => `npx tsc --noEmit -p tsconfig.tests.json${soTsc ? ` --incremental --tsBuildInfoFile "${soTsc}"` : ""}`;
 
 /** Chạy `tsc --noEmit -p tsconfig.tests.json` (cùng cổng check:tests của dự án) trong worktree pilot; heap 12 GB; giết cả cây khi hết hạn. */
-export const chayLenhTsc: ChayTsc = (wt, tepDoi, hanGiay) =>
+export const chayLenhTsc: ChayTsc = (wt, tepDoi, hanGiay, soTsc) =>
   new Promise((xong) => {
     const t0 = Date.now();
     let dau = "";
@@ -438,12 +455,12 @@ export const chayLenhTsc: ChayTsc = (wt, tepDoi, hanGiay) =>
     const env = envChoTsc();
     const ra = (exit: number | null, loi?: string) => {
       clearTimeout(dongHo);
-      const { trongTep, tong } = loiTscTrongTep(dau, tepDoi);
-      xong({ exit, hetGio, giay: Math.round(((Date.now() - t0) / 1000) * 10) / 10, loiTrongTep: trongTep, tongLoi: tong, ...(loi ? { loi } : {}) });
+      const { trongTep, tong, khoiTrongTep } = loiTscTrongTep(dau, tepDoi);
+      xong({ exit, hetGio, giay: Math.round(((Date.now() - t0) / 1000) * 10) / 10, loiTrongTep: trongTep, tongLoi: tong, ...(khoiTrongTep ? { khoiTrongTep } : {}), ...(loi ? { loi } : {}) });
     };
     let con: ReturnType<typeof spawn>;
     try {
-      con = spawn("npx tsc --noEmit -p tsconfig.tests.json", { cwd: wt, env, shell: true, windowsHide: true });
+      con = spawn(lenhTsc(soTsc), { cwd: wt, env, shell: true, windowsHide: true });
     } catch (e) {
       xong({ exit: null, hetGio: false, giay: 0, loiTrongTep: [], tongLoi: 0, loi: String(e) });
       return;

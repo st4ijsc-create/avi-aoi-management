@@ -37,7 +37,25 @@ import { canChayTsc, canSuaTsc, caTestGiam, chayLenhTsc, lyDoEnvTroTepEnv, RE_TE
 
 export type TenDriver = "kho" | "cli" | "host";
 
+/** V10 — một lần kiểm kiểu trong vòng (ghi vào chay.json). `giay` null = không chạy tsc. */
+export interface KieuMotLan {
+  lan: number;
+  giay: number | null;
+  trangThai: "sach" | "do" | "chua" | "kiem-do" | "khong-ap";
+}
+/** V10 — thứ driver cần để kiểm kiểu trong vòng. `chayTsc` đã bọc phép soi .env và dùng sổ riêng của lượt. */
+export interface KieuTrongVong {
+  tepDoi: () => string[];
+  chayTsc: (tepDoi: readonly string[], hanGiay: number) => Promise<KetQuaTsc>;
+  /** lý do hâm sổ kiểu hỏng; null = hâm được */
+  hamLoi: string | null;
+}
+
 export interface KetQuaDriver {
+  /** V10: số lần model xin LỆNH KIỂM và bộ chạy nhận (gồm cả lần bị từ chối vì quá trần) */
+  soTuChay?: number;
+  /** V10: các lần kiểm kiểu trong vòng */
+  kieuTrongVong?: KieuMotLan[];
   /** vòng model đã chạy nếu driver biết; null = không biết */
   vong: number | null;
   /** token xử lý nếu có nguồn (bản ghi lượt); null = không đo được */
@@ -78,8 +96,13 @@ export interface DauVaoDriver {
   phu?: { dongDuyet: DongDuyet[]; tenCaCu: ReadonlySet<string>; tepTest: string[] };
   /** giá trị bí mật (vd mật khẩu CSDL) phải bị xoá khỏi mọi thứ trả cho model, ở mọi dạng mã hoá */
   giaTriBiMat?: string[];
+  /** V10: có ⇒ lệnh kiểm tự chạy XANH được kèm kết quả kiểm kiểu; vắng ⇒ lời nhắc như cũ */
+  kieu?: KieuTrongVong;
 }
-export type Driver = (v: DauVaoDriver) => Promise<KetQuaDriver & { hetGio: boolean; loi?: string }>;
+export type Driver = ((v: DauVaoDriver) => Promise<KetQuaDriver & { hetGio: boolean; loi?: string }>) & {
+  /** V10: driver TỰ KHAI nó biết kiểm kiểu trong vòng (dùng `v.kieu`). Chỉ driver khai mới được hâm sổ và nhận `kieu`; hôm nay chỉ `driverHost` khai. Driver mới quên khai ⇒ V10 tắt (giới hạn V10-CO-TU-KHAI). */
+  kiemKieuTrongVong?: boolean;
+};
 
 /** HA-10 — phần `phu` ghi vào JSON kết quả. */
 export interface PhuJson extends KetQuaPhu {
@@ -238,6 +261,12 @@ export interface KetQuaViec {
   ghimNghiNgo?: Array<{ duong: string; dong: number; trich: string }>;
   /** L3a: số ca đếm tĩnh của từng tệp test model thêm/sửa */
   tepTest?: Array<{ duong: string; soCa: number }>;
+  /** V10: lượt hâm sổ kiểu riêng trên cây gốc, chạy TRƯỚC driver (không tính vào hạn model) */
+  hamTsc?: { dat: boolean; lyDo: string | null; giay: number };
+  /** V10: model có gọi LỆNH KIỂM trong lượt đầu không (đo tần suất lượt dừng mà chưa từng thấy kiểu) */
+  modelGoiLenhKiem?: boolean;
+  /** V10: các lần kiểm kiểu trong vòng (mọi lượt driver) */
+  kieuTrongVong?: KieuMotLan[];
   /** chưa đo được gì ở các trường trên null — nói rõ vì sao */
   luuY?: string[];
 }
@@ -690,7 +719,9 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     soiEnv("sau lệnh kiểm");
     return k;
   };
-  const chayTscDung: ChayTsc = async (cay, tep, han) => (soiEnv("trước tsc") ? { exit: null, hetGio: false, giay: 0, loiTrongTep: [], tongLoi: 0, loi: LY_ENV_GIUA_LUOT } : (p.chayTsc ?? chayLenhTsc)(cay, tep, han));
+  // V10: một sổ tsc RIÊNG cho cả lượt (hâm, trong vòng, cuối), nằm trong thư mục kết quả — không ghi vào sổ dùng chung ở node_modules
+  let soTsc: string | undefined;
+  const chayTscDung: ChayTsc = async (cay, tep, han) => (soiEnv("trước tsc") ? { exit: null, hetGio: false, giay: 0, loiTrongTep: [], tongLoi: 0, loi: LY_ENV_GIUA_LUOT } : (p.chayTsc ?? chayLenhTsc)(cay, tep, han, soTsc));
   if (dbCho) {
     const lyDoRa = raTrongGocSandbox(p.ra, wt, p.envSandbox ?? process.env);
     if (lyDoRa) return tuChoi(lyDoRa, the.ma);
@@ -765,6 +796,20 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
 
   if (p.driver === "host") return tuChoi("driver host phải được dựng ở dòng lệnh (phuThuocHostThat) rồi truyền vào dạng hàm", the.ma);
   const driver = typeof p.driver === "string" ? DRIVERS[p.driver] : p.driver;
+  // V10 (P1): hâm sổ kiểu trên cây GỐC trước khi gọi driver. Đặt TRƯỚC t0: thời gian hâm không tính vào giờ của model hay ngân sách lượt sửa.
+  // Chỉ cho driver TỰ KHAI `kiemKieuTrongVong` (driverHost): "kho"/"cli" và driver hàm khác không có vòng này. Hâm hỏng ⇒ lượt vẫn chạy, trong vòng nói "chưa kiểm được".
+  soTsc = path.join(p.ra, "tsc-so", `${the.ma}.tsbuildinfo`);
+  const coKiemKieu = typeof p.driver === "function" && p.driver.kiemKieuTrongVong === true && fs.existsSync(path.join(wt, "tsconfig.tests.json"));
+  let hamTsc: { dat: boolean; lyDo: string | null; giay: number } | null = null;
+  if (coKiemKieu) {
+    fs.mkdirSync(path.dirname(soTsc), { recursive: true });
+    const hanHam = p.hanTscGiay ?? 900;
+    nhatKy(`hâm sổ kiểu riêng trên cây gốc (hạn ${hanHam} s, chưa gọi model)`);
+    const h = await chayTscDung(wt, [], hanHam);
+    const lyDo = h.hetGio ? `hâm quá hạn ${hanHam} s` : h.loi ? `không khởi chạy được: ${h.loi}` : h.exit !== 0 && h.tongLoi === 0 ? `tsc thoát mã ${h.exit} mà không có dòng lỗi đọc được` : null;
+    hamTsc = { dat: lyDo === null, lyDo, giay: h.giay };
+    nhatKy(`hâm sổ kiểu: ${lyDo === null ? "được" : `HỎNG — ${lyDo}`} (${h.giay} s)`);
+  }
   const t0 = Date.now();
   nhatKy(`bắt đầu ${the.ma} trên ${nhanh} @ ${baseSha.slice(0, 9)} (driver ${tenDriver}, hạn ${the.gioiHan.giay}s)`);
   // trần của thẻ bị kẹp xuống (khoá TRẦN LƯỢT MODEL > AI_AGENT_SO_LUOT_TOI_DA hoặc mặc định): MỘT dòng cảnh báo ở đầu lượt (JSON `tran` ghi theYeuCau/thucDung/biKep/lyDoKep)
@@ -811,8 +856,9 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     if (b.ok) for (const ten of tenMoiCa(b.out)) tenCaCuPhu.add(ten);
   }
   const hanGiay0 = tran?.phutThucDung ? tran.phutThucDung * 60 : the.gioiHan.giay;
-  const goiDriver = (lenh: string, hanGiay: number, gh: GioiHanLuotChoDriver | undefined) => driver({ the: theChoDriver, wt, lenh, hanGiay, ...(gh ? { gioiHanLuot: gh } : {}), ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {}, chayKiem: chayKiemDung, ...(dbCho ? { cheDoKiem: "chi-so" as const, giaTriBiMat: giaTriBiMatTuUrl(p.testDbUrl) } : {}), ...(the.kiemPhu ? { phu: { dongDuyet, tenCaCu: tenCaCuPhu, tepTest: tepTestPhu } } : {}) });
+  const goiDriver = (lenh: string, hanGiay: number, gh: GioiHanLuotChoDriver | undefined) => driver({ the: theChoDriver, wt, lenh, hanGiay, ...(gh ? { gioiHanLuot: gh } : {}), ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {}, chayKiem: chayKiemDung, ...(dbCho ? { cheDoKiem: "chi-so" as const, giaTriBiMat: giaTriBiMatTuUrl(p.testDbUrl) } : {}), ...(the.kiemPhu ? { phu: { dongDuyet, tenCaCu: tenCaCuPhu, tepTest: tepTestPhu } } : {}), ...(hamTsc ? { kieu: { tepDoi: () => thuTepDoi(wt, cach === "ghi-de"), chayTsc: (tep: readonly string[], han: number) => chayTscDung(wt, tep, han), hamLoi: hamTsc.lyDo } } : {}) });
   const kq = await goiDriver(ghepLenh(the, luat, tran), hanGiay0, gioiHanLuot);
+  const kieuMoiLuot: KieuMotLan[] = [...(kq.kieuTrongVong ?? [])];
   const giayTuong = Math.round(((Date.now() - t0) / 1000) * 10) / 10;
   for (const g of kq.ghiChu) nhatKy(g);
 
@@ -915,6 +961,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
         const mocIndexOk = tepDoi.length === 0 || git(["add", "--", ...tepDoi], wt).ok;
         const t2 = Date.now();
         const kq2 = await goiDriver(nhac, ns.hanGiay, ns.gioiHan);
+        kieuMoiLuot.push(...(kq2.kieuTrongVong ?? []));
         for (const g of kq2.ghiChu) nhatKy(g);
         ({ tepDoi, dong, viPham, ghimNghiNgo, crlf, addNOk } = thu());
         if (!addNOk) luuY.push(canhBaoAddN("sau lượt sửa"));
@@ -1070,6 +1117,9 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
       : {}),
     ...(p.boChay ? { boChay: p.boChay } : {}),
     ...(tsc ? { tsc } : {}),
+    ...(hamTsc ? { hamTsc } : {}),
+    ...(kq.soTuChay === undefined ? {} : { modelGoiLenhKiem: kq.soTuChay > 0 }),
+    ...(kieuMoiLuot.length > 0 ? { kieuTrongVong: kieuMoiLuot } : {}),
     ...(the.suaTsc ? { coLuotSua: luotSua !== null, ...(truocSua ? { truocSuaTsc: truocSua, sauSuaTsc: sauSua } : {}), ...(luotSua ? { luotSua } : {}) } : {}),
     ...(dotBien ? { dotBien } : {}),
     ...(ghimNghiNgo.length > 0 ? { ghimNghiNgo } : {}),

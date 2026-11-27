@@ -19,8 +19,8 @@ import path from "node:path";
 import { loiNhacPhu, tinhPhu } from "./kiemPhu";
 import { quetHoSo, thuMucTamMacDinh, tomTatCanhBao, type CanhBao } from "./quetTinh";
 import { chuanDuong, kiemDiffTheoThe, vungCamCua, type TheViec } from "./theViec";
-import { chayLenhKiem, loaiUrlCsdl, xoaGiaTriBiMat, type ChayKiem, type KetQuaKiem } from "./kiemChung";
-import type { DauVaoDriver, KetQuaDriver } from "./chayMotViec";
+import { canChayTsc, chayLenhKiem, cheTokenTrongDauRa, loaiUrlCsdl, xoaGiaTriBiMat, type ChayKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
+import type { DauVaoDriver, KetQuaDriver, KieuMotLan } from "./chayMotViec";
 import type { GioiHanLuotChoDriver } from "./tranLuot";
 import type { PhuThuocQuanLy } from "../../server/services/ai/agent/quanLyLuotChay";
 
@@ -220,6 +220,77 @@ export function dungPhanCaDo(k: KetQuaKiem): { dong: string[]; kemDuoi: boolean;
   return { dong, kemDuoi: docThieu || k.coLoiNgoaiCa === true, soTenGui: demCa(khoi), soCaDo, soKhoiCat, soKyTu };
 }
 
+// ── V10: kiểu đi CÙNG kết quả lệnh kiểm trong vòng ─────────────────────────────────────────────────
+
+/** Lệnh kiểm + tsc phải xong trước khi thẻ lệnh hết hạn (TTL_THE_DUYET_MS 300 s), chừa biên. */
+export const TRAN_KIEM_VA_KIEU_GIAY = 270;
+/** Còn ít hơn thế thì không chạy tsc (tsc "nóng" đo được ~12 s). */
+export const TOI_THIEU_TSC_GIAY = 20;
+/** Ngân sách chữ cho cả khối "KIỂU:" (gồm dòng giải thích thụt lề). */
+export const NGAN_SACH_KIEU = 2400;
+const TRAN_DAI_DONG_LOI = 300;
+const CHO_CHO_CAU_CUOI = 120;
+
+/** Khối kiểu khi tsc ĐỎ. `trong` = lỗi ở tệp được phép; luôn giữ vị trí + mã trước, cắt giải thích trước, bớt lỗi sau cùng — cắt gì cũng NÓI. THUẦN. */
+export function dungKhoiKieuDo(trong: readonly string[], khoiTheoDau: ReadonlyMap<string, string>, soKhac: number, chiSo: boolean): string {
+  const dau = `KIỂU: ĐỎ — ${trong.length} lỗi trong tệp được phép, ${soKhac} lỗi ở tệp khác. Lệnh kiểm xanh CHƯA đủ: sửa lỗi kiểu rồi gọi lại đúng lệnh kiểm.`;
+  if (chiSo || trong.length === 0) return dau;
+  const giu: Array<{ dong: string; them: string }> = [];
+  let daDung = dau.length;
+  for (const d of trong) {
+    const dong = catChu(cheTokenTrongDauRa(d), TRAN_DAI_DONG_LOI);
+    if (daDung + dong.length + 1 > NGAN_SACH_KIEU - CHO_CHO_CAU_CUOI) break;
+    daDung += dong.length + 1;
+    const khoi = khoiTheoDau.get(d);
+    giu.push({ dong, them: khoi ? cheTokenTrongDauRa(khoi.split("\n").slice(1).join("\n")) : "" });
+  }
+  const phan = chiaDeu(giu.map((x) => (x.them ? x.them.length + 1 : 0)), Math.max(0, NGAN_SACH_KIEU - CHO_CHO_CAU_CUOI - daDung));
+  let daCat = false;
+  const ra = [dau];
+  giu.forEach((x, i) => {
+    ra.push(x.dong);
+    if (!x.them) return;
+    const them = catChu(x.them, phan[i]! - 1);
+    if (them !== x.them) daCat = true;
+    if (them !== "") ra.push(them);
+  });
+  const conLai = trong.length - giu.length;
+  if (conLai > 0) ra.push(`còn ${conLai} lỗi không liệt kê`);
+  if (daCat) ra.push("đã cắt bớt giải thích của một số lỗi");
+  return ra.join("\n");
+}
+
+/** Quyết có chạy tsc cho lần tự chạy này không và dựng khối "KIỂU:". Không nhánh nào im lặng. */
+export async function kiemKieuTrongVong(v: DauVaoDriver, k: KetQuaKiem): Promise<{ van: string; trangThai: KieuMotLan["trangThai"]; giay: number | null }> {
+  const kieu = v.kieu!;
+  const khong = (van: string, trangThai: KieuMotLan["trangThai"]) => ({ van, trangThai, giay: null });
+  const kiemXanh = k.exit === 0 && !k.hetGio && !k.loi && (k.vitest.ca?.hong ?? 0) === 0 && (k.vitest.tep?.hong ?? 0) === 0;
+  if (!kiemXanh) return khong("KIỂU: chưa kiểm vì lệnh kiểm đang đỏ.", "kiem-do");
+  const tepDoi = kieu.tepDoi();
+  if (!canChayTsc(v.wt, tepDoi)) return khong("KIỂU: không kiểm — không có tệp TypeScript đổi (hoặc dự án không có tsconfig.tests.json).", "khong-ap");
+  if (kieu.hamLoi !== null) return khong(`KIỂU: CHƯA kiểm được — hâm sổ kiểu hỏng: ${kieu.hamLoi}`, "chua");
+  const han = Math.floor(TRAN_KIEM_VA_KIEU_GIAY - k.giay);
+  if (han < TOI_THIEU_TSC_GIAY) return khong(`KIỂU: CHƯA kiểm được — lệnh kiểm đã dùng ${k.giay} s, không còn đủ chỗ trước khi thẻ lệnh hết hạn.`, "chua");
+  let t: KetQuaTsc;
+  try {
+    t = await kieu.chayTsc(tepDoi, han);
+  } catch (e) {
+    t = { exit: null, hetGio: false, giay: 0, loiTrongTep: [], tongLoi: 0, loi: e instanceof Error ? e.message : String(e) };
+  }
+  const chua = (lyDo: string) => ({ van: `KIỂU: CHƯA kiểm được — ${lyDo}. Đừng coi là kiểu sạch.`, trangThai: "chua" as const, giay: t.giay });
+  if (t.hetGio) return chua(`tsc quá ${han} s`);
+  if (t.loi) return chua(v.cheDoKiem === "chi-so" ? "tsc không khởi chạy được" : `tsc không khởi chạy được: ${catChu(cheTokenTrongDauRa(t.loi), TRAN_DAI_DONG_LOI)}`);
+  if (t.tongLoi === 0) {
+    // thoát khác 0 mà không đọc được dòng lỗi nào (lỗi cấu hình, sập) KHÔNG phải là sạch
+    if (t.exit !== 0) return chua(`tsc thoát mã ${t.exit} mà không có dòng lỗi đọc được`);
+    return { van: `KIỂU: sạch (tsc tsconfig.tests.json, ${t.giay} s).`, trangThai: "sach", giay: t.giay };
+  }
+  const duocPhep = tepDoi.filter((x) => kiemDiffTheoThe([x], v.the.tepDuocPhep).length === 0).map((x) => x.replace(/\\/g, "/"));
+  const trong = t.loiTrongTep.filter((d) => duocPhep.some((x) => d.startsWith(`${x}(`)));
+  const khoiTheoDau = new Map((t.khoiTrongTep ?? []).map((b) => [b.split("\n")[0]!.trim(), b]));
+  return { van: dungKhoiKieuDo(trong, khoiTheoDau, t.tongLoi - trong.length, v.cheDoKiem === "chi-so"), trangThai: "do", giay: t.giay };
+}
+
 /**
  * Văn bản trả cho model khi bộ chạy TỰ chạy LỆNH KIỂM thay cho thẻ duyệt. Kênh duy nhất để đưa kết quả về model là lý do từ chối của thẻ
  * (host in nó sau "User rejected this change:"), nên câu đầu nói rõ đây là KẾT QUẢ THẬT, không phải bị người từ chối.
@@ -289,8 +360,9 @@ export interface PhuThuocHost {
   datKhoaKy(): { ok: boolean; tam: boolean };
 }
 
-export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
-  async function host(v: DauVaoDriver): Promise<KetQuaDriver & { hetGio: boolean; loi?: string }> {
+export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) => {
+  // V10: driver này TỰ KHAI biết kiểm kiểu trong vòng (xem Driver.kiemKieuTrongVong)
+  const chay = async function host(v: DauVaoDriver): Promise<KetQuaDriver & { hetGio: boolean; loi?: string }> {
     const ghiChu: string[] = [];
     const loiMt = await dep.kiemMoiTruong(v);
     if (loiMt) return { vong: null, token: null, ghiChu, hetGio: false, loi: `môi trường không đạt: ${loiMt}` };
@@ -325,6 +397,7 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
     const nhanTuChoi = new Map<string, string>();
 
     let soTuChay = 0;
+    const kieuGhi: KieuMotLan[] = [];
     let soNhacPhu = 0;
     let soLanBaoHan = 0;
     const xuLyDuyet = async (id: string, de: { ten: string; thamSo: Record<string, unknown>; moTa?: string; xemTruoc?: unknown; nguonDangNgo?: string[] }, actionId: string) => {
@@ -362,6 +435,13 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
         // (V0, chỉ số M19) bao nhiêu tên ca đỏ tới model; chế độ chi-so không gửi tên nên không ghi
         const phan = v.cheDoKiem === "chi-so" ? null : dungPhanCaDo(k);
         if (phan) ghiChu.push(`V0 lần ${soTuChay}: gửi model tên ${phan.soTenGui}/${phan.soCaDo} ca đỏ; cắt chi tiết ${phan.soKhoiCat} khối; ${phan.soKyTu} ký tự chi tiết`);
+        // V10: khối kiểu đặt CUỐI lời nhắc; giờ tsc vẫn nằm trong thời gian thẻ lệnh đang chờ
+        if (v.kieu) {
+          const r = await kiemKieuTrongVong(v, k);
+          loiNhac = `${loiNhac}\n${r.van}`;
+          kieuGhi.push({ lan: soTuChay, giay: r.giay, trangThai: r.trangThai });
+          ghiChu.push(`KIỂU lần ${soTuChay}: ${r.trangThai}${r.giay === null ? "" : `, ${r.giay} s`}`);
+        }
         await dep.bac(actionId, loiNhac);
         if (v.cheDoKiem === "chi-so") {
           // đầu ra ĐẦY ĐỦ (đã lọc URL + bí mật) chỉ cho NGƯỜI duyệt đọc — tệp kết quả, không bao giờ đi vào lời nhắc của model
@@ -533,10 +613,15 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) =>
     }
     if (lyDoDung !== null) kq.lyDoDung = lyDoDung;
     kq.loiCongCu = loiCongCu;
+    kq.soTuChay = soTuChay;
+    if (kieuGhi.length > 0) kq.kieuTrongVong = kieuGhi;
     if (v.phu) kq.soLanNhacPhu = soNhacPhu;
     if (luuY.length > 0) kq.luuY = luuY;
     return kq;
   };
+  return Object.assign(chay, { kiemKieuTrongVong: true as const });
+};
+
 
 // ── Phụ thuộc THẬT (nạp lười: chỉ khi --driver host) ────────────────────────────────────────────────
 
