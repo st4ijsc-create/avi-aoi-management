@@ -1,6 +1,6 @@
 // URGENT bền của A2(n) (H37 và 22 kind khác) — logic thuần cho thẻ ở vùng URGENT (hợp đồng scada-master 13/11, hop-dong-scada-ui-urgent.md).
 // Nguồn bền DUY NHẤT: bảng `notifications`, MỘT hàng mỗi người nhận (`notification.list`, chỉ hàng của chính người đăng nhập).
-// Nhận diện: priority "URGENT" + entityType "orchestration_run" + metadata.kind bắt đầu bằng `foe_outcome_unknown_`.
+// Nhận diện: priority "URGENT" + entityType "orchestration_run" + metadata.kind bắt đầu bằng `foe_outcome_unknown_` HOẶC thuộc KIND_URGENT_P2.
 // Luật: thẻ KHÔNG tự rời; "đã đọc" chỉ là markAsRead của chính người xem (không phải "đã xử lý"); không có nút xoá / "đánh dấu tất cả".
 
 export const TIEN_TO_KIND = "foe_outcome_unknown_";
@@ -32,6 +32,15 @@ export const KIND_URGENT_A2N = [
   "edge_stream_stuck",
   "edge_sync_refused",
 ].map((k) => `${TIEN_TO_KIND}${k}`);
+
+/** Bốn kind URGENT của P2 (bù trừ bị ngắt lúc boot; nguồn canhBaoBuTruBiNgat, foeEngine.ts) — danh sách ĐÓNG, so NGUYÊN TÊN, không so tiền tố
+ *  (tên audit cùng họ như foe_stop_compensation_boot KHÔNG thuộc). Mỗi kind một nhãn `urgent.kind.<kind>` vi/en/zh. */
+export const KIND_URGENT_P2: readonly string[] = [
+  "foe_compensation_interrupted_held",
+  "foe_compensation_interrupted_failed",
+  "foe_stop_compensation_resent_at_boot",
+  "foe_stop_compensation_pending_at_boot",
+];
 
 /** Kind có nhắc "ghim" (kind 16–18): vùng URGENT hiện chú giải "ghim" MỘT lần khi có ít nhất một thẻ thuộc nhóm này. */
 export const KIND_NHAC_GHIM: readonly string[] = ["stop_unconfirmed_read", "stop_pin_mismatch", "stop_pin_mismatch_not_sent"].map((k) => `${TIEN_TO_KIND}${k}`);
@@ -79,11 +88,11 @@ export function kindCuaHang(h: HangThongBao): string | null {
   return null;
 }
 
-/** Hàng có phải URGENT của A2(n) không (cả kind lạ bắt đầu đúng tiền tố ⇒ vẫn là URGENT, hiện bằng `title`). */
+/** Hàng có thuộc vùng URGENT bền không: kind đúng tiền tố A2(n) (kể cả kind lạ ⇒ hiện bằng `title`) hoặc đúng một trong KIND_URGENT_P2. */
 export function laUrgentA2n(h: HangThongBao): boolean {
   if (h.priority !== "URGENT" || h.entityType !== "orchestration_run") return false;
   const k = kindCuaHang(h);
-  return k != null && k.startsWith(TIEN_TO_KIND);
+  return k != null && (k.startsWith(TIEN_TO_KIND) || KIND_URGENT_P2.includes(k));
 }
 
 export function thanhThe(h: HangThongBao): TheUrgent {
@@ -92,7 +101,7 @@ export function thanhThe(h: HangThongBao): TheUrgent {
     id: h.id,
     runId: typeof h.entityId === "number" ? h.entityId : null,
     kind,
-    khoaNhan: KIND_URGENT_A2N.includes(kind) ? `urgent.kind.${kind}` : null,
+    khoaNhan: KIND_URGENT_A2N.includes(kind) || KIND_URGENT_P2.includes(kind) ? `urgent.kind.${kind}` : null,
     title: h.title ?? "",
     message: h.message ?? "",
     isRead: h.isRead === true,

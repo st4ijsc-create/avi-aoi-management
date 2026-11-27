@@ -268,6 +268,22 @@ describe("VungUrgentBen", () => {
     expect(nhan.every((x) => x.length > 0 && !x.startsWith("urgent."))).toBe(true);
   });
 
+  it("★ P2: bốn kind bù trừ bị ngắt lúc boot dựng được thẻ với đúng nhãn vi của từng kind", () => {
+    const BON_KIND_P2 = [
+      "foe_compensation_interrupted_held",
+      "foe_compensation_interrupted_failed",
+      "foe_stop_compensation_resent_at_boot",
+      "foe_stop_compensation_pending_at_boot",
+    ];
+    srv.data = BON_KIND_P2.map((k, i) => hang(i + 1, { metadata: { kind: k } }));
+    render(<VungUrgentBen />);
+    fireEvent.click(screen.getByTestId("urgent-nhieu"));
+    const nhan = screen.getAllByTestId("urgent-nhan").map((x) => x.textContent ?? "");
+    const mongDoi = BON_KIND_P2.map((k) => VI.urgent.kind[k] as string);
+    expect(nhan.sort()).toEqual(mongDoi.sort());
+    expect(screen.queryByTestId("urgent-chu-giai-ghim")).toBeNull();
+  });
+
   it("nút cao ≥ 44 px (min-h-11) cho Mở run / Tôi đã đọc", () => {
     srv.data = [hang(1)];
     render(<VungUrgentBen />);

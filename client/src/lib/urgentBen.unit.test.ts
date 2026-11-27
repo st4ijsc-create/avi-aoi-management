@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import vi from "@/i18n/locales/vi.json";
 import en from "@/i18n/locales/en.json";
 import zh from "@/i18n/locales/zh.json";
-import { KIND_NHAC_GHIM, KIND_URGENT_A2N, TIEN_TO_KIND, TOI_DA_THE_HIEN, catTheHien, duongToiRun, laUrgentA2n, phanNhomUrgent, tuoiNgan, type HangThongBao } from "./urgentBen";
+import { KIND_NHAC_GHIM, KIND_URGENT_A2N, KIND_URGENT_P2, TIEN_TO_KIND, TOI_DA_THE_HIEN, catTheHien, duongToiRun, laUrgentA2n, phanNhomUrgent, tuoiNgan, type HangThongBao } from "./urgentBen";
 
 // Lưới chữ cấm "đã/đang/sẽ dừng" (quy tắc chữ: nhãn chỉ nói điều đã quan sát). MỘT nguồn: vòng soát nhãn và ca "bắt thật" dùng chung hằng này.
 // vi KHÔNG dùng \b: \b của JS chỉ coi [A-Za-z0-9_] là chữ nên "đ" không có biên ("máy đã dừng" lọt lưới). So chuỗi con, cờ iu, nhãn + mẫu chuẩn hoá NFC.
@@ -18,6 +18,13 @@ const CAM_DUNG = {
 const biCam = (ten: keyof typeof CAM_DUNG, chuoi: string): boolean => CAM_DUNG[ten].test(chuoi.normalize("NFC"));
 
 const H37 = `${TIEN_TO_KIND}edge_stream_stuck`;
+// Bốn tên P2 chép TAY từ hợp đồng mục (a2) — nguồn kỳ vọng độc lập với KIND_URGENT_P2 của mã.
+const BON_KIND_P2 = [
+  "foe_compensation_interrupted_held",
+  "foe_compensation_interrupted_failed",
+  "foe_stop_compensation_resent_at_boot",
+  "foe_stop_compensation_pending_at_boot",
+] as const;
 const hang = (id: number, x: Partial<HangThongBao> = {}): HangThongBao => ({
   id,
   type: "ALERT",
@@ -59,6 +66,34 @@ describe("laUrgentA2n", () => {
     expect(g.chuaDoc).toHaveLength(1);
     expect(g.chuaDoc[0]!.khoaNhan).toBeNull();
     expect(g.chuaDoc[0]!.title).toBe("t1");
+  });
+});
+
+describe("URGENT P2 — danh sách ĐÓNG bốn kind (URGENT-P2-KHONG-HIEN)", () => {
+  it("★ P2: KIND_URGENT_P2 đúng bốn tên, không trùng, không lẫn vào danh sách A2(n)", () => {
+    expect([...(KIND_URGENT_P2 ?? [])].sort()).toEqual([...BON_KIND_P2].sort());
+    expect(KIND_URGENT_A2N.filter((k) => (BON_KIND_P2 as readonly string[]).includes(k))).toEqual([]);
+  });
+  it.each(BON_KIND_P2)("★ P2 nhận: %s ⇒ thuộc vùng bền, có khoá nhãn, không nhắc ghim", (kind) => {
+    const h = hang(1, { metadata: { kind } });
+    expect(laUrgentA2n(h)).toBe(true);
+    const the = phanNhomUrgent([h]).chuaDoc;
+    expect(the.map((x) => [x.runId, x.khoaNhan, x.nhacGhim])).toEqual([[401, `urgent.kind.${kind}`, false]]);
+  });
+  it.each(BON_KIND_P2)("P2 cổng chung: %s với priority hoặc entityType khác ⇒ KHÔNG nhận", (kind) => {
+    expect(laUrgentA2n(hang(1, { metadata: { kind }, priority: "HIGH" }))).toBe(false);
+    expect(laUrgentA2n(hang(1, { metadata: { kind }, entityType: "machine" }))).toBe(false);
+  });
+  it.each([
+    "foe_stop_compensation_boot",
+    "foe_compensation_interrupted_boot",
+    "foe_compensation_interrupted_held_x",
+    "x_foe_compensation_interrupted_held",
+    "foe_compensation_interrupted_",
+    "foe_stop_compensation_",
+    "FOE_COMPENSATION_INTERRUPTED_HELD",
+  ])("★ P2 danh sách đóng: kind lạ cùng họ '%s' ⇒ KHÔNG vào vùng bền", (kind) => {
+    expect(laUrgentA2n(hang(1, { metadata: { kind } }))).toBe(false);
   });
 });
 
@@ -128,8 +163,8 @@ describe("lưới 24 kind", () => {
   });
   it.each([["vi", vi], ["en", en], ["zh", zh]] as const)("★ mỗi kind có nhãn urgent.kind.<kind> không rỗng ở %s", (_ten, loc) => {
     const nhan = (loc as unknown as { urgent: { kind: Record<string, string> } }).urgent.kind;
-    for (const k of KIND_URGENT_A2N) expect(typeof nhan[k] === "string" && nhan[k]!.trim().length > 0, k).toBe(true);
-    expect(Object.keys(nhan).sort()).toEqual([...KIND_URGENT_A2N].sort()); // không nhãn thừa
+    for (const k of [...KIND_URGENT_A2N, ...BON_KIND_P2]) expect(typeof nhan[k] === "string" && nhan[k]!.trim().length > 0, k).toBe(true);
+    expect(Object.keys(nhan).sort()).toEqual([...KIND_URGENT_A2N, ...BON_KIND_P2].sort()); // không nhãn thừa: HỢP hai danh sách
   });
   it.each([["vi", vi], ["en", en], ["zh", zh]] as const)("★ nhãn %s không nói 'đã/đang/sẽ dừng' (quy tắc chữ: chỉ nói điều đã quan sát)", (ten, loc) => {
     const nhan = Object.values((loc as unknown as { urgent: { kind: Record<string, string> } }).urgent.kind).join("\n");

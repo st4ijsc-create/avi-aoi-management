@@ -24970,7 +24970,11 @@
       "foe_outcome_unknown_abort_sweep_unfinished": "Huỷ run: lượt quét bước DỪNG chưa xong",
       "foe_outcome_unknown_stop_ended_unswept": "Run đã kết thúc mà không có lượt quét bước DỪNG — bước DỪNG CHƯA gửi; kiểm máy",
       "foe_outcome_unknown_edge_stream_stuck": "Luồng edge của run đứng do bất thường — run có thể còn bước DỪNG chưa ra; kiểm máy",
-      "foe_outcome_unknown_edge_sync_refused": "Báo cáo của edge bị từ chối trọn — trung tâm không biết có bước DỪNG nào đã tới máy hay chưa; kiểm máy tại chỗ"
+      "foe_outcome_unknown_edge_sync_refused": "Báo cáo của edge bị từ chối trọn — trung tâm không biết có bước DỪNG nào đã tới máy hay chưa; kiểm máy tại chỗ",
+      "foe_compensation_interrupted_held": "Máy chủ khởi động lại lúc run đang bù trừ — cần người xử lý; không rõ lệnh bù trừ đã tới máy hay chưa; mở run xem trạng thái; kiểm máy tại chỗ",
+      "foe_compensation_interrupted_failed": "Máy chủ khởi động lại lúc run đang bù trừ — run thất bại; lần khởi động này không gửi lại gì; kiểm máy tại chỗ",
+      "foe_stop_compensation_resent_at_boot": "Lúc khởi động, bước DỪNG bù trừ được gửi lại một lần — kiểm trạng thái máy tại chỗ",
+      "foe_stop_compensation_pending_at_boot": "Lúc khởi động, bước DỪNG bù trừ phải chờ kết nối thiết bị — thẻ này không cho biết diễn biến sau đó; kiểm máy tại chỗ"
     }
   }
 }

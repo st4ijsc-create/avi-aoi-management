@@ -24973,7 +24973,11 @@
       "foe_outcome_unknown_abort_sweep_unfinished": "Abort: the STOP sweep has not finished",
       "foe_outcome_unknown_stop_ended_unswept": "The run ended without a STOP sweep — the STOP was NOT sent; check the machine",
       "foe_outcome_unknown_edge_stream_stuck": "The run's edge stream stalled abnormally — a STOP may not be out; check the machine",
-      "foe_outcome_unknown_edge_sync_refused": "An edge report was refused in full — the centre does not know whether any STOP step reached the machine; check the machine on site"
+      "foe_outcome_unknown_edge_sync_refused": "An edge report was refused in full — the centre does not know whether any STOP step reached the machine; check the machine on site",
+      "foe_compensation_interrupted_held": "The server restarted while the run was compensating — a person needs to act; it is not known whether the compensation reached the machine; open the run to see its status; check the machine on site",
+      "foe_compensation_interrupted_failed": "The server restarted while the run was compensating — the run failed; this boot re-sent nothing; check the machine on site",
+      "foe_stop_compensation_resent_at_boot": "At boot the compensation STOP was re-sent once — check the machine state on site",
+      "foe_stop_compensation_pending_at_boot": "At boot the compensation STOP had to wait for the device connection — this card does not show what happened next; check the machine on site"
     }
   }
 }
