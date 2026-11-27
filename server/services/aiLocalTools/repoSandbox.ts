@@ -180,20 +180,30 @@ export const TRAN_MUC_LIET_KE = 300;
  * của hộp cát có ~7.616 tệp, và một lượt tìm "StreamingSecretRedactor" (có ≥5 tệp nguồn khớp) trả
  * đúng 1 kết quả vì quét dừng ở tệp thứ 600. Nâng lên 9.000 để phủ trọn cây hiện tại (+dư); cầu
  * chì CPU THẬT vẫn là `HAN_GIO_GREP_MS` — quá hạn thì trả bản cắt CÓ KHAI, đúng như cũ.
+ * V14 — đo 28/11: tập tệp được phép của repo là 11.037 > 9.000 ⇒ nâng 20.000.
  */
-export const TRAN_TEP_QUET = 9_000;
+export const TRAN_TEP_QUET = 20_000;
 /**
  * ★ 2026-08-31 · PDCA vòng 1 — trần cho CHỈ MỤC PHẲNG (`listFiles phang:true`, Ctrl+P/@-mention).
  * Đo thật: cây nhìn-thấy ~7.616 tệp ⇒ 12.000 phủ trọn + dư; hạn chót 3s là cầu chì thời gian
  * (cùng khuôn trần-kép của `duyetTepDocDuoc`). Vượt trần/hạn ⇒ `truncated:true` — client PHẢI
  * hiện cờ, không được im lặng (bài "bản cắt không khai là lời nói dối").
+ * V14 — 11.037 tệp đã sát 12.000 ⇒ nâng 20.000.
  */
-export const TRAN_TEP_PHANG = 12_000;
+export const TRAN_TEP_PHANG = 20_000;
 export const HAN_CHOT_PHANG_MS = 3_000;
 /** Số kết quả tối đa `grep_repo` trả về. */
 export const TRAN_KET_QUA_GREP = 80;
 /** Hạn giờ cho một lượt `grep_repo`. Quét cả repo có thể lâu tuỳ ổ đĩa ⇒ trả BẢN CẮT, không treo. */
-export const HAN_GIO_GREP_MS = 4_000;
+export const HAN_GIO_GREP_MS = 10_000;
+/**
+ * V14 — cấu hình của vòng duyệt cây và vòng quét. Là một ĐỐI TƯỢNG chỉ để ca kiểm đặt giá trị nhỏ; mã sản xuất KHÔNG ghi vào nó
+ * (`cauHinhDuyet.census.test.ts`), không đọc env, không nằm trong tham số tool.
+ *   • `mucMoiThuMuc` — số mục tối đa VÒNG DUYỆT lấy ở một thư mục. TÁCH khỏi `TRAN_MUC_LIET_KE` (300, trần HIỂN THỊ của `list_files`): dùng chung 300 đã làm
+ *     grep/find_files không thấy 2.402 / 11.037 tệp của repo mà không ai biết (đo 28/11). 5.000 là cầu chì cho thư mục rác khổng lồ.
+ *   • `latQuetMs` — vòng quét grep đọc đồng bộ; quá lát này thì nhường event loop để máy chủ không đứng suốt lượt quét.
+ */
+export const CAU_HINH_DUYET = { mucMoiThuMuc: 5_000, latQuetMs: 50 };
 /** Trần độ sâu đệ quy của `grep_repo`/`list_files`. */
 export const TRAN_DO_SAU = 12;
 /**
@@ -513,9 +523,10 @@ export function duyetTepDocDuoc(
   tranTep: number,
   hanChot: number,
   tranDoSau = TRAN_DO_SAU,
+  tranMuc = CAU_HINH_DUYET.mucMoiThuMuc,
 ): { tep: string[]; hetGio: boolean; hetTran: boolean; thuMucBiCat: string[] } {
   const tep: string[] = [];
-  /** V13: thư mục có nhiều hơn `TRAN_MUC_LIET_KE` mục — phần sau mốc KHÔNG được duyệt, nơi gọi PHẢI khai. Đường tương đối; "" là gốc. */
+  /** V13: thư mục có nhiều hơn `tranMuc` mục — phần sau mốc KHÔNG được duyệt, nơi gọi PHẢI khai. Đường tương đối; "" là gốc. */
   const thuMucBiCat: string[] = [];
   const hangDoi: Array<{ rel: string; sau: number }> = [{ rel: batDau, sau: 0 }];
   let hetGio = false;
@@ -526,7 +537,7 @@ export function duyetTepDocDuoc(
     }
     if (tep.length >= tranTep) break;
     const { rel, sau } = hangDoi.shift()!;
-    const lk = lietKeTrongHopCat(rel, goc, TRAN_MUC_LIET_KE);
+    const lk = lietKeTrongHopCat(rel, goc, tranMuc);
     if (!lk.ok) continue;
     if (lk.catBot) thuMucBiCat.push(lk.relPath);
     for (const e of lk.muc) {

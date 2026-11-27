@@ -50,6 +50,7 @@ import { menhLenhTuChoiChoModel } from "../ai/vanBanChoModel";
 import { TRAN_BYTE_DOC_CSV, TRAN_DONG_DOC_CSV } from "./csvTrongDuAn";
 import { authCtxParam, authCtxSchema, rbacGate } from "./readToolRbac";
 import {
+  CAU_HINH_DUYET,
   HAN_GIO_GREP_MS,
   MA_TU_CHOI_HOP_CAT,
   TRAN_BYTE_MOI_PHIEN,
@@ -354,7 +355,7 @@ function tomTatCat(ds: readonly string[]): KhaiCat | undefined {
 }
 // ⚠ Không khuyên đọc tiếp bằng start_line: read_file bị kẹp cùng trần byte.
 const cauTepBiCat = (k: KhaiCat): string => `${k.so} tệp chỉ được tìm trong ${TRAN_BYTE_MOI_TEP} byte đầu (vd: ${k.viDu.join(", ")}), phần sau CHƯA được tìm`;
-const cauThuMucBiCat = (k: KhaiCat): string => `${k.so} thư mục chỉ được duyệt ${TRAN_MUC_LIET_KE} mục đầu (vd: ${k.viDu.join(", ")}), phần còn lại CHƯA được tìm`;
+const cauThuMucBiCat = (k: KhaiCat): string => `${k.so} thư mục chỉ được duyệt ${CAU_HINH_DUYET.mucMoiThuMuc} mục đầu (vd: ${k.viDu.join(", ")}), phần còn lại CHƯA được tìm`;
 
 interface KetQuaGrep {
   path: string;
@@ -491,6 +492,8 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
     const batDau = typeof raw.path === "string" ? raw.path : "";
     const tranKetQua = Math.min(typeof raw.maxResults === "number" ? raw.maxResults : TRAN_KET_QUA_GREP, TRAN_KET_QUA_GREP);
     const hanChot = Date.now() + HAN_GIO_GREP_MS;
+    /** V14: mốc của lần nhường event loop gần nhất; tính từ đầu lượt để thời gian duyệt cây cũng được tính vào lát. */
+    let mocNhuong = Date.now();
 
     // Kiểm THƯ MỤC gốc trước, để một `path` xấu ra mã đúng thay vì "0 kết quả" (im lặng là nói dối).
     const kiemGoc = lietKeTrongHopCat(batDau, goc, 1);
@@ -535,6 +538,11 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
 
     for (const rel of dsQuet) {
       if (matches.length >= tranKetQua) break;
+      // V14: đọc tệp là ĐỒNG BỘ; không nhường thì cả máy chủ đứng suốt lượt quét. Hạn giờ được hỏi SAU khi nhường.
+      if (Date.now() - mocNhuong >= CAU_HINH_DUYET.latQuetMs) {
+        await new Promise<void>((tiep) => setImmediate(tiep));
+        mocNhuong = Date.now();
+      }
       if (Date.now() >= hanChot) {
         hetGio = true;
         break;
@@ -563,6 +571,14 @@ const grepRepoTool: Tool<z.infer<typeof thamSoGrep>, DuLieuGrep> = {
         if (matches.length >= tranKetQua) break;
       }
       if (hetGio) break;
+    }
+
+    // V14: vòng quét có nhường ⇒ lượt khác có thể đã rút hết ngân sách SAU phép hỏi ở đầu lượt. Hỏi lại ngay trước khi phát; từ đây tới `tieuNganSach` không còn `await`.
+    if (khoa !== undefined) {
+      const ns = nganSachConLai(khoa);
+      if (ns.conLai <= 0) {
+        return ketQuaTuChoiHopCat(title, { ...RONG_GREP, pattern: mau }, MA_TU_CHOI_HOP_CAT.BUDGET_EXCEEDED, `${ns.daDung}/${TRAN_BYTE_MOI_PHIEN}`);
+      }
     }
 
     // V13: thư mục người gọi đã bỏ bằng `loaiTru` thì không khai (cùng lối với tệp bị bỏ).
