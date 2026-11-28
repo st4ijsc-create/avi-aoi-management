@@ -205,6 +205,7 @@ scripts/audit/.s6-results.json
 # chúng vì hậu tố nằm SAU `.bak` (`.env.bak-2026-08-16-truoc-g1`), nên chúng hiện
 # ra như file chưa theo dõi và suýt bị commit — kèm nguyên bí mật bên trong.
 .env.bak*
+.env.testbak
 
 # Ảnh chụp màn hình của các lượt nghiệm thu THỊ GIÁC, sinh ra ở GỐC repo. Chúng là
 # bằng chứng của một lượt đo, không phải tài sản của mã nguồn; không tài liệu nào
