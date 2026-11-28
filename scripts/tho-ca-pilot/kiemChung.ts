@@ -346,8 +346,20 @@ export function quyetKetCuc(v: DauVaoQuyet): QuyetKetCuc {
   if (t) {
     if (t.hetGio) return { ketCuc: "kiem-do", lyDo: `tsc hết hạn sau ${t.giay}s — không kết luận được kiểu (fail-closed)` };
     if (t.loi) return { ketCuc: "kiem-do", lyDo: `tsc không khởi chạy được: ${t.loi}` };
+    const khongViTri = t.loiKhongViTri ?? [];
+    const neuVai = (ds: readonly string[]) => (ds.length > 0 ? ` — ${ds.slice(0, 3).join(" | ")}` : "");
+    // thoát khác 0 (hay không có mã) mà không đọc được dòng lỗi nào (lỗi cấu hình, hết bộ nhớ, npx hỏng) KHÔNG phải là sạch
+    if (t.exit !== 0 && t.tongLoi === 0) return { ketCuc: "kiem-do", lyDo: `tsc thoát mã ${t.exit} mà không có dòng lỗi đọc được (fail-closed)${neuVai(khongViTri)}` };
+    if (khongViTri.length > 0) return { ketCuc: "kiem-do", lyDo: `tsc: ${khongViTri.length} lỗi không gắn tệp — kiểu có thể chưa được kiểm (fail-closed)${neuVai(khongViTri)}` };
     if (t.loiTrongTep.length > 0) {
       return { ketCuc: "kiem-do", lyDo: `tsc: ${t.loiTrongTep.length} lỗi kiểu trong tệp model đổi — ${t.loiTrongTep.slice(0, 3).join(" | ")}` };
+    }
+    // lỗi ở tệp model KHÔNG đổi: chặn phần MỚI so với nền; không so được thì mọi lỗi đều chặn
+    if (t.soVoiNen) {
+      const { loiMoi } = t.soVoiNen;
+      if (loiMoi.length > 0) return { ketCuc: "kiem-do", lyDo: `tsc: ${loiMoi.length} lỗi kiểu MỚI so với nền${neuVai(loiMoi)}` };
+    } else if (t.tongLoi > 0) {
+      return { ketCuc: "kiem-do", lyDo: `tsc: ${t.tongLoi} lỗi kiểu, không có nền để so (fail-closed)${neuVai(t.dongLoi ?? [])}` };
     }
   }
   // HA-10: xanh mà KHÔNG thêm ca cho dòng đã duyệt ⇒ KHÔNG ĐẠT (đứng trước đột biến: đột biến trên bài làm thiếu phủ là vô nghĩa)
@@ -408,12 +420,52 @@ export interface KetQuaTsc {
   loi?: string;
   /** V10: mỗi lỗi của tệp model đổi KÈM các dòng giải thích thụt lề theo sau; chỉ có khi ít nhất một lỗi có giải thích */
   khoiTrongTep?: string[];
+  /** MỌI dòng lỗi gắn tệp (chỉ dòng đầu, không kèm giải thích) — để so với nền */
+  dongLoi?: string[];
+  /** dòng "error TSxxxx: …" KHÔNG gắn tệp (lỗi cấu hình…) — có là cổng cuối chặn */
+  loiKhongViTri?: string[];
+  /** so với nền (lỗi của cây gốc); chỉ có khi có nền VÀ lượt này đọc đủ dòng lỗi. `loiMoi` = dòng nguyên văn của phần dư */
+  soVoiNen?: { soLoiNen: number; loiMoi: string[] };
+}
+
+/** THUẦN. Khoá so một lỗi giữa hai cây: tệp + mã + thông điệp, BỎ (dòng,cột) để sửa phía trên không biến lỗi cũ thành lỗi mới. */
+const khoaSoLoi = (d: string): string => {
+  const m = /^(.+?)\(\d+,\d+\): (error TS\d+:.*)$/.exec(d.trim());
+  return m ? `${String(m[1]).replace(/\\/g, "/")}: ${m[2]}` : d.trim();
+};
+
+/** THUẦN. Đa tập `cuoi` trừ đa tập `nen`; cùng một khoá dư ra thì trả các lần SAU CÙNG theo thứ tự tsc in (không biết lần nào thật sự mới). */
+export function soLoiMoi(nen: readonly string[], cuoi: readonly string[]): string[] {
+  const con = new Map<string, number>();
+  for (const d of nen) con.set(khoaSoLoi(d), (con.get(khoaSoLoi(d)) ?? 0) + 1);
+  return cuoi.filter((d) => {
+    const k = khoaSoLoi(d);
+    const n = con.get(k) ?? 0;
+    if (n === 0) return true;
+    con.set(k, n - 1);
+    return false;
+  });
+}
+
+/** THUẦN. Danh sách lỗi của một lượt tsc nếu lượt đó ĐỌC ĐƯỢC ĐỦ; null = không dùng để so được (hết giờ, không chạy, sập, lỗi cấu hình, thiếu dòng). */
+export function danhSachTinDuoc(t: KetQuaTsc): string[] | null {
+  if (t.hetGio || t.loi || (t.loiKhongViTri?.length ?? 0) > 0 || (t.exit !== 0 && t.tongLoi === 0)) return null;
+  const ds = t.dongLoi ?? [];
+  return ds.length >= t.tongLoi ? ds : null;
+}
+
+/** THUẦN. Gắn kết quả so với nền vào một lượt tsc; không so được thì trả nguyên (cổng cuối sẽ coi mọi lỗi là chặn). */
+export function ganSoVoiNen(t: KetQuaTsc, nen: readonly string[] | null): KetQuaTsc {
+  const ds = danhSachTinDuoc(t);
+  return nen === null || ds === null ? t : { ...t, soVoiNen: { soLoiNen: nen.length, loiMoi: soLoiMoi(nen, ds) } };
 }
 
 /** THUẦN. Lọc dòng lỗi tsc theo danh sách tệp đổi (đường tương đối POSIX trong worktree). */
-export function loiTscTrongTep(dau: string, tepDoi: readonly string[]): { trongTep: string[]; tong: number; khoiTrongTep?: string[] } {
+export function loiTscTrongTep(dau: string, tepDoi: readonly string[]): { trongTep: string[]; tong: number; khoiTrongTep?: string[]; dongLoi?: string[]; loiKhongViTri?: string[] } {
   const tap = new Set(tepDoi.map((t) => t.replace(/\\/g, "/")));
   const trongTep: string[] = [];
+  const dongLoi: string[] = [];
+  const khongViTri: string[] = [];
   const khoi: string[][] = [];
   let dangGom: string[] | null = null;
   let tong = 0;
@@ -421,11 +473,13 @@ export function loiTscTrongTep(dau: string, tepDoi: readonly string[]): { trongT
     const m = /^(.+?)\((\d+),(\d+)\): error (TS\d+):/.exec(d);
     if (!m) {
       // dòng thụt lề ngay sau một lỗi là phần giải thích của lỗi đó; dòng không thụt lề kết thúc khối
+      if (/^error TS\d+:/.test(d)) khongViTri.push(d.trim());
       if (dangGom && /^\s+\S/.test(d)) dangGom.push(d.trimEnd());
       else dangGom = null;
       continue;
     }
     tong++;
+    dongLoi.push(d.trim());
     dangGom = null;
     if (tap.has(m[1].replace(/\\/g, "/"))) {
       trongTep.push(d.trim());
@@ -433,7 +487,13 @@ export function loiTscTrongTep(dau: string, tepDoi: readonly string[]): { trongT
       khoi.push(dangGom);
     }
   }
-  return { trongTep, tong, ...(khoi.some((k) => k.length > 1) ? { khoiTrongTep: khoi.map((k) => k.join("\n")) } : {}) };
+  return {
+    trongTep,
+    tong,
+    ...(khoi.some((k) => k.length > 1) ? { khoiTrongTep: khoi.map((k) => k.join("\n")) } : {}),
+    ...(dongLoi.length > 0 ? { dongLoi } : {}),
+    ...(khongViTri.length > 0 ? { loiKhongViTri: khongViTri } : {}),
+  };
 }
 
 /** Có đáng chạy tsc không: có tệp .ts/.tsx/.mts/.cts đổi VÀ worktree có tsconfig.tests.json (cổng check:tests của dự án). */
@@ -455,8 +515,8 @@ export const chayLenhTsc: ChayTsc = (wt, tepDoi, hanGiay, soTsc) =>
     const env = envChoTsc();
     const ra = (exit: number | null, loi?: string) => {
       clearTimeout(dongHo);
-      const { trongTep, tong, khoiTrongTep } = loiTscTrongTep(dau, tepDoi);
-      xong({ exit, hetGio, giay: Math.round(((Date.now() - t0) / 1000) * 10) / 10, loiTrongTep: trongTep, tongLoi: tong, ...(khoiTrongTep ? { khoiTrongTep } : {}), ...(loi ? { loi } : {}) });
+      const { trongTep, tong, ...them } = loiTscTrongTep(dau, tepDoi);
+      xong({ exit, hetGio, giay: Math.round(((Date.now() - t0) / 1000) * 10) / 10, loiTrongTep: trongTep, tongLoi: tong, ...them, ...(loi ? { loi } : {}) });
     };
     let con: ReturnType<typeof spawn>;
     try {
