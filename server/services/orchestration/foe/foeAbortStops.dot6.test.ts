@@ -946,6 +946,51 @@ describe("doc 81 Đợt 6 fix 3 — re-send of the STOP steps of an aborted run"
     expect(r).toMatchObject({ reason: "resendTooOld" });
   });
 
+
+  // X-EDGE-ABORT-TUOI N1-c — the re-send window (E:6646) from the abort's ONE moment: a rejection's stamp first, a negative age is unknown (never Math.abs)
+  it("★ X-EDGE-ABORT-TUOI N1-c a re-send 1 min after the run's LAST write but 16 min after its rejection's stamp ⇒ REFUSED (too old), audited with abortedAt = the stamp, nothing sent", async () => {
+    const runId = await pausedAfterMotion("n1c-stamp", [OT_STOP, RB_STOP]);
+    refuseNextOtStop();
+    await abortRun(runId, SUP);
+    await waitFor(() => stepRow(runId, "abort:ra")?.status === "completed");
+    const dau = Date.now() - ABORT_RESEND_WINDOW_MS - 60_000;
+    runRow(runId).contextJson = { ...((runRow(runId).contextJson as Record<string, unknown> | null) ?? {}), foeRejectClaim: "rc_n1c", foeRejectClaimAt: dau };
+    runRow(runId).finishedAt = new Date(Date.now() - 60_000);
+    audit.mockClear();
+    const before = { ot: otDispatchMock.mock.calls.length, rb: robotDispatchMock.mock.calls.length };
+    const r = await abortRun(runId, SUP);
+    expect(r, "N1-c: refused").toMatchObject({ ok: false, status: "aborted", reason: "resendTooOld", resend: true });
+    expect([otDispatchMock.mock.calls.length, robotDispatchMock.mock.calls.length], "N1-c: nothing sent").toEqual([before.ot, before.rb]);
+    await vi.waitFor(() => expect(auditsOf("abortStopResend").map((m) => [m.outcome, m.abortedAt]), "N1-c: audit").toEqual([["refusedTooOld", dau]]));
+  });
+
+  it("★ X-EDGE-ABORT-TUOI N1-c a finishedAt 5 min in the FUTURE (a clock gone back) is an unknown age ⇒ REFUSED, never inside the window by Math.abs", async () => {
+    const runId = await pausedAfterMotion("n1c-tuonglai", [OT_STOP]);
+    refuseNextOtStop();
+    await abortRun(runId, SUP);
+    runRow(runId).finishedAt = new Date(Date.now() + 5 * 60_000);
+    const r = await abortRun(runId, SUP);
+    expect(r, "N1-c: future").toMatchObject({ ok: false, reason: "resendTooOld" });
+  });
+
+  it("★ X-EDGE-ABORT-TUOI E:4664 a rejection with a hook stamps foeRejectClaimAt IN the claim's own write (next to its claim key), central's clock; the later 'aborted' write does not move it", async () => {
+    const runId = await pausedAfterMotion("stamp", [RB_STOP]);
+    const t0 = Date.now();
+    let trongHook: Record<string, unknown> | null = null;
+    await resumeRun(runId, { approved: false }, SUP, {
+      compensate: async () => {
+        trongHook = { ...((runRow(runId).contextJson as Record<string, unknown> | null) ?? {}) };
+        return "c";
+      },
+    });
+    const t1 = Date.now();
+    const ctx = trongHook as Record<string, unknown> | null;
+    expect(ctx !== null && typeof ctx[FOE_REJECT_CLAIM_CTX_KEY] === "string", "E:4664: the claim key, in the hook").toBe(true);
+    const dau = ctx?.foeRejectClaimAt;
+    expect(typeof dau === "number" && dau >= t0 && dau <= t1, `E:4664: the stamp ${String(dau)} in [${t0}, ${t1}]`).toBe(true);
+    expect(runRow(runId).status, "E:4664: the run ended").toBe("aborted");
+    expect((runRow(runId).contextJson as Record<string, unknown>).foeRejectClaimAt, "E:4664: unmoved by the final write").toBe(dau);
+  });
   it("★ M2 + M5 a re-send within the window: the REQUEST is audited (abortStopResend started), each STOP audit carries resend: true, the answer is marked resend", async () => {
     const runId = await pausedAfterMotion("resendaudit", [OT_STOP, RB_STOP]);
     refuseNextOtStop();
@@ -1028,6 +1073,30 @@ describe("doc 81 Đợt 7 I6 — rejection WITH a QT hook, claim reply lost ⇒ 
     // a retried rejection (the run is now aborted) re-sweeps WITHOUT the hook — never a second business compensation
     await resumeRun(runId, { approved: false }, SUP, { compensate });
     expect(c.n).toBe(1);
+  });
+
+  it("★ X-EDGE-ABORT-TUOI CHU-ENGINE-TUCHOI (C-f) a rejection WITH a hook (its claim carries the rejection key) answered unconfirmed: the retry words start from the long start", async () => {
+    const runId = await pausedAfterMotion("hooklost-chu", [OT_STOP, RB_STOP]);
+    LOST_REPLY.statuses.add("compensating");
+    LOST_REPLY.ms = 1.3 * D;
+    const { compensate } = hookCounter();
+    const r = await resumeRun(runId, { approved: false, note: "no" }, SUP, { compensate });
+    expect(r, "CHU-ENGINE-TUCHOI: unconfirmed").toMatchObject({ ok: false, reason: "abortUnconfirmed" });
+    expect(String((r as { message?: string }).message), "CHU-ENGINE-TUCHOI: the words").toContain(
+      "no retry can be counted on after 15 minutes from when the run was aborted, or when it was first rejected if it was: check the machine on site",
+    );
+    await waitFor(() => runRow(runId).status === "aborted", 6 * D);
+  });
+
+  it("★ X-EDGE-ABORT-TUOI CHU-ENGINE-TUCHOI-CU (control) a rejection WITHOUT a hook (no claim key) answered unconfirmed: the old words, byte for byte", async () => {
+    const runId = await pausedAfterMotion("lostreply-chu", [OT_STOP, RB_STOP]);
+    LOST_REPLY.statuses.add("aborted");
+    LOST_REPLY.ms = 1.3 * D;
+    const r = await resumeRun(runId, { approved: false, note: "no" }, SUP);
+    expect(r, "CHU-ENGINE-TUCHOI-CU: unconfirmed").toMatchObject({ ok: false, reason: "abortUnconfirmed" });
+    const m = String((r as { message?: string }).message);
+    expect([m.includes("no retry can be counted on after 15 minutes from when the run was aborted: check the machine on site"), m.includes("first rejected")], "CHU-ENGINE-TUCHOI-CU").toEqual([true, false]);
+    await waitFor(() => robotDispatchMock.mock.calls.length === 1 && otCommands().length === 2, 4 * D);
   });
 
   it("★ the claim did NOT commit (reply lost) and ANOTHER decision holds 'compensating' ⇒ nothing finished: no STOP, no hook", async () => {

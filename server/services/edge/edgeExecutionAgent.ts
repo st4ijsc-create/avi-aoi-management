@@ -27,6 +27,7 @@
  * be authorised ⇒ HELD (D5), its STOPs still go. The credential is never logged.
  */
 import { promises as fs } from "node:fs";
+import { quyetAbortCu, type TuoiAbortNhan } from "@shared/foeAbortResend"; // X-EDGE-ABORT-TUOI — the ONE decision on the age of central's abort
 import type { EdgeAuthorizeClient, EdgeCentralClient, EdgeVerifiedCommand } from "./edgeCentralClient";
 import { edgeTrustAdapter, verifyCommands, verifyRunPackage } from "./edgeCentralClient";
 import type { EdgeConfigSource } from "./edgeConfigSource";
@@ -35,6 +36,7 @@ import { EDGE_NODE_TOKEN_RE } from "./edgeNodeCredentials";
 import {
   EDGE_ACCEPTS_PROGRESS_JOURNAL_STALL,
   EDGE_HELD_REASONS,
+  edgeHeldWireReason, // X-EDGE-ABORT-TUOI — the heldReason on the wire
   EDGE_JOURNAL_STALL_RECOVERED_CODE,
   edgeRunStream,
   edgeSweepPictureSchema,
@@ -259,6 +261,13 @@ export interface EdgeWalker {
   /** abort the live walker of a run (its STOP sweep runs locally) */
   abortLive(runId: number): Promise<{ live: boolean }>;
   /**
+   * X-EDGE-ABORT-TUOI — central's abort is too old / has no known time: NO sweep; the live walker only refuses a NEW non-STOP step (held), its STOP
+   * paths go as if it did not know (foeEngine.chanNonStopChoAbortCu). Absent ⇒ abortLive (as before).
+   */
+  chanNonStopAbortCu?(runId: number, x: { lyDo: "refusedTooOld" | "refusedNoTime"; abortAgeMs: number | null; tuoi: number | null }): Promise<{ live: boolean }>;
+  /** X-EDGE-ABORT-TUOI — central gave no age (an old central / a cut header): one warning per run, counted (foeEngine.baoTrungTamCuMotLan) */
+  baoTrungTamCu?(runId: number): void;
+  /**
    * the engine's STOP re-send of a VERIFIED sweep picture (foeEngine.resendStopsOfAbortedRun + edgeRunStore's sweep store):
    * the outcome of each STOP is reported as a `stop` event (no claim exists any more). Absent ⇒ the device port re-sends.
    */
@@ -308,6 +317,8 @@ interface Segment {
   token: string;
   seq: number;
   aborted: boolean;
+  /** X-EDGE-ABORT-TUOI — central's abort was decided "too old / no time" once for this segment: no sweep, the walker flagged; never decided again */
+  abortCu?: true;
   controller: AbortController;
   done: Promise<void>;
 }
@@ -317,6 +328,8 @@ interface PendingComplete {
   token: string;
   seq: number;
   outcome: Exclude<EdgeSegmentOutcome, { refused: string }>;
+  /** X-EDGE-ABORT-TUOI — central answered 400 to heldReason abortStopsWithheld once: every later send of THIS end carries the baseline (the end is never thrown away) */
+  luiLyDo?: true;
 }
 
 export interface TickReport {
@@ -334,6 +347,8 @@ export class EdgeExecutionAgent {
   private timer: NodeJS.Timeout | null = null;
   /** the PULL (+ STOP fast path) — single-flight, never behind the work phase (L-7) */
   private pulling: Promise<{ report: TickReport; rest: unknown[] | null; answer: EdgePullAnswer | null; cycle: number; deferred?: unknown[] }> | null = null;
+  /** X-EDGE-ABORT-TUOI — the monotonic ms right before the LAST pull went out (the claims' abortAgeMs is reckoned from it) */
+  private guiLucPull: number | undefined;
   /** the WORK phase (config refresh, non-STOP commands, segment ends, claims) — single-flight, skipped while busy */
   private working: Promise<void> | null = null;
   private readonly segments = new Map<number, Segment>();
@@ -509,6 +524,7 @@ export class EdgeExecutionAgent {
     this.noteStallEnded();
     const report: TickReport = { online: false, claimed: [], stopsResent: [], skipped: [], interrupted: [], aborted: [], commands: [] };
     const pulled = await this.deps.client.post("pull", {});
+    this.guiLucPull = pulled.guiLuc;
     if (!pulled.ok) {
       if (this.online !== false) {
         console.warn(`[EdgeExec] central not reachable / refused the node (HTTP ${pulled.status || "network"}${pulled.code ? ` ${pulled.code}` : ""}): no new run is started; a walking run's next non-STOP step is held (STOPs still go)`);
@@ -633,7 +649,7 @@ export class EdgeExecutionAgent {
     for (const c of p.claims) {
       const seg = this.segments.get(c.runId);
       if (seg) {
-        if (c.abortRequested && (await this.abortSegment(seg))) report.aborted.push(c.runId);
+        if (c.abortRequested && (await this.abortSegment(seg, this.tuoiNhan(c, this.guiLucPull)))) report.aborted.push(c.runId);
         continue;
       }
       if (this.pending.has(c.runId)) continue;
@@ -1080,9 +1096,9 @@ export class EdgeExecutionAgent {
       if (r.ok) {
         const cmds = [...r.data.commands, ...unsignedStopsOf(r.data)];
         if (cmds.length > 0) await this.handleCommands(cmds);
-        if (r.data.abortRequested) await this.abortSegment(seg);
+        if (r.data.abortRequested) await this.abortSegment(seg, this.tuoiNhan(r.data, r.guiLuc));
       } else if (r.code === "claim_stale" && (r.data as { abortRequested?: unknown } | undefined)?.abortRequested === true) {
-        await this.abortSegment(seg);
+        await this.abortSegment(seg, this.tuoiNhan(r.data, r.guiLuc));
       }
       // unreachable: nothing to read locally — the next non-STOP step cannot be authorised (held), STOPs still go
     };
@@ -1106,8 +1122,32 @@ export class EdgeExecutionAgent {
     };
   }
 
-  /** Abort the LOCAL walker once (non-STOP steps stop; STOPs still sent). true ⇔ applied now. */
-  private async abortSegment(seg: Segment): Promise<boolean> {
+  /** X-EDGE-ABORT-TUOI — central's age of the abort as received with this answer: absent ⇔ no `abortAgeMs` key (an old central / a cut header). */
+  private tuoiNhan(data: unknown, guiLuc: number | undefined): TuoiAbortNhan | undefined {
+    const d = (data ?? {}) as { abortAgeMs?: unknown };
+    if (!("abortAgeMs" in d) || guiLuc === undefined) return undefined;
+    return { abortAgeMs: typeof d.abortAgeMs === "number" ? d.abortAgeMs : null, guiLuc, monoNow: this.deps.client.monoNow };
+  }
+
+  /**
+   * Abort the LOCAL walker once (non-STOP steps stop; STOPs still sent). true ⇔ applied now. X-EDGE-ABORT-TUOI — first the age, reckoned NOW
+   * (quyetAbortCu): within the R-6-d window ⇒ as today; past it / no known time ⇒ NO sweep: the walker is only flagged (no NEW non-STOP step),
+   * once per segment; no age at all (an old central) ⇒ as today, warned once per run.
+   */
+  private async abortSegment(seg: Segment, tuoi?: TuoiAbortNhan): Promise<boolean> {
+    if (seg.aborted || seg.abortCu) return false;
+    const q = quyetAbortCu(tuoi);
+    if ((q.quyet === "refusedTooOld" || q.quyet === "refusedNoTime") && this.deps.walker!.chanNonStopAbortCu) {
+      seg.abortCu = true;
+      try {
+        const r = await this.deps.walker!.chanNonStopAbortCu(seg.runId, { lyDo: q.quyet, abortAgeMs: tuoi?.abortAgeMs ?? null, tuoi: q.tuoi });
+        console.warn(`[EdgeExec] run ${seg.runId}: central stopped it ${q.quyet === "refusedTooOld" ? `${Math.round((q.tuoi ?? 0) / 1000)} s ago — past the re-send window` : "at a time this node cannot know"}: its STOPs are NOT swept here; ${r.live ? "the walker sends no new non-STOP step" : "no walker here"} (use the machine's direct STOP / E-STOP)`);
+      } catch (err) {
+        console.error(`[EdgeExec] run ${seg.runId}: the hold of a too-old abort failed — ${(err as Error)?.message ?? err}`);
+      }
+      return false;
+    }
+    if (q.quyet === "trungTamCu") this.deps.walker!.baoTrungTamCu?.(seg.runId);
     if (seg.aborted) return false;
     seg.aborted = true;
     seg.controller.abort();
@@ -1158,13 +1198,20 @@ export class EdgeExecutionAgent {
         seq: ++p.seq,
         outcome: o.outcome,
         ...(o.outcome === "paused" ? { gateStepId: o.gateStepId } : {}),
-        ...(o.outcome === "held" ? { heldReason: o.heldReason } : {}),
+        ...(o.outcome === "held" ? { heldReason: edgeHeldWireReason(o.heldReason, (t) => this.deps.client.centralAccepts(t), p.luiLyDo === true) } : {}),
         ...((o.outcome === "failed" || o.outcome === "held" || o.outcome === "aborted" || o.outcome === "paused") && o.error ? { error: o.error.slice(0, 4_000) } : {}),
         epoch: this.deps.journal.epoch,
         reportedThrough: this.deps.journal.ackedSeq(stream),
       },
       { runId: p.runId },
     );
+    // X-EDGE-ABORT-TUOI — central refused the NEW held reason (a 400 from a central that went back a version): keep the end, send the baseline next time
+    if (!r.ok && r.code === "bad_request" && o.outcome === "held" && o.heldReason === "abortStopsWithheld" && p.luiLyDo !== true && edgeHeldWireReason(o.heldReason, (t) => this.deps.client.centralAccepts(t)) === "abortStopsWithheld") {
+      p.luiLyDo = true;
+      this.pending.set(p.runId, p);
+      console.warn(`[EdgeExec] run ${p.runId}: central refused heldReason abortStopsWithheld — the segment end is kept and sent again with the baseline (EDGE-ABORT-HELD-NHAN-LUI)`);
+      return;
+    }
     if (r.ok || (!r.unavailable && r.code !== "gap" && r.code !== "not_finished")) {
       // taken — or the claim is gone (stale / not found): nothing left to report for this segment
       this.pending.delete(p.runId);
@@ -1227,6 +1274,8 @@ export async function loadDefaultEdgeWalker(): Promise<EdgeWalker> {
     drive: async (pkg, io) =>
       normaliseOutcome(await engine.driveEdgeRunFromPackage(pkg, { runId: io.runId, claimSeq: io.claimSeq, claimToken: io.claimToken, defHash: pkg.defHash }, store.createEdgeRunStore(pkg, io))),
     abortLive: (runId) => engine.stopLiveRunForCentralAbort(runId, { ...EDGE_AGENT_ABORT_USER }),
+    chanNonStopAbortCu: (runId, x) => engine.chanNonStopChoAbortCu(runId, x),
+    baoTrungTamCu: (runId) => engine.baoTrungTamCuMotLan(runId),
     resendStops: async (picture, sink, ownerEpochOf) => {
       let sent = 0;
       let failed = 0;

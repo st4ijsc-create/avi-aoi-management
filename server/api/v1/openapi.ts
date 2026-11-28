@@ -695,7 +695,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           tags: ["Edge"],
           summary: "Edge node: pull the runs assigned to it (doc 81 Đợt 9 S2)",
           description:
-            "The claimable runs of THIS node with the definition snapshot and central's binding digest, plus its current claims with `abortRequested`." +
+            "The claimable runs of THIS node with the definition snapshot and central's binding digest, plus its current claims with `abortRequested` (and `abortAgeMs` — the age of central's abort on central's clock, null when unknown — only when the request carries the header `x-edge-node-accepts: answer.abort_age`)." +
             " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
             "A run not assigned to the calling node (another node's, outside the node's factory, missing) ⇒ the SAME 404.",
           security: [{ bearerAuth: [] }],
@@ -734,7 +734,7 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           tags: ["Edge"],
           summary: "Edge node: report progress (claim-bound, strictly increasing seq)",
           description:
-            "Body `{ claimSeq, claimToken, seq, status }`, optional `journalStalledSinceMs` (edge clock: the node's journal disk has not answered since then; only when central advertises `progress.journal_stall`, raises one URGENT per stall); a replayed / older seq ⇒ 409 `replayed`. Answer: `abortRequested`." +
+            "Body `{ claimSeq, claimToken, seq, status }`, optional `journalStalledSinceMs` (edge clock: the node's journal disk has not answered since then; only when central advertises `progress.journal_stall`, raises one URGENT per stall); a replayed / older seq ⇒ 409 `replayed`. Answer: `abortRequested` (with `abortAgeMs` when the request carries `x-edge-node-accepts: answer.abort_age`)." +
             " Authentication: ONLY the node's own credential (`Authorization: Bearer edn_…`); an API key is never accepted. " +
             "A run not assigned to the calling node (another node's, outside the node's factory, missing) ⇒ the SAME 404.",
           security: [{ bearerAuth: [] }],

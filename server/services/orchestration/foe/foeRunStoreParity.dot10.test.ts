@@ -495,6 +495,9 @@ import { createEdgeRunStore, type EdgeRunRecordIn, type EdgeStepAuthorizeOutcome
 import { STOP_DB_STEP_DEADLINE_MS } from "../../robot/stopJob";
 import type { EdgeRunPackage } from "../../edge/edgeProtocol";
 import type { MachineForValidation, WorkflowDefinition, WorkflowStep } from "./workflowModel";
+import { _soLanTrungTamCuChoTest, chanNonStopChoAbortCu } from "./foeEngine"; // X-EDGE-ABORT-TUOI
+import { bam8DanhSachStop } from "../../edge/edgeProtocol"; // X-EDGE-ABORT-TUOI
+import { createEdgeAuthorizeClient } from "../../edge/edgeCentralClient"; // X-EDGE-ABORT-TUOI (C-a)
 
 type Row = Record<string, any>;
 const OWNER = { id: 10, role: "engineer", name: "owner" };
@@ -3759,6 +3762,21 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(msg.slice(0, b.length), "the words (b)").toBe(b);
   });
   // k1 — khongChot bỏ choNut: URGENT choNut mở bằng chữ "unknown outcome" dù lúc bấm run CHƯA chốt. Chữ duyệt "URGENT bản dài": tiêu đề và thân, không có câu mở về kết cục không rõ.
+  it("★ X-EDGE-ABORT-TUOI CHU-ENGINE-NUT (C-f) the same press on a run carrying a rejection claim stamped 20 min ago (its hook hung: 'compensating'): the answer and the URGENT say the edge node may NOT send s9 (conditional words), from the long start", async () => {
+    const ref = "x11tuoi";
+    const DAI = "when the run was aborted, or when it was first rejected if it was";
+    const x = await kd65(ref, {
+      truocBam1: () => {
+        const r = rows("orchestration_runs").find((v) => v.workflowRef === ref)!;
+        r.status = "compensating";
+        r.contextJson = { ...((r.contextJson as Record<string, unknown> | null) ?? {}), foeRejectClaim: "rc_x11", foeRejectClaimAt: Date.now() - 20 * 60_000 };
+      },
+    });
+    expect(x.kq1.abortStops?.choNut, "CHU-ENGINE-NUT: s9 left to the node").toEqual(["s9"]);
+    expect(String(x.kq1.message ?? ""), "CHU-ENGINE-NUT: the answer").toContain(`The edge node that holds its adapter may NOT send it: more than 15 minutes have passed from ${DAI}, so a node that is told the age of the abort runs no STOP sweep for it (the run's own steps may still send it), while an older node may still send it; nothing here confirms either way.`);
+    const nut = x.urg1.filter(laUrgentNut65);
+    expect(nut.map((a) => [a.title.endsWith("STOP s9 left to the edge node, which may NOT send it"), a.message.includes(`more than 15 minutes have passed from ${DAI}`)]), "CHU-ENGINE-NUT: the URGENT").toEqual([[true, true]]);
+  });
   it("T4-B3-Q1-X11-KD-k1 (X-11, kiem-dinh k1) the URGENT of a STOP left to the node (chuAbort choNut, as the press raises it): the approved title and body first, no opening of an unknown outcome", () => {
     const n = noiDungCanhBaoKhongRo({ loai: "abortStopNotSent", runId: 7, stepId: "s9", compId: KHONG_CO_BU_TRU, error: "FOE_STOP_NOT_SENT", lan: "nut", biet: true, vi: { nguon: "doc", ma: "NOT_CONFIRMED" }, chuAbort: "choNut", adapterNut: true, tuTrungTam: true } as never);
     expect(n.title, "the approved title").toBe(`Run 7: ${URGENT_TIEU_DE_65("s9")}`);
@@ -3788,7 +3806,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     `STOP ${s} was routed to the edge node that holds its adapter: queued for that node if it could be, and sent as central's fallback STOP if it could not be queued or the node was unreachable (the step's records say which). Nothing confirms it reached the device: check the machine on site now and use its direct STOP / E-STOP if it is still running. A STOP request queued for the node does not expire: it is delivered at each pull until the node acknowledges it. A further press of Abort can hand it over again only if the run's steps do not show the node's STOP confirmed by then and its pins are then read as a pinned STOP: within 15 minutes from when the run was aborted, or with no time limit once the run records a command whose outcome is unknown, while it stays owed. Otherwise no press sends it.`;
   /** the 77ec64b0b string of a rejection not confirmed in time (foeEngine.ts:4711 + chuThuLai, as P:15744-15747 reads it), nguyên văn; n: STOP steps handed to the dispatcher */
   const CHU_TU_CHOI_CHUA_XAC_NHAN_13 = (run: number, n: number) =>
-    `Rejection of run ${run} not confirmed by the database in time — STOP steps handed to the dispatcher (the machine has not confirmed them): ${n}; check the run and retry, but no retry can be counted on after 15 minutes from when the run was aborted: check the machine on site and use its direct STOP / E-STOP.`;
+    `Rejection of run ${run} not confirmed by the database in time — STOP steps handed to the dispatcher (the machine has not confirmed them): ${n}; check the run and retry, but no retry can be counted on after 15 minutes from when the run was aborted, or when it was first rejected if it was: check the machine on site and use its direct STOP / E-STOP.`; // X-EDGE-ABORT-TUOI (B1): a QT rejection carries the claim ⇒ the long start
   /** the key of the press's own URGENT of a STOP not sent on a run not latched (lan `xm`) */
   const KHOA_XM_13 = (c: number, s: string) => `${CANH_BAO_KHONG_RO_KIND.abortStopNotSent}:${c}:${s}:-:xm`;
   const laXm13 = (a: { dedupKey: string }) => a.dedupKey.endsWith(":-:xm");
@@ -4034,7 +4052,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     expect(x.a.reason).toBe("abortUnconfirmed");
     expect(x.a.abortStops?.sent ?? [], "handed over").toEqual(["s9"]);
     expect(truong13(x.a), "none of the fields").toEqual({ khongXacMinhChuaKhoa: undefined, ketNoiChuaKhoa: undefined, giaoNutChuaKhoa: undefined });
-    expect(x.a.message, "the old string alone").toBe(CHU_TU_CHOI_CHUA_XAC_NHAN_13(x.c, 1));
+    expect(x.a.message, "the rejection string alone").toBe(CHU_TU_CHOI_CHUA_XAC_NHAN_13(x.c, 1));
   });
   // A14 (thay, V10-5) — đối chứng G1': the connection confirmed: s9 handed over once, none of the fields, no `xm`, the ok answer as before (no message)
   it("T4-B3-LO2A-G1P-DC-KET-NOI-OK (X-13, đối chứng G1'; xanh trước và sau) press 1 on the central run NOT latched, pins read, the connection confirmed: s9 handed to a driver once; no khongXacMinhChuaKhoa / ketNoiChuaKhoa, no `xm`; no message (the unconfirmed branch: CHU-KHONG-CO-NUT ketNoi = true)", async () => {
@@ -4129,7 +4147,7 @@ describe("doc 81 Đợt 10 C fix review 1 — compensation hold (R-10-y), journa
     h.hangNem = null;
     expect(q.a.reason).toBe("abortUnconfirmed");
     expect(q.a.abortStops?.khongBen, "the lost write named").toEqual(["s9"]);
-    expect(q.a.message, "rejection: the old string, then the words khongBen").toBe(`${CHU_TU_CHOI_CHUA_XAC_NHAN_13(q.c, 0)} ${X13_CAU_KHONG_BEN("s9")}`);
+    expect(q.a.message, "rejection: the rejection string, then the words khongBen").toBe(`${CHU_TU_CHOI_CHUA_XAC_NHAN_13(q.c, 0)} ${X13_CAU_KHONG_BEN("s9")}`);
   });
   // RJ-KB — từ chối ở cổng người (foeEngine.ts:4715), chỉ có khongBen: câu trả lời có lời (hàng X-13 (3)), mở bằng trạng thái run, rồi chữ chuKhongBen nguyên văn
   it("T4-B3-LO2A-REJECT-KHONG-BEN (X-13 (3), khongBen; HST 17/11) a person rejects g2 of the central run NOT latched, s9's pins unreadable and its trace NOT written: the answer is 'Run N is rejected and aborted.' and the words of a trace not recorded, to the character; never the words G1", async () => {
@@ -13429,6 +13447,22 @@ describe("A2(n) T7b-1c — one classification of a STOP at an Abort: what goes, 
     expect(a.status).toBe("completed");
     expect(a.message).toContain("completed");
   });
+  it("X-EDGE-ABORT-TUOI RC12B-NHANH-3-KHOA-TU-CHOI a run carrying a rejection claim stamped 20 min ago, the row reads failed: the Abort's SEND decision is as before (s goes, its class unchanged); only the words take the flag", async () => {
+    seedHalt();
+    h.ghim = PIN_OK;
+    h.slow.set("x", 250);
+    const { c, di } = await moDi(def("rc12n3t", [gate(), parF("p", [move("x"), box("b", [delay("w", 800), otStop("s")])])]));
+    await waitFor(() => h.sent.some((x) => x.stepId === "x"), "x handed over");
+    await wait(20);
+    h.sent.length = 0;
+    h.alerts.length = 0;
+    runRow(c).contextJson = { ...((runRow(c).contextJson as Record<string, unknown> | null) ?? {}), foeRejectClaim: "rc_rc12", foeRejectClaimAt: Date.now() - 20 * 60_000 };
+    h.treAborted = 5;
+    h.khiTreAborted = () => (runRow(c).status = "failed");
+    const a = { ...(await abortRun(c, OWNER, "walker alive")) };
+    await di;
+    expect([a.ok, a.status, a.abortStops?.sent, a.abortStops?.phanLoai?.s?.lop], "RC12B-NHANH-3-KHOA-TU-CHOI").toEqual([false, "failed", ["s"], "chuaGiao"]);
+  });
   it("RC12B-NHANH-3-CHUA-TAC-DONG a run that ended and never acted: R-6-b stands: its STOP is not sent", async () => {
     seedHalt();
     h.ghim = PIN_OK;
@@ -16454,6 +16488,16 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
   });
   // ── lượt sửa 5 (F-5, bảng câu dòng 25): "check the run and retry" names the window as an upper limit and the machine; a retry at minute 14 sends, at minute 16 nothing ─────────────────────────────
   // phán quyết sau rà (R5-6): the road of a rejection with a business hook (QT, foeEngine :4573): its claim writes 'compensating', its final write of 'aborted' lands late
+  // B2 (K3 lại 28/11, HST + kiem-dinh): a QT rejection stamps its claim (FOE_REJECT_CLAIM_AT_CTX_KEY, central's clock) and the window counts from that stamp first (shared/foeAbortResend mocAbortMs);
+  // finishedAt alone no longer moves the start of a QT run. The stamp must be there (soft: on the base it is not, and the line after it still runs), then it moves back with finishedAt
+  async function dauTuChoi(c: number, phutTruoc: number | null): Promise<unknown> {
+    const { FOE_REJECT_CLAIM_AT_CTX_KEY } = await import("@shared/foeAbortResend");
+    const ctx = (runRow(c).contextJson as Record<string, unknown> | null) ?? {};
+    const dau = ctx[FOE_REJECT_CLAIM_AT_CTX_KEY];
+    expect.soft(typeof dau, "the QT claim's stamp is there (the claim's own write)").toBe("number");
+    if (phutTruoc !== null) runRow(c).contextJson = { ...ctx, [FOE_REJECT_CLAIM_AT_CTX_KEY]: Date.now() - phutTruoc * 60_000 };
+    return dau;
+  }
   for (const via of ["abort", "reject", "qt"] as const) {
     const ten = via === "qt" ? "T7B1D-THU-LAI-QT a gate rejection with a business hook (QT)" : `T7B1D-THU-LAI-CHUA-XAC-NHAN ${via === "abort" ? "an Abort" : "a gate rejection"}`;
     it(`${ten} whose 'aborted' write lands late: the retry it is told is bounded by 15 minutes from when the run was aborted, and the machine is to be checked; a retry at minute 14 sends, at minute 16 nothing`, async () => {
@@ -16483,11 +16527,12 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
         // H38 thêm (dieu-phoi 13/11, P3 of kiem-dinh) — the abort / reject answer: handed to the dispatcher, never "confirmed sent" (the machine has not confirmed them)
         expect(a.message).toMatch(/ — STOP steps handed to the dispatcher \(the machine has not confirmed them\): \d+; /);
         expect(a.message).not.toMatch(/confirmed sent/);
-        expect(a.message).toContain("check the run and retry, but no retry can be counted on after 15 minutes from when the run was aborted: check the machine on site and use its direct STOP / E-STOP.");
+        expect(a.message).toContain(`check the run and retry, but no retry can be counted on after 15 minutes from ${via === "qt" ? "when the run was aborted, or when it was first rejected if it was" : "when the run was aborted"}: check the machine on site and use its direct STOP / E-STOP.`); // X-EDGE-ABORT-TUOI (B1): only the QT rejection writes the claim
         await waitFor(() => runRow(c).status === "aborted", "the late write lands", 5_000);
         await wait(300);
         h.tuChoi.clear();
         h.treAborted = 0;
+        if (via === "qt") await dauTuChoi(c, phut); // B2: the QT start is the claim's stamp: it moves back too, at minute 14 and at minute 16
         runRow(c).finishedAt = new Date(Date.now() - phut * 60_000);
         const a2 = await bam(c);
         if (phut === 14) expect(ids(), "minute 14: the retry sends").toEqual(["s"]);
@@ -16495,6 +16540,36 @@ describe("A2(n) T7b-1d — what an Abort tried or meant to send goes at a later 
           expect(ids(), "minute 16: nothing").toEqual([]);
           expect(a2.reason).toBe("resendTooOld");
         }
+      }
+    }, 30_000);
+  }
+  // B2 đối chứng (HST, kiem-dinh 28/11), the two directions: the QT start is the claim's stamp, not finishedAt
+  for (const dc of ["dauMoi", "dauCu"] as const) {
+    it(`T7B1D-THU-LAI-QT-MOC-${dc === "dauMoi" ? "DAU-MOI" : "DAU-CU"} a gate rejection with a business hook (QT) whose 'aborted' write lands late: the start of the retry is the claim's stamp; ${dc === "dauMoi" ? "the stamp fresh, finishedAt 16 min old: the retry sends" : "the stamp 16 min old, finishedAt fresh: nothing, too old"}`, async () => {
+      ve0();
+      h.tuChoi.set("s", REF);
+      h.treAborted = 1_600;
+      const c = await centralRun(def(`d1dtlqm${dc === "dauMoi" ? "m" : "c"}`, [gate("g0"), move("x"), box("b", [gate("g1"), otStop("s")])]), 1);
+      await wait(30);
+      const view = (await getRun(c, { bindingDigest: true }))!;
+      const a = await resumeRun(c, { approved: false, reason: "no", expectedStepId: view.run.currentStepId, expectedDefHash: view.defHash!, expectedBindingDigest: view.bindingDigest! } as never, OTHER, { compensate: async () => (await wait(50), "qt hook ran") });
+      expect(a.reason).toBe("abortUnconfirmed");
+      await waitFor(() => runRow(c).status === "aborted", "the late write lands", 5_000);
+      await wait(300);
+      h.tuChoi.clear();
+      h.treAborted = 0;
+      if (dc === "dauMoi") {
+        const dau = await dauTuChoi(c, null);
+        expect.soft(typeof dau === "number" && Date.now() - dau < 60_000, "the stamp is fresh (soft: the line after it still runs on the base)").toBe(true);
+        runRow(c).finishedAt = new Date(Date.now() - 16 * 60_000);
+        await bam(c);
+        expect(ids(), "a fresh stamp, finishedAt 16 min old: the retry sends").toEqual(["s"]);
+      } else {
+        await dauTuChoi(c, 16);
+        runRow(c).finishedAt = new Date();
+        const a2 = await bam(c);
+        expect(ids(), "a stamp 16 min old, finishedAt fresh: nothing").toEqual([]);
+        expect(a2.reason).toBe("resendTooOld");
       }
     }, 30_000);
   }
@@ -18168,6 +18243,25 @@ describe("A2(n) T7b-2 — the Abort on the edge side: a live edge walker, centra
     await wait(20);
     expect(r2.http).toBe(200);
     expect(hang(e.runId, "abort:s1")?.status, "confirmed").toBe("completed");
+  });
+
+  it("★ X-EDGE-ABORT-TUOI TUOI-EVENTS-RUNID the node's EDGE_ABORT_STOPS_WITHHELD on the events stream: a run of THIS node ⇒ one URGENT edge_abort_stops_withheld on that run; a run not this node's ⇒ none", async () => {
+    const e = await edgeAssignedRun(def("tev-tuoi", [gate(), otStop("s1")]));
+    h.alerts.length = 0;
+    chuanBi(e, 1);
+    (fake as any).execute = async () => []; // the admins' read (raw SQL): nobody beyond the owner
+    const chiTiet = (id: number) => `refusedTooOld: run ${id} abortAgeMs=960000 stops=1 hash=0123abcd: s1@adapter 501`;
+    const r = (await eventsForNode(NUT, {
+      stream: "events",
+      epoch: EPOCH,
+      records: [
+        { kind: "anomaly", seq: 1, runId: e.runId, code: "EDGE_ABORT_STOPS_WITHHELD", detail: chiTiet(e.runId), at: Date.now() },
+        { kind: "anomaly", seq: 2, runId: 987_654, code: "EDGE_ABORT_STOPS_WITHHELD", detail: chiTiet(987_654), at: Date.now() },
+      ],
+    } as never)) as Record<string, any>;
+    await wait(40);
+    expect(r.http, "TUOI-EVENTS-RUNID: taken").toBe(200);
+    expect(h.alerts.filter((a) => a.kind === "edge_abort_stops_withheld").map((a) => [a.entityType, a.entityId, a.dedupKey]), "TUOI-EVENTS-RUNID").toEqual([["orchestration_run", e.runId, `abort_stops_withheld:run:${e.runId}:0123abcd`]]);
   });
 
   // ── 4: G4i (3a) — the QT pump's rejection of a latched run is no person's ──────────────────────────────────────────────────────────────────────────────────────
@@ -20723,5 +20817,228 @@ describe("X-38 (P1-HANG, edge) the node's next segment tries a STOP in state C o
     expect(gui(n0)).not.toContain("undo");
     expect(gui(n0), "cs tried again in segment 3").toContain("cs");
     expect(String(runRow(e.runId).error)).toContain('STOP "cs"');
+  });
+});
+
+describe("X-EDGE-ABORT-TUOI — the edge walker and central's abort by its AGE (real edgeRunStore; L4 authorize 'stopped', L1–L3 the agent's hook)", () => {
+  const MIN = 60_000;
+  /** central's age as the client hands it on (edgeCentralClient: TuoiAbortNhan); the node's clock stands still ⇒ the reckoned age = central's */
+  const tuoi = (abortAgeMs: number | null) => ({ abortAgeMs, guiLuc: 0, monoNow: () => 0 });
+  const okAuth = async (): Promise<EdgeStepAuthorizeOutcome> => ({ ok: true, authorization: {} as never, claims: { jti: randomUUID(), approval: null }, ttlMs: 10_000, reqNonce: "n".repeat(32) });
+  const dungVoi = (t: ReturnType<typeof tuoi> | undefined, code = "stopped") => ({ ok: false as const, verdict: "stopped" as const, code, ...(t ? { tuoi: t } : {}) }) as unknown as EdgeStepAuthorizeOutcome;
+  function ioOf(runId: number, authorize: (i: EdgeStepAuthorizeRequest) => Promise<EdgeStepAuthorizeOutcome>) {
+    const records: EdgeRunRecordIn[] = [];
+    const events: Array<Record<string, any>> = [];
+    return {
+      records,
+      events,
+      io: {
+        runId,
+        claimSeq: 1,
+        claimToken: "ect_" + "t".repeat(43),
+        sink: {
+          run: async (_r: number, _c: number, rec: EdgeRunRecordIn) => (records.push(rec), { seq: records.length }),
+          event: async (rec: unknown) => (events.push(rec as Record<string, any>), { seq: events.length, durable: true as const }),
+        },
+        authorize: { authorize },
+      },
+    };
+  }
+  const giuLai = (events: Array<Record<string, any>>) => events.filter((x) => x.kind === "anomaly" && x.code === "EDGE_ABORT_STOPS_WITHHELD").map((x) => String(x.detail));
+  const kiemToan = (events: Array<Record<string, any>>) => events.filter((x) => x.kind === "anomaly" && x.code === "abortStopWithheld").map((x) => String(x.detail));
+  const buocCuoi = (records: EdgeRunRecordIn[], id: string) => records.filter((r: any) => r.kind === "step" && r.stepId === id).pop() as Record<string, any> | undefined;
+
+  it("★ TUOI-L4-QUA — 'stopped' at r1's authorisation, central's age 16 min ⇒ NO sweep: r1 HELD (abortStopsWithheld), the STOP after it NOT sent; the anomaly at the decision and at the hold; the audit's head", async () => {
+    const e = await edgeAssignedRun(def("tuoi-l4-qua", [move("r1"), robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    const t = ioOf(e.runId, async () => dungVoi(tuoi(16 * MIN)));
+    const out = (await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, createEdgeRunStore(pkg, t.io))) as Record<string, any>;
+    await new Promise((r) => setTimeout(r, 50)); // a sweep would have started by now
+    expect(out, "TUOI-L4-QUA: the end").toMatchObject({ outcome: "held", heldReason: "abortStopsWithheld" });
+    expect(h.sent.map((s) => s.stepId), "TUOI-L4-QUA: nothing sent").toEqual([]);
+    expect(buocCuoi(t.records, "r1"), "TUOI-L4-QUA: r1").toMatchObject({ status: "held" });
+    expect(String(buocCuoi(t.records, "r1")!.error), "TUOI-L4-QUA: r1's error").toMatch(/^EDGE_HELD\(abortStopsWithheld\): command step "r1" was not sent/);
+    const ds = ["s1@machine 2"];
+    const dong = `refusedTooOld: run ${e.runId} abortAgeMs=${16 * MIN} stops=1 hash=${bam8DanhSachStop(ds)}: s1@machine 2`;
+    expect(giuLai(t.events), "TUOI-L4-QUA: the anomaly, at the decision and at the hold").toEqual([dong, dong]);
+    expect(kiemToan(t.events).length, "TUOI-L4-QUA: one audit").toBe(1);
+    expect(kiemToan(t.events)[0]!.startsWith(`{"tomTat":"stops=1 hash=${bam8DanhSachStop(ds)}"`), "TUOI-L4-QUA: the audit's head").toBe(true);
+  });
+
+  it("★ TUOI-L4-TRONG — 'stopped', central's age 1 min (within 15 min) ⇒ as today: aborted, the STOP swept; no anomaly of a withheld sweep (control)", async () => {
+    const e = await edgeAssignedRun(def("tuoi-l4-trong", [move("r1"), robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    const t = ioOf(e.runId, async () => dungVoi(tuoi(MIN)));
+    const out = (await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, createEdgeRunStore(pkg, t.io))) as Record<string, any>;
+    await waitFor(() => h.sent.some((s) => s.stepId === "s1"), "TUOI-L4-TRONG: sweep sent s1");
+    expect([out.outcome, h.sent.map((s) => s.stepId), giuLai(t.events)], "TUOI-L4-TRONG").toEqual(["aborted", ["s1"], []]);
+  });
+
+  it("★ TUOI-L4-NULL — 'stopped', central's age null ⇒ NO sweep: held abortStopsWithheld, refusedNoTime in the anomaly", async () => {
+    const e = await edgeAssignedRun(def("tuoi-l4-null", [move("r1"), robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    const t = ioOf(e.runId, async () => dungVoi(tuoi(null)));
+    const out = (await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, createEdgeRunStore(pkg, t.io))) as Record<string, any>;
+    await new Promise((r) => setTimeout(r, 50));
+    expect([out.outcome, out.heldReason, h.sent.map((s) => s.stepId)], "TUOI-L4-NULL").toEqual(["held", "abortStopsWithheld", []]);
+    expect(giuLai(t.events)[0], "TUOI-L4-NULL: the anomaly").toBe(`refusedNoTime: run ${e.runId} abortAgeMs=null stops=1 hash=${bam8DanhSachStop(["s1@machine 2"])}: s1@machine 2`);
+  });
+
+  it("★ TUOI-L4-CU — 'stopped' from an OLD central (no age at all) ⇒ as today: aborted + swept; counted once (EDGE-ABORT-TRUNG-TAM-CU)", async () => {
+    _soLanTrungTamCuChoTest(true);
+    const e = await edgeAssignedRun(def("tuoi-l4-cu", [move("r1"), robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    const t = ioOf(e.runId, async () => dungVoi(undefined));
+    const out = (await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, createEdgeRunStore(pkg, t.io))) as Record<string, any>;
+    await waitFor(() => h.sent.some((s) => s.stepId === "s1"), "TUOI-L4-CU: sweep sent s1");
+    expect([out.outcome, h.sent.map((s) => s.stepId), giuLai(t.events), _soLanTrungTamCuChoTest(true)], "TUOI-L4-CU").toEqual(["aborted", ["s1"], [], 1]);
+  });
+
+  it("★ TUOI-L4-RNA — 'stopped' with code run_not_active (no central abort) and an age of 16 min ⇒ unchanged: aborted + swept", async () => {
+    const e = await edgeAssignedRun(def("tuoi-l4-rna", [move("r1"), robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    const t = ioOf(e.runId, async () => dungVoi(tuoi(16 * MIN), "run_not_active"));
+    const out = (await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, createEdgeRunStore(pkg, t.io))) as Record<string, any>;
+    await waitFor(() => h.sent.some((s) => s.stepId === "s1"), "TUOI-L4-RNA: sweep sent s1");
+    expect([out.outcome, h.sent.map((s) => s.stepId), giuLai(t.events)], "TUOI-L4-RNA").toEqual(["aborted", ["s1"], []]);
+  });
+
+  it("★ TUOI-CHAN-CHUOI — the agent's hook (L1–L3) on a LIVE walker: the step in flight finishes, the STOP behind it GOES, the next non-STOP is HELD, the STOP after that is not sent", async () => {
+    const e = await edgeAssignedRun(def("tuoi-chuoi", [move("r1"), { id: "d1", type: "delay", ms: 300 } as never, robotStop("s1"), move("r2"), robotStop("s2")]));
+    const pkg = await claimPackage(e, 1);
+    const hoi: string[] = [];
+    const t = ioOf(e.runId, async (i) => (hoi.push(i.stepId), okAuth()));
+    const drive = driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, createEdgeRunStore(pkg, t.io));
+    await waitFor(() => t.records.some((r: any) => r.kind === "step" && r.stepId === "d1" && r.status === "running"), "TUOI-CHAN-CHUOI: d1 running");
+    expect(await chanNonStopChoAbortCu(e.runId, { lyDo: "refusedTooOld", abortAgeMs: 16 * MIN, tuoi: 16 * MIN }), "TUOI-CHAN-CHUOI: live").toEqual({ live: true });
+    const out = (await drive) as Record<string, any>;
+    expect([out.outcome, out.heldReason, h.sent.map((s) => s.stepId)], "TUOI-CHAN-CHUOI").toEqual(["held", "abortStopsWithheld", ["r1", "s1"]]);
+    expect(buocCuoi(t.records, "r2"), "TUOI-CHAN-CHUOI: r2").toMatchObject({ status: "held" });
+    expect(hoi, "TUOI-CHAN-CHUOI (iii): r2 never asked for an authorisation").toEqual(["r1"]);
+    expect(buocCuoi(t.records, "s2"), "TUOI-CHAN-CHUOI: s2 never ran").toBeUndefined();
+    const g = giuLai(t.events);
+    expect(g, "TUOI-CHAN-CHUOI: at the decision (s1, s2 left), at the hold (s2 left)").toEqual([
+      `refusedTooOld: run ${e.runId} abortAgeMs=${16 * MIN} stops=2 hash=${bam8DanhSachStop(["s1@machine 2", "s2@machine 2"])}: s1@machine 2, s2@machine 2`,
+      `refusedTooOld: run ${e.runId} abortAgeMs=${16 * MIN} stops=1 hash=${bam8DanhSachStop(["s2@machine 2"])}: s2@machine 2`,
+    ]);
+  });
+
+  it("★ TUOI-CHAN-CHUOI-TRONG — (ii) the same chain, central's abort WITHIN the window (the agent's abortLive) ⇒ as today: aborted, the sweep sends s1 and s2, r2 never (control)", async () => {
+    const e = await edgeAssignedRun(def("tuoi-chuoi-trong", [move("r1"), { id: "d1", type: "delay", ms: 60_000 } as never, robotStop("s1"), move("r2"), robotStop("s2")]));
+    const pkg = await claimPackage(e, 1);
+    const hoi: string[] = [];
+    const t = ioOf(e.runId, async (i) => (hoi.push(i.stepId), okAuth()));
+    const drive = driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, createEdgeRunStore(pkg, t.io));
+    await waitFor(() => t.records.some((r: any) => r.kind === "step" && r.stepId === "d1" && r.status === "running"), "TUOI-CHAN-CHUOI-TRONG: d1 running");
+    const live = await stopLiveRunForCentralAbort(e.runId, { id: 0, role: "system", name: "edge: central abort" });
+    const out = (await drive) as Record<string, any>;
+    await waitFor(() => h.sent.some((s) => s.stepId === "s2"), "TUOI-CHAN-CHUOI-TRONG: the sweep sent s2");
+    expect([out.outcome, live.abortStops?.sent, h.sent.map((s) => s.stepId), hoi], "TUOI-CHAN-CHUOI-TRONG").toEqual(["aborted", ["s1", "s2"], ["r1", "s1", "s2"], ["r1"]]);
+  });
+
+  it("★ TUOI-CHAN-BU — (i) the flag lands while r1 is IN FLIGHT: r1 is sent, r2 HELD; r1's STOP compensation is left to no one ⇒ the anomaly at the hold names it", async () => {
+    const e = await edgeAssignedRun(def("tuoi-bu", [move("r1", { compensation: robotStop("c1") }), move("r2")]));
+    const pkg = await claimPackage(e, 1);
+    let mo!: () => void;
+    const cho = new Promise<void>((r) => (mo = r));
+    const t = ioOf(e.runId, async (i) => {
+      if (i.stepId === "r1") await cho; // r1's authorisation is out when the flag lands
+      return okAuth();
+    });
+    const drive = driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, createEdgeRunStore(pkg, t.io));
+    await waitFor(() => t.records.some((r: any) => r.kind === "step" && r.stepId === "r1"), "TUOI-CHAN-BU: r1 started");
+    expect(await chanNonStopChoAbortCu(e.runId, { lyDo: "refusedTooOld", abortAgeMs: 16 * MIN, tuoi: 16 * MIN }), "TUOI-CHAN-BU: live").toEqual({ live: true });
+    mo();
+    const out = (await drive) as Record<string, any>;
+    expect([out.outcome, out.heldReason, h.sent.map((s) => s.stepId)], "TUOI-CHAN-BU").toEqual(["held", "abortStopsWithheld", ["r1"]]);
+    const g = giuLai(t.events);
+    expect(g.length >= 1 && g[g.length - 1]!.endsWith(": c1@machine 2"), `TUOI-CHAN-BU: the anomaly at the hold names c1 — ${JSON.stringify(g)}`).toBe(true);
+  });
+
+  it("★ TUOI-CHAN-KHONG — the hook for a run with no walker here ⇒ { live: false }, nothing written", async () => {
+    expect(await chanNonStopChoAbortCu(987_654, { lyDo: "refusedNoTime", abortAgeMs: null, tuoi: null }), "TUOI-CHAN-KHONG").toEqual({ live: false });
+  });
+
+  it("★ TUOI-HELD-TRUNG-TAM — (§2.2) central applies a segment end held(abortStopsWithheld): the run is HELD, nothing moves it on by itself (not queued / running), its error names the reason", async () => {
+    const id = 9731;
+    fake.store.set("orchestration_runs", [...rows("orchestration_runs"), { id, status: "running", contextJson: null }]);
+    await applyEdgeSegmentEnd(fake as never, id, { outcome: "held", heldReason: "abortStopsWithheld" as never, error: 'EDGE_HELD(abortStopsWithheld): command step "r1" was not sent', nodeCode: "edge-a", claimSeq: 1, def: def("tuoi-held-tt", [move("r1"), robotStop("s1")]) });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(runRow(id).status, "TUOI-HELD-TRUNG-TAM: held").toBe("held");
+    expect(String(runRow(id).error ?? ""), "TUOI-HELD-TRUNG-TAM: the reason").toContain("abortStopsWithheld");
+  });
+
+  it("★ TUOI-AUDIT-CAT — EDGE-ABORT-AUDIT-TRUNG-TAM-CAT: the audit of a withheld sweep reaches central cut at 1 000 characters (edgeRunStore.auditAbort); its head still names k and the hash of the FULL list", async () => {
+    const e = await edgeAssignedRun(def("tuoi-audit-cat", [move("r1")]));
+    const pkg = await claimPackage(e, 1);
+    const t = ioOf(e.runId, okAuth);
+    const store = createEdgeRunStore(pkg, t.io);
+    const ds = Array.from({ length: 81 }, (_, i) => `stop-${String(i).padStart(3, "0")}@adapter ${100 + i}`);
+    store.auditAbort({ id: 0, role: "system", name: "edge: guard" } as never, e.runId, "abortStopWithheld" as never, { tomTat: `stops=81 hash=${bam8DanhSachStop(ds)}`, via: "liveAbort", outcome: "refusedTooOld", stops: ds });
+    await new Promise((r) => setTimeout(r, 20));
+    const k = kiemToan(t.events);
+    expect([k.length, k[0]?.length], "TUOI-AUDIT-CAT: one audit event, cut").toEqual([1, 1_000]);
+    expect(k[0]!.startsWith(`{"tomTat":"stops=81 hash=${bam8DanhSachStop(ds)}"`), "TUOI-AUDIT-CAT: the head survives the cut").toBe(true);
+  });
+
+  /** the REAL authorize client over a stub transport that answers what EdgeCentralClient.post returns for a 409 (edgeAbortTuoiNut A10 pins that answer on the real client) */
+  const clThat = (tra: Record<string, unknown>) =>
+    createEdgeAuthorizeClient({
+      client: { monoNow: () => 0, post: async () => ({ ok: false, status: 409, unavailable: false, guiLuc: 0, ...tra }) } as never,
+      trust: () => ({}) as never,
+      credentialId: () => 1,
+      maxTtlMs: () => 10_000,
+      isJtiConsumed: () => false,
+      programChecks: () => [],
+    });
+
+  it("★ TUOI-L4-CL-QUA — (C-a) the REAL authorize client → the real edge store → the walker: central's 409 stopped with abortAgeMs 16 min ⇒ held abortStopsWithheld, nothing sent", async () => {
+    const e = await edgeAssignedRun(def("tuoi-cl-qua", [move("r1"), robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    const cl = clThat({ code: "stopped", data: { abortAgeMs: 16 * MIN } });
+    const t = ioOf(e.runId, (i) => cl.authorize(i as never) as never);
+    const out = (await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, createEdgeRunStore(pkg, t.io))) as Record<string, any>;
+    await new Promise((r) => setTimeout(r, 50));
+    expect([out.outcome, out.heldReason, h.sent.map((s) => s.stepId)], "TUOI-L4-CL-QUA").toEqual(["held", "abortStopsWithheld", []]);
+  });
+
+  it("★ TUOI-L4-CL-STALE — (C-a) the same chain, 409 claim_stale WITH abortRequested and abortAgeMs 16 min (the store turns it into 'stopped') ⇒ held abortStopsWithheld, nothing sent", async () => {
+    const e = await edgeAssignedRun(def("tuoi-cl-stale", [move("r1"), robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    const cl = clThat({ code: "claim_stale", data: { abortRequested: true, abortAgeMs: 16 * MIN } });
+    const t = ioOf(e.runId, (i) => cl.authorize(i as never) as never);
+    const out = (await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, createEdgeRunStore(pkg, t.io))) as Record<string, any>;
+    await new Promise((r) => setTimeout(r, 50));
+    expect([out.outcome, out.heldReason, h.sent.map((s) => s.stepId)], "TUOI-L4-CL-STALE").toEqual(["held", "abortStopsWithheld", []]);
+  });
+
+  it("★ TUOI-V1-SYNC — (C-e) a legacy sync's payload context never brings a rejection's stamp (nor its claim) into the run", async () => {
+    const d = def("tuoi-v1", [gate(), move("r1")]);
+    expect((await deployWorkflow(d, OWNER)).ok).toBe(true);
+    const wf = rows("orchestration_workflows").find((w) => w.ref === "tuoi-v1")!;
+    const C = 9741;
+    fake.seed(orchestrationRuns, [...rows("orchestration_runs"), { id: C, workflowId: wf.id, workflowRef: "tuoi-v1", status: "running", paramsJson: {}, edgeNodeId: null, startedBy: OWNER.id, createdAt: new Date(), contextJson: {} }]);
+    const truocCo = process.env.EDGE_RUNTIME_ENABLED;
+    process.env.EDGE_RUNTIME_ENABLED = "true"; // the legacy sync's own flag, as T7c-b sets it
+    try {
+      const r = await syncRunResult({ edgeNodeCode: "edge-x", runId: C, status: "running", currentStepId: "r1", contextJson: { k: 1, foeRejectClaim: "forged", foeRejectClaimAt: 123 }, steps: [] } as never);
+      expect(r.ok, `TUOI-V1-SYNC: ${JSON.stringify(r).slice(0, 300)}`).toBe(true);
+      expect(runRow(C).contextJson, "TUOI-V1-SYNC: the context written").toEqual({ k: 1 });
+    } finally {
+      if (truocCo === undefined) delete process.env.EDGE_RUNTIME_ENABLED;
+      else process.env.EDGE_RUNTIME_ENABLED = truocCo;
+    }
+  });
+
+  it("★ TUOI-UU-TIEN — a sibling's LATER centralUnreachable never overwrites abortStopsWithheld (outcomeUnknown > journalFull > abortStopsWithheld > the rest)", async () => {
+    const e = await edgeAssignedRun(def("tuoi-uutien", [{ id: "p1", type: "parallel", steps: [move("r1"), move("r2")] } as never, robotStop("s1")]));
+    const pkg = await claimPackage(e, 1);
+    const t = ioOf(e.runId, async (i) => {
+      if (i.stepId === "r1") return dungVoi(tuoi(16 * MIN));
+      await new Promise((r) => setTimeout(r, 100));
+      return { ok: false, verdict: "unavailable", code: "network" };
+    });
+    const out = (await driveEdgeRunFromPackage(pkg, { runId: e.runId, claimSeq: 1 }, createEdgeRunStore(pkg, t.io))) as Record<string, any>;
+    expect([out.outcome, out.heldReason, h.sent.map((s) => s.stepId)], "TUOI-UU-TIEN").toEqual(["held", "abortStopsWithheld", []]);
   });
 });

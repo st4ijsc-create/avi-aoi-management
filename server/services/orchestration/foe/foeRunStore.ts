@@ -14,6 +14,7 @@
  * the edge store answers a STOP without asking central.
  */
 import { randomUUID } from "node:crypto";
+import type { TuoiAbortNhan } from "@shared/foeAbortResend"; // X-EDGE-ABORT-TUOI
 import cluster from "node:cluster"; // A2(n) T8 lượt sửa 1 (CHAN-3) — cheDoProcessEngine
 import { isStopCommandType } from "../../ot/loaiLenhStop";
 import { and, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
@@ -133,8 +134,10 @@ export interface AuthorizeInput {
  * Why an edge segment ends `held` (design §2.10, D5) — the edge store's only non-central verdict (edgeProtocol EDGE_HELD_REASONS).
  * R1b-2b-2a A2(n) — `outcomeUnknown`: a command's outcome is unknown and the compensation due is not a pinned STOP ⇒ held for a person
  * (both stores; the walker's own verdict, foeEngine.execStep).
+ * X-EDGE-ABORT-TUOI — `abortStopsWithheld`: central aborted the run too long ago (or when, unknown): its STOPs were not swept on the edge and the next
+ * non-STOP step is held (edge only; never continues by itself — a person's Continue, refused on an aborted run).
  */
-export type RunStoreHeldReason = "centralUnreachable" | "journalFull" | "keysetUnknown" | "configStale" | "outcomeUnknown";
+export type RunStoreHeldReason = "centralUnreachable" | "journalFull" | "keysetUnknown" | "configStale" | "outcomeUnknown" | "abortStopsWithheld";
 
 /** R1b-2b-2a A2(n) — what the walker reports about a compensation split after an unknown outcome (alert / anomaly — the store's way). */
 export interface KetCucKhongRoBaoCao {
@@ -175,8 +178,12 @@ export type AuthorizeVerdict =
   | { ok: true; cmd: EquipmentCommand; args: Record<string, unknown>; approval: FoeGateApproval | null; stopGhim?: true; stopXacMinh?: true; stopChuaDocGhim?: true; ghimKhongDoc?: true; chuaRaStop?: true }
   /** refused — the step fails with `error` (FOE_GATE_REQUIRED(<reason>) … for a gate refusal: the Studio keys on it) */
   | { ok: false; verdict: "refused"; error: string; reason?: string }
-  /** central stopped the run (abort / rejection) — the walker sweeps locally (edge store only) */
-  | { ok: false; verdict: "stopped" }
+  /**
+   * central stopped the run (abort / rejection) — the walker sweeps locally (edge store only). X-EDGE-ABORT-TUOI: `code` (stopped / run_not_active / claim_stale),
+   * `tuoi` (central's age of the abort as received, with the node's send time and clock; absent ⇔ an old central or a cut header) — the walker
+   * re-reckons the age at each decision (shared/foeAbortResend quyetAbortCu).
+   */
+  | { ok: false; verdict: "stopped"; code?: string | null; tuoi?: TuoiAbortNhan }
   /** the claim is no longer this walker's — it lets go of the run without writing it (edge store only) */
   | { ok: false; verdict: "stale" }
   /** no authorisation obtainable now (central unreachable, journal full …) — the step is HELD, nothing sent (D5, edge only) */
@@ -216,7 +223,10 @@ export type AbortAuditOp =
   /** doc 81 Đợt 7 I6 — a rejection whose claim failed late could not re-read the run: not finished (abort it to send its STOPs). */
   | "rejectClaimUndecided"
   /** A2(n) extension — not the sweep's: a forward command not handed over because the run is latched (the one audit both stores carry; nothing is silent). */
-  | "notSentRunLatched";
+  | "notSentRunLatched"
+  /** X-EDGE-ABORT-TUOI — an edge walker learnt central's abort past the R-6-d window / with no known time: the sweep was NOT run (outcome refusedTooOld |
+   *  refusedNoTime, via "liveAbort", the STOPs left). A failure for both readers (logAbortStop / edgeRunStore.auditAbort ⇒ an anomaly central only audits). */
+  | "abortStopWithheld";
 
 /** How an edge walk segment ended (edgeProtocol edgeCompleteRequest outcome); null ⇔ the walker let go of the run (stale claim). */
 export interface EdgeSegmentEnd {
@@ -299,6 +309,13 @@ export interface RunStore {
   dispatcherNoiKhongGhim?(result: { ok: boolean; detail?: Record<string, unknown> | null }): boolean;
   /** A2(n) T5 — EDGE only: the package read this step and it is no STOP: a refusal of it is an answer, no debt (V-CTL). */
   stopDocDuocKhongGhim?(stepId: string): boolean;
+  /**
+   * X-EDGE-ABORT-TUOI — EDGE only: central aborted this run too long ago (`refusedTooOld`) or when is unknown (`refusedNoTime`): its STOPs were NOT swept
+   * here. The store records the held reason `abortStopsWithheld` (priority: outcomeUnknown > journalFull > abortStopsWithheld > the rest — a weaker one
+   * never overwrites it) and sends an `anomaly` EDGE_ABORT_STOPS_WITHHELD (central raises the URGENT) with the STOPs left (`"?"`: the plan could not be
+   * built). `luc`: "quyet" (the decision) / "giu" (the walk stopped held). Never throws, never awaited. The central store has none.
+   */
+  baoAbortCuKhongQuet?(x: { runId: number; stepId: string | null; lyDo: "refusedTooOld" | "refusedNoTime"; abortAgeMs: number | null; stops: readonly string[] | "?"; luc: "quyet" | "giu" }): void;
 }
 
 // ── shared pure helpers (both stores) ───────────────────────────────────────────────────────────────────────────────

@@ -661,7 +661,8 @@ export const TRAN_RUN_X14_MOI_LUOT = 10;
 export const NGAN_SACH_PHAN_TICH_X14 = 300;
 /** Timed alerts raised by THIS process (bridges the gap until the inbox row, the durable marker, lands); bounded. */
 const daBaoX14 = new Map<string, number>();
-type ViecX14 = { run: { id: number; startedBy: number | null }; id: string; moc: "som" | "het"; chu: "A" | "C" | "E" | "F" | "G1" | "G2"; ageS: number; conLai: number };
+/** X-EDGE-ABORT-TUOI — `mocChuX14`: the start of the window in the words (foeKetCucKhongRo.mocChu: a run with a rejection claim ⇒ the long words; else MOC_CUA_SO). */
+type ViecX14 = { run: { id: number; startedBy: number | null }; id: string; moc: "som" | "het"; chu: "A" | "C" | "E" | "F" | "G1" | "G2"; ageS: number; conLai: number; mocChuX14: string };
 
 /**
  * X-14 — the words (tam/x14-thiet-ke.md mục 3, verbatim). `q`: the node acknowledged a STOP request for the step's adapter after the abort (G19): the lighter
@@ -671,14 +672,14 @@ function chuX14(v: ViecX14, id: string, ma: string, q: { id: number; adapterId: 
   const r = v.run.id;
   const phut = Math.ceil(v.conLai / 60_000);
   const tay = "Check the machine on site and use its direct STOP / E-STOP.";
-  const het = "Nothing sends it any more: 15 minutes from when the run was aborted have passed.";
+  const het = `Nothing sends it any more: 15 minutes from ${v.mocChuX14} have passed.`;
   const khong = `${v.chu === "F" ? "Step" : "STOP"} not sent — run ${r} step ${id}`;
   if (q && (v.chu === "A" || v.chu === "C"))
     return [`STOP not confirmed on the run — run ${r} step ${id} (edge node ${ma})`, `The run's STOP "${id}" (aborted run ${r}) is NOT confirmed on the run ${v.ageS} s after it became edge node ${ma}'s to send. Edge node ${ma} did acknowledge an adapter STOP request #${q.id} for the same adapter ${q.adapterId} at ${new Date(q.ackedAt ?? 0).toISOString()}, after the abort: that STOP request may come from this Abort or from a console / interlock STOP, and its acknowledgement does not say whether it reached the device or was only simulated. ${v.moc === "som" ? `The node can still send the run's STOP for about ${phut} more minute(s).` : "Nothing sends the run's STOP on its own any more (the node's re-send window is over)."} Check the machine on site and use its direct STOP / E-STOP if it is still running.`];
   if (v.chu === "A")
-    return [`STOP not confirmed yet — run ${r} step ${id} (edge node ${ma})`, `STOP "${id}" of aborted run ${r} is NOT confirmed ${v.ageS} s after it became edge node ${ma}'s to send (bound ${boundS} s). Central did not send it: its adapter belongs to that node, and central has no connection to it. The node can still send it for about ${phut} more minute(s) (until 15 minutes from when the run was aborted), once it reaches central; it may be offline, or its STOP may have failed (a failed STOP has its own alert). Check the machine on site now and use its direct STOP / E-STOP if it is still running. A further press of Abort at central hands it to that node only if the run records a command whose outcome is unknown.`];
+    return [`STOP not confirmed yet — run ${r} step ${id} (edge node ${ma})`, `STOP "${id}" of aborted run ${r} is NOT confirmed ${v.ageS} s after it became edge node ${ma}'s to send (bound ${boundS} s). Central did not send it: its adapter belongs to that node, and central has no connection to it. The node can still send it for about ${phut} more minute(s) (until 15 minutes from ${v.mocChuX14}), once it reaches central; it may be offline, or its STOP may have failed (a failed STOP has its own alert). Check the machine on site now and use its direct STOP / E-STOP if it is still running. A further press of Abort at central hands it to that node only if the run records a command whose outcome is unknown.`];
   if (v.chu === "C")
-    return [`STOP not confirmed — run ${r} step ${id} (edge node ${ma})`, `STOP "${id}" of aborted run ${r} was NOT confirmed within 15 minutes from when the run was aborted. Central did not send it: its adapter belongs to edge node ${ma}, and central has no connection to it. The node did not confirm sending it either: it may be offline, or its STOP may have failed. Nothing sends it on its own any more: the node's re-send window is over. A further press of Abort at central hands it to that node only if the run records a command whose outcome is unknown. ${tay}`];
+    return [`STOP not confirmed — run ${r} step ${id} (edge node ${ma})`, `STOP "${id}" of aborted run ${r} was NOT confirmed within 15 minutes from ${v.mocChuX14}. Central did not send it: its adapter belongs to edge node ${ma}, and central has no connection to it. The node did not confirm sending it either: it may be offline, or its STOP may have failed. Nothing sends it on its own any more: the node's re-send window is over. A further press of Abort at central hands it to that node only if the run records a command whose outcome is unknown. ${tay}`];
   if (v.chu === "E") return [khong, `STOP "${id}" of aborted run ${r} was NOT sent: central could not confirm the connection to its adapter at the Abort, and no press since sent it. ${het.slice(0, -1)}, and nothing sends it on its own when the connection comes back. ${tay}`];
   if (v.chu === "F") return [khong, `Step "${id}" of aborted run ${r} was NOT sent: its pins could not be read at the Abort, so it could not be verified as a pinned STOP, and no press since sent it. ${het} ${tay}`];
   if (v.chu === "G1") return [khong, `STOP "${id}" of aborted run ${r} was refused when the Abort handed it over, so it was NOT sent, and no press since sent it. ${het} ${tay}`];
@@ -698,7 +699,7 @@ function chuX14(v: ViecX14, id: string, ma: string, q: { id: number; adapterId: 
  */
 export async function canhBaoStopRunQuaHan(now: number = Date.now()): Promise<number> {
   const d = await centralDb();
-  const [{ inArray, gte, like }, S, { runEdgeAssignments: A }, { laHangAbortChoAnh, edgeClaimStaleMs }, { phanLoaiStopAbort, dauKhongXacNhan }, F, { ABORT_RESEND_WINDOW_MS: CUA }, { docHetTheoTrang, baoDocCatBot }, { allStepsOf }] = await Promise.all([
+  const [{ inArray, gte, like }, S, { runEdgeAssignments: A }, { laHangAbortChoAnh, edgeClaimStaleMs }, { phanLoaiStopAbort, dauKhongXacNhan }, F, { ABORT_RESEND_WINDOW_MS: CUA, mocAbortMs, mocTuChoiMs }, { docHetTheoTrang, baoDocCatBot }, { allStepsOf }] = await Promise.all([
     import("drizzle-orm"),
     import("../../../drizzle/schema"),
     import("./edgeExecutionSchema"),
@@ -739,10 +740,13 @@ export async function canhBaoStopRunQuaHan(now: number = Date.now()): Promise<nu
   const viec: ViecX14[] = [];
   for (const run of doc.hang.filter((r) => r.finishedAt && coVet.includes(r.id)).sort((x, y) => +new Date(x.finishedAt!) - +new Date(y.finishedAt!))) {
     const fin = new Date(run.finishedAt!).getTime();
+    // X-EDGE-ABORT-TUOI — the age counts from the abort's ONE moment (a rejection's stamp first); the one-day window to alert still counts from the last write (fin)
+    const mocTuoiAbort = mocAbortMs({ status: run.status, finishedAt: run.finishedAt, contextJson: run.contextJson }) ?? fin;
+    const mocChuX14 = F.mocChu(mocTuChoiMs(run) !== null);
     const hang = hangAll.filter((h) => h.runId === run.id);
     const ctx = (run.contextJson ?? {}) as Record<string, unknown>;
     const chot = F.runDaChotKhongRo(ctx) || F.chotTuHang(hang, ctx.foeResumeState as never) !== null;
-    const het = now - fin > CUA && now - fin <= CUA + NGAY;
+    const het = now - mocTuoiAbort > CUA && now - fin <= CUA + NGAY;
     const a = asgOf.get(run.id);
     const tuoi = a?.claimTokenHash != null && now - new Date(a.lastProgressAt ?? a.claimedAt ?? 0).getTime() < edgeClaimStaleMs();
     const moc = a?.claimTokenHash == null && a?.lastProgressAt ? Math.max(fin, new Date(a.lastProgressAt).getTime()) : fin;
@@ -750,10 +754,10 @@ export async function canhBaoStopRunQuaHan(now: number = Date.now()): Promise<nu
       const kq = (v.resultJson ?? {}) as { stepId?: unknown; abortStop?: unknown; adapterNut?: unknown };
       const id = String(kq.stepId ?? v.stepId.slice("abort:".length));
       const cua = hang.find((h) => h.stepId === id);
-      const them = (m: ViecX14["moc"], chu: ViecX14["chu"]) => viec.push({ run, id, moc: m, chu, ageS: Math.round((now - moc) / 1000), conLai: fin + CUA - now });
+      const them = (m: ViecX14["moc"], chu: ViecX14["chu"]) => viec.push({ run, id, moc: m, chu, ageS: Math.round((now - moc) / 1000), conLai: mocTuoiAbort + CUA - now, mocChuX14 });
       if (a && laHangAbortChoAnh(v, true)) {
         if ((cua?.status === "completed" || cua?.status === "compensated") && dauKhongXacNhan(cua.resultJson) === null) continue; // a1: its own row went
-        if (fin + CUA - now > 0 && !tuoi && now >= moc + hanSom) them("som", "A");
+        if (mocTuoiAbort + CUA - now > 0 && !tuoi && now >= moc + hanSom) them("som", "A");
         if (het) them("het", "C");
       } else if (het && !chot && kq.abortStop === "chuaXacMinh") them("het", kq.adapterNut === true ? "E" : "F");
       else if (het && !chot && !a && (kq.abortStop === "failed" || kq.abortStop === "chuaTraLoi")) {

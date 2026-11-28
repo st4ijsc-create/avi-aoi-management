@@ -24973,6 +24973,7 @@
       "foe_outcome_unknown_edge_sync_refused": "边缘报告被整体拒绝——中心不知道是否有停止步骤到达设备；请到现场检查设备",
       "foe_outcome_unknown_boot_stop_not_sent_held": "服务器重启时未自行发送该运行的任何停止指令，也未自动继续该运行；服务器当时已将该运行暂停，等待人工决定——请打开该运行查看状态；请到现场检查设备",
       "foe_outcome_unknown_boot_run_unconfirmed": "服务器重启时无法确认对该运行的处理结果——运行状态可能已改变，也可能未改变；本次启动未为该运行发送任何指令，也未自动继续该运行；请打开该运行查看；请到现场检查设备",
+      "edge_abort_stops_withheld": "边缘节点得知该运行被中止时已太晚（超过 15 分钟或时间未知），因此未执行 STOP 清扫；该运行自身的步骤仍可能发送部分 STOP 步骤，均未确认；请到现场检查设备并使用设备上的直接 STOP / E-STOP",
       "foe_compensation_interrupted_held": "服务器在运行补偿过程中重启——需要人工处理；无法确定补偿指令是否到达设备；请打开该运行查看状态；请到现场检查设备",
       "foe_compensation_interrupted_failed": "服务器在运行补偿过程中重启——运行失败；本次启动未重新发送任何指令；请到现场检查设备",
       "foe_stop_compensation_resent_at_boot": "启动时补偿停止步骤被重新发送了一次——请到现场检查设备状态",

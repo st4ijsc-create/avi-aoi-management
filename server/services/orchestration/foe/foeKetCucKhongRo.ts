@@ -430,6 +430,10 @@ export const KHONG_CO_BU_TRU = "-";
 export const BUOC_KHONG_XAC_DINH = "?";
 
 export interface CanhBaoKhongRo {
+  /** X-EDGE-ABORT-TUOI — the run carries a rejection claim: every window in the words starts from mocChu(true) */
+  coKhoaTuChoi?: true;
+  /** X-EDGE-ABORT-TUOI — and that window is over: what is left to an edge node may NOT be sent (choNut says so, conditionally: an older node still sends it) */
+  nutKhongGui?: true;
   loai: LoaiCanhBaoKhongRo;
   runId: number;
   stepId: string;
@@ -496,6 +500,8 @@ export interface NoKetThucKhongQuet {
   khongDoc: boolean;
   /** X-23 (G40) — of ghim / chuaXacMinh, those skipped by their precondition (never tried) */
   boQua?: readonly string[];
+  /** X-EDGE-ABORT-TUOI — the run carries a rejection claim: its window in the words starts from mocChu(true) */
+  coKhoaTuChoi?: true;
 }
 /** H36 — how the run ended, in words true of every source: no claim of who or what ended it */
 const cachKetThuc = (ket: KetThucKhongQuet): string => (ket === "completed" ? "ended completed although a step of it failed" : `ended ${ket}`);
@@ -503,20 +509,20 @@ const cachKetThuc = (ket: KetThucKhongQuet): string => (ket === "completed" ? "e
  * H36 — what a press of Abort can do on such a run, said as it is. Aborted: a press in the window may send it (measured, r2), an upper limit from MOC_CUA_SO, never a promise. Failed / completed: Abort answers
  * "already terminal" and sends nothing, so no word suggests it does.
  */
-function chuBamSauKetThuc(ket: KetThucKhongQuet, nhieu: boolean): string {
+function chuBamSauKetThuc(ket: KetThucKhongQuet, nhieu: boolean, coKhoaTuChoi = false): string {
   const no = nhieu ? "them" : "it";
   return ket === "aborted"
-    ? `A press of Abort within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes of ${MOC_CUA_SO} may send ${no}, but may not reach ${no}: none is promised.`
+    ? `A press of Abort within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes of ${mocChu(coKhoaTuChoi)} may send ${no}, but may not reach ${no}: none is promised.`
     : `Abort cannot reach a run that has ${cachKetThuc(ket)} (it answers "already terminal"), so no press sends ${no}.`;
 }
 /** A2(n) T7b-3 (H36) — the words of the URGENT: the STOP by name, NOT sent, the machine on site, and what a press can do (chuBamSauKetThuc). Nothing of the run has an unknown outcome, and no word says so. */
-function chuKetThucKhongQuet(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "stopKhongXacMinh" | "ketThuc" | "boQuaDieuKien">): [string, string] {
+function chuKetThucKhongQuet(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "stopKhongXacMinh" | "ketThuc" | "boQuaDieuKien" | "coKhoaTuChoi">): [string, string] {
   const ket = a.ketThuc ?? "failed";
   const dau = `Run ${a.runId} ${cachKetThuc(ket)}, and no STOP sweep ran at that end`;
   const tay = `${a.boQuaDieuKien ? "It was skipped by its precondition and never tried. " : ""}Check the machine on site and use its direct STOP / E-STOP.`; // X-23 (G40)
-  if (a.stepId === BUOC_KHONG_XAC_DINH) return [`the run ${cachKetThuc(ket)}, which STOP steps were NOT sent could not be told`, `${dau}. Its records could not be read, so which STOP steps of it were NOT sent cannot be told. ${tay} ${chuBamSauKetThuc(ket, true)}`];
-  if (a.stopKhongXacMinh) return [`step "${a.stepId}" NOT sent: the run ${cachKetThuc(ket)}, not verified as a pinned STOP`, `${dau}: step "${a.stepId}" could not be verified as a pinned STOP, so it was NOT sent. ${tay} ${chuBamSauKetThuc(ket, false)}`];
-  return [`STOP "${a.stepId}" NOT sent: the run ${cachKetThuc(ket)} with no STOP sweep`, `${dau}: its STOP "${a.stepId}" was NOT sent. ${tay} ${chuBamSauKetThuc(ket, false)}`];
+  if (a.stepId === BUOC_KHONG_XAC_DINH) return [`the run ${cachKetThuc(ket)}, which STOP steps were NOT sent could not be told`, `${dau}. Its records could not be read, so which STOP steps of it were NOT sent cannot be told. ${tay} ${chuBamSauKetThuc(ket, true, a.coKhoaTuChoi === true)}`];
+  if (a.stopKhongXacMinh) return [`step "${a.stepId}" NOT sent: the run ${cachKetThuc(ket)}, not verified as a pinned STOP`, `${dau}: step "${a.stepId}" could not be verified as a pinned STOP, so it was NOT sent. ${tay} ${chuBamSauKetThuc(ket, false, a.coKhoaTuChoi === true)}`];
+  return [`STOP "${a.stepId}" NOT sent: the run ${cachKetThuc(ket)} with no STOP sweep`, `${dau}: its STOP "${a.stepId}" was NOT sent. ${tay} ${chuBamSauKetThuc(ket, false, a.coKhoaTuChoi === true)}`];
 }
 /**
  * A2(n) T7b-3 (H37, chu du an 11/11) — the words of a run's edge report stream wedged by a refused batch: the run, the refusal, what may be owed (the batch's STOP steps by name when it named any), the machine
@@ -590,15 +596,24 @@ export function chuStopAbort(p: Pick<PhanLoaiStopAbort, "lop" | "truoc">, ben: b
  * write to an Abort. The words name what they share, never one of them
  */
 export const MOC_CUA_SO = "when the run was aborted";
+/** X-EDGE-ABORT-TUOI — the start of the window for a run that carries a rejection claim (its stamp counts first: shared/foeAbortResend mocAbortMs). */
+export const MOC_CUA_SO_TU_CHOI = "when the run was aborted, or when it was first rejected if it was";
+/**
+ * X-EDGE-ABORT-TUOI — THE one place a product text takes the start of the window: a run with a rejection claim ⇒ the long words; any other run ⇒ MOC_CUA_SO,
+ * byte for byte as before. A census pins that no product site inserts MOC_CUA_SO itself.
+ */
+export function mocChu(coKhoaTuChoi = false): string {
+  return coKhoaTuChoi ? MOC_CUA_SO_TU_CHOI : MOC_CUA_SO;
+}
 
 /** T7b-1d lượt sửa 2 (H32) — what a later press can do when a read failed: it may send, it may not reach it (P2-Y: a container ended in another step's words), and the window is an upper limit, never a promise (as H28). */
-export function chuBamSauKhongDoc(): string {
-  return `A further press of Abort may send it but may not reach it, and none can be counted on after ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes from ${MOC_CUA_SO}`;
+export function chuBamSauKhongDoc(coKhoaTuChoi = false): string {
+  return `A further press of Abort may send it but may not reach it, and none can be counted on after ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes from ${mocChu(coKhoaTuChoi)}`;
 }
 
 /** A2(n) T7b-1c (dieu-phoi 09/11) — an Abort of a run that could not read its definition: no step to name, and the 15 minutes do not stretch. The URGENT and the answer say the same. T7b-1d lượt sửa 2 — no press promised: chuBamSauKhongDoc. */
-export function chuKhongDocDinhNghia(runId: number): string {
-  return `The system could not read the definition of run ${runId}, so which STOP steps are due is not known and a STOP may still not be out. Check the machine on site and use its direct STOP / E-STOP if needed. ${chuBamSauKhongDoc()}.`;
+export function chuKhongDocDinhNghia(runId: number, coKhoaTuChoi = false): string {
+  return `The system could not read the definition of run ${runId}, so which STOP steps are due is not known and a STOP may still not be out. Check the machine on site and use its direct STOP / E-STOP if needed. ${chuBamSauKhongDoc(coKhoaTuChoi)}.`;
 }
 
 /** A2(n) T7b-1d lượt sửa 2 (H32) — a sweep past its ceiling: nothing here was refused or unread, it has simply not answered. It goes on behind this: a STOP may be out already or may yet go. No step to name: no second picture of a sweep for this. The URGENT and the answer say the same. */
@@ -773,17 +788,21 @@ function chuStopChuaRa(a: Pick<CanhBaoKhongRo, "stepId" | "compId" | "vi" | "tha
  * debt is durable; "did NOT go out" never of a STOP that may have gone (coTheDaRa), was handed over (daGiao) or whose rows could not be read (khongDoc). Not durable: within the window a press still sends it, past
  * it nothing can; one a dispatcher took is not handed over again (H3).
  */
-function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "compId" | "vi" | "chuAbort" | "adapterNut" | "tuTrungTam">): [string, string] {
+function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "compId" | "vi" | "chuAbort" | "adapterNut" | "tuTrungTam" | "coKhoaTuChoi" | "nutKhongGui">): [string, string] {
+  const moc = mocChu(a.coKhoaTuChoi === true); // X-EDGE-ABORT-TUOI — the one start of the window
   const id = `"${stopCua(a)}"`;
   const ma = a.vi ? ` (${rutGonGiua(a.vi.ma, TRAN_MA)})` : ""; // mục 4 — printed at its ceiling
   const tay = "use the machine's direct STOP / E-STOP";
   const chu = a.chuAbort ?? "chuaRaKhongHan";
   const ketThuc = chu === "daKetThuc" || chu === "daKetThucChuaKhoa" || chu === "daKetThucKhongXacMinh";
   // X-11 (P3, chữ HST duyệt 17/11, x11-chu-duyet "URGENT bản dài") — left to the edge node at a press that found the run not latched: the node's road, its limit, what a further press does by the run's state then (never a promise)
-  if (chu === "choNut") return [`STOP ${stopCua(a)} left to the edge node, NOT confirmed`, `Central's Abort of run ${a.runId} did NOT send STOP ${id}: its adapter belongs to the edge node that holds the run, and central has no connection to it. The node sends it, only after the database shows the run aborted: its walker of the run when it learns of the abort, or, once its part of the run has ended, from its signed copy of the run's STOPs, if it reaches central within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes from ${MOC_CUA_SO}. The run's steps show it confirmed when the node's STOP is; this alert is not withdrawn then. A further press of Abort at central hands it to that node only if by then the run records a command whose outcome is unknown; otherwise it sends nothing for it. Until confirmed, and if the node is offline, ${tay}.`];
+  // X-EDGE-ABORT-TUOI — a run with a rejection claim past its window: the node may NOT send it (conditional words; no promise either way)
+  if (chu === "choNut" && a.nutKhongGui === true)
+    return [`STOP ${stopCua(a)} left to the edge node, which may NOT send it`, `Central's Abort of run ${a.runId} did NOT send STOP ${id}: its adapter belongs to the edge node that holds the run, and central has no connection to it. The edge node may NOT send it either: more than ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes have passed from ${moc}, so a node that is told the age of the abort runs no STOP sweep for it (the run's own steps may still send it), while an older node may still send it; nothing here confirms either way. Check the machine on site now and ${tay}.`];
+  if (chu === "choNut") return [`STOP ${stopCua(a)} left to the edge node, NOT confirmed`, `Central's Abort of run ${a.runId} did NOT send STOP ${id}: its adapter belongs to the edge node that holds the run, and central has no connection to it. The node sends it, only after the database shows the run aborted: its walker of the run when it learns of the abort, or, once its part of the run has ended, from its signed copy of the run's STOPs, if it reaches central within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes from ${moc}. The run's steps show it confirmed when the node's STOP is; this alert is not withdrawn then. A further press of Abort at central hands it to that node only if by then the run records a command whose outcome is unknown; otherwise it sends nothing for it. Until confirmed, and if the node is offline, ${tay}.`];
   // X-13 (chủ dự án 17/11, phương án (C); chữ HST duyệt 17/11, x13-chu-de-nghi §2) — a press that found the run not latched did NOT send it: pins not read (G1), read with central's connection not confirmed (G1'), its record not written (khongBen). The action first, then what a further press can do (true whether or not the run turns out latched)
-  if (chu === "chuaKhoaKhongXacMinh") return [`step ${id} NOT sent: its pins could not be read`, `Central's Abort of run ${a.runId} did NOT send step ${id}: its pins could not be read, so it was not verified as a pinned STOP and nothing was written to the device for it. Check the machine on site and use its direct STOP / E-STOP. A further press of Abort can send it only if its pins are then read as a pinned STOP (on an edge node's adapter: queued for or left to that node, or sent as central's fallback STOP), within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes from ${MOC_CUA_SO}, or with no time limit once the run records a command whose outcome is unknown, while it stays owed. Otherwise no press sends it.`];
-  if (chu === "chuaKhoaKetNoi") return [`STOP ${id} NOT sent: central could not confirm the connection to its adapter`, `Central's Abort of run ${a.runId} did NOT send STOP ${id}: its pins were read, but central could not confirm the running connection to its adapter, so it was not verified and nothing was written to the device for it. Check the machine on site and use its direct STOP / E-STOP. A further press of Abort can send it only if its pins are then read as a pinned STOP and that connection is then confirmed (on an edge node's adapter: queued for or left to that node, or sent as central's fallback STOP), within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes from ${MOC_CUA_SO}, or with no time limit once the run records a command whose outcome is unknown, while it stays owed. Otherwise no press sends it; central does not send it on its own when the connection comes back.`];
+  if (chu === "chuaKhoaKhongXacMinh") return [`step ${id} NOT sent: its pins could not be read`, `Central's Abort of run ${a.runId} did NOT send step ${id}: its pins could not be read, so it was not verified as a pinned STOP and nothing was written to the device for it. Check the machine on site and use its direct STOP / E-STOP. A further press of Abort can send it only if its pins are then read as a pinned STOP (on an edge node's adapter: queued for or left to that node, or sent as central's fallback STOP), within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes from ${moc}, or with no time limit once the run records a command whose outcome is unknown, while it stays owed. Otherwise no press sends it.`];
+  if (chu === "chuaKhoaKetNoi") return [`STOP ${id} NOT sent: central could not confirm the connection to its adapter`, `Central's Abort of run ${a.runId} did NOT send STOP ${id}: its pins were read, but central could not confirm the running connection to its adapter, so it was not verified and nothing was written to the device for it. Check the machine on site and use its direct STOP / E-STOP. A further press of Abort can send it only if its pins are then read as a pinned STOP and that connection is then confirmed (on an edge node's adapter: queued for or left to that node, or sent as central's fallback STOP), within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes from ${moc}, or with no time limit once the run records a command whose outcome is unknown, while it stays owed. Otherwise no press sends it; central does not send it on its own when the connection comes back.`];
   if (chu === "chuaKhoaKhongBen") return [`step ${id} NOT sent: its record could not be written`, `Central's Abort of run ${a.runId} did NOT send step ${id}, and the record of it could not be written, so a further press may not reach it. The STOP was not sent: check the machine on site and use its direct STOP / E-STOP.`];
   // T9 (T9-CHU-Q2B, T7b-2) — queued for the edge node that owns the adapter: nothing confirms it, a press queues it again
   if (!ketThuc && a.vi?.ma === "ADAPTER_OWNED_BY_EDGE") return [`run aborted, STOP ${id} queued for the edge node, NOT confirmed`, chuGiaoNut(id)] // 3c (mục 3): the title says "run aborted"; the words need the room;
@@ -798,7 +817,7 @@ function chuAbortChuaRa(a: Pick<CanhBaoKhongRo, "runId" | "stepId" | "compId" | 
   const khongChuyen = a.tuTrungTam && nut && a.vi?.ma === "ADAPTER_OFFLINE" ? `${CAU_KHONG_CHUYEN}. ` : "";
   const trungTinh = `${khongChuyen}It stays owed: ${CAU_NUT_KHONG_BIET}: check the machine on site and use its direct STOP / E-STOP.`;
   const nutSauThat = khongChuyen ? `${khongChuyen}${CAU_NUT_LAI}.` : nutSau;
-  const khongHan = nut === "khongBiet" ? trungTinh : nut ? nutSauThat : `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}. If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes of ${MOC_CUA_SO}: past that, check the machine on site and use its direct STOP / E-STOP.`;
+  const khongHan = nut === "khongBiet" ? trungTinh : nut ? nutSauThat : `It stays owed: press Abort again, there is no time limit on this STOP. Until then ${tay}. If a press finds it not pinned, nothing is sent, and a pin set again after that press is sent only by a press within ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes of ${moc}: past that, check the machine on site and use its direct STOP / E-STOP.`;
   // H28 (dieu-phoi 09/11) — a debt durable nowhere: a press may send it (the body of a container: it does) or may not reach it (a compensation not due): no promise, no minutes
   const han = nut === "khongBiet" ? trungTinh : nut ? nutSauThat : `This could not be recorded: a further press of Abort may send it, but may not reach it: check the machine on site and ${tay}.`;
   // T7b-1c (RC12b, dieu-phoi 09/11) — the run reached another end before this Abort's write: a press cannot reach it ("already terminal"), so none is promised
@@ -880,7 +899,7 @@ export function noiDungCanhBaoKhongRo(goc: CanhBaoKhongRo): { kind: string; titl
       stopGhimLech: [`STOP "${stopCua(a)}": the pins differ, what went out may not be a STOP`, `The edge node reports step "${stopCua(a)}" handed over as a STOP, but the pins central reads do not match it: what went out may not have been a STOP. Check the machine on site and use its direct STOP / E-STOP.`],
       stopGhimLechChuaGui: [`STOP "${stopCua(a)}" NOT sent: the edge snapshot says it is not pinned`, `Central verified step "${stopCua(a)}" as a pinned STOP, but the edge node's dispatcher snapshot says it is not pinned: it was refused before any driver, so the STOP was NOT sent. Check the machine on site and use its direct STOP / E-STOP if needed.`],
       abortStopNotSent: chuAbortChuaRa(a),
-      abortDefUnread: a.keHoachLoi ? [`planning of the STOP sweep failed, a STOP may still not be out`, chuKeHoachLoi(a.runId)] : [`definition of the run unread, a STOP may still not be out`, chuKhongDocDinhNghia(a.runId)],
+      abortDefUnread: a.keHoachLoi ? [`planning of the STOP sweep failed, a STOP may still not be out`, chuKeHoachLoi(a.runId)] : [`definition of the run unread, a STOP may still not be out`, chuKhongDocDinhNghia(a.runId, a.coKhoaTuChoi === true)],
       abortSweepUnfinished: [`STOP sweep has not finished, a STOP may have gone out or may still go`, chuQuetChuaXong(a.runId)],
       stopEndedUnswept: chuKetThucKhongQuet(a),
       edgeStreamStuck: chuLuongEdgeKet(a),

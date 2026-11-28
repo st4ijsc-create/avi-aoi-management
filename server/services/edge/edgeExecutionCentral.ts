@@ -39,7 +39,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { and, asc, eq, gt, gte, inArray, isNotNull, like, lte, sql } from "drizzle-orm";
-import { ABORT_RESEND_WINDOW_MS, abortResendAllowed } from "@shared/foeAbortResend"; // the engine's own re-send window (R-6-d), read the same way
+import { ABORT_RESEND_WINDOW_MS, FOE_REJECT_CLAIM_AT_CTX_KEY, mocAbortMs, trongCuaAbort, tuoiAbortMs } from "@shared/foeAbortResend"; // the engine's own re-send window (R-6-d), read the same way — X-EDGE-ABORT-TUOI: from ONE moment (mocAbortMs)
 import { getDb } from "../../db/connection";
 import { orchestrationRuns, orchestrationRunSteps, orchestrationWorkflows } from "../../../drizzle/schema";
 import { computeBindingDigest, hashWorkflowDefinition } from "../orchestration/foe/foeGateApproval";
@@ -291,7 +291,7 @@ export async function pullForNode(
 
 // ── A2(j): the two lists of a pull that carry a STOP / an abort signal, read TO THE END ──────────────────────────────────────────────
 
-type ClaimRow = { a: RunEdgeAssignment; run: { id: number; status: string; contextJson: unknown } };
+type ClaimRow = { a: RunEdgeAssignment; run: { id: number; status: string; contextJson: unknown; finishedAt: Date | null } };
 type PullDb = Awaited<ReturnType<typeof db>>;
 
 /**
@@ -305,7 +305,7 @@ export async function docClaimCuaNode(d: PullDb, node: Pick<EdgeNodePrincipal, "
   const r = await docHetTheoTrang<ClaimRow>(
     (sau, n) =>
       d
-        .select({ a: runEdgeAssignments, run: { id: orchestrationRuns.id, status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson } })
+        .select({ a: runEdgeAssignments, run: { id: orchestrationRuns.id, status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson, finishedAt: orchestrationRuns.finishedAt } })
         .from(runEdgeAssignments)
         .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
         .where(and(eq(runEdgeAssignments.edgeNodeId, node.nodeId), isNotNull(runEdgeAssignments.claimTokenHash), sau === null ? undefined : gt(runEdgeAssignments.runId, sau)))
@@ -324,7 +324,7 @@ export async function docClaimCuaNode(d: PullDb, node: Pick<EdgeNodePrincipal, "
   return r;
 }
 
-type AbortRow = { a: RunEdgeAssignment; finishedAt: Date | null };
+type AbortRow = { a: RunEdgeAssignment; finishedAt: Date | null; contextJson: unknown };
 
 /**
  * A2(n) T7b-2 (P4, EDGE-VET) + X-11 P1b (chủ dự án 16/11) — an `abort:<step>` row that lists its run for the node's picture: a STOP central handed over and could not confirm; or the trace of a STOP
@@ -355,7 +355,7 @@ export async function docRunAbortCanGuiLaiStop(
   const r = await docHetTheoTrang<AbortRow>(
     (sau, n) =>
       d
-        .select({ a: runEdgeAssignments, finishedAt: orchestrationRuns.finishedAt })
+        .select({ a: runEdgeAssignments, finishedAt: orchestrationRuns.finishedAt, contextJson: orchestrationRuns.contextJson })
         .from(runEdgeAssignments)
         .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
         .where(
@@ -371,7 +371,8 @@ export async function docRunAbortCanGuiLaiStop(
         .limit(n) as Promise<AbortRow[]>,
     (x) => x.a.runId,
   );
-  const recent = r.hang.filter((x) => abortResendAllowed(x.finishedAt, now));
+  // X-EDGE-ABORT-TUOI — the window from ONE moment (a rejection's own stamp first; never made younger by its final write); the SQL above stays the superset
+  const recent = r.hang.filter((x) => trongCuaAbort({ status: "aborted", finishedAt: x.finishedAt, contextJson: x.contextJson }, now));
   const failed = new Set<number>();
   const CO = 200;
   for (let i = 0; i < recent.length; i += CO) {
@@ -540,7 +541,7 @@ interface ClaimBody {
 }
 type ClaimCheck = { ok: true; a: RunEdgeAssignment; tokenHash: string; seq: number } | { ok: false; answer: EdgeAnswer };
 
-async function checkCurrentClaim(d: Awaited<ReturnType<typeof db>>, node: EdgeNodePrincipal, runId: number, body: ClaimBody, needSeq = true): Promise<ClaimCheck> {
+async function checkCurrentClaim(d: Awaited<ReturnType<typeof db>>, node: EdgeNodePrincipal, runId: number, body: ClaimBody, needSeq = true, tuoiAbort = false): Promise<ClaimCheck> {
   const a = await assignmentForNode(d, node, runId);
   if (!a) return { ok: false, answer: notFound(runId) };
   if (typeof body.claimToken !== "string" || !CLAIM_TOKEN_RE.test(body.claimToken) || typeof body.claimSeq !== "number") {
@@ -548,8 +549,11 @@ async function checkCurrentClaim(d: Awaited<ReturnType<typeof db>>, node: EdgeNo
   }
   const tokenHash = hashEdgeSecret(body.claimToken);
   if (a.claimSeq !== body.claimSeq || !sameDigest(tokenHash, a.claimTokenHash)) {
-    const [run] = await d.select({ status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson }).from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
-    return { ok: false, answer: { http: 409, code: "claim_stale", message: `Run ${runId}: this claim is no longer current — stop walking it.`, data: { abortRequested: run ? centralStopped(run) : true } } };
+    const [run] = await d.select({ status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson, finishedAt: orchestrationRuns.finishedAt }).from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+    const abortRequested = run ? centralStopped(run) : true;
+    // X-EDGE-ABORT-TUOI — only to a node that asked (answer.abort_age), only with an abort: its age on THIS clock (null: unknown)
+    const tuoi = tuoiAbort && abortRequested ? { abortAgeMs: run ? tuoiAbortMs(run) : null } : {};
+    return { ok: false, answer: { http: 409, code: "claim_stale", message: `Run ${runId}: this claim is no longer current — stop walking it.`, data: { abortRequested, ...tuoi } } };
   }
   const seq = body.seq;
   if (needSeq && (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq <= 0)) {
@@ -582,15 +586,17 @@ export async function progressForNode(
   node: EdgeNodePrincipal,
   runId: number,
   body: ClaimBody & { status?: unknown; currentStepId?: unknown },
-): Promise<EdgeAnswer<{ abortRequested: boolean; status: string; consistent: boolean }>> {
+  opts: { tuoiAbort?: boolean } = {},
+): Promise<EdgeAnswer<{ abortRequested: boolean; status: string; consistent: boolean; abortAgeMs?: number | null }>> {
   try {
     const d = await db();
-    const c = await checkCurrentClaim(d, node, runId, body);
+    const c = await checkCurrentClaim(d, node, runId, body, true, opts.tuoiAbort === true);
     if (!c.ok) return c.answer as EdgeAnswer<never>;
     if (!(await advance(d, runId, c, false))) return { http: 409, code: "replayed", message: `Run ${runId}: report ${c.seq} was already received — refused.` };
-    const [run] = await d.select({ status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson }).from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
+    const [run] = await d.select({ status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson, finishedAt: orchestrationRuns.finishedAt }).from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
     if (!run) return notFound(runId) as EdgeAnswer<never>;
-    return { http: 200, data: { abortRequested: centralStopped(run), status: run.status, consistent: body.status === run.status } };
+    const abortRequested = centralStopped(run);
+    return { http: 200, data: { abortRequested, status: run.status, consistent: body.status === run.status, ...(opts.tuoiAbort === true && abortRequested ? { abortAgeMs: tuoiAbortMs(run) } : {}) } };
   } catch (err) {
     if (!isEdgeSchemaMissing(err)) console.error(`[EdgeExec] progress of run ${runId} by node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`);
     return unavailable as EdgeAnswer<never>;
@@ -750,11 +756,11 @@ export function __resetClaimRateForTests(): void {
   lastClaimAttempt.clear();
 }
 
-/** The run context shipped in a package: the server-only rejection claim token is never shipped. */
-function packageContext(ctx: unknown): Record<string, unknown> {
+/** The run context shipped in a package: the server-only rejection claim token is never shipped — nor its stamp (X-EDGE-ABORT-TUOI). */
+export function packageContext(ctx: unknown): Record<string, unknown> {
   const src = (ctx ?? {}) as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(src)) if (k !== FOE_REJECT_CLAIM_CTX_KEY) out[k] = v;
+  for (const [k, v] of Object.entries(src)) if (k !== FOE_REJECT_CLAIM_CTX_KEY && k !== FOE_REJECT_CLAIM_AT_CTX_KEY) out[k] = v;
   return JSON.parse(JSON.stringify(out)) as Record<string, unknown>;
 }
 const plainJson = <T>(v: T): T => JSON.parse(JSON.stringify(v ?? null)) as T;
@@ -824,9 +830,10 @@ async function programCheckWanted(d: CentralDbHandle, node: EdgeNodePrincipal): 
 }
 
 /** The sweep picture payload; `abortedAt` (Group C's addition to the schema) is carried once the schema has it. */
-function sweepPayload(picture: Record<string, unknown>, finishedAt: Date | string | null | undefined): Record<string, unknown> {
+function sweepPayload(picture: Record<string, unknown>, row: { finishedAt: Date | null; contextJson: unknown }): Record<string, unknown> {
   const base = { kind: "sweep_picture", ...picture };
-  const at = finishedAt == null ? NaN : new Date(finishedAt).getTime();
+  // X-EDGE-ABORT-TUOI — the abort's ONE moment (null ⇒ no abortedAt: the node falls back to the picture's issuedAt, as before)
+  const at = mocAbortMs({ status: "aborted", finishedAt: row.finishedAt, contextJson: row.contextJson }) ?? NaN;
   return "abortedAt" in (edgeSweepPictureSchema as unknown as { shape: Record<string, unknown> }).shape && Number.isFinite(at) ? { ...base, abortedAt: at } : base;
 }
 
@@ -840,7 +847,7 @@ function sweepPayload(picture: Record<string, unknown>, finishedAt: Date | strin
  * analysis read) can never hold back a STOP. The edge then HOLDS every non-STOP work and never reads a missing section as
  * "no abort" (a run central aborted is never walked on because its claim row could not be read).
  */
-export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Promise<EdgeAnswer<EdgePullAnswer>> {
+export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown, opts: { tuoiAbort?: boolean } = {}): Promise<EdgeAnswer<EdgePullAnswer>> {
   const parsed = parseEdgeBody(edgePullRequestSchema, body);
   if (!parsed.ok) return parsed.answer;
   let d: CentralDbHandle;
@@ -901,7 +908,9 @@ export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Pro
       .filter(({ a }) => a.claimSeq > 0)
       .map(({ a, run }) => {
         const last = (a.lastProgressAt ?? a.claimedAt) as Date | null;
-        return { runId: a.runId, claimSeq: a.claimSeq, status: run.status as EdgeNodeClaim["status"], abortRequested: centralStopped(run), stale: !last || new Date(last).getTime() < staleBefore };
+        const abortRequested = centralStopped(run);
+        // X-EDGE-ABORT-TUOI — only to a node that asked (answer.abort_age): the age of THIS claim's abort on central's clock (null: unknown)
+        return { runId: a.runId, claimSeq: a.claimSeq, status: run.status as EdgeNodeClaim["status"], abortRequested, stale: !last || new Date(last).getTime() < staleBefore, ...(opts.tuoiAbort === true && abortRequested ? { abortAgeMs: tuoiAbortMs(run) } : {}) };
       });
     const { chon, vuot } = chonClaimsChoTraLoi(node, all); // aborts first; overflow ⇒ rotating window + URGENT alert (deduped)
     if (catBot || vuot) {
@@ -927,7 +936,7 @@ export async function pullForNodeV2(node: EdgeNodePrincipal, body: unknown): Pro
         const def = await assignedDefinition(d, r.a);
         if (!def) return;
         const { picture } = await runPicture(d, node, r.a.runId, r.a.defHash, def);
-        out.push({ runId: r.a.runId, picture: signForNode(signer!, "runpkg", edgeSweepPictureSchema, sweepPayload(picture, r.finishedAt), node) });
+        out.push({ runId: r.a.runId, picture: signForNode(signer!, "runpkg", edgeSweepPictureSchema, sweepPayload(picture, r), node) });
       });
     }
     return out;
@@ -1047,18 +1056,18 @@ export async function claimForNodeV2(node: EdgeNodePrincipal, runId: number, bod
 }
 
 /** POST /edge/node/runs/:runId/progress (v2) — liveness + abortRequested + the node's signed commands. */
-export async function progressForNodeV2(node: EdgeNodePrincipal, runId: number, body: unknown): Promise<EdgeAnswer<EdgeProgressAnswer>> {
+export async function progressForNodeV2(node: EdgeNodePrincipal, runId: number, body: unknown, opts: { tuoiAbort?: boolean } = {}): Promise<EdgeAnswer<EdgeProgressAnswer>> {
   const parsed = parseEdgeBody(edgeProgressRequestSchema, body);
   if (!parsed.ok) return parsed.answer;
   try {
     const d = await db();
     const refused = await v2Gate(d, node, { signerOptional: true });
     if (refused) return refused;
-    const r = await progressForNode(node, runId, parsed.data);
+    const r = await progressForNode(node, runId, parsed.data, opts);
     if (r.http !== 200 || !r.data) return r as EdgeAnswer<never>;
     // a2n — never awaited: a slow or failing alert is no reason to hold or fail the tick that carries abortRequested and the node's STOPs
     if (parsed.data.journalStalledSinceMs !== undefined) void baoJournalTreo(d, node, parsed.data.journalStalledSinceMs).catch((err) => console.error(`[EdgeExec] journal stall alert of node ${node.nodeCode} failed: ${(err as Error)?.message ?? err}`));
-    return { http: 200, data: { abortRequested: r.data.abortRequested, status: r.data.status as EdgeProgressAnswer["status"], consistent: r.data.consistent, ...(await commandFields(node)) } };
+    return { http: 200, data: { abortRequested: r.data.abortRequested, ...(r.data.abortAgeMs !== undefined ? { abortAgeMs: r.data.abortAgeMs } : {}), status: r.data.status as EdgeProgressAnswer["status"], consistent: r.data.consistent, ...(await commandFields(node)) } };
   } catch (err) {
     if (!isEdgeUnavailableError(err) && !(err instanceof EdgeDbUnavailable)) console.error(`[EdgeExec] v2 progress of run ${runId} failed: ${(err as Error)?.message ?? err}`);
     return edgeUnavailableV2;
@@ -1145,7 +1154,7 @@ export async function baoRunMatProgress(now: number = Date.now(), khoiDongLuc: n
   const { hang, catBot } = await docHetTheoTrang<Hang>(
     (sau, n) =>
       d
-        .select({ a: runEdgeAssignments, run: { id: orchestrationRuns.id, status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson }, nodeCode: edgeNodes.code })
+        .select({ a: runEdgeAssignments, run: { id: orchestrationRuns.id, status: orchestrationRuns.status, contextJson: orchestrationRuns.contextJson, finishedAt: orchestrationRuns.finishedAt }, nodeCode: edgeNodes.code })
         .from(runEdgeAssignments)
         .innerJoin(orchestrationRuns, eq(orchestrationRuns.id, runEdgeAssignments.runId))
         .innerJoin(edgeNodes, eq(edgeNodes.id, runEdgeAssignments.edgeNodeId))
