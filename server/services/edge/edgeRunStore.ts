@@ -56,6 +56,7 @@ import { EdgeContractError } from "./edgeSigning";
 import { EDGE_CONFIG_STALE, EDGE_SAFETY_CONFIG_MISSING, edgeConfigStaleText, type EdgeConfigStaleness } from "./edgeDeviceRuntime";
 import { EDGE_HOLD_CONSUME_OVERRUN, EDGE_HOLD_UNUSED_NOT_REPORTED } from "./edgeProgramReportRule";
 import type { EdgeAuthUnusedReason } from "./edgeProtocol";
+import { tomTatStop } from "./edgeProtocol"; // X-EDGE-ABORT-TUOI — "stops=<k|?> hash=<băm8>" over the FULL list
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 /** A run-stream record before the journal numbers it (edgeJournal.EdgeRunRecordInput). */
@@ -88,7 +89,7 @@ export type EdgeStepAuthorizeOutcome =
       requestSentMonoMs?: number;
       expiresAtMonoMs?: number;
     }
-  | { ok: false; verdict: "refused" | "stopped" | "stale" | "unavailable"; code: string | null; reason?: string; abortRequested?: boolean };
+  | { ok: false; verdict: "refused" | "stopped" | "stale" | "unavailable"; code: string | null; reason?: string; abortRequested?: boolean; tuoi?: import("@shared/foeAbortResend").TuoiAbortNhan }; // X-EDGE-ABORT-TUOI — the age as the client received it (edgeCentralClient)
 
 /** What the edge store needs for ONE claimed segment (group E's EdgeRunIo is structurally compatible). */
 export interface EdgeRunStoreIo {
@@ -293,11 +294,30 @@ abstract class EdgeStoreBase implements RunStore {
  * The store of ONE claimed segment of a run (created by group E's agent right after the claim, from the VERIFIED package).
  * `segmentEnd()` is what the agent reports with POST runs/:id/complete once the walk returned.
  */
+/** X-EDGE-ABORT-TUOI — the anomaly code central turns into an URGENT (edgeConfigCentral.alertForEdgeAnomaly). */
+export const EDGE_ABORT_STOPS_WITHHELD_CODE = "EDGE_ABORT_STOPS_WITHHELD";
+/** detail: `<lyDo>: run <id> abortAgeMs=<n|null> stops=<k|?> hash=<băm8>: <list>` — the head up to the hash is never cut (1 000 characters in all). */
+export function chiTietAbortCuKhongQuet(x: { runId: number; lyDo: string; abortAgeMs: number | null; stops: readonly string[] | "?" }): string {
+  const dau = `${x.lyDo}: run ${x.runId} abortAgeMs=${x.abortAgeMs === null ? "null" : Math.round(x.abortAgeMs)} ${tomTatStop(x.stops)}`;
+  const ds = x.stops === "?" ? "" : [...x.stops].sort().join(", ");
+  return ds ? `${dau}: ${ds}`.slice(0, 1_000) : dau;
+}
+
 export class EdgeRunStore extends EdgeStoreBase {
   private status: OrchestrationRun["status"] = "running";
   private lastPatch: Partial<OrchestrationRun> = {};
   private heldReason: RunStoreHeldReason | null = null;
   private ended = false;
+  /**
+   * X-EDGE-ABORT-TUOI — the ONE writer of `heldReason`: outcomeUnknown (khongRoGiu, never overwritten) > journalFull > abortStopsWithheld > the rest.
+   * A weaker reason never overwrites a stronger one; among the rest the later one wins, as before.
+   */
+  private datLyDoGiu(reason: RunStoreHeldReason): void {
+    if (this.khongRoGiu) return; // A2(n) (C-2) — a sibling's reason never overwrites outcomeUnknown
+    const hang = (r: RunStoreHeldReason | null): number => (r === "outcomeUnknown" ? 3 : r === "journalFull" ? 2 : r === "abortStopsWithheld" ? 1 : 0);
+    if (hang(reason) < hang(this.heldReason)) return;
+    this.heldReason = reason;
+  }
   private readonly statuses: string[] = [];
   /** fix review 1 — the journal refused a non-STOP record (its reason): nothing further is authorised; the segment ends held */
   private journalRefused: string | null = null;
@@ -310,6 +330,18 @@ export class EdgeRunStore extends EdgeStoreBase {
   private readonly sentSteps = new Set<string>();
   /** commands SENT whose result could not be recorded — never sent again */
   private readonly outcomeUnknown = new Set<string>();
+
+  /** X-EDGE-ABORT-TUOI — central aborted too long ago / when unknown: the held reason (priority) + the anomaly central raises. Never throws. */
+  baoAbortCuKhongQuet(x: { runId: number; stepId: string | null; lyDo: "refusedTooOld" | "refusedNoTime"; abortAgeMs: number | null; stops: readonly string[] | "?"; luc: "quyet" | "giu" }): void {
+    try {
+      if (x.stepId !== null) this.datLyDoGiu("abortStopsWithheld");
+      // at the decision: always; where the walk stops held: only when STOPs are left, or the plan could not be built (stops "?")
+      if (x.luc === "giu" && x.stops !== "?" && x.stops.length === 0) return;
+      this.event({ kind: "anomaly", code: EDGE_ABORT_STOPS_WITHHELD_CODE, runId: x.runId, detail: chiTietAbortCuKhongQuet(x), at: Date.now() });
+    } catch {
+      /* the report of a withheld sweep never fails the walk */
+    }
+  }
   private readonly priorAbortSent: Set<string>;
   /** the authorisation (jti) a NON-STOP command step last ran under — quoted by its rows (central checks it, design §2.6) */
   private readonly jtiByStep = new Map<string, string>();
@@ -480,10 +512,13 @@ export class EdgeRunStore extends EdgeStoreBase {
       return { ok: false, verdict: "unavailable", heldReason: "outcomeUnknown", error: `FOE_OUTCOME_UNKNOWN: central refused compensation step "${step.id}": this run has an unknown outcome and no Continue approved it — NOT sent.` };
     }
     switch (out.verdict) {
+      // X-EDGE-ABORT-TUOI — code + the received age go on to the walker (an ABSENT age stays absent: an old central, a cut header)
       case "stopped":
-        return { ok: false, verdict: "stopped" };
+        return { ok: false, verdict: "stopped", code: out.code, ...(out.tuoi !== undefined ? { tuoi: out.tuoi } : {}) };
       case "stale":
-        return out.abortRequested ? { ok: false, verdict: "stopped" } : { ok: false, verdict: "stale" };
+        return out.abortRequested
+          ? { ok: false, verdict: "stopped", code: out.code, ...(out.tuoi !== undefined ? { tuoi: out.tuoi } : {}) }
+          : { ok: false, verdict: "stale" };
       case "unavailable":
         return this.unavailable(step.id, out.code === "no_config" ? "configStale" : HELD_REASONS.has(String(out.code)) ? (out.code as RunStoreHeldReason) : "centralUnreachable");
       default:
@@ -509,7 +544,7 @@ export class EdgeRunStore extends EdgeStoreBase {
    * (central's URGENT alert) for it; the step error still says why.
    */
   private heldForStaleConfig(stepId: string, why: string, cause: typeof EDGE_CONFIG_STALE | typeof EDGE_SAFETY_CONFIG_MISSING = EDGE_CONFIG_STALE, continueOk = true): AuthorizeVerdict & { ok: false; verdict: "unavailable" } {
-    if (!this.khongRoGiu) this.heldReason = "configStale"; // A2(n) (C-2) — one field, a sibling's reason never overwrites outcomeUnknown
+    this.datLyDoGiu("configStale"); // A2(n) (C-2) — one field, a sibling's reason never overwrites outcomeUnknown (X-EDGE-ABORT-TUOI: nor abortStopsWithheld)
     if (cause === EDGE_CONFIG_STALE) {
       this.event({ kind: "anomaly", code: "EDGE_CONFIG_STALE", runId: this.io.runId, detail: `step ${stepId}: ${why} — the run is HELD (configStale); STOPs still go`.slice(0, 1000), at: Date.now() });
     }
@@ -557,7 +592,7 @@ export class EdgeRunStore extends EdgeStoreBase {
   }
 
   private unavailable(stepId: string, reason: RunStoreHeldReason): AuthorizeVerdict {
-    if (!this.khongRoGiu) this.heldReason = reason; // A2(n) (C-2) — see heldForStaleConfig
+    this.datLyDoGiu(reason); // A2(n) (C-2) — see heldForStaleConfig
     // data-raw-ok: a held step's reason recorded on the step row (machine-to-machine); the Studio keys on EDGE_HELD(<reason>)
     return { ok: false, verdict: "unavailable", heldReason: reason, error: `EDGE_HELD(${reason}): command step "${stepId}" was not sent — no authorisation could be obtained from central; the run is held (Continue it once the edge is reachable again).` };
   }

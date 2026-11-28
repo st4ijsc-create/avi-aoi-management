@@ -250,6 +250,9 @@ const CLASSIFIED: Record<string, Kind> = {
 };
 
 const ALLOW_ENGINE: Record<string, string> = {
+  // 2026-11-28 X-EDGE-ABORT-TUOI (hàng X-EDGE-ABORT-TUOI-LUOI) — the EDGE half
+  chanNonStopChoAbortCu:
+    "EDGE only (its only non-test caller is edgeExecutionAgent's walker hook): flags the LIVE walker of a run on THIS node (liveRuns of this process) after central answered its abort too old / with no time; on the node's store it reads no DB; it returns only {live}; it sends no command to any device (no STOP either) and only journals for central two reports of that run (the audit anomaly and the withheld-STOPs anomaly); the node's scope was decided by central at assignment",
   getRun: "internal read (no caller identity); every caller that serves a person checks first (orchestrationRouter.getRun, api/v1 GET /orchestration/runs/:id)",
   autoResumeInterruptedRuns: "boot-time system sweep of runs interrupted by a restart (no caller)",
   runIdVisibleTo: "IS the shared check",

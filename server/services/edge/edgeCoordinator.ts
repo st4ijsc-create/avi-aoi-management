@@ -21,6 +21,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { FOE_APPROVAL_SOURCE_EDGE, FOE_REJECT_CLAIM_CTX_KEY } from "../orchestration/foe/foeGateApproval"; // doc 81 Đợt 4 fix round 1 (R-4-h); Đợt 7 I1
+import { FOE_REJECT_CLAIM_AT_CTX_KEY } from "@shared/foeAbortResend"; // X-EDGE-ABORT-TUOI — the rejection's stamp (server-only)
 import { and, desc, eq, lt, inArray } from "drizzle-orm";
 import { DbUnavailableError } from "../../_core/dbErrors";
 import { readEdgeAssignment } from "./edgeExecutionSchema"; // doc 81 Đợt 9 S2 — runs executed under the node protocol
@@ -643,8 +644,10 @@ export async function syncRunResult(
     // the server-only rejection claim token is never taken from (nor removed by) an edge payload. X-32 — computed BEFORE the latch check: it is the context the picture after the write is read with
     let contextJson = run.contextJson;
     if (payload.contextJson && typeof payload.contextJson === "object") {
-      const { [FOE_REJECT_CLAIM_CTX_KEY]: _ignored, ...rest } = payload.contextJson as Record<string, unknown>;
+      // X-EDGE-ABORT-TUOI — nor its stamp: the age of an abort counts from central's own write, never from an edge payload
+      const { [FOE_REJECT_CLAIM_CTX_KEY]: _ignored, [FOE_REJECT_CLAIM_AT_CTX_KEY]: _ignoredAt, ...rest } = payload.contextJson as Record<string, unknown>;
       void _ignored;
+      void _ignoredAt;
       contextJson = rest;
     }
 

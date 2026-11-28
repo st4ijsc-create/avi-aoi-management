@@ -9,10 +9,13 @@
  * FLAG: EDGE_RUNTIME_ENABLED off ⇒ 503 `edge_disabled` (as POST /edge/sync).
  */
 import type { NextFunction, Request, Response, Router } from "express";
-import { EDGE_CENTRAL_ACCEPTS_HEADER, edgeCentralAcceptsHeaderValue } from "../../services/edge/edgeProtocol";
+import { EDGE_CENTRAL_ACCEPTS_HEADER, EDGE_NODE_ACCEPTS_ANSWER_ABORT_AGE, EDGE_NODE_ACCEPTS_HEADER, edgeCentralAcceptsHeaderValue, nodeAccepts } from "../../services/edge/edgeProtocol";
 import { sendError, sendOk, wrap } from "./envelope";
 
 type NodeRequest = Request & { edgeNode?: import("../../services/edge/edgeNodeCredentials").EdgeNodePrincipal };
+
+/** X-EDGE-ABORT-TUOI — what the node asked for in central's answers (x-edge-node-accepts, exact tokens). Absent ⇒ answers byte-identical to before. */
+const nhanTuoiAbort = (req: Request): { tuoiAbort: boolean } => ({ tuoiAbort: nodeAccepts(req.header(EDGE_NODE_ACCEPTS_HEADER), EDGE_NODE_ACCEPTS_ANSWER_ABORT_AGE) });
 
 function bearer(req: Request): string | null {
   const auth = req.header("authorization");
@@ -84,7 +87,7 @@ export function registerEdgeNodeRoutes(r: Router): void {
   r.post(
     "/edge/node/pull",
     auth,
-    wrap(byVersion(async (req) => (await svc()).pullForNode(node(req)), async (req) => (await svc()).pullForNodeV2(node(req), req.body))),
+    wrap(byVersion(async (req) => (await svc()).pullForNode(node(req)), async (req) => (await svc()).pullForNodeV2(node(req), req.body, nhanTuoiAbort(req)))),
   );
   r.post(
     "/edge/node/runs/:runId/claim",
@@ -94,7 +97,7 @@ export function registerEdgeNodeRoutes(r: Router): void {
   r.post(
     "/edge/node/runs/:runId/progress",
     auth,
-    wrap(byVersion(async (req) => (await svc()).progressForNode(node(req), runIdOf(req), body(req)), async (req) => (await svc()).progressForNodeV2(node(req), runIdOf(req), req.body))),
+    wrap(byVersion(async (req) => (await svc()).progressForNode(node(req), runIdOf(req), body(req)), async (req) => (await svc()).progressForNodeV2(node(req), runIdOf(req), req.body, nhanTuoiAbort(req)))),
   );
   r.post(
     "/edge/node/runs/:runId/complete",
@@ -131,7 +134,7 @@ export function registerEdgeNodeRoutes(r: Router): void {
   r.post(
     "/edge/node/runs/:runId/authorize",
     auth,
-    wrap(async (req, res) => answer(res, await (await import("../../services/edge/edgeAuthorizeCentral")).authorizeForNode(node(req), runIdOf(req), req.body))),
+    wrap(async (req, res) => answer(res, await (await import("../../services/edge/edgeAuthorizeCentral")).authorizeForNode(node(req), runIdOf(req), req.body, nhanTuoiAbort(req)))),
   );
   r.post(
     "/edge/node/runs/:runId/report",

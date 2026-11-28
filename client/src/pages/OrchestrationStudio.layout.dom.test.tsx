@@ -1000,6 +1000,23 @@ describe("Orchestration P2 — R-2-n: hành động điều khiển giữ đúng
     expect(toastSpy.success).not.toHaveBeenCalled();
   });
 
+
+  it("X-EDGE-ABORT-TUOI N1-d: the window from the abort's ONE moment — a rejection stamped 20 min ago (finishedAt 1 min) ⇒ disabled 'too old'; a stamp without its claim is no moment ⇒ enabled; finishedAt in the future (a clock gone back) ⇒ disabled, never Math.abs", async () => {
+    const motPhut = new Date(Date.now() - 60_000).toISOString();
+    srv.runs = [
+      ...RUNS_PLAIN,
+      run(44, "aborted", { finishedAt: motPhut, contextJson: { foeRejectClaim: "rc_studio", foeRejectClaimAt: Date.now() - 20 * 60_000 } }),
+      run(45, "aborted", { finishedAt: motPhut, contextJson: { foeRejectClaimAt: Date.now() - 20 * 60_000 } }),
+      run(46, "aborted", { finishedAt: new Date(Date.now() + 5 * 60_000).toISOString() }),
+    ].map((r) => ({ ...r }));
+    render(<OrchestrationStudio />);
+    const tooOld = S.resendTooOld.replace("{{minutes}}", "15");
+    const b44 = within(rowOf(44)).getByRole("button", { name: S.resendStops });
+    expect(b44, "N1-d: the rejection's stamp").toBeDisabled();
+    expect(b44).toHaveAccessibleDescription(tooOld);
+    expect(within(rowOf(45)).getByRole("button", { name: S.resendStops }), "N1-d: a stamp without its claim").toBeEnabled();
+    expect(within(rowOf(46)).getByRole("button", { name: S.resendStops }), "N1-d: a moment in the future").toBeDisabled();
+  });
   it("doc 81 Đợt 6 fix 1 (R-6-a): Reject says the remaining STOP steps are still sent, and its answer gets the same confirmation + warning", async () => {
     const user = userEvent.setup();
     srv.runs = [...RUNS_PLAIN, AWAITING].map((r) => ({ ...r }));

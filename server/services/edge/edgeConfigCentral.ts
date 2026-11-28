@@ -21,6 +21,7 @@
  * holds. configHash = edgeProtocol.edgeConfigHash(envelope); a request quoting it gets `notModified`.
  */
 import { eq, inArray, sql } from "drizzle-orm";
+import { ABORT_RESEND_WINDOW_MS } from "@shared/foeAbortResend"; // X-EDGE-ABORT-TUOI — the window named in the URGENT
 import { deviceAdapters, deviceTags, edgeNodes, machines, robots, type SafetyPlcConfig } from "../../../drizzle/schema";
 import {
   EDGE_PROTOCOL_VERSION,
@@ -219,6 +220,47 @@ function rearmConfigAlerts(nodeId: number): void {
   }
 }
 
+/** X-EDGE-ABORT-TUOI — the anomaly an edge node sends when it did NOT sweep a central abort (too old / no known time): edgeRunStore EDGE_ABORT_STOPS_WITHHELD_CODE. */
+export const EDGE_ABORT_STOPS_WITHHELD_ANOMALY = "EDGE_ABORT_STOPS_WITHHELD";
+
+/**
+ * X-EDGE-ABORT-TUOI — an edge node did NOT sweep central's abort of run `runId` (refusedTooOld / refusedNoTime): its STOPs were not sent from there.
+ *   • runId not this node's (null: runEntity said so) ⇒ nothing raised (the EDGE_ANOMALY audit of the caller stays) — H5;
+ *   • `stops=0` ⇒ the audit only; `stops=?`, a number > 0, or a detail that cannot be read ⇒ ALWAYS one URGENT (no shortcut by status or window — H6);
+ *   • durable dedup only within this source (khuTrungBenVung): `abort_stops_withheld:run:<runId>:<hash>` — the hash the node computed over the FULL list;
+ *     X-14's own keys are never touched (EDGE-ABORT-BAO-HAI-NGUON: a run can get one URGENT from each). The message names the run, the node, k, the hash
+ *     and the STOPs (criticalStopAlert also dedups on kind + message). Never throws. true ⇔ a raise was started.
+ */
+export function alertAbortStopsWithheld(node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">, rec: { detail: string; runId: number | null }, recipients: () => Promise<number[]>): boolean {
+  if (rec.runId === null || !Number.isSafeInteger(rec.runId) || rec.runId <= 0) {
+    console.warn(`[EdgeConfig] node ${node.nodeCode}: ${EDGE_ABORT_STOPS_WITHHELD_ANOMALY} for a run that is not this node's — not raised (audited)`);
+    return false;
+  }
+  const m = /^(refusedTooOld|refusedNoTime): run \d+ abortAgeMs=(\S+) stops=(\d+|\?) hash=([0-9a-f]{8})(?:: (.*))?$/s.exec(rec.detail);
+  const k = m?.[3] ?? "?"; // unreadable ⇒ "?" ⇒ raised
+  if (k === "0") return false;
+  const runId = rec.runId;
+  const hash = m?.[4] ?? "unread";
+  const lyDo = m?.[1] ?? "unreadable";
+  const stops = m?.[5] ?? "";
+  const vi = lyDo === "refusedTooOld" ? `more than ${Math.round(ABORT_RESEND_WINDOW_MS / 60_000)} minutes after central aborted it` : lyDo === "refusedNoTime" ? "with no known time of central's abort" : "(its report could not be read)";
+  void (async () => {
+    const { raiseCriticalStopAlert } = await import("../robot/criticalStopAlert");
+    await raiseCriticalStopAlert({
+      kind: "edge_abort_stops_withheld",
+      title: `Edge node ${node.nodeCode}: STOPs of aborted run ${runId} NOT sent`,
+      message: `Edge node ${node.nodeCode} learnt of central's abort of run ${runId} ${vi}: it did NOT run the abort's STOP sweep. STOP(s) not sent at the time of this report: ${k} (list ${hash})${stops ? `: ${stops}` : ""}. The walker's own sequence may still send some of them; nothing in this alert confirms either way. Check the machines on site now and use their direct STOP / E-STOP.`.slice(0, 2_000),
+      recipients: await recipients(),
+      dedupKey: `abort_stops_withheld:run:${runId}:${hash}`,
+      source: "ot",
+      entityType: "orchestration_run",
+      entityId: runId,
+      khuTrungBenVung: {},
+    });
+  })().catch((err) => console.error(`[EdgeConfig] node ${node.nodeCode}: the URGENT of run ${runId}'s withheld STOPs failed: ${(err as Error)?.message ?? err}`));
+  return true;
+}
+
 /**
  * R1b-2b-2a A2(o) AMENDMENT 2 — what central raises for an anomaly an EDGE reported (events stream, edgeReportsCentral):
  *   • EDGE_SAFETY_CONFIG_MISSING (a write refused: a safety PLC the authorisation was signed for is not in the edge's config) ⇒
@@ -228,8 +270,9 @@ function rearmConfigAlerts(nodeId: number): void {
  *   • EDGE_CONFIG_STALE and every other code ⇒ nothing beyond the EDGE_ANOMALY audit the caller writes.
  * true ⇔ an alert was raised now. Never throws.
  */
-export function alertForEdgeAnomaly(node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">, rec: { code: string; detail?: string | null }, recipients: () => Promise<number[]>): boolean {
+export function alertForEdgeAnomaly(node: Pick<EdgeNodePrincipal, "nodeId" | "nodeCode">, rec: { code: string; detail?: string | null; runId?: number | null }, recipients: () => Promise<number[]>): boolean {
   if (rec.code === EDGE_JOURNAL_STALL_RECOVERED_CODE) return alertJournalStallRecovered(node, String(rec.detail ?? ""), recipients);
+  if (rec.code === EDGE_ABORT_STOPS_WITHHELD_ANOMALY) return alertAbortStopsWithheld(node, { detail: String(rec.detail ?? ""), runId: rec.runId ?? null }, recipients);
   if (rec.code !== "EDGE_SAFETY_CONFIG_MISSING") return false;
   const detail = String(rec.detail ?? "");
   const listed = /signed safety-PLC config\(s\) ([#0-9, ]+)/.exec(detail)?.[1] ?? "";

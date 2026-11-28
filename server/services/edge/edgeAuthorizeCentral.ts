@@ -38,6 +38,7 @@
  *  10. sign + audit — {authorization, ttlMs}; EDGE_STEP_AUTHORIZED.
  */
 import { randomUUID } from "node:crypto";
+import { tuoiAbortMs } from "@shared/foeAbortResend"; // X-EDGE-ABORT-TUOI — the age of central's abort (one moment, one clock)
 import { and, eq } from "drizzle-orm";
 import { aiPendingActions, orchestrationRunSteps, orchestrationRuns, orchestrationWorkflows } from "../../../drizzle/schema";
 import {
@@ -513,7 +514,7 @@ function isUniqueViolation(err: unknown): boolean {
   return (e?.code ?? e?.cause?.code) === "23505";
 }
 
-export async function authorizeForNode(node: EdgeNodePrincipal, runId: number, body: unknown): Promise<EdgeAnswer<EdgeAuthorizeAnswer>> {
+export async function authorizeForNode(node: EdgeNodePrincipal, runId: number, body: unknown, opts: { tuoiAbort?: boolean } = {}): Promise<EdgeAnswer<EdgeAuthorizeAnswer>> {
   const parsed = parseEdgeBody(edgeAuthorizeRequestSchema, body);
   if (!parsed.ok) return parsed.answer;
   const req: EdgeAuthorizeRequest = parsed.data;
@@ -531,11 +532,17 @@ export async function authorizeForNode(node: EdgeNodePrincipal, runId: number, b
     const [run] = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.id, runId)).limit(1);
     if (!run || !(await runInNodeScope(run, node))) return runNotFound(runId);
     const { centralStopped } = await import("./edgeCoordinator");
+    // X-EDGE-ABORT-TUOI — the age of central's abort, only to a node that asked (answer.abort_age); null: unknown / negative / not finite
+    const tuoi = (): { abortAgeMs?: number | null } => (opts.tuoiAbort === true ? { abortAgeMs: tuoiAbortMs(run) } : {});
     const tokenHash = hashEdgeSecret(req.claimToken);
     if (a.claimSeq !== req.claimSeq || !sameDigest(tokenHash, a.claimTokenHash)) {
-      return edgeError("claim_stale", `Run ${runId}: this claim is no longer current — stop walking it.`, { abortRequested: centralStopped(run) });
+      const abortRequested = centralStopped(run);
+      return edgeError("claim_stale", `Run ${runId}: this claim is no longer current — stop walking it.`, { abortRequested, ...(abortRequested ? tuoi() : {}) });
     }
-    if (centralStopped(run)) return edgeError("stopped", `Run ${runId} was stopped centrally (abort / gate rejection) — run the local abort sweep.`);
+    if (centralStopped(run)) {
+      const t = tuoi();
+      return edgeError("stopped", `Run ${runId} was stopped centrally (abort / gate rejection) — run the local abort sweep.`, t.abortAgeMs !== undefined ? t : undefined);
+    }
     if (run.status !== "running" && run.status !== "compensating") return edgeError("run_not_active", `Run ${runId} is ${run.status} — nothing is authorised.`);
 
     // ── 2. definition & step ──

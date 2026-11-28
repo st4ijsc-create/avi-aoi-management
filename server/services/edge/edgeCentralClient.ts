@@ -19,11 +19,14 @@
  * place that changes when the verifier signatures change.
  */
 import { randomBytes } from "node:crypto";
+import type { TuoiAbortNhan } from "@shared/foeAbortResend"; // X-EDGE-ABORT-TUOI
 import { performance } from "node:perf_hooks";
 import type { z } from "zod";
 import {
   EDGE_ANSWER_SCHEMAS,
   EDGE_CENTRAL_ACCEPTS_HEADER,
+  EDGE_NODE_ACCEPTS_HEADER,
+  edgeNodeAcceptsHeaderValue,
   parseEdgeCentralAccepts,
   EDGE_AUTH_TTL_MAX_MS,
   EDGE_NODE_ROUTES,
@@ -156,8 +159,9 @@ export function parseEdgeUnsignedStop(x: unknown, me: { nodeId: number; credenti
 type AnswerOf<R extends EdgeNodeRoute> = z.infer<(typeof EDGE_ANSWER_SCHEMAS)[R]>;
 type BodyOf<R extends EdgeNodeRoute> = z.input<(typeof EDGE_REQUEST_SCHEMAS)[R]>;
 export type EdgeHttpResult<T> =
-  | { ok: true; status: number; data: T }
-  | { ok: false; status: number; code: string | null; data?: unknown; message?: string; unavailable: boolean };
+  /** X-EDGE-ABORT-TUOI — `guiLuc`: this node's monotonic ms RIGHT BEFORE the request went out (an upper bound of the age of what central answered) */
+  | { ok: true; status: number; data: T; guiLuc?: number }
+  | { ok: false; status: number; code: string | null; data?: unknown; message?: string; unavailable: boolean; guiLuc?: number };
 
 export interface EdgeCentralClientOptions {
   centralUrl: string;
@@ -235,15 +239,17 @@ export class EdgeCentralClient {
       p = p.replace(":runId", String(params.runId));
     }
     let res: Response;
+    const guiLuc = this.monoNow(); // X-EDGE-ABORT-TUOI — before the send: the age the walker reckons from here can only be over-, never under-estimated
     try {
       res = await this.fetchImpl(`${this.opts.centralUrl}/api/v1${p}`, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${this.opts.credential}` },
+        // X-EDGE-ABORT-TUOI — what this node accepts in the answers (an old central ignores an unknown header)
+        headers: { "content-type": "application/json", authorization: `Bearer ${this.opts.credential}`, [EDGE_NODE_ACCEPTS_HEADER]: edgeNodeAcceptsHeaderValue() },
         body: JSON.stringify(body ?? {}),
         signal: AbortSignal.timeout(this.opts.requestTimeoutMs),
       });
     } catch {
-      return { ok: false, status: 0, code: null, unavailable: true }; // network / timeout
+      return { ok: false, status: 0, code: null, unavailable: true, guiLuc }; // network / timeout
     }
     type Envelope = { ok?: unknown; data?: unknown; error?: { code?: unknown; message?: unknown; details?: unknown } } | null;
     let json: Envelope = null;
@@ -259,10 +265,10 @@ export class EdgeCentralClient {
       const a = (EDGE_ANSWER_SCHEMAS[route] as z.ZodType).safeParse(json.data);
       if (!a.success) {
         this.log(`[EdgeClient] ${route}: central's answer does not match the protocol (${a.error.issues[0]?.path.join(".") ?? "?"}) — treated as unavailable`);
-        return { ok: false, status: res.status, code: "bad_answer", unavailable: true };
+        return { ok: false, status: res.status, code: "bad_answer", unavailable: true, guiLuc };
       }
       this.accepts = parseEdgeCentralAccepts(res.headers?.get?.(EDGE_CENTRAL_ACCEPTS_HEADER) ?? null);
-      return { ok: true, status: res.status, data: a.data as AnswerOf<R> };
+      return { ok: true, status: res.status, data: a.data as AnswerOf<R>, guiLuc };
     }
     const code = typeof json?.error?.code === "string" ? json.error.code : null;
     const unavailable = res.status === 0 || res.status >= 500 || res.status === 401 || res.status === 429 || (code !== null && UNAVAILABLE_CODES.has(code)) || code === null;
@@ -273,6 +279,7 @@ export class EdgeCentralClient {
       data: json?.error?.details,
       message: typeof json?.error?.message === "string" ? json.error.message.slice(0, 300) : undefined,
       unavailable,
+      guiLuc,
     };
   }
 }
@@ -346,7 +353,8 @@ export type EdgeAuthorizeOutcome =
   /** refused: central said no (gate / device / payload / ownership) or the answer failed verification — nothing is sent;
    *  stopped: central aborted / rejected the run (sweep locally); stale: the claim is gone (abortRequested says why);
    *  unavailable: central could not be asked (D5 ⇒ the step is HELD, never failed + compensated) */
-  | { ok: false; verdict: "refused" | "stopped" | "stale" | "unavailable"; code: string | null; reason?: string; abortRequested?: boolean };
+  /** X-EDGE-ABORT-TUOI — stopped / stale also carry `tuoi`: central's age of the abort as received (absent ⇔ an old central / a cut header) */
+  | { ok: false; verdict: "refused" | "stopped" | "stale" | "unavailable"; code: string | null; reason?: string; abortRequested?: boolean; tuoi?: TuoiAbortNhan };
 
 export interface EdgeAuthorizeClient {
   authorize(input: EdgeAuthorizeInput): Promise<EdgeAuthorizeOutcome>;
@@ -425,10 +433,13 @@ export function createEdgeAuthorizeClient(deps: EdgeAuthorizeDeps): EdgeAuthoriz
       if (!r.ok && r.status === 0 && r.code === null) r = await deps.client.post("authorize", body, { runId: input.runId }); // one retry: same nonce ⇒ same token
       if (!r.ok) {
         pending.delete(reqNonce);
-        const d = (r.data ?? {}) as { abortRequested?: unknown; reason?: unknown; gate?: unknown };
+        const d = (r.data ?? {}) as { abortRequested?: unknown; reason?: unknown; gate?: unknown; abortAgeMs?: unknown };
+        // X-EDGE-ABORT-TUOI — the age as central sent it: a number (any sign: the walker reads a negative as unknown), null, or ABSENT (kept absent)
+        const tuoi: { tuoi?: TuoiAbortNhan } =
+          "abortAgeMs" in d && r.guiLuc !== undefined ? { tuoi: { abortAgeMs: typeof d.abortAgeMs === "number" ? d.abortAgeMs : null, guiLuc: r.guiLuc, monoNow: deps.client.monoNow } } : {};
         if (r.unavailable) return { ok: false, verdict: "unavailable", code: r.code };
-        if (r.code === "stopped" || r.code === "run_not_active") return { ok: false, verdict: "stopped", code: r.code };
-        if (r.code === "claim_stale" || r.status === 404) return { ok: false, verdict: "stale", code: r.code, abortRequested: d.abortRequested === true };
+        if (r.code === "stopped" || r.code === "run_not_active") return { ok: false, verdict: "stopped", code: r.code, ...tuoi };
+        if (r.code === "claim_stale" || r.status === 404) return { ok: false, verdict: "stale", code: r.code, abortRequested: d.abortRequested === true, ...tuoi };
         const reason = typeof d.reason === "string" ? d.reason : typeof d.gate === "string" ? d.gate : r.code ?? `HTTP ${r.status}`;
         return { ok: false, verdict: "refused", code: r.code, reason };
       }

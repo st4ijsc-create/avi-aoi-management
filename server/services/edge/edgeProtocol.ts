@@ -138,7 +138,7 @@ export const EDGE_DEVICE_GATES = [
 export type EdgeDeviceGate = (typeof EDGE_DEVICE_GATES)[number];
 
 /** Why an edge segment ended `held` (D5: an offline non-STOP step is held, never failed + compensated). */
-export const EDGE_HELD_REASONS = ["centralUnreachable", "journalFull", "keysetUnknown", "configStale", "outcomeUnknown"] as const; // R1b-2b-2a A2(n) — outcomeUnknown: held for a person (a non-STOP compensation after an unknown outcome)
+export const EDGE_HELD_REASONS = ["centralUnreachable", "journalFull", "keysetUnknown", "configStale", "outcomeUnknown", "abortStopsWithheld"] as const; // R1b-2b-2a A2(n) — outcomeUnknown: held for a person (a non-STOP compensation after an unknown outcome). X-EDGE-ABORT-TUOI — abortStopsWithheld: central aborted the run too long ago (or when, unknown): its STOPs were NOT swept here, the next non-STOP step is held; on the wire only to a central advertising EDGE_ACCEPTS_HELD_ABORT_STOPS_WITHHELD (edgeHeldWireReason)
 export type EdgeHeldReason = (typeof EDGE_HELD_REASONS)[number];
 
 /** The answer shape every central node handler returns (the route maps it to the /api/v1 envelope). */
@@ -550,7 +550,9 @@ export const edgePulledRunSchema = z.strictObject({
  *  them without a silent drop — docHetTheoTrang.chonTrongGioiHanGiaoThuc + runStateUnavailable). Values unchanged. */
 export const EDGE_PULL_CLAIMS_MAX = 200;
 export const EDGE_PULL_STOPS_UNCONFIRMED_MAX = 50;
-export const edgeNodeClaimSchema = z.strictObject({ runId: zId, claimSeq: zClaimSeq, status: zRunStatus, abortRequested: z.boolean(), stale: z.boolean() });
+/** X-EDGE-ABORT-TUOI — the age of central's abort (ms, central's clock); only to a node advertising answer.abort_age. null = unknown. No min(0): a negative is unknown too. */
+const zAbortAgeMs = z.number().nullable().optional();
+export const edgeNodeClaimSchema = z.strictObject({ runId: zId, claimSeq: zClaimSeq, status: zRunStatus, abortRequested: z.boolean(), stale: z.boolean(), abortAgeMs: zAbortAgeMs });
 export const edgePullAnswerSchema = z.strictObject({
   node: zCode(128),
   protocolVersion: z.literal(EDGE_PROTOCOL_VERSION),
@@ -604,6 +606,8 @@ export const edgeProgressRequestSchema = z.strictObject({
 });
 export const edgeProgressAnswerSchema = z.strictObject({
   abortRequested: z.boolean(),
+  /** X-EDGE-ABORT-TUOI — see zAbortAgeMs */
+  abortAgeMs: zAbortAgeMs,
   status: zRunStatus,
   consistent: z.boolean(),
   commands: zSignedList(EDGE_PULL_COMMANDS_MAX),
@@ -719,7 +723,9 @@ export const EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE = "auth_unused.config_stale";
 export const EDGE_ACCEPTS_AUTH_UNUSED_RUN_LATCHED = "auth_unused.run_latched";
 /** a2n — `progress` may carry journalStalledSinceMs. The request schema is strict: an old central answers 400 to the field. */
 export const EDGE_ACCEPTS_PROGRESS_JOURNAL_STALL = "progress.journal_stall";
-export const EDGE_CENTRAL_ACCEPTS: readonly string[] = Object.freeze([EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE, EDGE_ACCEPTS_AUTH_UNUSED_RUN_LATCHED, EDGE_ACCEPTS_PROGRESS_JOURNAL_STALL]);
+/** X-EDGE-ABORT-TUOI — `complete` may carry heldReason `abortStopsWithheld`. The request schema is strict (z.enum): an old central answers 400 to it. */
+export const EDGE_ACCEPTS_HELD_ABORT_STOPS_WITHHELD = "held.abort_stops_withheld";
+export const EDGE_CENTRAL_ACCEPTS: readonly string[] = Object.freeze([EDGE_ACCEPTS_AUTH_UNUSED_CONFIG_STALE, EDGE_ACCEPTS_AUTH_UNUSED_RUN_LATCHED, EDGE_ACCEPTS_PROGRESS_JOURNAL_STALL, EDGE_ACCEPTS_HELD_ABORT_STOPS_WITHHELD]);
 /** a2n — anomaly code on the events stream: a stall `progress` reported has ended. Its detail: `... since <ms> ...; healthy=<bool>`. */
 export const EDGE_JOURNAL_STALL_RECOVERED_CODE = "EDGE_JOURNAL_STALL_RECOVERED";
 /** The header value central sends (comma-separated tokens). */
@@ -733,6 +739,42 @@ export function parseEdgeCentralAccepts(v: string | null | undefined): ReadonlyS
       .map((t) => t.trim())
       .filter((t) => /^[a-z0-9._-]{1,64}$/.test(t)),
   );
+}
+/**
+ * X-EDGE-ABORT-TUOI — the reverse of EDGE_CENTRAL_ACCEPTS_HEADER: what THIS edge node accepts in central's ANSWERS, sent as a REQUEST header (every
+ * answer schema is strict: central adds a field only when the node asked for it, so an old node gets byte-identical answers). Absent ⇔ an old node.
+ *   • `answer.abort_age` — every answer that says `abortRequested` (pull claims, progress, claim_stale, authorize `stopped`) may carry `abortAgeMs`:
+ *     the age of the abort on CENTRAL's clock (shared/foeAbortResend tuoiAbortMs), null when unknown / negative / not finite.
+ */
+export const EDGE_NODE_ACCEPTS_HEADER = "x-edge-node-accepts";
+export const EDGE_NODE_ACCEPTS_ANSWER_ABORT_AGE = "answer.abort_age";
+export const EDGE_NODE_ACCEPTS: readonly string[] = Object.freeze([EDGE_NODE_ACCEPTS_ANSWER_ABORT_AGE]);
+/** The header value a node sends (comma-separated tokens). */
+export const edgeNodeAcceptsHeaderValue = (): string => EDGE_NODE_ACCEPTS.join(",");
+/** Central's read of the header: the same exact-token parse as parseEdgeCentralAccepts (never `includes` on the raw string). */
+export function nodeAccepts(v: string | null | undefined, token: string): boolean {
+  return parseEdgeCentralAccepts(v).has(token);
+}
+/** X-EDGE-ABORT-TUOI — the 8-hex hash of the FULL, sorted list of STOPs withheld ("?" when the plan could not be built), computed BEFORE any cut. */
+export function bam8DanhSachStop(stops: readonly string[] | "?"): string {
+  const chu = stops === "?" ? "?" : [...stops].sort().join(",");
+  return createHash("sha256").update(chu).digest("hex").slice(0, 8);
+}
+/**
+ * X-EDGE-ABORT-TUOI — the head every record of a withheld sweep starts with (the anomaly's detail, the audit's metadata): `stops=<k|?> hash=<băm8>` of the
+ * FULL list — a record cut at 1 000 characters still says how many STOPs and which list (EDGE-ABORT-AUDIT-TRUNG-TAM-CAT).
+ */
+export function tomTatStop(stops: readonly string[] | "?"): string {
+  return `stops=${stops === "?" ? "?" : String(stops.length)} hash=${bam8DanhSachStop(stops)}`;
+}
+/**
+ * X-EDGE-ABORT-TUOI — the heldReason a segment end carries ON THE WIRE: `abortStopsWithheld` only when central advertises it AND this segment's
+ * end was never refused for it (`lui`: a 400 to it once ⇒ every later send of that end uses the baseline); else `centralUnreachable` (the run is
+ * already aborted at central — a segment end never resurrects it). The edge's own audit keeps the true reason (EDGE-ABORT-HELD-NHAN-LUI).
+ */
+export function edgeHeldWireReason(reason: EdgeHeldReason, centralAccepts: (token: string) => boolean, lui = false): EdgeHeldReason {
+  if (reason === "abortStopsWithheld" && (lui || !centralAccepts(EDGE_ACCEPTS_HELD_ABORT_STOPS_WITHHELD))) return "centralUnreachable";
+  return reason;
 }
 /**
  * The reason an `auth_unused` record carries ON THE WIRE: `config_stale` / `run_latched` only when central advertised it; otherwise the baseline
@@ -982,7 +1024,9 @@ export type EdgeEventsRequest = z.infer<typeof edgeEventsRequestSchema>;
 // ── error data ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export const edgeErrorDataSchemas = Object.freeze({
-  claim_stale: z.strictObject({ abortRequested: z.boolean() }),
+  claim_stale: z.strictObject({ abortRequested: z.boolean(), abortAgeMs: zAbortAgeMs }),
+  /** X-EDGE-ABORT-TUOI — authorize `stopped`: only to a node advertising answer.abort_age (an old node gets no data, as before) */
+  stopped: z.strictObject({ abortAgeMs: zAbortAgeMs }),
   gate_required: z.strictObject({ reason: zCode(200) }),
   device_refused: z.strictObject({ gate: z.enum(EDGE_DEVICE_GATES) }),
   gap: z.strictObject({ expectedSeq: zSeq }),

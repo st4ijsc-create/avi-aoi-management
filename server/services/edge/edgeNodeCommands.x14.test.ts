@@ -663,3 +663,62 @@ describe("X-14 — the sweep's source: no dispatcher, no driver, no write of ano
     expect(goi).toEqual([]);
   });
 });
+
+// ── X-EDGE-ABORT-TUOI — the age of an abort counts from its ONE moment (shared/foeAbortResend.mocAbortMs: a rejection's stamp first) ──────────────────────
+describe("X-EDGE-ABORT-TUOI — X-14 counts the 15 minutes from the abort's one moment", () => {
+  const MIN = 60_000;
+  /** a rejection's claim + its stamp, as foeEngine writes them at the rejection (the claim key's value is the claim; the stamp is ms) */
+  const ctxTuChoi = (truocMs: number) => ({ foeRejectClaim: "rc_tuoi_x14", foeRejectClaimAt: NOW - truocMs });
+  const CHU_C_DAI = (r: number, s: string, c: string) =>
+    CHU.C.than(r, s, c).replace("within 15 minutes from when the run was aborted.", "within 15 minutes from when the run was aborted, or when it was first rejected if it was.");
+
+  it("★ X14-TUOI-MOC a rejected node run whose stamp is 16 min old, its finishedAt 1 min old (a later write): :het fires — the age is the stamp's; the words name the long start", async () => {
+    run(71, 1 * MIN, { nut: true, ctx: ctxTuChoi(16 * MIN) });
+    vet(71, "s9", VET_NUT);
+    nap();
+    await quet(NOW);
+    expect(khoaCua(), "X14-TUOI-MOC: keys").toEqual([khoa(71, "s9", "het")]);
+    const a = motCanhBao(khoa(71, "s9", "het"));
+    expect(CHU_C_DAI(71, "s9", NUT.code) === CHU.C.than(71, "s9", NUT.code), "X14-TUOI-MOC: the long words differ from [C]").toBe(false);
+    expect([String(a.title), String(a.message)], "X14-TUOI-MOC: [C] with the long start").toEqual([CHU.C.tieuDe(71, "s9", NUT.code), CHU_C_DAI(71, "s9", NUT.code)]);
+  });
+
+  it("★ X14-TUOI-MOC-CU the same run with NO rejection claim (its finishedAt 1 min old): no :het — the age is finishedAt's, as before", async () => {
+    run(72, 1 * MIN, { nut: true, ctx: { foeRejectClaimAt: NOW - 16 * MIN } }); // a stamp without its claim is no moment (TUOI-MOC-TIEM)
+    vet(72, "s9", VET_NUT);
+    nap();
+    await quet(NOW);
+    expect(khoaCua().filter((k) => k.endsWith(":het")), "X14-TUOI-MOC-CU: no :het").toEqual([]);
+  });
+
+  it("★ X14-TUOI-HAI-NGUON (H4, EDGE-ABORT-BAO-HAI-NGUON) an inbox row of the node's WITHHELD URGENT for the same run (key abort_stops_withheld:run:<id>:<hash>) is never X-14's marker: :het still alerts", async () => {
+    run(73, 16 * MIN, { nut: true });
+    vet(73, "s9", VET_NUT);
+    H.inbox.push({ id: 1, userId: ADMIN, type: "ALERT", title: "t", message: "m", entityType: "orchestration_run", entityId: 73, metadata: { kind: "edge_abort_stops_withheld", dedupKey: "abort_stops_withheld:run:73:0123abcd" }, createdAt: new Date(NOW - MIN) });
+    nap();
+    await quet(NOW);
+    expect(khoaCua(), "X14-TUOI-HAI-NGUON: X-14's own key").toEqual([khoa(73, "s9", "het")]);
+  });
+
+  it("★ X14-TUOI-DO-DAI the long start of a rejected run keeps X14-10's bounds (not loosened): title ≤ 200, body ≤ 800 with a 200-character step id, runId 2 147 483 647, a 128-character node code", async () => {
+    const DAI = "s".repeat(200);
+    const R = 2_147_483_647;
+    const tc = (msTruoc: number) => ({ foeRejectClaim: "rc_dodai", foeRejectClaimAt: NOW - msTruoc });
+    runs.push({ id: R, workflowId: 1, status: "aborted", startedBy: OWNER, finishedAt: new Date(NOW - 20_000), contextJson: tc(20_000) });
+    asg.push({ runId: R, edgeNodeId: 9, workflowId: 1, workflowVersion: 1, defHash: "h", claimTokenHash: null, claimedAt: null, lastProgressAt: null });
+    vet(R, DAI, VET_NUT);
+    for (const [id, kq] of [[R - 1, VET_G1P], [R - 2, VET_G1], [R - 3, VET_TIMEOUT]] as const) {
+      runs.push({ id, workflowId: 1, status: "aborted", startedBy: OWNER, finishedAt: new Date(NOW - ABORT_RESEND_WINDOW_MS - 5_000), contextJson: tc(ABORT_RESEND_WINDOW_MS + 5_000) });
+      vet(id, DAI, kq);
+    }
+    nap();
+    fake.seed(edgeNodes, [{ id: 9, code: "n".repeat(128), name: "long", status: "offline" }]);
+    await quet(NOW);
+    await quet(NOW + ABORT_RESEND_WINDOW_MS);
+    expect(H.alerts.some((a) => String(a.message).includes("or when it was first rejected if it was")), "X14-TUOI-DO-DAI: the long start is in the words").toBe(true);
+    for (const a of H.alerts) {
+      expect(String(a.title).length, `${a.dedupKey}: title ≤ 200`).toBeLessThanOrEqual(200);
+      expect(String(a.message).length, `${a.dedupKey}: body ≤ 800`).toBeLessThanOrEqual(800);
+    }
+  });
+});

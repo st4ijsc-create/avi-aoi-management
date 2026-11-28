@@ -538,6 +538,8 @@ const DONG_BANG: readonly DongDongBang[] = [
   { tep: "server/services/edge/edgeConfigCentral.ts", ham: "alertForEdgeAnomaly", dang: "/re/.exec", chu: "/signed safety-PLC config\\(s\\) ([#0-9, ]+)/.exec(detail)", ma: "MOI-1", lyDo: "bảng Đã xem edgeConfigCentral.ts:235: id cấu hình trong detail chỉ chọn khoá chống trùng + câu URGENT" },
   { tep: "server/services/edge/edgeConfigCentral.ts", ham: "alertJournalStallRecovered", dang: "/re/.exec", chu: "/since (\\d+)/.exec(detail)", ma: "MOI-1", lyDo: "bảng Đã xem :272: `since` trong detail chỉ chọn khoá chống trùng của URGENT" },
   { tep: "server/services/edge/edgeConfigCentral.ts", ham: "alertJournalStallRecovered", dang: "/re/.test", chu: "/healthy=false/.test(detail)", ma: "MOI-1", lyDo: "bảng Đã xem :273: `healthy=` trong detail chỉ chọn câu URGENT (nút còn từ chối việc không phải STOP)" },
+  { tep: "server/services/edge/edgeConfigCentral.ts", ham: "alertAbortStopsWithheld", dang: "/re/.exec", chu: "/^(refusedTooOld|refusedNoTime): run \\d+ abortAgeMs=(\\S+) stops=(\\d+|\\?) hash=([0-9a-f]{8})(?:: (.*))?$/s.exec(rec.detail)", ma: "MOI-1", lyDo: "X-EDGE-ABORT-TUOI (hàng X-EDGE-ABORT-TUOI-LUOI): detail do nút soạn chỉ chọn chữ URGENT và khoá khử trùng; stops=0 ⇒ không nâng, còn lại (k > 0, '?', KHÔNG đọc được) ⇒ LUÔN nâng: không suy an toàn từ chữ" },
+  { tep: "server/services/edge/edgeConfigCentral.ts", ham: "alertForEdgeAnomaly", dang: "===", chu: "rec.code===EDGE_ABORT_STOPS_WITHHELD_ANOMALY", ma: "MOI-1", lyDo: "X-EDGE-ABORT-TUOI (hàng X-EDGE-ABORT-TUOI-LUOI): so `code` có cấu trúc của anomaly nút để chọn nhánh URGENT (như dòng EDGE_JOURNAL_STALL_RECOVERED_CODE)" },
   { tep: "server/services/edge/edgeConfigSource.ts", ham: "openEdgeConfigCache", dang: "JSON.parse", chu: "JSON.parse(text)", ma: "MOI-2", lyDo: "đọc tệp đệm cấu hình do chính nút ghi (phong bì AES-GCM có thẻ xác thực); hỏng ⇒ ném cache_format" },
   { tep: "server/services/edge/edgeCoordinator.ts", ham: "lyDoDongBoKhoa", dang: "goi:chotTuHang", chu: "chotTuHang(hang)", ma: "B-5", lyDo: "lyDoDongBoKhoa: chốt từ chữ hàng ⇒ từ chối syncRunResult/assignRun" },
   { tep: "server/services/edge/edgeCoordinator.ts", ham: "lyDoDongBoKhoa", dang: "goi:stopChuaRaTuHang", chu: "stopChuaRaTuHang(hang,ctxasRecord<string,unknown>|null)", ma: "B-5", lyDo: "lyDoDongBoKhoa: nợ STOP từ chữ hàng ⇒ từ chối đồng bộ" },
@@ -756,10 +758,11 @@ const DONG_BANG: readonly DongDongBang[] = [
 // QUYET_DINH_MOC lần 9 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-21; hàng X-38, commit 2): mốc = 191 = 187 + 4 (MOI-43 khoaC gọi stopTrangThaiC; MOI-44 held, MOI-45 congCuoi, MOI-46 applyEdgeSegmentEnd gọi khoaC — khoaC vào HAM_TRUNG_GIAN). Ghim lại phần tử đầu.
 // QUYET_DINH_MOC lần 10 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-21; hàng X-35; HST quyết 11:42, mốc đo ở lượt xanh): mốc = 192 = 191 + 1 (MOI-47 held gọi edgeResumeStateOf cho đuôi "cần người"). Ghim lại phần tử đầu.
 // QUYET_DINH_MOC lần 11 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-27 17:4x; hàng T10, quyết D2): mốc = 193 = 192 + 1 (MOI-48 chotLucBoot gọi chotTuHang), đo ở lượt xanh. Ghim lại phần tử đầu.
-const MOC_GOC = 193;
-const LICH_SU_MOC: readonly number[] = [193];
+// QUYET_DINH_MOC lần 12 (chu-du-an-HST theo uỷ quyền 17/11, 2026-11-28; hàng X-EDGE-ABORT-TUOI-LUOI, K3 bước 3): mốc = 195 = 193 + 2 (MOI-1 alertAbortStopsWithheld bóc detail; MOI-1 alertForEdgeAnomaly so code EDGE_ABORT_STOPS_WITHHELD_ANOMALY), đo ở K3. Ghim lại phần tử đầu.
+const MOC_GOC = 195;
+const LICH_SU_MOC: readonly number[] = [195];
 /** Mốc số dòng đóng băng: bằng phần tử cuối của `LICH_SU_MOC`, chỉ được GIẢM. */
-const SO_DONG_MOC = 193;
+const SO_DONG_MOC = 195;
 
 /**
  * HST 14/11 T2-DK1 — "ngoài tầm" không được thành "ngoài sổ". 21 ô của bảng kiểm kê mà census KHÔNG bắt được (không có phép so chữ để bắt:

@@ -289,7 +289,7 @@ describe("A2(o) AMENDMENT 2 — central's answer to an EDGE-reported anomaly", (
     expect(at).toBeGreaterThan(0);
     const branch = s.slice(at, s.indexOf("return;", at));
     expect(branch).toContain(`audits.push({ action: "EDGE_ANOMALY"`);
-    expect(branch).toMatch(/alertForEdgeAnomaly\(node, \{ code: rec\.code, detail: rec\.detail \}/);
+    expect(branch).toMatch(/alertForEdgeAnomaly\(node, \{ code: rec\.code, detail: rec\.detail(?:, runId: entity\.type === "orchestration_run" \? \(rec\.runId as number\) : null)? \}/); // X-EDGE-ABORT-TUOI (hàng X-EDGE-ABORT-TUOI-LUOI): the runId of a run THIS node holds, else null — the exact expression, optional
     expect(branch.indexOf("audits.push")).toBeLessThan(branch.indexOf("alertForEdgeAnomaly("));
   });
 });

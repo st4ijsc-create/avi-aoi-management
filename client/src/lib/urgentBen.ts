@@ -44,6 +44,10 @@ export const KIND_URGENT_P2: readonly string[] = [
   "foe_stop_compensation_pending_at_boot",
 ];
 
+/** X-EDGE-ABORT-TUOI — kind URGENT của lượt quét STOP bị giữ ở nút (abort trung tâm đã quá cửa sổ / không rõ giờ; nguồn edgeConfigCentral.alertAbortStopsWithheld).
+ *  Danh sách ĐÓNG, so NGUYÊN TÊN. Một nhãn `urgent.kind.<kind>` vi/en/zh. */
+export const KIND_URGENT_EDGE_ABORT: readonly string[] = ["edge_abort_stops_withheld"];
+
 /** Kind có nhắc "ghim" (kind 16–18): vùng URGENT hiện chú giải "ghim" MỘT lần khi có ít nhất một thẻ thuộc nhóm này. */
 export const KIND_NHAC_GHIM: readonly string[] = ["stop_unconfirmed_read", "stop_pin_mismatch", "stop_pin_mismatch_not_sent"].map((k) => `${TIEN_TO_KIND}${k}`);
 
@@ -94,7 +98,7 @@ export function kindCuaHang(h: HangThongBao): string | null {
 export function laUrgentA2n(h: HangThongBao): boolean {
   if (h.priority !== "URGENT" || h.entityType !== "orchestration_run") return false;
   const k = kindCuaHang(h);
-  return k != null && (k.startsWith(TIEN_TO_KIND) || KIND_URGENT_P2.includes(k));
+  return k != null && (k.startsWith(TIEN_TO_KIND) || KIND_URGENT_P2.includes(k) || KIND_URGENT_EDGE_ABORT.includes(k));
 }
 
 export function thanhThe(h: HangThongBao): TheUrgent {
@@ -103,7 +107,7 @@ export function thanhThe(h: HangThongBao): TheUrgent {
     id: h.id,
     runId: typeof h.entityId === "number" ? h.entityId : null,
     kind,
-    khoaNhan: KIND_URGENT_A2N.includes(kind) || KIND_URGENT_P2.includes(kind) ? `urgent.kind.${kind}` : null,
+    khoaNhan: KIND_URGENT_A2N.includes(kind) || KIND_URGENT_P2.includes(kind) || KIND_URGENT_EDGE_ABORT.includes(kind) ? `urgent.kind.${kind}` : null,
     title: h.title ?? "",
     message: h.message ?? "",
     isRead: h.isRead === true,

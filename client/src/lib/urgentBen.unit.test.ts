@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import vi from "@/i18n/locales/vi.json";
 import en from "@/i18n/locales/en.json";
 import zh from "@/i18n/locales/zh.json";
-import { KIND_NHAC_GHIM, KIND_URGENT_A2N, KIND_URGENT_P2, TIEN_TO_KIND, TOI_DA_THE_HIEN, catTheHien, duongToiRun, laUrgentA2n, phanNhomUrgent, tuoiNgan, type HangThongBao } from "./urgentBen";
+import { KIND_NHAC_GHIM, KIND_URGENT_A2N, KIND_URGENT_EDGE_ABORT, KIND_URGENT_P2, TIEN_TO_KIND, TOI_DA_THE_HIEN, catTheHien, duongToiRun, laUrgentA2n, phanNhomUrgent, tuoiNgan, type HangThongBao } from "./urgentBen";
 
 // Lưới chữ cấm "đã/đang/sẽ dừng" (quy tắc chữ: nhãn chỉ nói điều đã quan sát). MỘT nguồn: vòng soát nhãn và ca "bắt thật" dùng chung hằng này.
 // vi KHÔNG dùng \b: \b của JS chỉ coi [A-Za-z0-9_] là chữ nên "đ" không có biên ("máy đã dừng" lọt lưới). So chuỗi con, cờ iu, nhãn + mẫu chuẩn hoá NFC.
@@ -25,6 +25,8 @@ const BON_KIND_P2 = [
   "foe_stop_compensation_resent_at_boot",
   "foe_stop_compensation_pending_at_boot",
 ] as const;
+// X-EDGE-ABORT-TUOI — tên kind chép TAY từ hàng ngoại lệ X-EDGE-ABORT-TUOI — nguồn kỳ vọng độc lập với KIND_URGENT_EDGE_ABORT của mã.
+const MOT_KIND_EDGE_ABORT = ["edge_abort_stops_withheld"] as const;
 // Hai tên T10 chép TAY từ hợp đồng (hàng 25, 26) — nguồn kỳ vọng độc lập với KIND_URGENT_A2N của mã.
 const HAI_KIND_T10 = [
   "foe_outcome_unknown_boot_stop_not_sent_held",
@@ -171,10 +173,19 @@ describe("lưới 26 kind", () => {
     const the = phanNhomUrgent([hang(1, { metadata: { kind } })]).chuaDoc;
     expect(the.map((x) => [x.runId, x.khoaNhan, x.nhacGhim])).toEqual([[401, `urgent.kind.${kind}`, false]]);
   });
+  it("★ X-EDGE-ABORT-TUOI: KIND_URGENT_EDGE_ABORT = danh sách chép tay; thẻ edge_abort_stops_withheld là URGENT của run, có khoá nhãn, không nhắc ghim", () => {
+    expect([...KIND_URGENT_EDGE_ABORT], "danh sách").toEqual([...MOT_KIND_EDGE_ABORT]);
+    const h1 = hang(1, { metadata: { kind: "edge_abort_stops_withheld" } });
+    expect(laUrgentA2n(h1), "laUrgentA2n").toBe(true);
+    const the = phanNhomUrgent([h1]).chuaDoc;
+    expect(the.map((x) => [x.runId, x.khoaNhan, x.nhacGhim]), "thẻ").toEqual([[401, "urgent.kind.edge_abort_stops_withheld", false]]);
+    // cùng kind trên thực thể KHÁC run ⇒ không phải URGENT của run (một tên, một chỗ)
+    expect(laUrgentA2n(hang(2, { entityType: "machine", metadata: { kind: "edge_abort_stops_withheld" } })), "thực thể khác").toBe(false);
+  });
   it.each([["vi", vi], ["en", en], ["zh", zh]] as const)("★ mỗi kind có nhãn urgent.kind.<kind> không rỗng ở %s", (_ten, loc) => {
     const nhan = (loc as unknown as { urgent: { kind: Record<string, string> } }).urgent.kind;
-    for (const k of [...KIND_URGENT_A2N, ...BON_KIND_P2]) expect(typeof nhan[k] === "string" && nhan[k]!.trim().length > 0, k).toBe(true);
-    expect(Object.keys(nhan).sort()).toEqual([...KIND_URGENT_A2N, ...BON_KIND_P2].sort()); // không nhãn thừa: HỢP hai danh sách
+    for (const k of [...KIND_URGENT_A2N, ...BON_KIND_P2, ...MOT_KIND_EDGE_ABORT]) expect(typeof nhan[k] === "string" && nhan[k]!.trim().length > 0, k).toBe(true);
+    expect(Object.keys(nhan).sort()).toEqual([...KIND_URGENT_A2N, ...BON_KIND_P2, ...MOT_KIND_EDGE_ABORT].sort()); // không nhãn thừa: HỢP ba danh sách (X-EDGE-ABORT-TUOI)
   });
   it.each([["vi", vi], ["en", en], ["zh", zh]] as const)("★ nhãn %s không nói 'đã/đang/sẽ dừng' (quy tắc chữ: chỉ nói điều đã quan sát)", (ten, loc) => {
     const nhan = Object.values((loc as unknown as { urgent: { kind: Record<string, string> } }).urgent.kind).join("\n");
@@ -210,6 +221,15 @@ describe("lưới 26 kind", () => {
     const kindServer = [...src.slice(j, k).matchAll(/"(foe_outcome_unknown_[a-z_]+)"/g)].map((m) => m[1]!);
     expect(kindServer.length).toBeGreaterThan(0);
     expect([...KIND_URGENT_A2N].sort()).toEqual([...new Set(kindServer)].sort());
+  });
+});
+
+describe("X-EDGE-ABORT-TUOI — lệch với máy chủ", () => {
+  const duongEdge = resolve(__dirname, "../../../server/services/edge/edgeConfigCentral.ts");
+  it.skipIf(!existsSync(duongEdge))("★ kind mà edgeConfigCentral nâng cho lượt quét bị giữ = KIND_URGENT_EDGE_ABORT (thiếu/thừa ⇒ đỏ)", () => {
+    const src = readFileSync(duongEdge, "utf8");
+    const kindServer = [...src.matchAll(/kind: "(edge_abort_[a-z_]+)"/g)].map((m) => m[1]!);
+    expect([...new Set(kindServer)].sort(), "kind máy chủ").toEqual([...KIND_URGENT_EDGE_ABORT].sort());
   });
 });
 

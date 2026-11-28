@@ -63,7 +63,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { setAiChatOpen, useAiEntry } from "@/lib/aiEntryStore";
 import { toast } from "sonner";
-import { ABORT_RESEND_WINDOW_MS, abortResendAllowed } from "@shared/foeAbortResend"; // doc 81 Đợt 6 fix 3 (R-6-d)
+import { ABORT_RESEND_WINDOW_MS, trongCuaAbort } from "@shared/foeAbortResend"; // doc 81 Đợt 6 fix 3 (R-6-d); X-EDGE-ABORT-TUOI — the same ONE moment as the server
 import {
   Workflow,
   Terminal,
@@ -2915,7 +2915,8 @@ function RunRow({
   // doc 81 Đợt 9 final wave F2 — a run handed to an edge node that no node claimed in time is held as "edge unreachable".
   const edgeUnreachableCtx = (run.contextJson as Record<string, unknown> | null | undefined) ?? null;
   const edgeUnreachable = edgeUnreachableCtx?.edgeUnreachable === true;
-  const resendTooOld = resendable && !abortResendAllowed(run.finishedAt as string | Date | null | undefined);
+  // X-EDGE-ABORT-TUOI — the window from the abort's ONE moment (a rejection's stamp, when the client sees it; else finishedAt), never Math.abs (EDGE-ABORT-STUDIO-NUT)
+  const resendTooOld = resendable && !trongCuaAbort({ status, finishedAt: run.finishedAt as string | Date | null | undefined, contextJson: run.contextJson });
   const [outcomeUnknownNote, setOutcomeUnknownNote] = useState("");
   // Realtime: khi panel mở → poll bước; run đang chờ duyệt cũng nạp 1 lần (không poll)
   // để lấy NGỮ CẢNH gate (prompt/approverRoles) hiển thị cạnh nút Approve.
