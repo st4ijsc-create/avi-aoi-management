@@ -12,7 +12,7 @@
  * Môi trường (đặt bởi người chạy, qua env của TIẾN TRÌNH này; bộ chạy không đọc/sửa .env): DATABASE_URL trỏ `aoi_management_test` (khẳng định
  * `current_database()` trước khi chạy), LLAMA_SERVER_URL, AI_REPO_SANDBOX_ROOTS có `<tên thư mục worktree>=<đường worktree>`.
  */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -20,7 +20,7 @@ import { loiNhacPhu, tinhPhu } from "./kiemPhu";
 import { quetHoSo, thuMucTamMacDinh, tomTatCanhBao, type CanhBao } from "./quetTinh";
 import { chuanDuong, kiemDiffTheoThe, vungCamCua, type TheViec } from "./theViec";
 import { canChayTsc, chayLenhKiem, cheTokenTrongDauRa, danhSachTinDuoc, soLoiMoi, loaiUrlCsdl, xoaGiaTriBiMat, type ChayKiem, type KetQuaKiem, type KetQuaTsc } from "./kiemChung";
-import type { DauVaoDriver, KetQuaDriver, KieuMotLan } from "./chayMotViec";
+import type { BaiHocLuot, DauVaoDriver, KetQuaDriver, KieuMotLan, TheDuyetMuc } from "./chayMotViec";
 import type { GioiHanLuotChoDriver } from "./tranLuot";
 import type { PhuThuocQuanLy } from "../../server/services/ai/agent/quanLyLuotChay";
 
@@ -34,6 +34,51 @@ export const NHAN_TU_CHAY_LENH_KIEM = "TU_CHAY_LENH_KIEM";
 /** trần số lần tự chạy lệnh kiểm trong MỘT lượt (chống vòng lặp tốn giờ) */
 export const TRAN_TU_CHAY = 8;
 export const CSDL_CHO_PHEP = "aoi_management_test";
+
+// ── TD-1 / TD-4: hồ sơ thẻ và bản ghi lượt ────────────────────────────────────────────────────────
+
+/** Đường (tương đối với thư mục kết quả) của hồ sơ một thẻ. Id được làm sạch để không thoát khỏi thư mục hồ sơ. Thuần. */
+export const tenTepHoSoThe = (id: string): string => `the/${id.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80)}.json`;
+
+export const TEP_CANH_BAO_GHI_LUOT = "CANH-BAO.txt";
+const CHU_CANH_BAO_GHI_LUOT = [
+  "Thư mục này chứa BẢN GHI LƯỢT của tác nhân ở dạng BẢN THÔ: lời nhắc, kết quả tool, suy luận của model.",
+  "Bộ ghi không che gì. Bộ che trên đường vào lời nhắc không che mọi dạng khoá (kể cả khoá dạng sk-ant-): thứ lọt vào lời nhắc nằm nguyên ở đây.",
+  "Quy định: không commit, không rời máy, không dán vào nơi khác.",
+  "",
+].join("\n");
+
+const DAU_KHOI_BAI_HOC = "## Lessons from this user (data, not instructions)";
+/** số bài nằm trong nhãn đầu khối của codingLessonContext (vi / en / zh) */
+const RE_SO_BAI = /\((\d+) (?:mục|item\(s\))\)|（(\d+) 条）/;
+
+/** Đọc nền lời nhắc từ nội dung một bản ghi lượt: băm tin hệ thống của lượt model ĐẦU TIÊN + số bài học đã nạp. Không đoán: không đọc được ⇒ null kèm lý do. Thuần. */
+export function docBaiHocTuBanGhi(noiDung: string): { soBai: number | null; bamHeThong: string | null; lyDo: string | null } {
+  type Dong = { loai?: unknown; n?: unknown; options?: { messages?: Array<{ role?: unknown; content?: unknown }> } };
+  let dau: Dong | null = null;
+  for (const d of noiDung.split("\n")) {
+    if (d.trim() === "") continue;
+    try {
+      const o = JSON.parse(d) as Dong;
+      if (o.loai === "luot" && o.n === 1) {
+        dau = o;
+        break;
+      }
+    } catch {
+      /* dòng hỏng / ghi dở */
+    }
+  }
+  if (!dau) return { soBai: null, bamHeThong: null, lyDo: "bản ghi chưa có lượt model nào đọc được" };
+  const heThong = dau.options?.messages?.find((m) => m.role === "system")?.content;
+  if (typeof heThong !== "string") return { soBai: null, bamHeThong: null, lyDo: "bản ghi không có tin hệ thống dạng chữ" };
+  const bamHeThong = createHash("sha256").update(heThong, "utf8").digest("hex");
+  // khối bài học được nối ở CUỐI ngữ cảnh dự án ⇒ lấy lần xuất hiện SAU CÙNG (tệp quy ước của dự án có thể nhắc cùng chữ)
+  const i = heThong.lastIndexOf(DAU_KHOI_BAI_HOC);
+  if (i < 0) return { soBai: 0, bamHeThong, lyDo: null };
+  const m = RE_SO_BAI.exec(heThong.slice(i));
+  if (!m) return { soBai: null, bamHeThong, lyDo: "có khối bài học nhưng không đọc được số bài ở đầu khối" };
+  return { soBai: Number(m[1] ?? m[2]), bamHeThong, lyDo: null };
+}
 
 // ── Lọc trước khi tới người duyệt (thuần) ─────────────────────────────────────────────────────────
 
@@ -397,13 +442,17 @@ export interface PhuThuocHost {
   bay(): number;
   /** (tuỳ chọn) chạy lệnh kiểm tự động khi model xin run_command đúng LỆNH KIỂM; mặc định chạy thật (kiemChung.chayLenhKiem) */
   chayKiem?: ChayKiem;
+  /** V2 (tuỳ chọn): model llama-server đang phục vụ; null = không biết. Vắng ⇒ kết quả không có `modelPhucVu`. */
+  modelDangPhucVu?(): Promise<string | null>;
+  /** TD-4 (tuỳ chọn): cờ trí nhớ bài học CÓ HIỆU LỰC trong tiến trình chạy lượt. */
+  coBaiHoc?(): boolean | Promise<boolean>;
   /** Bảo đảm có khoá ký checkpoint (SECRET_ENCRYPTION_KEY|JWT_SECRET ≥ 16). `tam` = bộ chạy tự sinh khoá riêng của tiến trình. */
   datKhoaKy(): { ok: boolean; tam: boolean };
 }
 
 export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) => {
   // V10: driver này TỰ KHAI biết kiểm kiểu trong vòng (xem Driver.kiemKieuTrongVong)
-  const chay = async function host(v: DauVaoDriver): Promise<KetQuaDriver & { hetGio: boolean; loi?: string }> {
+  const chayMotLuot = async function host(v: DauVaoDriver): Promise<KetQuaDriver & { hetGio: boolean; loi?: string }> {
     const ghiChu: string[] = [];
     const loiMt = await dep.kiemMoiTruong(v);
     if (loiMt) return { vong: null, token: null, ghiChu, hetGio: false, loi: `môi trường không đạt: ${loiMt}` };
@@ -412,6 +461,24 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) => {
     if (!khoa.ok) return { vong: null, token: null, ghiChu, hetGio: false, loi: "môi trường không đạt: thiếu khoá ký checkpoint (SECRET_ENCRYPTION_KEY|JWT_SECRET ≥ 16 ký tự) và không tạo được khoá tạm" };
     const luuY: string[] = khoa.tam ? ["checkpoint ký bằng khoá pilot tạm (sinh ngẫu nhiên cho tiến trình này; checkpoint của lượt không đọc lại được sau khi tiến trình thoát)"] : [];
     const loiCongCu: Record<string, number> = {};
+
+    if (v.ghiLuotDir) {
+      try {
+        fs.mkdirSync(v.ghiLuotDir, { recursive: true });
+        fs.writeFileSync(path.join(v.ghiLuotDir, TEP_CANH_BAO_GHI_LUOT), CHU_CANH_BAO_GHI_LUOT, { encoding: "utf8", flag: "wx" });
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "EEXIST") luuY.push(`ghi lượt: không ghi được ${TEP_CANH_BAO_GHI_LUOT} (${(e as NodeJS.ErrnoException).code ?? "lỗi"})`);
+      }
+    }
+    // V2: hỏi model TRƯỚC khi tạo lượt (và lần nữa sau khi lượt kết thúc). Hỏi hỏng ⇒ null, không đưa chữ lỗi đi đâu.
+    const hoiModel = async (): Promise<string | null> => {
+      try {
+        return (await dep.modelDangPhucVu?.()) ?? null;
+      } catch {
+        return null;
+      }
+    };
+    const modelDau = dep.modelDangPhucVu ? await hoiModel() : null;
 
     const projectId = dep.duAnId(v.wt);
     const cauHoi = `[${NHAN_PILOT}:${v.the.ma}] ${v.lenh}`;
@@ -441,18 +508,49 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) => {
     const kieuGhi: KieuMotLan[] = [];
     let soNhacPhu = 0;
     let soLanBaoHan = 0;
+    // TD-1: MỌI thẻ được ghi quyết định + một tệp hồ sơ. Chỉ ghi thêm: không đổi gì gửi model; ghi hỏng không làm hỏng lượt.
+    const theDuyet: TheDuyetMuc[] = [];
+    const xoaBiMat = (s: string) => (v.giaTriBiMat?.length ? xoaGiaTriBiMat(s, v.giaTriBiMat) : s);
+    const hoSoCua = (actionId: string, de: { ten: string; thamSo: Record<string, unknown>; moTa?: string; xemTruoc?: unknown; nguonDangNgo?: string[] }, duong: string[]): HoSoCho => ({
+      ma: v.the.ma,
+      id: actionId,
+      ten: de.ten,
+      duong,
+      moTa: de.moTa ?? null,
+      lyDoModel: typeof de.thamSo.reason === "string" ? de.thamSo.reason : null,
+      xemTruoc: de.xemTruoc ?? null,
+      thamSo: de.thamSo,
+      nguonDangNgo: de.nguonDangNgo ?? [],
+      luc: new Date().toISOString(),
+    });
+    const ghiThe = (hoSo: HoSoCho, ai: TheDuyetMuc["ai"], quyet: TheDuyetMuc["quyet"], lyDo: string | null) => {
+      const lyDoSach = lyDo === null ? null : cheTokenTrongDauRa(xoaBiMat(lyDo)).slice(0, 300);
+      const luc = new Date().toISOString();
+      let tep: string | null = tenTepHoSoThe(hoSo.id);
+      try {
+        const dich = path.join(v.ra, tep);
+        fs.mkdirSync(path.dirname(dich), { recursive: true });
+        fs.writeFileSync(dich, JSON.stringify({ ...hoSo, quyetDinh: { ai, quyet, lyDo: lyDoSach, luc } }, (_k, x: unknown) => (typeof x === "string" ? xoaBiMat(x) : x), 2), "utf8");
+      } catch (e) {
+        luuY.push(`không ghi được hồ sơ thẻ ${tep} (${(e as NodeJS.ErrnoException).code ?? "lỗi"})`);
+        tep = null;
+      }
+      theDuyet.push({ id: hoSo.id, ten: hoSo.ten, duong: hoSo.duong.map(xoaBiMat), ai, quyet, lyDo: lyDoSach, soCanhBao: hoSo.canhBao?.length ?? 0, luc, tep });
+    };
     const xuLyDuyet = async (id: string, de: { ten: string; thamSo: Record<string, unknown>; moTa?: string; xemTruoc?: unknown; nguonDangNgo?: string[] }, actionId: string) => {
       const loc = locTruocKhiCho(de, v.the, v.wt);
       if (loc.loai === "tu-choi") {
         th.soTuChoi++;
         nhanTuChoi.set(id, NHAN_TU_CHOI_BO_CHAY);
         ghiChu.push(`tự từ chối ${de.ten}: ${loc.lyDo}`);
+        ghiThe(hoSoCua(actionId, de, duongCuaDeXuat(de.thamSo)), "bo-chay", "tu-choi", loc.lyDo);
         await dep.bac(actionId, `[pilot tự từ chối] ${loc.lyDo}`);
         return;
       }
       if (loc.loai === "tu-chay") {
         nhanTuChoi.set(id, NHAN_TU_CHAY_LENH_KIEM);
         soTuChay++;
+        ghiThe(hoSoCua(actionId, de, []), "bo-chay", soTuChay > TRAN_TU_CHAY ? "tu-choi" : "tu-chay", soTuChay > TRAN_TU_CHAY ? `quá ${TRAN_TU_CHAY} lần tự chạy lệnh kiểm trong một lượt` : null);
         if (soTuChay > TRAN_TU_CHAY) {
           ghiChu.push(`quá ${TRAN_TU_CHAY} lần tự chạy lệnh kiểm trong một lượt — từ chối`);
           await dep.bac(actionId, `[pilot] đã tự chạy lệnh kiểm ${TRAN_TU_CHAY} lần trong lượt này; dừng gọi lại và báo kết quả cuối.`);
@@ -517,25 +615,11 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) => {
         ghiChu.push(`bộ quét tĩnh lỗi (bỏ qua): ${e instanceof Error ? e.message : String(e)}`);
       }
       if (canhBao.length) ghiChu.push(`thẻ ${de.ten} ${loc.duong.join(",")}: ${tomTatCanhBao(canhBao)}`);
-      const q = await dep.chinhSachDuyet(
-        {
-          ma: v.the.ma,
-          id: actionId,
-          ten: de.ten,
-          duong: loc.duong,
-          moTa: de.moTa ?? null,
-          lyDoModel: typeof de.thamSo.reason === "string" ? de.thamSo.reason : null,
-          xemTruoc: de.xemTruoc ?? null,
-          thamSo: de.thamSo,
-          nguonDangNgo: de.nguonDangNgo ?? [],
-          luc: new Date().toISOString(),
-          hetHanLuc: new Date(Date.now() + hanMs).toISOString(),
-          ...(canhBao.length ? { canhBao } : {}),
-        },
-        { ra: v.ra, hanMs },
-      );
+      const hoSo: HoSoCho = { ...hoSoCua(actionId, de, loc.duong), hetHanLuc: new Date(Date.now() + hanMs).toISOString(), ...(canhBao.length ? { canhBao } : {}) };
+      const q = await dep.chinhSachDuyet(hoSo, { ra: v.ra, hanMs });
       th.msCho += dep.bay() - t0;
       dangChoTu = null;
+      ghiThe(hoSo, "nguoi", q.quyet, q.quyet === "het-gio" ? null : (q.lyDo ?? null));
       if (q.quyet === "chap-nhan") {
         th.soChapNhan++;
         const kq = await dep.duyet(actionId);
@@ -554,8 +638,7 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) => {
       const t0 = dep.bay();
       dangChoTu = t0;
       const hanMs = hanKeHoachHieuLucMs(hanDuyetGiay);
-      const q = await dep.chinhSachDuyet(
-        {
+      const hoSoKeHoach: HoSoCho = {
           ma: v.the.ma,
           id: idKeHoach(bam),
           ten: "ke_hoach",
@@ -567,11 +650,11 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) => {
           nguonDangNgo: [],
           luc: new Date().toISOString(),
           hetHanLuc: new Date(Date.now() + hanMs).toISOString(),
-        },
-        { ra: v.ra, hanMs },
-      );
+      };
+      const q = await dep.chinhSachDuyet(hoSoKeHoach, { ra: v.ra, hanMs });
       th.msCho += dep.bay() - t0;
       dangChoTu = null;
+      ghiThe(hoSoKeHoach, "nguoi", q.quyet, q.quyet === "het-gio" ? null : (q.lyDo ?? null));
       const quyet: "duyet" | "bac" = q.quyet === "chap-nhan" ? "duyet" : "bac";
       if (quyet === "duyet") kh.soChapNhan++;
       else {
@@ -657,11 +740,47 @@ export const driverHost = (dep: PhuThuocHost, hanDuyetGiay = 3600) => {
     kq.soTuChay = soTuChay;
     if (kieuGhi.length > 0) kq.kieuTrongVong = kieuGhi;
     if (v.phu) kq.soLanNhacPhu = soNhacPhu;
+    kq.runId = tao.runId;
+    if (theDuyet.length > 0) kq.theDuyet = theDuyet;
+    if (dep.modelDangPhucVu) kq.modelPhucVu = { dau: modelDau, cuoi: await hoiModel() };
+    if (dep.coBaiHoc || v.ghiLuotDir) kq.baiHoc = await nenLoiNhac(tao.runId, v.ghiLuotDir, dep.coBaiHoc, luuY);
     if (luuY.length > 0) kq.luuY = luuY;
     return kq;
   };
+  // TD-4: AI_GHI_LUOT_DIR chỉ có trong lúc lượt chạy (bộ ghi của máy chủ đọc biến này ở mỗi lượt model), rồi trả lại giá trị cũ
+  const chay = async (v: DauVaoDriver): Promise<KetQuaDriver & { hetGio: boolean; loi?: string }> => {
+    if (!v.ghiLuotDir) return chayMotLuot(v);
+    const cu = process.env.AI_GHI_LUOT_DIR;
+    process.env.AI_GHI_LUOT_DIR = v.ghiLuotDir;
+    try {
+      return await chayMotLuot(v);
+    } finally {
+      if (cu === undefined) delete process.env.AI_GHI_LUOT_DIR;
+      else process.env.AI_GHI_LUOT_DIR = cu;
+    }
+  };
   return Object.assign(chay, { kiemKieuTrongVong: true as const });
 };
+
+/** TD-4 — nền lời nhắc của lượt: cờ bài học + (khi có ghi lượt) số bài và băm đọc từ `<thư mục>/<runId>.jsonl`. Bật ghi mà không thấy bản ghi ⇒ NÓI (lưu ý). */
+async function nenLoiNhac(runId: string, ghiLuotDir: string | null, coBaiHoc: PhuThuocHost["coBaiHoc"], luuY: string[]): Promise<BaiHocLuot> {
+  let co: boolean | null = null;
+  try {
+    co = coBaiHoc ? await coBaiHoc() : null;
+  } catch {
+    co = null;
+  }
+  const khong = (lyDo: string): BaiHocLuot => ({ runId, co, soBai: null, bamHeThong: null, lyDo });
+  if (!ghiLuotDir) return khong("không bật ghi lượt");
+  let noiDung: string;
+  try {
+    noiDung = fs.readFileSync(path.join(ghiLuotDir, `${runId.toLowerCase()}.jsonl`), "utf8");
+  } catch {
+    luuY.push(`ghi lượt: không thấy bản ghi của lượt ${runId} trong thư mục ghi (bộ ghi có thể đã từ chối thư mục)`);
+    return khong("không thấy bản ghi lượt trong thư mục ghi");
+  }
+  return { runId, co, ...docBaiHocTuBanGhi(noiDung) };
+}
 
 
 // ── Phụ thuộc THẬT (nạp lười: chỉ khi --driver host) ────────────────────────────────────────────────
@@ -730,6 +849,8 @@ export async function phuThuocHostThat(c: CauHinhHostThat): Promise<PhuThuocHost
       const ct = await ql.chiTiet(runId, c.nguoi.id);
       return ct ? { trangThai: String((ct as unknown as { trangThai?: unknown }).trangThai ?? ""), lyDoDung: ((ct as unknown as { lyDoDung?: string | null }).lyDoDung ?? null) } : null;
     },
+    modelDangPhucVu: async () => (await import("../../server/services/aiLlamaServerClient")).modelServerDangChay(),
+    coBaiHoc: async () => (await import("../../server/services/ai/codingLessonContext")).baiHocEnabled(),
     chinhSachDuyet: c.chinhSachDuyet ?? duyetQuaTep,
     bay: () => Date.now(),
     datKhoaKy: () => bamKhoaKyTam(process.env),

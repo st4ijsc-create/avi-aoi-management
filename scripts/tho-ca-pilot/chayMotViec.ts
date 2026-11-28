@@ -54,7 +54,38 @@ export interface KieuTrongVong {
   hamLoi: string | null;
 }
 
+/** V2 — model llama-server đang phục vụ (basename) hỏi lúc đầu và cuối lượt; null = không biết. */
+export interface ModelPhucVu {
+  dau: string | null;
+  cuoi: string | null;
+}
+/** TD-1 — quyết định cho MỘT thẻ (kể cả thẻ bộ chạy tự quyết). `tep` = hồ sơ của thẻ, tương đối với thư mục kết quả; null = ghi hồ sơ hỏng. */
+export interface TheDuyetMuc {
+  id: string;
+  ten: string;
+  duong: string[];
+  ai: "nguoi" | "bo-chay";
+  quyet: "chap-nhan" | "tu-choi" | "het-gio" | "tu-chay";
+  lyDo: string | null;
+  soCanhBao: number;
+  luc: string;
+  tep: string | null;
+}
+/** TD-4 (phần ghi) — nền lời nhắc của một lượt. `soBai` / `bamHeThong` chỉ có khi lượt được ghi (bản ghi thô); null kèm `lyDo`. */
+export interface BaiHocLuot {
+  runId: string;
+  co: boolean | null;
+  soBai: number | null;
+  bamHeThong: string | null;
+  lyDo: string | null;
+}
+
 export interface KetQuaDriver {
+  /** TD-3: mã lượt agent — nối kết quả với bản ghi lượt */
+  runId?: string;
+  modelPhucVu?: ModelPhucVu;
+  theDuyet?: TheDuyetMuc[];
+  baiHoc?: BaiHocLuot;
   /** V10: số lần model xin LỆNH KIỂM và bộ chạy nhận (gồm cả lần bị từ chối vì quá trần) */
   soTuChay?: number;
   /** V10: các lần kiểm kiểu trong vòng */
@@ -270,6 +301,14 @@ export interface KetQuaViec {
   modelGoiLenhKiem?: boolean;
   /** V10: các lần kiểm kiểu trong vòng (mọi lượt driver) */
   kieuTrongVong?: KieuMotLan[];
+  /** V2: model đang phục vụ — `dau` của lượt driver đầu, `cuoi` của lượt driver cuối */
+  modelPhucVu?: ModelPhucVu;
+  /** TD-3: mã các lượt agent, theo thứ tự (lượt sửa tsc là phần tử thứ hai) */
+  runId?: string[];
+  /** TD-1: MỌI thẻ theo thứ tự, đánh số liền qua các lượt */
+  theDuyet?: Array<TheDuyetMuc & { so: number }>;
+  /** TD-4: nền lời nhắc của từng lượt */
+  baiHoc?: BaiHocLuot[];
   /** chưa đo được gì ở các trường trên null — nói rõ vì sao */
   luuY?: string[];
 }
@@ -389,6 +428,30 @@ function namTrong(con: string, goc: string): boolean {
   const c = path.resolve(con).toLowerCase();
   const g = path.resolve(goc).toLowerCase();
   return c === g || c.startsWith(g.endsWith(path.sep) ? g : g + path.sep);
+}
+
+/** Repo chứa chính bộ chạy này. */
+const GOC_BO_CHAY = (): string => path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+/**
+ * TD-4 — thư mục ghi lượt chứa bản ghi THÔ ⇒ phải tuyệt đối và nằm NGOÀI worktree pilot, ngoài repo bộ chạy, ngoài MỌI worktree của hai kho đó.
+ * So cả dạng resolve lẫn dạng thật (junction / symlink). Không liệt kê được worktree ⇒ từ chối (fail-closed).
+ */
+export function lyDoThuMucGhiLuot(thuMuc: string, wt: string, gocBoChay: string = GOC_BO_CHAY()): string | null {
+  if (!path.isAbsolute(thuMuc)) return "thư mục ghi lượt phải là đường tuyệt đối";
+  const cam = [path.resolve(wt), gocBoChay];
+  for (const kho of [wt, gocBoChay]) {
+    const r = git(["worktree", "list", "--porcelain"], kho);
+    if (!r.ok) return "thư mục ghi lượt phải nằm ngoài repo và mọi worktree — không liệt kê được worktree để kiểm (fail-closed)";
+    for (const d of r.out.split(/\r?\n/)) if (d.startsWith("worktree ")) cam.push(path.resolve(d.slice("worktree ".length).trim()));
+  }
+  const dang = [path.resolve(thuMuc), duongThat(thuMuc)];
+  for (const goc of cam) {
+    for (const g of [goc, duongThat(goc)]) {
+      if (dang.some((x) => namTrong(x, g))) return "thư mục ghi lượt phải nằm ngoài repo và mọi worktree (bản ghi là bản thô)";
+    }
+  }
+  return null;
 }
 
 /** `aoi_management_test` phải là MỘT token nguyên trong dòng CSDL (ranh giới từ: chữ, số, gạch dưới) — `aoi_management_test_x` không tính. */
@@ -690,6 +753,12 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   // HA-10: thẻ bật KIỂM PHỦ phải có khối ĐÃ DUYỆT với ít nhất một dòng cần phủ (không thì kiểm này vô nghĩa ⇒ từ chối, fail-closed)
   const dongDuyet = the.kiemPhu ? docDongDaDuyet(the.quyTrinh) : [];
   if (the.kiemPhu && dongDuyet.filter((d) => !d.giu).length === 0) return tuChoi("KIỂM PHỦ: CÓ nhưng thẻ không có khối `ĐÃ DUYỆT:` với dòng đánh số cần phủ (không tính dòng GIỮ:)", the.ma);
+  // TD-4: biến AI_GHI_LUOT_DIR đặt từ ngoài được coi NHƯ --ghi-luot (cùng chốt) — nếu không, nó là đường vòng qua cả hai luật dưới đây
+  const coGhiLuot = (p.ghiLuotDir ?? "").trim() || null;
+  const bienGhiLuot = ((p.envNguoiChay ?? process.env).AI_GHI_LUOT_DIR ?? "").trim() || null;
+  if (coGhiLuot && bienGhiLuot && path.resolve(coGhiLuot) !== path.resolve(bienGhiLuot)) return tuChoi("AI_GHI_LUOT_DIR khác --ghi-luot — bộ chạy không đoán thư mục nào đúng; chỉ đặt một, hoặc đặt giống nhau", the.ma);
+  const ghiLuot = coGhiLuot ?? bienGhiLuot;
+  if (ghiLuot && dbCho) return tuChoi("ghi lượt không đi cùng --cho-phep-db (bản ghi là bản thô) — gỡ --ghi-luot và biến AI_GHI_LUOT_DIR", the.ma);
   if (dbCho) {
     const lyDoDb = kiemChoPhepDb(the, p.testDbUrl);
     if (lyDoDb) return tuChoi(lyDoDb, the.ma);
@@ -735,6 +804,11 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
   const chung = git(["rev-parse", "--git-common-dir"], wt).out.trim();
   const laLienKet = path.resolve(wt, gitDir) !== path.resolve(wt, chung);
   if (!laLienKet && !p.choPhepKhoRieng) return tuChoi("đây là worktree CHÍNH, không phải worktree liên kết — từ chối", the.ma);
+  // TD-4: chốt thư mục ghi TRƯỚC mọi thay đổi trên worktree (kể cả việc "cất" kết quả lượt trước)
+  if (ghiLuot) {
+    const lyDoGhi = lyDoThuMucGhiLuot(ghiLuot, wt);
+    if (lyDoGhi) return tuChoi(lyDoGhi, the.ma);
+  }
   const cach: LuatCach = p.luatCach ?? "ghi-de";
   const trangThaiBan = () => git(["status", "--porcelain=v1", "--untracked-files=all"], wt).out.split("\n").filter((x) => x !== "" && (cach === "ghep" || !x.endsWith(` ${TEP_LUAT}`)));
   let ban = trangThaiBan();
@@ -863,9 +937,11 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     if (b.ok) for (const ten of tenMoiCa(b.out)) tenCaCuPhu.add(ten);
   }
   const hanGiay0 = tran?.phutThucDung ? tran.phutThucDung * 60 : the.gioiHan.giay;
-  const goiDriver = (lenh: string, hanGiay: number, gh: GioiHanLuotChoDriver | undefined) => driver({ the: theChoDriver, wt, lenh, hanGiay, ...(gh ? { gioiHanLuot: gh } : {}), ra: p.ra, ghiLuotDir: p.ghiLuotDir ?? null, khoGhi: p.khoGhi ?? {}, chayKiem: chayKiemDung, ...(dbCho ? { cheDoKiem: "chi-so" as const, giaTriBiMat: giaTriBiMatTuUrl(p.testDbUrl) } : {}), ...(the.kiemPhu ? { phu: { dongDuyet, tenCaCu: tenCaCuPhu, tepTest: tepTestPhu } } : {}), ...(hamTsc ? { kieu: { tepDoi: () => thuTepDoi(wt, cach === "ghi-de"), chayTsc: (tep: readonly string[], han: number) => chayTscDung(wt, tep, han), hamLoi: hamTsc.lyDo, nen: nenTsc } } : {}) });
+  const goiDriver = (lenh: string, hanGiay: number, gh: GioiHanLuotChoDriver | undefined) => driver({ the: theChoDriver, wt, lenh, hanGiay, ...(gh ? { gioiHanLuot: gh } : {}), ra: p.ra, ghiLuotDir: ghiLuot, khoGhi: p.khoGhi ?? {}, chayKiem: chayKiemDung, ...(dbCho ? { cheDoKiem: "chi-so" as const, giaTriBiMat: giaTriBiMatTuUrl(p.testDbUrl) } : {}), ...(the.kiemPhu ? { phu: { dongDuyet, tenCaCu: tenCaCuPhu, tepTest: tepTestPhu } } : {}), ...(hamTsc ? { kieu: { tepDoi: () => thuTepDoi(wt, cach === "ghi-de"), chayTsc: (tep: readonly string[], han: number) => chayTscDung(wt, tep, han), hamLoi: hamTsc.lyDo, nen: nenTsc } } : {}) });
   const kq = await goiDriver(ghepLenh(the, luat, tran), hanGiay0, gioiHanLuot);
   const kieuMoiLuot: KieuMotLan[] = [...(kq.kieuTrongVong ?? [])];
+  /** mọi lượt driver theo thứ tự — nguồn của modelPhucVu / runId / theDuyet / baiHoc */
+  const cacLuot: KetQuaDriver[] = [kq];
   const giayTuong = Math.round(((Date.now() - t0) / 1000) * 10) / 10;
   for (const g of kq.ghiChu) nhatKy(g);
 
@@ -969,6 +1045,8 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
         const t2 = Date.now();
         const kq2 = await goiDriver(nhac, ns.hanGiay, ns.gioiHan);
         kieuMoiLuot.push(...(kq2.kieuTrongVong ?? []));
+        cacLuot.push(kq2);
+        for (const y of kq2.luuY ?? []) if (!luuY.includes(y)) luuY.push(y);
         for (const g of kq2.ghiChu) nhatKy(g);
         ({ tepDoi, dong, viPham, ghimNghiNgo, crlf, addNOk } = thu());
         if (!addNOk) luuY.push(canhBaoAddN("sau lượt sửa"));
@@ -1125,6 +1203,7 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     ...(p.boChay ? { boChay: p.boChay } : {}),
     ...(tsc ? { tsc } : {}),
     ...(hamTsc ? { hamTsc } : {}),
+    ...gopLuot(cacLuot, luuY),
     ...(kq.soTuChay === undefined ? {} : { modelGoiLenhKiem: kq.soTuChay > 0 }),
     ...(kieuMoiLuot.length > 0 ? { kieuTrongVong: kieuMoiLuot } : {}),
     ...(the.suaTsc ? { coLuotSua: luotSua !== null, ...(truocSua ? { truocSuaTsc: truocSua, sauSuaTsc: sauSua } : {}), ...(luotSua ? { luotSua } : {}) } : {}),
@@ -1132,6 +1211,32 @@ export async function chayMotViec(p: ThamSoViec): Promise<KetQuaViec> {
     ...(ghimNghiNgo.length > 0 ? { ghimNghiNgo } : {}),
     ...(tepTest.length > 0 ? { tepTest } : {}),
     luuY: lyDoKiem ? [...luuY, `L3a: ${lyDoKiem}`] : luuY,
+  };
+}
+
+/**
+ * V2 / TD-1 / TD-3 / TD-4 — gộp số đo của các lượt driver vào kết quả. Driver không trả trường nào thì kết quả không có trường đó.
+ * Model không biết hoặc đổi giữa chừng CHỈ thành lưu ý (đẩy vào `luuY`), không đổi kết cục.
+ */
+function gopLuot(cacLuot: readonly KetQuaDriver[], luuY: string[]): Pick<KetQuaViec, "modelPhucVu" | "runId" | "theDuyet" | "baiHoc"> {
+  const model = cacLuot.flatMap((k) => (k.modelPhucVu ? [k.modelPhucVu] : []));
+  const moc = model.flatMap((m) => [m.dau, m.cuoi]);
+  if (moc.some((m) => m === null)) luuY.push("V2: không biết model phục vụ ở ít nhất một thời điểm của lượt (chỉ cảnh báo)");
+  const biet = moc.filter((m): m is string => m !== null);
+  biet.forEach((m, i) => {
+    const truoc = biet[i - 1];
+    if (truoc !== undefined && truoc !== m) luuY.push(`V2: model phục vụ đổi trong lượt: ${truoc} → ${m}`);
+  });
+  const runId = cacLuot.flatMap((k) => (k.runId ? [k.runId] : []));
+  const theDuyet = cacLuot.flatMap((k) => k.theDuyet ?? []).map((t, i) => ({ so: i + 1, ...t }));
+  const baiHoc = cacLuot.flatMap((k) => (k.baiHoc ? [k.baiHoc] : []));
+  const dau = model[0];
+  const cuoi = model[model.length - 1];
+  return {
+    ...(dau && cuoi ? { modelPhucVu: { dau: dau.dau, cuoi: cuoi.cuoi } } : {}),
+    ...(runId.length > 0 ? { runId } : {}),
+    ...(theDuyet.length > 0 ? { theDuyet } : {}),
+    ...(baiHoc.length > 0 ? { baiHoc } : {}),
   };
 }
 
